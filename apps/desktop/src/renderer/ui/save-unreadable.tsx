@@ -4,7 +4,7 @@ import { Curtain } from "@/renderer/ui/curtain";
 import { SaveIssues } from "@/renderer/ui/save-issues";
 import type { LoadSkip } from "@repo/domain/domain";
 
-// Offering onboarding here would create a second company over an unreadable save.
+// No onboarding here: founding refuses while the save's folder is there.
 // A save only a newer build can read must be left as it is: editing or moving it
 // loses what that build added, so it gets no Fix-or-move advice and no folder button.
 export const SaveUnreadable = ({ issues }: { issues: LoadSkip[] }) => {
@@ -16,8 +16,8 @@ export const SaveUnreadable = ({ issues }: { issues: LoadSkip[] }) => {
       </AlertDialog.Title>
       <AlertDialog.Description className="mt-1 text-sm leading-relaxed text-fg-dim">
         {newer
-          ? "Update IdleBiz to open it. Leave the save folder as it is: editing or moving it would lose what the newer version added, and starting over here would create a second company on top of it."
-          : "A company folder under ~/.idlebiz exists, but its file did not parse. Fix or move it, then relaunch. Starting over from here would create a second company on top of it."}
+          ? "Update IdleBiz to open it. Leave the save folder as it is: editing or moving it would lose what the newer version added."
+          : "The company folder under ~/.idlebiz holds no COMPANY.md this build can read. Fix or move it, then relaunch."}
       </AlertDialog.Description>
       <div className="mt-3">
         <SaveIssues issues={issues} />

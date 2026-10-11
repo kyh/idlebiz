@@ -1,10 +1,9 @@
 //! The one window: main's own page, served on loopback and signed in by a one-time handoff link
-//! main hands the shell, as kyh/inteligir's window is its server's page. It is pinned to that
-//! origin, opens no second window, holds no device permission, and reaches no command of the
-//! shell's: the page calls main on its own origin. Closing it hides it: the office keeps working in
-//! the menu bar, the dock icon goes with the window, and Open brings the same page back. What the
-//! founder does with it (looks away, hides it, brings it back) goes to main, which keeps when the
-//! office was last seen.
+//! main hands the shell. It is pinned to that origin, opens no second window, holds no device
+//! permission, and reaches no command of the shell's: the page calls main on its own origin.
+//! Closing it hides it: the office keeps working in the menu bar, the dock icon goes with the
+//! window, and Open brings the same page back. What the founder does with it (looks away, hides it,
+//! brings it back) goes to main, which keeps when the office was last seen.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -122,11 +121,13 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String
         .on_permission_request(|_, _| PermissionResponse::Deny)
         // the first load alone: a later one (a reload) must not bring back a window Close hid, nor
         // take the focus from whatever has it. Main hears it shown once it is. Nothing of the URL is
-        // logged: a handoff's link carries a nonce until its redirect drops it
+        // logged: a handoff's link carries a nonce until its redirect drops it. The line is what
+        // the packaged smoke (scripts/smoke-packaged.ts) waits on
         .on_page_load(move |window, payload| {
             if payload.event() != PageLoadEvent::Finished || shown.swap(true, Ordering::Relaxed) {
                 return;
             }
+            println!("[shell] window loaded");
             match window.show().and_then(|()| window.set_focus()) {
                 Ok(()) => told(window.app_handle(), WindowState::Shown),
                 Err(error) => eprintln!("[shell] could not show the window: {error}"),

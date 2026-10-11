@@ -5,15 +5,17 @@ import { rmSync } from "node:fs";
 import { chmod, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { ROOT_DIR } from "./paths";
+import { rootDir } from "./paths";
 import { RefusalError } from "./refusal";
+import { MAX_REQUEST_BYTES, toolAt } from "./tool-specs";
+import type { ToolAnswer, ToolName, ToolOutcome } from "./tool-specs";
 import { BadRequestError, errorMessage } from "@repo/domain/errors";
 import { parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
 
 // Each run's own line back to the company: an HTTP server on a unix socket only that run's seal
 // lets it connect to (`apiSocket` in agents/seal.ts). What the tools are and do lives in
-// tool-specs.ts and tools.ts; this only carries the call.
+// tool-specs.ts and tools/; this only carries the call.
 //
 // The socket, not the bearer, is what says which run is calling. Runs are processes of the
 // founder's own user, so one run can read another's env (`ps -E`, or sysctl's KERN_PROCARGS2,
@@ -22,8 +24,8 @@ import type { JsonValue } from "@repo/domain/json";
 // own socket alone, so a token read from another run's env is no use without that run's socket.
 // The token stays as a second check, and a server takes only the token of its own run.
 
-/** Answers one call by `METHOD /path` in prose the agent reads; null when there is no such tool. */
-export type ToolCaller = (route: string, raw: JsonValue) => Promise<string | null>;
+/** Answers one call of the tool `name`: how it ended, in prose the agent reads. */
+export type ToolCaller = (name: ToolName, raw: JsonValue) => Promise<ToolOutcome>;
 
 interface RunHandle {
   /** Run-scoped env for the agent process: the socket its API answers on and its bearer token. */
@@ -37,8 +39,6 @@ interface RunHandle {
 /** The longest path macOS takes for a unix socket: `sun_path` holds 104 bytes, its NUL included. */
 export const SOCKET_PATH_MAX_BYTES = 103;
 
-const MAX_BODY_BYTES = 64 * 1024;
-
 const fits = (socket: string): boolean => Buffer.byteLength(socket) <= SOCKET_PATH_MAX_BYTES;
 
 interface SocketDirs {
@@ -47,8 +47,8 @@ interface SocketDirs {
 }
 
 /**
- * Where runs' sockets go for the save at `root`: in the save, hidden so it is never read as a
- * company, and, for a save whose path is too long for that, a folder in HOME named for the save.
+ * Where runs' sockets go for the save at `root`: in the save beside its company folder, and, for
+ * a save whose path is too long for that, a folder in HOME named for the save.
  * A run writes neither: the save but for its own folders, and HOME but for its runner's state.
  */
 export const socketDirs = (root: string, home: string): SocketDirs => ({
@@ -73,33 +73,37 @@ export const runSocketPath = (root: string, home: string, id: string): string =>
   return socket;
 };
 
-interface ToolResponse {
-  ok: boolean;
-  error?: string;
-  message?: string;
-}
-
-const respond = (res: ServerResponse, status: number, payload: ToolResponse): void => {
+const respond = (res: ServerResponse, status: number, payload: ToolAnswer): void => {
   const body = JSON.stringify(payload);
   res.writeHead(status, { "content-type": "application/json" });
   res.end(body);
 };
 
+/** A call's request, read whole: one too heavy or not JSON is the caller's to fix. */
 const readJsonBody = async (req: IncomingMessage): Promise<JsonValue> => {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
     size += buf.length;
-    if (size > MAX_BODY_BYTES) {
-      throw new Error("request body too large");
+    // read on past the limit, keeping nothing: a request torn down mid-body never reads its answer
+    if (size <= MAX_REQUEST_BYTES) {
+      chunks.push(buf);
     }
-    chunks.push(buf);
+  }
+  if (size > MAX_REQUEST_BYTES) {
+    throw new BadRequestError(
+      `The request is ${size} bytes, over the ${MAX_REQUEST_BYTES} a call may send.`,
+    );
   }
   if (chunks.length === 0) {
     return {};
   }
-  return parseJson(Buffer.concat(chunks).toString("utf-8"));
+  try {
+    return parseJson(Buffer.concat(chunks).toString("utf-8"));
+  } catch (error) {
+    throw new BadRequestError(`The request is not JSON: ${errorMessage(error)}`);
+  }
 };
 
 /** A registered run: its tools while it lives, and the token only its socket takes. */
@@ -136,20 +140,20 @@ const handle = async (run: Run, req: IncomingMessage, res: ServerResponse): Prom
       respond(res, 401, { error: "unknown or expired run token", ok: false });
       return;
     }
-    const [routePath] = (req.url ?? "").split("?");
-    const route = `${req.method ?? "GET"} ${routePath}`;
-    const raw = req.method === "POST" ? await readJsonBody(req) : {};
+    const [pathname = ""] = (req.url ?? "").split("?");
+    const name = req.method === "POST" ? toolAt(pathname) : null;
+    if (name === null) {
+      const route = `${req.method ?? "GET"} ${pathname}`;
+      respond(res, 404, { error: `no tool is served at ${route}`, ok: false });
+      return;
+    }
+    const raw = await readJsonBody(req);
     // A run may finish while its request body is still arriving.
     if (authenticate(run, req) !== caller) {
       respond(res, 401, { error: "unknown or expired run token", ok: false });
       return;
     }
-    const message = await caller(route, raw);
-    if (message === null) {
-      respond(res, 404, { error: `no such tool: ${route}`, ok: false });
-    } else {
-      respond(res, 200, { message, ok: true });
-    }
+    respond(res, 200, { ...(await caller(name, raw)), ok: true });
   } catch (error) {
     if (error instanceof BadRequestError) {
       respond(res, 400, { error: error.message, ok: false });
@@ -161,12 +165,13 @@ const handle = async (run: Run, req: IncomingMessage, res: ServerResponse): Prom
 
 export class ControlPlane {
   private started = false;
-  private readonly root: string;
+  /** The save whose runs it serves, read as it is used: main makes its plane before it opens a save. */
+  private readonly root: () => string;
   private readonly home: string;
   /** Every live run's server, by its socket. */
   private readonly servers = new Map<string, { run: Run; server: Server }>();
 
-  constructor(root: string = ROOT_DIR, home: string = homedir()) {
+  constructor(root: () => string = rootDir, home: string = homedir()) {
     this.root = root;
     this.home = home;
   }
@@ -176,7 +181,7 @@ export class ControlPlane {
     if (this.started) {
       return;
     }
-    const { inSave, aside } = socketDirs(this.root, this.home);
+    const { inSave, aside } = socketDirs(this.root(), this.home);
     await Promise.all([inSave, aside].map((dir) => rm(dir, { force: true, recursive: true })));
     this.started = true;
   }
@@ -195,7 +200,7 @@ export class ControlPlane {
     if (!this.started) {
       throw new Error("control plane not started");
     }
-    const socket = runSocketPath(this.root, this.home, randomBytes(6).toString("hex"));
+    const socket = runSocketPath(this.root(), this.home, randomBytes(6).toString("hex"));
     const token = randomBytes(24).toString("base64url");
     const run: Run = { caller, token: Buffer.from(token) };
     await mkdir(path.dirname(socket), { mode: 0o700, recursive: true });

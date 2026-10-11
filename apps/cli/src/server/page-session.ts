@@ -1,5 +1,4 @@
-// The window's sign-in to main's page server, as kyh/inteligir's browser session signs its window in
-// (apps/cli/src/server/browser-session.ts there): one secret per boot, which the page holds in an
+// The window's sign-in to main's page server: one secret per boot, which the page holds in an
 // HttpOnly, SameSite=Strict cookie that only a one-time handoff sets. Main mints a handoff when the
 // shell (or the dev host) asks for one over stdio, and the shell opens its window on it. The nonce
 // rides a URL, so it is spent at its first use and dies unspent after five minutes.

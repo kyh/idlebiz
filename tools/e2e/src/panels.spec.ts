@@ -54,9 +54,9 @@ test("a file boot skipped is named in full, so the founder can find it", async (
   root,
 }) => {
   const founding = await launch();
-  const { company } = await foundCompany(founding.page);
+  await foundCompany(founding.page);
   await founding.close();
-  const taskDir = path.join(root, company.id, "tasks", "a-fairly-long-task-slug-the-lead-wrote");
+  const taskDir = path.join(root, "company", "tasks", "a-fairly-long-task-slug-the-lead-wrote");
   await mkdir(taskDir, { recursive: true });
   await writeFile(path.join(taskDir, "TASK.md"), "---\nbroken: [\n---\n");
 
@@ -66,22 +66,4 @@ test("a file boot skipped is named in full, so the founder can find it", async (
   const skipped = settings.getByText(path.join(taskDir, "TASK.md"), { exact: true });
   await expect(skipped).toBeVisible();
   expect(await skipped.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-});
-
-test("a Stripe sign-in left in the browser can be started over from the Budget panel", async ({
-  launch,
-}) => {
-  const founding = await launch();
-  await foundCompany(founding.page);
-  await founding.close();
-
-  const { opened, page } = await launch();
-  await page.getByRole("button", { name: /revenue/iu }).click();
-  const budget = page.getByRole("dialog", { name: "Budget" });
-  await budget.getByRole("button", { name: "Connect Stripe" }).click();
-  await expect(budget.getByText("Waiting for Stripe in your browser…")).toBeVisible();
-
-  await budget.getByRole("button", { name: "Start over" }).click();
-  await expect.poll(() => opened.filter(({ kind }) => kind === "url").length).toBe(2);
-  await expect(budget.getByText("Waiting for Stripe in your browser…")).toBeVisible();
 });

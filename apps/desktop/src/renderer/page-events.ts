@@ -13,7 +13,6 @@ type Listeners = { [E in PageEventName]: Set<Listener<E>> };
 const listeners: Listeners = {
   activity: new Set(),
   auth: new Set(),
-  stripe: new Set(),
 };
 
 /** Hears one of main's events until the answer it gives is called. */
@@ -44,10 +43,6 @@ const hear = (event: PageEvent): void => {
       break;
     }
     case "auth": {
-      tell(event.name, event.data);
-      break;
-    }
-    case "stripe": {
       tell(event.name, event.data);
       break;
     }

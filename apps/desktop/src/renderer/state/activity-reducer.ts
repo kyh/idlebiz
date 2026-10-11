@@ -10,7 +10,16 @@ import { orpc } from "@/renderer/api";
 // of it moved.
 
 /** A part of main's state the page holds a copy of. */
-type Slice = "company" | "employees" | "resting" | "products" | "bets" | "tasks" | "room" | "all";
+type Slice =
+  | "company"
+  | "employees"
+  | "resting"
+  | "products"
+  | "bets"
+  | "tasks"
+  | "room"
+  | "stripeKey"
+  | "all";
 
 const SLICE_KEYS = {
   all: [
@@ -30,6 +39,7 @@ const SLICE_KEYS = {
   products: [orpc.products.key()],
   resting: [orpc.agents.resting.key()],
   room: [orpc.team.key()],
+  stripeKey: [orpc.stripe.keyStatus.key()],
   // what an employee can be asked comes from their open work
   tasks: [orpc.tasks.key(), orpc.employees.options.key()],
 } satisfies Record<Slice, readonly QueryKey[]>;
@@ -37,8 +47,8 @@ const SLICE_KEYS = {
 /** Everything main's events can move: what the page asks for again once it may have missed some. */
 export const EVERYTHING: readonly QueryKey[] = [
   ...SLICE_KEYS.all,
+  ...SLICE_KEYS.stripeKey,
   orpc.agents.hasAuth.key(),
-  orpc.stripe.status.key(),
 ];
 
 const ACTIVITY_RING = 300;
@@ -138,8 +148,9 @@ const REFETCH_FOR = {
   // the team panel shows the room's lines in full, where the event cuts them
   chat: ["room"],
   message: [],
-  // the pulse writes each product's numbers and each live bet's reading too
-  "metrics.pulse": ["company", "products", "bets"],
+  // the pulse writes each product's numbers and each live bet's reading too, and finds whether
+  // Stripe still takes the key
+  "metrics.pulse": ["company", "products", "bets", "stripeKey"],
   // an order card is a task no run touches, so its own event says it came or went
   "order.card": ["tasks"],
   "org.hired": ["all"],
@@ -150,7 +161,7 @@ const REFETCH_FOR = {
   "product.named": ["products"],
   // An ask exists the moment it is raised, and a dead letter the moment it dies.
   // Every way back out (answered, approved, retried, resumed on connect) goes
-  // through the scheduler's assign, which says `status: queued`. The inbox must
+  // through the scheduler's enqueue, which says `status: queued`. The inbox must
   // not wait for the run to end to agree with the office.
   "run.ask": ["tasks"],
   "run.end": ["all"],

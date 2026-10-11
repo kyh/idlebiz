@@ -92,24 +92,24 @@ const waitingOf = (tasks: readonly Task[]): Set<string> =>
   new Set(tasks.flatMap((t) => (taskIn("blocked")(t) && t.assigneeId ? [t.assigneeId] : [])));
 
 export class OfficeScene extends Scene {
-  private player?: Player;
+  private player?: Player | undefined;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys?: Record<"W" | "A" | "S" | "D", Phaser.Input.Keyboard.Key>;
   private facing: Dir = "down";
-  private debugGfx?: Phaser.GameObjects.Graphics;
-  private npcs?: NpcManager;
+  private debugGfx?: Phaser.GameObjects.Graphics | undefined;
+  private npcs?: NpcManager | undefined;
   /**
    * What the office hears while it boots waits for its snapshot, then replays in
    * order: statuses and asks are last-writer-wins and a spawn of someone already
    * there is a no-op, so replaying what the snapshot already saw is harmless.
    */
   private readonly npcEvents = new BootGate<NpcManager>();
-  private clickWalk?: ClickWalk;
+  private clickWalk?: ClickWalk | undefined;
   private modalOpen = false;
   /** Bumped by boot() and by teardown: an await in boot() that outlives its scene must not touch it or the next one. */
   private generation = 0;
   private activityUnsub?: () => void;
-  private stopWatchingAsks?: () => void;
+  private stopWatchingAsks?: (() => void) | undefined;
 
   constructor() {
     super("office");

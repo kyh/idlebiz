@@ -1,4 +1,4 @@
-import { getSecret, setSecret } from "./secrets";
+import { VERCEL_TOKEN, getSecret, setSecret } from "./secrets";
 import * as store from "./store/store";
 import { listProjects, validateToken } from "./vercel";
 import { errorMessage } from "@repo/domain/errors";
@@ -7,8 +7,6 @@ import type { connectInput, saveTokenInput } from "@repo/contract/vercel/vercel-
 import type { VercelListing } from "@repo/domain/integrations";
 
 // One token per founder; each product binds its own project.
-
-const VERCEL_TOKEN_KEY = "VERCEL_TOKEN";
 
 /**
  * What a connection gives the asks waiting on Vercel. The first token saved is what every
@@ -31,14 +29,14 @@ const saveToken = (productId: string, token: string | undefined): VercelConnecti
   if (token === undefined) {
     return { kind: "product", productId };
   }
-  const first = getSecret(VERCEL_TOKEN_KEY) === null;
-  setSecret(VERCEL_TOKEN_KEY, token);
+  const first = getSecret(VERCEL_TOKEN) === null;
+  setSecret(VERCEL_TOKEN, token);
   return first ? { kind: "token" } : { kind: "product", productId };
 };
 
 /** The projects `token` can see, or the saved token's when none is given. */
 export const listVercelProjects = async (token?: string): Promise<VercelListing> => {
-  const key = token ?? getSecret(VERCEL_TOKEN_KEY);
+  const key = token ?? getSecret(VERCEL_TOKEN);
   if (!key) {
     return { kind: "rejected" };
   }
@@ -68,6 +66,6 @@ export const saveVercelToken = ({ productId, token }: z.infer<typeof saveTokenIn
 };
 
 export const disconnectVercel = (productId: string): void => {
-  // Older saves may still use the founder's shared token.
+  // the token is the founder's, which every product deploys with, so unbinding one keeps it
   store.setProductVercel(productId, null);
 };

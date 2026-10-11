@@ -10,7 +10,6 @@ import type {
   Task,
 } from "@repo/domain/domain";
 import type { Digest } from "@repo/domain/digest";
-import type { StripeStatus } from "@repo/domain/integrations";
 import { api, orpc } from "@/renderer/api";
 import { hearMain, listen } from "@/renderer/page-events";
 import { hear, tell } from "@/renderer/game/office-port";
@@ -30,7 +29,6 @@ import {
   restingQuery,
   setAnswer,
   stripeKeyQuery,
-  stripeStatusQuery,
   useRoom,
   warm,
 } from "@/renderer/state/queries";
@@ -183,16 +181,6 @@ export const digest = (): Promise<Digest | null> =>
 export const setMaxAgents = (maxAgents: number): Promise<void> =>
   updateCompany(() => api.company.setMaxAgents({ maxAgents }));
 
-export const connectStripe = (): Promise<void> =>
-  withCompany(async () => {
-    await api.stripe.connect();
-  });
-
-export const disconnectStripe = (): Promise<void> =>
-  withCompany(async () => {
-    await api.stripe.disconnect();
-  });
-
 const stripeKeyMoved = async (): Promise<void> => {
   await queryClient.invalidateQueries({ queryKey: stripeKeyQuery.queryKey });
 };
@@ -210,10 +198,10 @@ export const removeStripeKey = async (): Promise<void> => {
 export const connectVercel = async (input: {
   productId: string;
   /** Absent: keep the saved token. */
-  token?: string;
+  token?: string | undefined;
   projectId: string;
   projectName: string;
-  teamId?: string;
+  teamId?: string | undefined;
 }): Promise<void> => {
   await api.vercel.connect(input);
   await productsMoved();
@@ -356,14 +344,10 @@ export const initStore = (): void => {
     return;
   }
   initialized = true;
-  // an integration ask in the inbox words its button by these
+  // an integration ask in the inbox words its button by it
   void warm(stripeKeyQuery);
-  void warm(stripeStatusQuery);
   listen("activity", (e) => {
     void onActivityInBackground(e);
-  });
-  listen("stripe", (s: StripeStatus) => {
-    void setAnswer(stripeStatusQuery.queryKey, s);
   });
   listen("auth", (e: AuthFlowEvent) => {
     if (e.type === "done") {

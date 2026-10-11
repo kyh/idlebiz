@@ -1,11 +1,10 @@
-// The window's page, and main's door for it, on loopback: what kyh/inteligir's server answers its
-// window (apps/cli/src/server/app.ts there). The shell opens its window on a one-time handoff link
-// main mints when asked over stdio (`handoff`), the link signs the page in (page-session.ts), and the
-// page then calls the contract's procedures, main's event stream among them (RPC_PREFIX,
-// page-router.ts), on its own origin: the window, a browser under `pnpm dev:browser` and e2e's
-// Chromium alike. The page's files are the ones
-// main ships beside it, or under `tauri dev` and `pnpm dev:browser` Vite's, forwarded so the page
-// keeps this origin while it reloads in place.
+// The window's page, and main's door for it, on loopback. The shell opens its window on a one-time
+// handoff link main mints when asked over stdio (`handoff`), the link signs the page in
+// (page-session.ts), and the page then calls the contract's procedures, main's event stream among
+// them (RPC_PREFIX, page-router.ts), on its own origin: the window, a browser under
+// `pnpm dev:browser` and e2e's Chromium alike. The page's files are the ones main ships beside it,
+// or under `tauri dev` and `pnpm dev:browser` Vite's, forwarded so the page keeps this origin while
+// it reloads in place.
 //
 // The founder's approve button is on this port. No employee run reaches it: the seal closes it to
 // every run (`pagePorts`, agents/seal.ts). Of everyone else it answers only a request that names its
@@ -22,7 +21,7 @@ import { listenLoopback } from "./lib/http";
 import { createPageSession, fromOwnOrigin, loopbackOrigin } from "./page-session";
 import { errorMessage } from "@repo/domain/errors";
 import type { JsonValue } from "@repo/domain/json";
-import { pagePolicy } from "./page-policy";
+import { pagePolicy } from "@repo/contract/page-policy";
 
 /** Where the page's files come from: the built page main ships beside it, or Vite's dev server. */
 export type PageSource = { kind: "built"; dir: string } | { kind: "dev"; origin: string };
@@ -203,7 +202,7 @@ const forward = async (
   target.search = url.search;
   const upstream = await fetch(target, {
     headers: { accept: onlyHeader(request, "accept") ?? "*/*" },
-    method: request.method,
+    method: request.method ?? "GET",
   });
   const headers: Record<string, string> = {};
   for (const [name, value] of upstream.headers) {

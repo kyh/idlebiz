@@ -17,12 +17,13 @@ import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import { DEPLOY_TIMEOUT_MS } from "./tool-specs";
 import type { KeptEnvValue } from "./vercel-env";
+import { deployToVercel, unshippableIn } from "./deploy";
+import { tempSave } from "./test-support/save";
 
+// outside the save, so the secrets.json a symlink names below is not the save's own
 const scratch = mkdtempSync(path.join(tmpdir(), "idlebiz-deploy-"));
 const workspace = path.join(scratch, "workspace");
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = path.join(scratch, "save");
-const { deployToVercel, unshippableIn } = await import("./deploy");
+tempSave();
 
 const TOKEN = "vercel-token";
 const BINDING = { projectId: "prj_1", projectName: "acme", teamId: "team_1" };
@@ -166,11 +167,6 @@ afterEach(() => {
 
 afterAll(() => {
   rmSync(scratch, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 describe("deploying through Vercel's API", () => {
@@ -338,7 +334,7 @@ describe("deploying through Vercel's API", () => {
     const vercel = fakeVercel();
 
     const result = await deployBound([
-      { company: "co", kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
+      { kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
     ]);
     expect(result).toEqual({
       kind: "failed",
@@ -352,7 +348,6 @@ describe("deploying through Vercel's API", () => {
 
   it("finds the same leak before the founder is asked, and none in a folder it cannot read", async () => {
     const held: KeptEnvValue = {
-      company: "co",
       kind: "env",
       name: "OPENAI_API_KEY",
       product: "acme",
@@ -388,8 +383,8 @@ describe("deploying through Vercel's API", () => {
 
     await expect(
       deployBound([
-        { company: "co", kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
-        { company: "co", kind: "env", name: "FLAG", product: "acme", value: "on" },
+        { kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
+        { kind: "env", name: "FLAG", product: "acme", value: "on" },
       ]),
     ).resolves.toMatchObject({ kind: "deployed" });
     expect(vercel.created[0]?.files.map((f) => f.file)).toEqual(["index.html"]);
@@ -401,9 +396,7 @@ describe("deploying through Vercel's API", () => {
     const vercel = fakeVercel({ beforeAskingForFiles: () => put("index.html", key) });
 
     await expect(
-      deployBound([
-        { company: "co", kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
-      ]),
+      deployBound([{ kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key }]),
     ).resolves.toMatchObject({ kind: "failed" });
     expect([...vercel.stored.values()].map(String)).not.toContain(key);
   });

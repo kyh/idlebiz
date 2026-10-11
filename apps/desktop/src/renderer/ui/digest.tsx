@@ -53,12 +53,12 @@ const Lines = ({ d }: { d: DigestSummary }) => (
  * exactly the absence, and asking is itself the next look.
  */
 export const Digest = () => {
-  const companyId = useCompany()?.id ?? null;
+  const hasCompany = useCompany() !== null;
   const now = useNow();
   const [summary, setSummary] = useState<DigestSummary | null>(null);
 
   useEffect(() => {
-    if (companyId === null) {
+    if (!hasCompany) {
       return;
     }
     const look = async () => {
@@ -73,7 +73,7 @@ export const Digest = () => {
     void look();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [companyId]);
+  }, [hasCompany]);
 
   if (!summary) {
     return null;

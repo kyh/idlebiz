@@ -1,28 +1,37 @@
+import { z } from "zod";
 import type { Routine } from "@repo/domain/domain";
-import { PACKAGE_SCHEMA, nullableNum, optNum, optStr, reqStr } from "./frontmatter";
+import { PACKAGE_SCHEMA, decodeDoc } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
-export const routineToDoc = (r: Routine): FrontmatterDoc => {
-  const metadata: FrontmatterDoc["metadata"] = { intervalHours: r.intervalHours };
-  if (r.role !== null) {
-    metadata.role = r.role;
-  }
-  if (r.lastRunAt !== null) {
-    metadata.lastRunAt = r.lastRunAt;
-  }
+/** A null field gets no line. */
+const RoutineDocSchema = z.object({
+  body: z.string(),
+  fields: z.object({ name: z.string(), schema: z.literal(PACKAGE_SCHEMA), slug: z.string() }),
+  metadata: z.object({
+    intervalHours: z.number().positive(),
+    lastRunAt: z.number().optional(),
+    role: z.string().optional(),
+  }),
+});
+
+export const routineToDoc = (r: Routine): z.input<typeof RoutineDocSchema> => ({
+  body: `${r.instruction}\n`,
+  fields: { name: r.name, schema: PACKAGE_SCHEMA, slug: r.id },
+  metadata: {
+    intervalHours: r.intervalHours,
+    lastRunAt: r.lastRunAt ?? undefined,
+    role: r.role ?? undefined,
+  },
+});
+
+export const docToRoutine = (doc: FrontmatterDoc): Routine => {
+  const { body, fields, metadata: m } = decodeDoc(RoutineDocSchema, doc);
   return {
-    body: `${r.instruction}\n`,
-    fields: { name: r.name, schema: PACKAGE_SCHEMA, slug: r.id },
-    metadata,
+    id: fields.slug,
+    instruction: body.trim(),
+    intervalHours: m.intervalHours,
+    lastRunAt: m.lastRunAt ?? null,
+    name: fields.name,
+    role: m.role ?? null,
   };
 };
-
-export const docToRoutine = (doc: FrontmatterDoc, companyId: string): Routine => ({
-  companyId,
-  id: reqStr(doc.fields, "slug"),
-  instruction: doc.body.trim(),
-  intervalHours: optNum(doc.metadata, "intervalHours", 24),
-  lastRunAt: nullableNum(doc.metadata, "lastRunAt"),
-  name: reqStr(doc.fields, "name"),
-  role: optStr(doc.metadata, "role"),
-});

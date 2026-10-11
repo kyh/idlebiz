@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { toolAskOf } from "@repo/agent-driver/tool-ask";
 import type { ToolAsk } from "@repo/agent-driver/tool-ask";
-import { holdFor } from "../command-policy";
-import type { Confinement } from "../command-policy";
+import { holdFor } from "../policy";
+import type { Confinement } from "../policy/browser";
 
-const ask = (request: { rawInput?: unknown; meta?: unknown; title?: string; kind?: string }) =>
+const ask = (request: {
+  rawInput?: unknown;
+  meta?: unknown;
+  title?: string | undefined;
+  kind?: string | undefined;
+}) =>
   toolAskOf({
     kind: request.kind,
     meta: request.meta,
@@ -39,11 +44,7 @@ describe("toolAskOf", () => {
     async (title) => {
       const tool = ask({ kind: "execute", rawInput: { cwd: "/w" }, title });
       expect(tool).toEqual({ kind: "unknown", title });
-      expect(await judge(tool)).toEqual({
-        key: `ask: ${title}`,
-        leasable: false,
-        rule: "unknown-ask",
-      });
+      expect(await judge(tool)).toEqual({ key: `ask: ${title}`, rule: "unknown-ask" });
     },
   );
 

@@ -13,11 +13,11 @@ describe("the Vercel picker's lookup", () => {
   it("shows a fault reading the saved token instead of asking for a paste", () => {
     const lookup = lookupFor({
       data: undefined,
-      error: new Error("IPC closed"),
+      error: new Error("Failed to fetch"),
       isFetching: false,
     });
-    expect(lookup).toEqual({ message: "IPC closed", state: "error" });
-    expect(problemOf(lookup)).toBe("IPC closed");
+    expect(lookup).toEqual({ message: "Failed to fetch", state: "error" });
+    expect(problemOf(lookup)).toBe("Failed to fetch");
   });
 
   it("asks for a paste when the saved token is refused or missing", () => {

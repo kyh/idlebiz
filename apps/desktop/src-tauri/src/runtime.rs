@@ -7,7 +7,6 @@
 //! (`apps/cli/dist`, which the dev command builds) on the developer's own node, and the server takes
 //! the page from the dev server. Nothing in the environment can point the shell elsewhere: a variable
 //! an `open --env` could set would run another program inside a process the OS counts as this app.
-//! The same layout as kyh/inteligir's shell.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -81,10 +80,9 @@ pub fn resolve(exe: &Path, resource_dir: &Path) -> Result<Runtime, String> {
 }
 
 /// What main starts from: the shell's own environment less every `NODE_*`, as the dev host gives
-/// it too (`apps/cli/src/dev-host/host.ts`). `NODE_OPTIONS` can `--require` a file or `--inspect` a
-/// port, the job of the Electron fuses that turned it and the inspector arguments off; and main
-/// reads no `NODE_ENV`, but every run inherits main's env, so a terminal's or a test runner's would
-/// build the founder's products in its mode.
+/// it too (`apps/cli/src/dev-host/host.ts`). `NODE_OPTIONS` could `--require` a file into main or
+/// `--inspect` it on a port; and main reads no `NODE_ENV`, but every run inherits main's env, so a
+/// terminal's or a test runner's would build the founder's products in its mode.
 pub fn scrubbed_env<I>(inherited: I) -> BTreeMap<OsString, OsString>
 where
     I: IntoIterator<Item = (OsString, OsString)>,
@@ -118,8 +116,8 @@ fn resolved(path: &Path) -> PathBuf {
     out
 }
 
-/// Where main's log goes: `~/Library/Logs/IdleBiz` for the app, where a report has always found
-/// it; a development shell keeps its own beside its data, one folder per isolated save, so
+/// Where main's log goes: `~/Library/Logs/IdleBiz` for the app, where Console lists a Mac app's
+/// logs; a development shell keeps its own beside its data, one folder per isolated save, so
 /// sessions on different roots never share a log.
 pub fn logs_dir(bundled: bool, home: &Path, data_dir: &Path, root: &Path) -> PathBuf {
     if bundled {

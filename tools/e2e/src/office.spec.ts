@@ -32,7 +32,7 @@ const blockLead = async (
   slug: string,
   ask: string,
 ): Promise<void> => {
-  const taskDir = path.join(root, company.id, "tasks", slug);
+  const taskDir = path.join(root, "company", "tasks", slug);
   await mkdir(taskDir, { recursive: true });
   await writeFile(
     path.join(taskDir, "TASK.md"),
@@ -43,6 +43,7 @@ const blockLead = async (
       'schema: "agentcompanies/v1"',
       `slug: ${JSON.stringify(slug)}`,
       "metadata:",
+      "  attempts: 0",
       `  createdAt: ${Date.now()}`,
       '  origin: "founder"',
       '  priority: "high"',

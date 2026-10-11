@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { HttpError, fetchOk } from "./lib/http";
 import { ENV_PREFIX, hasSecret, secretsUnder, setSecret } from "./secrets";
+import type { EnvSecretName } from "./secrets";
 import { VERCEL_API } from "./vercel";
 import type { Product, VercelBinding } from "@repo/domain/domain";
 import { isPublicEnvName } from "./env-name";
@@ -27,18 +28,17 @@ export type EnvSetter = (req: EnvRequest) => Promise<EnvResult>;
 /** A value a teammate set on a product's project under a server-only name, which no deploy may ship. */
 export interface KeptEnvValue {
   kind: "env";
-  company: string;
   product: string;
   name: string;
   value: string;
 }
 
-type ProductRef = Pick<Product, "companyId" | "id">;
+type ProductRef = Pick<Product, "id">;
 
 // Kept per project, not per product: the founder may rebind the product to a live project of
 // theirs, whose variable of the same name set_env never set.
-const keptKey = ({ companyId, id }: ProductRef, projectId: string, name: string): string =>
-  `${ENV_PREFIX}${companyId}/${id}/${encodeURIComponent(projectId)}/${name}`;
+const keptKey = ({ id }: ProductRef, projectId: string, name: string): EnvSecretName =>
+  `${ENV_PREFIX}${id}/${encodeURIComponent(projectId)}/${name}`;
 
 /** Whether set_env set `name` on the product's project before, even a value this launch cannot open. */
 export const teamSetEnv = (product: ProductRef, projectId: string, name: string): boolean =>
@@ -55,24 +55,22 @@ export const keepEnvValue = (
 };
 
 /**
- * Every value set_env set under a server-only name, in any company (secrets.json is every
- * company's, and never the save, which runs read): one product's key ships as publicly from
- * another's folder. A value under a public name is built into the page anyway, so a file
- * holding it ships nothing new. That trusts the name, not the framework: a prefix the product's
- * framework does not read (`VITE_` in a Next.js app) leaves its value server-only and unguarded.
+ * Every value set_env set under a server-only name, on any product (kept in secrets.json, never
+ * the save, which runs read): one product's key ships as publicly from another's folder. A value
+ * under a public name is built into the page anyway, so a file holding it ships nothing new. That
+ * trusts the name, not the framework: a prefix the product's framework does not read (`VITE_` in
+ * a Next.js app) leaves its value server-only and unguarded.
  */
 export const unshippableEnvValues = (): KeptEnvValue[] =>
   [...secretsUnder(ENV_PREFIX)].flatMap(([key, value]) => {
-    // a value kept before keys named the project (no project part) still guards every deploy
-    const [company, product, ...rest] = key.split("/");
-    const name = rest.at(-1);
-    return company === undefined ||
-      product === undefined ||
+    const [product, project, name, ...rest] = key.split("/");
+    return product === undefined ||
+      project === undefined ||
       name === undefined ||
-      rest.length > 2 ||
+      rest.length > 0 ||
       isPublicEnvName(name)
       ? []
-      : [{ company, kind: "env", name, product, value }];
+      : [{ kind: "env", name, product, value }];
   });
 
 // a flag or a port turns up in any value, and no key is this short

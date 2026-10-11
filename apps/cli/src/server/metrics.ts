@@ -1,15 +1,11 @@
 import { z } from "zod";
 import { HttpError, getJson } from "./lib/http";
-import { STRIPE_CONNECT_TOKEN, STRIPE_SECRET_KEY, getSecret } from "./secrets";
+import { STRIPE_SECRET_KEY, VERCEL_TOKEN, getSecret } from "./secrets";
 import { STRIPE_API, isTestKey, stripeHeaders } from "./stripe-api";
-import { readMetricsConfig } from "./store/metrics-config";
-import type { MetricsConfig } from "./store/metrics-config";
 import type { Bet } from "@repo/domain/bets";
 import type { Product } from "@repo/domain/domain";
 import type { JsonValue } from "@repo/domain/json";
 import { webAnalyticsVisitors } from "./vercel";
-
-// Credentials live in secrets.json; the Stripe account a company connected, in its metrics.json (store/metrics-config.ts).
 
 export const PULSE_MS = 30_000;
 
@@ -22,8 +18,8 @@ export interface RealSnapshot {
   productRevenue: ReadonlyMap<string, number | null>;
   /** What each live bet's claim has brought in, and when it was read. */
   betReadings: ReadonlyMap<string, BetRead>;
-  /** How Stripe answered the company's key, and whose key it was; null when it has none. */
-  stripe: { via: StripeCredential["via"]; answer: StripeAnswer } | null;
+  /** How Stripe answered the founder's key; null when none is saved. */
+  stripe: StripeAnswer | null;
 }
 
 /** A bet's reading, null where no source can say, and when it was taken. */
@@ -33,7 +29,7 @@ interface BetRead {
 }
 
 /** Stripe took the key, turned it away (401/403), or never answered, which says nothing either way. */
-type StripeAnswer = "accepted" | "refused" | "unanswered";
+export type StripeAnswer = "accepted" | "refused" | "unanswered";
 
 const stripeGet = (endpoint: string, key: string): Promise<JsonValue> =>
   getJson(`${STRIPE_API}${endpoint}`, stripeHeaders(key));
@@ -172,59 +168,44 @@ interface StripeSnapshot {
   answer: StripeAnswer;
 }
 
-/** The key a company reads Stripe with, and whose it is: only a refused Connect token means the connection was revoked. */
-export interface StripeCredential {
-  via: "connect" | "own";
-  key: string;
-}
-
 /**
- * The founder's own key reads whenever one is saved: it makes every payment link, so its
- * account is the one a bet's tagged money lands on, and a Connect grant, which may be
- * another account or revoked, never stands between them. Only with no key does the
- * company that connected Stripe read through its token: secrets.json is shared by every
- * company and the token outlives the company that connected it. A key left blank in the
- * file is no key.
+ * The key revenue is read with: the founder's own, which makes every payment link, so its
+ * account is the one a bet's tagged money lands on. A key left blank in the file is no key.
  */
-export const stripeCredential = (cfg: MetricsConfig | null): StripeCredential | null => {
-  const own = getSecret(STRIPE_SECRET_KEY);
-  if (own) {
-    return { key: own, via: "own" };
-  }
-  const token = cfg?.stripeAccount ? getSecret(STRIPE_CONNECT_TOKEN) : null;
-  return token ? { key: token, via: "connect" } : null;
+export const stripeCredential = (): string | null => {
+  const key = getSecret(STRIPE_SECRET_KEY);
+  return key === "" ? null : key;
 };
 
 /** Whether test-mode money counts: only in an end-to-end run of a revenue bet, never by default. */
 const countsTestMoney = (): boolean => process.env.IDLEBIZ_COUNT_TEST_MONEY === "1";
 
 /** While test money does not count, a key in test mode counts none: it sees only test charges. */
-const countsNoMoney = (credential: StripeCredential): boolean =>
-  !countsTestMoney() && isTestKey(credential.key);
+const countsNoMoney = (key: string): boolean => !countsTestMoney() && isTestKey(key);
 
-/** Whether the company reads Stripe with a key in test mode, whose charges count for nothing. */
-export const stripeInTestMode = (companyId: string): boolean => {
-  const credential = stripeCredential(readMetricsConfig(companyId));
-  return credential !== null && countsNoMoney(credential);
+/** Whether Stripe is read with a key in test mode, whose charges count for nothing. */
+export const stripeInTestMode = (): boolean => {
+  const key = stripeCredential();
+  return key !== null && countsNoMoney(key);
 };
 
 /**
  * Why no source would read what `bet` claims, in the words the lead should act
- * on, or null when one can: the company's Stripe key for money, its product's
+ * on, or null when one can: the founder's Stripe key for money, its product's
  * Vercel project for visitors. A window over a number nothing reads could only
  * close on no reading at all.
  */
 export const measureRefusal = (bet: Bet, product: Product | null): string | null => {
   if (bet.claim.metric === "revenue") {
-    const credential = stripeCredential(readMetricsConfig(bet.companyId));
-    if (credential === null) {
-      return 'No source reads revenue yet — request_integration "stripe": its card takes the founder to the Budget panel to connect Stripe or add a Stripe key. Then measure_bet again.';
+    const key = stripeCredential();
+    if (key === null) {
+      return 'No source reads revenue yet — request_integration "stripe" for the founder to add the Stripe key IdleBiz charges with in the Budget panel. Then measure_bet again.';
     }
-    return countsNoMoney(credential)
+    return countsNoMoney(key)
       ? 'Stripe is in test mode — no charge counts. Ask the founder to swap the Stripe key IdleBiz charges with for a live one in the Budget panel (request_integration "stripe"), then measure_bet again.'
       : null;
   }
-  return product?.vercel && getSecret("VERCEL_TOKEN")
+  return product?.vercel && getSecret(VERCEL_TOKEN)
     ? null
     : `No source reads users of ${product?.name ?? bet.productId} yet — ask the founder to bind Vercel to it (request_integration "vercel"), then measure_bet again.`;
 };
@@ -265,17 +246,16 @@ const answerOf = (reads: readonly PromiseSettledResult<unknown>[]): StripeAnswer
  * (`closes`) that closed after the kept read, which its verdict waits on.
  */
 const stripeSnapshot = async (
-  credential: StripeCredential | null,
+  key: string | null,
   since: number | null,
   closes: readonly number[],
 ): Promise<StripeSnapshot> => {
   const now = Date.now();
-  if (credential === null) {
+  if (key === null) {
     return { answer: "unanswered", at: now, bets: null, charges: null };
   }
-  const { key } = credential;
   const countTest = countsTestMoney();
-  const noMoney = countsNoMoney(credential);
+  const noMoney = countsNoMoney(key);
   const kept =
     stripeRead?.key === key &&
     stripeRead.since === since &&
@@ -370,15 +350,15 @@ const revenueCloses = (bets: readonly Bet[]): number[] =>
     bet.claim.metric === "revenue" && bet.state.kind === "measuring" ? [bet.state.until] : [],
   );
 
-/** `credential` is the company's `stripeCredential`; `bets` are the live ones: a closed bet's number is settled. */
+/** `key` is the founder's `stripeCredential`; `bets` are the live ones: a closed bet's number is settled. */
 export const fetchRealMetrics = async (
-  credential: StripeCredential | null,
+  key: string | null,
   products: readonly Product[],
   bets: readonly Bet[],
 ): Promise<RealSnapshot> => {
   const now = Date.now();
   const [stripe, vercel] = await Promise.all([
-    stripeSnapshot(credential, revenueSince(bets), revenueCloses(bets)),
+    stripeSnapshot(key, revenueSince(bets), revenueCloses(bets)),
     productVisitors(products),
   ]);
   const { charges } = stripe;
@@ -395,7 +375,7 @@ export const fetchRealMetrics = async (
     ),
     productUsers: vercel.each,
     revenue: charges?.total ?? null,
-    stripe: credential ? { answer: stripe.answer, via: credential.via } : null,
+    stripe: key === null ? null : stripe.answer,
     users: vercel.total,
   };
 };

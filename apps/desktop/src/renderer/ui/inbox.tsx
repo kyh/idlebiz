@@ -5,7 +5,6 @@ import {
   useEmployees,
   usePendingAsks,
   useStripeKey,
-  useStripeStatus,
   useStuckTasks,
 } from "@/renderer/state/queries";
 import { retryTask } from "@/renderer/state/store";
@@ -18,9 +17,10 @@ import { Failure } from "@/renderer/ui/failure";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
 import { approvalScope, describeRule, shownKey } from "@repo/domain/hold-rules";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
 import { INTEGRATION_LABELS } from "@repo/domain/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
-import type { IntegrationAsk, IntegrationNeed, Task, TaskIn } from "@repo/domain/domain";
+import type { IntegrationAsk, IntegrationKind, Task, TaskIn } from "@repo/domain/domain";
 import { cn } from "cn";
 
 // Connecting resumes integration asks automatically; no text answer is needed.
@@ -33,13 +33,12 @@ const ConnectRow = ({
 }: {
   t: Task;
   by: string;
-  integration: IntegrationNeed;
+  integration: IntegrationKind;
   reason: string;
-  onConnect: (need: IntegrationNeed) => void;
+  onConnect: (kind: IntegrationKind) => void;
 }) => {
   const stripeKey = useStripeKey();
-  const stripeStatus = useStripeStatus();
-  const copy = connectAskCopy(integration, stripeKey, stripeStatus);
+  const copy = connectAskCopy(integration, stripeKey);
   return (
     <div className="px-inset p-3">
       <div className="text-xs text-accent-lo">
@@ -72,7 +71,7 @@ const ApprovalRow = ({
   t: Task;
   by: string;
   command: string;
-  rule: string;
+  rule: HoldRuleId;
 }) => {
   const { submission, decided, decide } = useApproval(t.id);
   return (

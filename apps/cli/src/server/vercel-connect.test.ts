@@ -1,34 +1,22 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type { VercelConnection } from "./vercel-connect";
+import * as store from "./store/store";
+import { getSecret, setSecret } from "./secrets";
+import {
+  connectVercel,
+  disconnectVercel,
+  initVercelConnect,
+  listVercelProjects,
+  saveVercelToken,
+} from "./vercel-connect";
+import { foundAcme, freshSave } from "./test-support/save";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-vercel-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
+freshSave();
 
-const store = await import("./store/store");
-const { getSecret, setSecret } = await import("./secrets");
-const { connectVercel, disconnectVercel, initVercelConnect, listVercelProjects, saveVercelToken } =
-  await import("./vercel-connect");
-
-beforeEach(() => {
-  rmSync(root, { force: true, recursive: true });
-  store.initStore();
-});
 afterEach(() => vi.unstubAllGlobals());
 
 const foundProduct = () => {
-  store.foundCompany({
-    budget: { mode: "infinite" },
-    businessType: "software",
-    founderName: "Kai",
-    founderSpriteSeed: "seed",
-    hires: [],
-    mission: "ship",
-    name: "Acme",
-  });
+  foundAcme();
   const [product] = store.listProducts();
   if (!product) {
     throw new Error("missing founding product");
@@ -60,15 +48,6 @@ const vercelAccount = (override: Override = () => null): (string | null)[] => {
   return tokens;
 };
 
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
-});
-
 it("rejects an unknown product before replacing the founder's credential", () => {
   setSecret("VERCEL_TOKEN", "existing-token");
 
@@ -84,7 +63,7 @@ it("rejects an unknown product before replacing the founder's credential", () =>
   expect(getSecret("VERCEL_TOKEN")).toBe("existing-token");
 });
 
-it("unbinds the active product without removing the credential shared with older saves", () => {
+it("unbinds the active product without removing the token every product deploys with", () => {
   const product = foundProduct();
   connectVercel({
     productId: product.id,

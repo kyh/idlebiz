@@ -1,40 +1,37 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RefusalError } from "./refusal";
+import type { Sealer } from "./secrets";
+import { getSecret, heldKeyIn, heldKeys, setSealer, setSecret } from "./secrets";
+import {
+  printfulCredential,
+  printfulTokenStatus,
+  removePrintfulToken,
+  savePrintfulToken,
+} from "./printful-token";
+import { tempSave } from "./test-support/save";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-printful-token-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const { getSecret, setSealer, setSecret } = await import("./secrets");
-const { printfulTokenStatus, removePrintfulToken, savePrintfulToken } =
-  await import("./printful-token");
-const { printfulCredential } = await import("./printful");
+const root = tempSave();
 
 const secretsFile = path.join(root, "secrets.json");
+const storeFile = path.join(root, "printful-store.json");
 const TOKEN = "pf_founder_token_0000000000abcd";
+
+const reversing: Sealer = {
+  open: (sealed) => Buffer.from(sealed.toReversed()).toString("utf-8"),
+  seal: (plain) => Buffer.from(Buffer.from(plain, "utf-8").toReversed()),
+};
 
 beforeEach(() => {
   rmSync(secretsFile, { force: true });
-  setSealer({
-    open: (sealed) => Buffer.from(sealed.toReversed()).toString("utf-8"),
-    seal: (plain) => Buffer.from(Buffer.from(plain, "utf-8").toReversed()),
-  });
+  rmSync(storeFile, { force: true });
+  setSealer(reversing);
 });
 
 afterEach(() => {
   setSealer(null);
   vi.unstubAllGlobals();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 const ORDERS = { data: [{ name: "View and manage orders", value: "orders" }] };
@@ -71,8 +68,53 @@ describe("saving the Printful token", () => {
     ]);
     expect(asked[0]?.headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
     expect(readFileSync(secretsFile, "utf-8")).not.toContain(TOKEN);
+    expect(readFileSync(secretsFile, "utf-8")).not.toContain("Acme Prints");
+    expect(JSON.parse(readFileSync(storeFile, "utf-8"))).toEqual({ id: 42, name: "Acme Prints" });
     expect(printfulTokenStatus()).toEqual({ last4: "abcd", state: "set", store: "Acme Prints" });
     expect(printfulCredential()).toEqual({ storeId: 42, token: TOKEN });
+  });
+
+  it("holds the bare token from every deploy and reply, and never the store", async () => {
+    printful();
+    await savePrintfulToken(TOKEN);
+
+    expect(heldKeyIn(`const printful = "${TOKEN}";`)).toBe("PRINTFUL_TOKEN");
+    expect(heldKeyIn('{"id":42,"name":"Acme Prints"}')).toBeNull();
+    expect(heldKeys().map(({ name }) => name)).toEqual(["PRINTFUL_TOKEN"]);
+  });
+
+  describe("when the token can't be kept", () => {
+    const refusing: Sealer = {
+      ...reversing,
+      seal: () => {
+        throw new Error("the Keychain refused");
+      },
+    };
+
+    it("keeps no store without a token", async () => {
+      printful();
+      setSealer(refusing);
+
+      await expect(savePrintfulToken(TOKEN)).rejects.toThrow("the Keychain refused");
+
+      expect(existsSync(storeFile)).toBe(false);
+      expect(getSecret("PRINTFUL_TOKEN")).toBeNull();
+      expect(printfulTokenStatus()).toEqual({ state: "unset" });
+    });
+
+    it("keeps the token saved before with its own store", async () => {
+      printful();
+      await savePrintfulToken(TOKEN);
+      printful({ stores: { data: [{ id: 7, name: "Other Prints", type: "native" }] } });
+      setSealer(refusing);
+
+      await expect(savePrintfulToken("pf_other_token_00000000000wxyz")).rejects.toThrow(
+        "the Keychain refused",
+      );
+
+      expect(printfulCredential()).toEqual({ storeId: 42, token: TOKEN });
+      expect(printfulTokenStatus()).toEqual({ last4: "abcd", state: "set", store: "Acme Prints" });
+    });
   });
 
   it.each([
@@ -148,12 +190,18 @@ describe("removing the Printful token", () => {
 
     expect(printfulTokenStatus()).toEqual({ state: "unset" });
     expect(printfulCredential()).toBeNull();
-    expect(getSecret("PRINTFUL_STORE")).toBeNull();
+    expect(existsSync(storeFile)).toBe(false);
     expect(getSecret("STRIPE_SECRET_KEY")).toBe("sk_live_founder");
   });
 
   it("counts a token without its store as none", () => {
     setSecret("PRINTFUL_TOKEN", TOKEN);
+    expect(printfulTokenStatus()).toEqual({ state: "unset" });
+    expect(printfulCredential()).toBeNull();
+  });
+
+  it("counts a store without its token as none", () => {
+    writeFileSync(storeFile, JSON.stringify({ id: 42, name: "Acme Prints" }));
     expect(printfulTokenStatus()).toEqual({ state: "unset" });
     expect(printfulCredential()).toBeNull();
   });

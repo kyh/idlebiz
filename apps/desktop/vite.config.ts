@@ -13,11 +13,11 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { build, defineConfig, isRunnableDevEnvironment } from "vite";
 import type { Plugin, ViteDevServer } from "vite";
+import { pagePolicy } from "@repo/contract/page-policy";
 import { DEV_PORT } from "@repo/contract/routes";
 import { errorMessage } from "@repo/domain/errors";
 import type * as DevHostModule from "idlebiz/dev-host";
 import type { DevHost } from "idlebiz/dev-host";
-import { pagePolicy } from "idlebiz/server/page-policy";
 
 const configDir = import.meta.dirname;
 

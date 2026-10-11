@@ -297,7 +297,7 @@ const PromptField = ({
             <ConfirmLink
               label="↺ start over"
               confirmLabel="delete saves"
-              title="Delete saved companies and restart"
+              title="Delete the save and restart"
               onConfirm={() => api.save.reset()}
             />
           }

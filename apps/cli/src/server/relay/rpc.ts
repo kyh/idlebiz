@@ -1,8 +1,8 @@
 // One end of the channel between main and the host that runs it (the desktop shell, or the dev
-// host): JSON-RPC 2.0, one message per line. Requests go both ways. The host invokes main's IPC
-// methods, and main asks the host for what only a native app does. Every message is parsed by the
-// schema of the method it names where it lands. A line that is no message goes to `stray`, never a
-// reason to stop.
+// host): JSON-RPC 2.0, one message per line. Requests go both ways. The host asks main to boot, hand
+// a window off and quit, and tells it of the window and the menu-bar icon; main asks the host for
+// what only a native app does. Every message is parsed by the schema of the method it names where
+// it lands. A line that is no message goes to `stray`, never a reason to stop.
 
 import { z } from "zod";
 import { errorMessage } from "@repo/domain/errors";

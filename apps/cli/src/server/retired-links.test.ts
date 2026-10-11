@@ -1,17 +1,22 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChargeLink } from "./payment-link";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { OrderCard } from "@repo/domain/domain";
+import type { ChargeLink } from "./link-record";
 import type { Listing } from "./listing";
 import type { Sale } from "./order";
+import * as store from "./store/store";
+import { taskFile } from "./paths";
+import {
+  raiseOrderCard,
+  retireProduct,
+  settleOrderCard,
+  switchOffBeforeReset,
+  switchOffRetiredLinks,
+} from "./company-actions";
+import { foundAcme, freshSave } from "./test-support/save";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-retired-links-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const store = await import("./store/store");
-const { retireProduct, settleOrderCard, switchOffBeforeReset, switchOffRetiredLinks } =
-  await import("./company-actions");
+const root = freshSave();
 
 const TEE = "plink_tee";
 const PRO = "plink_pro";
@@ -22,8 +27,6 @@ type Answer = "off" | "refused" | "busy" | "down";
 interface StripeSetup {
   /** How Stripe answers a switch-off of each link; one not named is switched off. */
   answers?: Partial<Record<string, Answer>>;
-  /** The account's active links, as Stripe lists them. */
-  active?: { id: string; url: string; metadata: Record<string, string> }[];
 }
 
 interface SwitchOff {
@@ -33,15 +36,11 @@ interface SwitchOff {
 }
 
 /** Stripe's payment links, faked at fetch: every switch-off asked, with the key it came with. */
-const fakeStripe = ({ answers = {}, active = [] }: StripeSetup = {}) => {
+const fakeStripe = ({ answers = {} }: StripeSetup = {}) => {
   const switchOffs: SwitchOff[] = [];
-  const world = { lists: 0, switchOffs };
+  const world = { switchOffs };
   vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
     const { host, pathname } = new URL(url);
-    if (host === "api.stripe.com" && pathname === "/v1/payment_links" && !init?.method) {
-      world.lists += 1;
-      return Promise.resolve(Response.json({ data: active, has_more: false }));
-    }
     const id = /^\/v1\/payment_links\/(?<id>\w+)$/u.exec(pathname)?.groups?.id;
     if (host !== "api.stripe.com" || id === undefined || init?.method !== "POST") {
       return Promise.reject(new Error(`unexpected call to ${url}`));
@@ -113,49 +112,44 @@ const chargeLinkOn = (productId: string, id: string, livemode = true): ChargeLin
 
 /** Acme with a side product selling a print and a plan, and the founder's live key saved. */
 const openShop = () => {
-  const company = store.foundCompany({
-    budget: { mode: "infinite" },
-    businessType: "ecommerce",
-    founderName: "Kai",
-    founderSpriteSeed: "seed",
-    hires: [],
-    mission: "sell tees",
-    name: "Acme",
-  });
+  foundAcme([], { businessType: "ecommerce", mission: "sell tees" });
   const side = store.createProduct({ description: "a side bet", name: "Side" });
   store.recordListing(listingOn(side.id));
   store.recordChargeLink(chargeLinkOn(side.id, PRO));
   saveKey("rk_live_founder");
-  return { company, side };
+  return { side };
 };
 
 /** The founder's cards, by title: cards raised in one millisecond list in no fixed order. */
-const cards = () =>
+const cards = (): OrderCard[] =>
   store
     .listOpenTasks()
-    .filter((t) => t.origin === "order" && t.state.kind === "blocked")
+    .flatMap((t) => (t.origin === "order" && t.state.kind === "blocked" ? [t] : []))
     .toSorted((a, b) => a.title.localeCompare(b.title));
 
-const statesOf = () => Object.fromEntries(store.paymentLinks().map((l) => [l.id, l.state.kind]));
+const cardAbout = (orderId: string): OrderCard => {
+  const card = cards().find((t) => t.subject.kind === "order" && t.subject.orderId === orderId);
+  if (!card) {
+    throw new Error(`order ${orderId} must have had a card`);
+  }
+  return card;
+};
+
+const SETTLE = { action: "Settle it", draft: null, instructions: "", type: "action" } as const;
+
+/** The checkout of an order whose card for `trouble` waits on the founder. */
+const owed = (id: string, trouble: string) => {
+  store.raiseOrderCard({ kind: "order", orderId: id, trouble }, `Order ${id}: ${trouble}`, SETTLE);
+  return `cs_${id}`;
+};
+
+const statesOf = () =>
+  Object.fromEntries(store.paymentLinks().map(({ link }) => [link.id, link.state.kind]));
 
 const roomSays = () => store.recentTeamMessages(50).map((m) => m.text);
 
-beforeEach(() => {
-  rmSync(root, { force: true, recursive: true });
-  store.initStore();
-});
-
 afterEach(() => {
   vi.unstubAllGlobals();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 describe("retiring a product", () => {
@@ -235,7 +229,7 @@ describe("retiring a product", () => {
     await switchOffRetiredLinks();
 
     expect(statesOf()).toEqual({ [PRO]: "retrying", [TEE]: "switched-off" });
-    expect(store.paymentLinks().find((l) => l.id === PRO)?.state).toEqual({
+    expect(store.paymentLinks().find((l) => l.link.id === PRO)?.link.state).toEqual({
       kind: "retrying",
       tries: 2,
       why: "fetch failed",
@@ -266,7 +260,7 @@ describe("retiring a product", () => {
     settleOrderCard(pro?.id ?? "", { kind: "done", note: "" });
     settleOrderCard(tee?.id ?? "", { kind: "cant", reason: "no dashboard access" });
 
-    expect(store.paymentLinks().find((l) => l.id === PRO)?.state).toMatchObject({
+    expect(store.paymentLinks().find((l) => l.link.id === PRO)?.link.state).toMatchObject({
       by: "founder",
       kind: "switched-off",
     });
@@ -274,8 +268,8 @@ describe("retiring a product", () => {
   });
 
   it("switches off nothing for a live product whose PRODUCT.md boot could not read", async () => {
-    const { company, side } = openShop();
-    writeFileSync(path.join(root, company.id, "products", side.id, "PRODUCT.md"), "not a product");
+    const { side } = openShop();
+    writeFileSync(path.join(root, "company", "products", side.id, "PRODUCT.md"), "not a product");
     store.initStore();
     const stripe = fakeStripe();
 
@@ -292,7 +286,7 @@ describe("retiring a product", () => {
     const { side } = openShop();
     writeFileSync(
       path.join(root, "secrets.json"),
-      JSON.stringify({ STRIPE_SECRET_KEY: "sealed:v1:c2VhbGVk" }),
+      JSON.stringify({ STRIPE_SECRET_KEY: "sealed:v2:c2VhbGVk" }),
     );
     const stripe = fakeStripe();
 
@@ -352,121 +346,6 @@ describe("retiring a product", () => {
     await Promise.all([retireProduct(side.id, "dud", null), switchOffRetiredLinks()]);
 
     expect(stripe.switchOffs.map((s) => s.id)).toEqual([TEE, PRO]);
-  });
-});
-
-/** Stamp the save as another build would have written it. */
-const restamp = (companyId: string, format: number): void => {
-  const file = path.join(root, companyId, "COMPANY.md");
-  writeFileSync(file, readFileSync(file, "utf-8").replace(/format: \d+/u, `format: ${format}`));
-};
-
-/** A format 6 save with a product it already retired and one still live, which made links nobody recorded. */
-const olderShop = () => {
-  const company = store.foundCompany({
-    budget: { mode: "infinite" },
-    businessType: "software",
-    founderName: "Kai",
-    founderSpriteSeed: "seed",
-    hires: [],
-    mission: "ship",
-    name: "Acme",
-  });
-  const gone = store.createProduct({ description: "a dud", name: "Gone" });
-  const side = store.createProduct({ description: "a side bet", name: "Side" });
-  store.killProduct(gone.id, "dud", null);
-  restamp(company.id, 6);
-  store.initStore();
-  return { gone, side };
-};
-
-describe("an older save's links", () => {
-  it("hands the founder the unrecorded links Stripe lists for a retired product, and switches none off", async () => {
-    const { gone, side } = olderShop();
-    saveKey("rk_live_founder");
-    const stripe = fakeStripe({
-      active: [
-        { id: "plink_old", metadata: { product: gone.id }, url: "https://buy.stripe.com/old" },
-        { id: "plink_side", metadata: { product: side.id }, url: "https://buy.stripe.com/side" },
-        { id: "plink_mine", metadata: {}, url: "https://buy.stripe.com/mine" },
-      ],
-    });
-
-    await switchOffRetiredLinks();
-
-    expect(stripe.switchOffs).toEqual([]);
-    expect(cards().map((c) => c.title)).toEqual([`Switch off ${gone.id}'s older payment links`]);
-    const said = JSON.stringify(cards()[0]?.state);
-    expect(said).toContain("https://buy.stripe.com/old (plink_old)");
-    expect(said).not.toContain("plink_side");
-    expect(store.unrecordedLinkProducts()).not.toContain(gone.id);
-
-    await switchOffRetiredLinks();
-    expect(stripe.lists).toBe(1);
-
-    await retireProduct(side.id, "dud too", null);
-
-    expect(stripe.lists).toBe(2);
-    expect(cards().map((c) => c.title)).toContain(`Switch off ${side.id}'s older payment links`);
-    expect(store.unrecordedLinkProducts()).not.toContain(side.id);
-  });
-
-  it("looks for no live product's older links when its PRODUCT.md could not be read", async () => {
-    const { side } = olderShop();
-    const company = store.getCompany();
-    writeFileSync(
-      path.join(root, company?.id ?? "", "products", side.id, "PRODUCT.md"),
-      "not a product",
-    );
-    store.initStore();
-    saveKey("rk_live_founder");
-    fakeStripe({
-      active: [
-        { id: "plink_side", metadata: { product: side.id }, url: "https://buy.stripe.com/side" },
-      ],
-    });
-
-    await switchOffRetiredLinks();
-
-    expect(cards().map((c) => c.title)).not.toContain(
-      `Switch off ${side.id}'s older payment links`,
-    );
-    expect(store.unrecordedLinkProducts()).toContain(side.id);
-  });
-
-  it("raises nothing for a retired product Stripe lists no link for", async () => {
-    olderShop();
-    saveKey("rk_live_founder");
-    const stripe = fakeStripe();
-
-    await switchOffRetiredLinks();
-
-    expect(stripe.lists).toBe(1);
-    expect(cards()).toEqual([]);
-  });
-
-  it("waits for a live key before it looks, and looks again after a read that failed", async () => {
-    const { gone } = olderShop();
-    saveKey("rk_test_founder");
-    const stripe = fakeStripe();
-
-    await switchOffRetiredLinks();
-
-    expect(stripe.lists).toBe(0);
-    expect(store.unrecordedLinkProducts()).toContain(gone.id);
-
-    saveKey("rk_live_founder");
-    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("fetch failed")));
-    await switchOffRetiredLinks();
-
-    expect(store.unrecordedLinkProducts()).toContain(gone.id);
-    expect(cards()).toEqual([]);
-
-    const again = fakeStripe();
-    await switchOffRetiredLinks();
-
-    expect(again.lists).toBe(1);
-    expect(store.unrecordedLinkProducts()).not.toContain(gone.id);
   });
 });
 
@@ -535,15 +414,6 @@ describe("resetting the company", () => {
       paymentIntent: null,
       productId: side.id,
     };
-    const owed = (id: string, trouble: string) => {
-      store.raiseOrderCard(`Order ${id.slice(0, 8)}: ${trouble}`, {
-        action: "Settle it",
-        draft: null,
-        instructions: "",
-        type: "action",
-      });
-      return `cs_${id}`;
-    };
     const delivery = "Email the buyer the PDF";
     store.recordOrder({
       ...paid,
@@ -573,11 +443,7 @@ describe("resetting the company", () => {
       name: "Guide",
       sessionId: settled,
     });
-    const card = cards().find((t) => t.title.startsWith("Order guide-se"));
-    if (!card) {
-      throw new Error("the settled order must have had a card");
-    }
-    settleOrderCard(card.id, { kind: "done", note: "" });
+    settleOrderCard(cardAbout("guide-sent").id, { kind: "done", note: "" });
     fakeStripe();
 
     const left = await switchOffBeforeReset();
@@ -595,20 +461,16 @@ describe("resetting the company", () => {
       store.recordOrder(
         teeOrder(side.id, id, { kind: "held", printfulId: 7, why: "Printful wants more" }),
       );
-      store.raiseOrderCard(`Order ${id.slice(0, 8)}: Printful wants more than the buyer paid`, {
-        action: "Settle it",
-        draft: null,
-        instructions: "",
-        type: "action",
-      });
+      const trouble = "Printful wants more than the buyer paid";
+      store.raiseOrderCard(
+        { kind: "order", orderId: id, trouble },
+        `Order ${id}: ${trouble}`,
+        SETTLE,
+      );
     };
     hold("held-open");
     hold("heldover");
-    const card = cards().find((t) => t.title.startsWith("Order heldover"));
-    if (!card) {
-      throw new Error("the settled sale must have had a card");
-    }
-    settleOrderCard(card.id, { kind: "done", note: "refunded" });
+    settleOrderCard(cardAbout("heldover").id, { kind: "done", note: "refunded" });
     fakeStripe();
 
     const left = await switchOffBeforeReset();
@@ -627,5 +489,59 @@ describe("resetting the company", () => {
     expect(stripe.switchOffs).toEqual([]);
     expect(left).toContain("https://buy.stripe.com/tee");
     expect(left).toContain(`https://buy.stripe.com/${PRO}`);
+  });
+});
+
+describe("an order card", () => {
+  it("is known by what it is about, so a reworded title still records its Done and still warns a reset", async () => {
+    const { side } = openShop();
+    fakeStripe({ answers: { [PRO]: "refused" } });
+    await retireProduct(side.id, "dud", null);
+    store.recordOrder({
+      collectedCents: 900,
+      createdAt: 3,
+      delivery: "Email the buyer the PDF",
+      email: "reader@example.com",
+      id: "guide-owed",
+      kind: "link",
+      livemode: true,
+      name: "Guide",
+      paymentIntent: null,
+      productId: side.id,
+      sessionId: "cs_guide-owed",
+    });
+    raiseOrderCard(
+      { kind: "order", orderId: "guide-owed", trouble: "deliver it" },
+      { action: "Send the buyer the guide", draft: null, instructions: "" },
+    );
+    for (const card of cards()) {
+      const file = taskFile(card.id);
+      const named = `name: ${JSON.stringify(card.title)}`;
+      writeFileSync(
+        file,
+        readFileSync(file, "utf-8").replace(
+          named,
+          `name: ${JSON.stringify(`Reworded ${card.id}`)}`,
+        ),
+      );
+    }
+    store.initStore();
+    expect(cards().map((c) => c.title.startsWith("Reworded "))).toEqual([true, true]);
+
+    const left = cards().find((c) => c.subject.kind === "link-left-on");
+    settleOrderCard(left?.id ?? "", { kind: "done", note: "" });
+
+    expect(store.paymentLinks().find((l) => l.link.id === PRO)?.link.state).toMatchObject({
+      by: "founder",
+      kind: "switched-off",
+    });
+
+    fakeStripe();
+    const warning = await switchOffBeforeReset();
+
+    expect(warning).toContain(
+      `Reworded ${cardAbout("guide-owed").id}: "Guide", reader@example.com`,
+    );
+    expect(warning).toContain("checkout cs_guide-owed");
   });
 });

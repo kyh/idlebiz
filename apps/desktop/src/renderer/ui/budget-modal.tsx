@@ -4,15 +4,8 @@ import { api, orpc } from "@/renderer/api";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { Failure } from "@/renderer/ui/failure";
-import { queryClient, useCompany, useStripeKey, useStripeStatus } from "@/renderer/state/queries";
-import {
-  setBudget,
-  resetSpend,
-  connectStripe,
-  disconnectStripe,
-  saveStripeKey,
-  removeStripeKey,
-} from "@/renderer/state/store";
+import { queryClient, useCompany, useStripeKey } from "@/renderer/state/queries";
+import { setBudget, resetSpend, saveStripeKey, removeStripeKey } from "@/renderer/state/store";
 import { Modal } from "@/renderer/ui/modal";
 import { Picker } from "@/renderer/ui/picker";
 import type { PickerOption } from "@/renderer/ui/picker";
@@ -20,96 +13,15 @@ import { isOutOfBudget } from "@repo/domain/domain";
 import type { Budget } from "@repo/domain/domain";
 import { formatUsd } from "@repo/domain/format";
 import { errorMessage } from "@repo/domain/errors";
-import type { StripeKeyStatus, StripeStatus } from "@repo/domain/integrations";
+import type { StripeKeyStatus } from "@repo/domain/integrations";
 
 const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
   { label: "∞ Infinite", value: "infinite" },
   { label: "$ Capped", value: "capped" },
 ];
 
-const StripeConnection = ({ stripeStatus }: { stripeStatus: StripeStatus }) => {
-  const connecting = useSubmission(connectStripe);
-  const disconnecting = useSubmission(disconnectStripe);
-  if (stripeStatus.state === "connected") {
-    return (
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm text-fg">
-          ✓ {stripeStatus.accountId}
-          <span
-            className="px-badge ml-2"
-            style={{
-              color: stripeStatus.livemode ? "var(--ok)" : "var(--warn)",
-            }}
-          >
-            {stripeStatus.livemode ? "live" : "test"}
-          </span>
-        </span>
-        <button
-          type="button"
-          onClick={() => disconnecting.submit()}
-          disabled={disconnecting.submission.kind === "sending"}
-          className="px-btn"
-        >
-          Disconnect
-        </button>
-        <Failure submission={disconnecting.submission} doing="disconnect" />
-      </div>
-    );
-  }
-  // main holds a flow the founder left in the browser for minutes; a new one replaces it
-  if (stripeStatus.state === "connecting") {
-    return (
-      <div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="px-live-dot text-sm text-fg-dim">
-            Waiting for Stripe in your browser…
-          </span>
-          <button
-            type="button"
-            onClick={() => connecting.submit()}
-            disabled={connecting.submission.kind === "sending"}
-            className="px-btn"
-          >
-            Start over
-          </button>
-        </div>
-        <Failure submission={connecting.submission} doing="connect Stripe" />
-      </div>
-    );
-  }
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-2">
-        {stripeStatus.state === "error" ? (
-          <span className="text-xs text-danger">{stripeStatus.message}</span>
-        ) : (
-          <span className="text-xs text-fg-dim">Not connected</span>
-        )}
-        <div className="flex gap-2">
-          {stripeStatus.state === "error" && stripeStatus.bound && (
-            <button
-              type="button"
-              onClick={() => disconnecting.submit()}
-              disabled={disconnecting.submission.kind === "sending"}
-              className="px-btn"
-            >
-              Disconnect
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => connecting.submit()}
-            disabled={connecting.submission.kind === "sending"}
-            className="px-btn-accent px-btn"
-          >
-            {stripeStatus.state === "error" ? "Reconnect Stripe" : "Connect Stripe"}
-          </button>
-        </div>
-      </div>
-      <Failure submission={disconnecting.submission} doing="disconnect" />
-    </div>
-  );
-};
+const REFUSED_KEY =
+  "Stripe won't let this key read charges, so no revenue is counted — grant it Read on Charges, or paste a key over it.";
 
 const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
   const [draft, setDraft] = useState("");
@@ -120,7 +32,7 @@ const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
   const removing = useSubmission(removeStripeKey);
   const key = draft.trim();
   const sending = saving.submission.kind === "sending";
-  const set = stripeKey.state === "set";
+  const set = stripeKey.state !== "unset";
   const saveLabel = set ? "Replace key" : "Save";
   // a key is replaced by pasting over it, never by removing it first: a pulse in that gap finds
   // no key and hands every retiring link to the founder to switch off by hand
@@ -147,14 +59,14 @@ const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
       <Failure submission={saving.submission} doing="save the key" />
     </div>
   );
-  if (stripeKey.state !== "set") {
+  if (stripeKey.state === "unset") {
     return entry;
   }
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm text-fg">
-          ✓ key …{stripeKey.last4}
+          {stripeKey.state === "refused" ? "✗" : "✓"} key …{stripeKey.last4}
           <span
             className="px-badge ml-2"
             style={{
@@ -173,6 +85,11 @@ const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
           Remove
         </button>
       </div>
+      {stripeKey.state === "refused" ? (
+        <div role="alert" className="text-xs text-danger">
+          {REFUSED_KEY}
+        </div>
+      ) : null}
       <Failure submission={removing.submission} doing="remove the key" />
       {entry}
     </div>
@@ -259,7 +176,6 @@ const PrintfulToken = () => {
 
 export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
   const company = useCompany();
-  const stripeStatus = useStripeStatus();
   const stripeKey = useStripeKey();
   const savedCap = company?.budget.mode === "capped" ? String(company.budget.capUsd) : "";
   // the draft carries the saved cap it was typed against, so a cap saved
@@ -267,7 +183,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
   const [draft, setDraft] = useState({ savedCap, value: savedCap });
   const capInput = draft.savedCap === savedCap ? draft.value : savedCap;
   const setCapInput = (value: string) => setDraft({ savedCap, value });
-  // real revenue showing at all means the connection is live
+  // real revenue showing at all means the key reads it
   const liveMetrics = company !== null && company.revenueUsd !== null;
   const saving = useSubmission(setBudget);
   const resetting = useSubmission(resetSpend);
@@ -373,16 +289,11 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
           </div>
           <div className="px-inset space-y-2 p-3">
             <div className="text-sm leading-snug text-fg">
-              Connect your Stripe account to see your REAL revenue
-              {liveMetrics ? " — live now ⚡" : ""}.
-            </div>
-            <StripeConnection stripeStatus={stripeStatus} />
-            <div className="pt-2 text-sm leading-snug text-fg">
-              Charging key: lets the team create payment links, each one you sign off. It also reads
-              revenue in place of Connect, since its account is the one the links charge on, so a
-              restricted key needs Read on Charges too. Read on Checkout Sessions is how paid orders
-              are found, so a link that names a delivery needs it, and selling prints needs it with
-              Write on Shipping Rates.
+              Your Stripe key lets the team create payment links, each one you sign off, and reads
+              the REAL revenue they bring in{liveMetrics ? " — live now ⚡" : ""}, so a restricted
+              key needs Read on Charges too. Read on Checkout Sessions is how paid orders are found,
+              so a link that names a delivery needs it, and selling prints needs it with Write on
+              Shipping Rates.
             </div>
             <ChargingKey stripeKey={stripeKey} />
           </div>

@@ -1,6 +1,6 @@
 # idlebiz — the binary
 
-One program, two kinds of verb, laid out as kyh/inteligir's `inteligir` is.
+One program, two kinds of verb.
 
 **`idlebiz serve` IS the game's server**, main: it owns the save under `~/.idlebiz`, the keys
 and the runs, starts the employees' `claude` / `codex` sessions sealed, answers the company's
@@ -25,8 +25,10 @@ its spec in `src/server/tool-specs.ts`, so the instructions a run is given, the 
 server's parse cannot disagree (`src/commands/tools.ts`). It is a client of the control plane its
 run was handed (`IDLEBIZ_API_SOCKET`, `IDLEBIZ_RUN_TOKEN`, both run-scoped): it sends the request
 as it is, over the run's own unix socket, which main opens for that run alone and only that
-run's seal reaches, prints the answer, and exits 1 with why when the call is refused or never
-arrives. Outside a run there is nothing to call, and it says so.
+run's seal reaches, and prints the answer on stdout however the call ended. Its exit code says
+how: 0 done, 1 refused, 2 a fault of the server's, 4 held for the founder; a call that never
+arrives, or that the server cannot take, exits 1 with why on stderr. Outside a run there is
+nothing to call, and it says so.
 
 ## How a run finds it
 
@@ -53,4 +55,5 @@ for `pnpm dev:browser` and the e2e suite.
 `pnpm --filter idlebiz test` runs main's suites against temporary save roots and real loopback
 and socket servers, and the verbs against a live control plane. On macOS it also runs each run's seal and,
 where a `claude` or `codex` CLI is installed, that CLI through the app's adapter against a
-stand-in model (`src/server/agents/*-gate.test.ts`); those skip elsewhere.
+stand-in model (`src/server/agents/*-gate.test.ts`); those skip elsewhere. CI's `test-macos`
+job installs both CLIs, pinned in its workflow, so they run there.

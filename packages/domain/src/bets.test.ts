@@ -18,7 +18,6 @@ const HOUR = 3_600_000;
 const bet = (patch: Partial<Bet> = {}): Bet => ({
   budgetUsd: 5,
   claim: { landingPath: "/b/bet", metric: "users" },
-  companyId: "co",
   createdAt: 0,
   hypothesis: "a launch post brings visitors",
   id: "bet",
@@ -55,6 +54,7 @@ const ledger = (bets: Bet[], products = ["app", "site"]) => ({
   bets,
   busy: new Map<string, number>(),
   products,
+  proposalIdle: false,
   proposalPending: false,
   runCostUsd: 1,
   stalled: new Set<string>(),
@@ -260,6 +260,12 @@ describe("allocate", () => {
 
   it("does not ask a lead already waiting on the founder to open another", () => {
     expect(allocate({ ...ledger([]), proposalPending: true }, DEFAULT_POLICY)).toEqual({
+      kind: "wait",
+    });
+  });
+
+  it("does not ask a lead whose last proposal came to nothing to open another", () => {
+    expect(allocate({ ...ledger([]), proposalIdle: true }, DEFAULT_POLICY)).toEqual({
       kind: "wait",
     });
   });

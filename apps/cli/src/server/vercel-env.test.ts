@@ -1,28 +1,13 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
+import { tempSave } from "./test-support/save";
+import { keepEnvValue, unshippableEnvValues, setVercelEnv, teamSetEnv } from "./vercel-env";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-vercel-env-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const { keepEnvValue, unshippableEnvValues, setVercelEnv, teamSetEnv } =
-  await import("./vercel-env");
-const { setSecret } = await import("./secrets");
+tempSave();
 
 afterEach(() => {
   vi.unstubAllGlobals();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 const TOKEN = "vercel-token";
@@ -219,48 +204,28 @@ describe("setting a product's variable on Vercel", () => {
 });
 
 describe("the values a deploy may not ship", () => {
-  const acme = { companyId: "co", id: "acme" };
+  const acme = { id: "acme" };
+  const beta = { id: "beta" };
 
-  it("keeps one value a name per project of each company's product, replaced when the name is set again, and lets a deploy ship a public one", () => {
+  it("keeps one value a name per project of each product, replaced when the name is set again, and lets a deploy ship a public one", () => {
     keepEnvValue(acme, "prj_1", "OPENAI_API_KEY", "sk-proj-old");
     keepEnvValue(acme, "prj_1", "OPENAI_API_KEY", "sk-proj-new");
-    keepEnvValue({ companyId: "next-co", id: "acme" }, "prj_2", "RESEND_API_KEY", "re_next_key");
+    keepEnvValue(beta, "prj_2", "RESEND_API_KEY", "re_beta_key");
     keepEnvValue(acme, "prj_1", "NEXT_PUBLIC_STRIPE_KEY", "pk_live_acmePublishable");
 
     expect(teamSetEnv(acme, "prj_1", "NEXT_PUBLIC_STRIPE_KEY")).toBe(true);
     expect(unshippableEnvValues()).toEqual([
-      { company: "co", kind: "env", name: "OPENAI_API_KEY", product: "acme", value: "sk-proj-new" },
-      {
-        company: "next-co",
-        kind: "env",
-        name: "RESEND_API_KEY",
-        product: "acme",
-        value: "re_next_key",
-      },
+      { kind: "env", name: "OPENAI_API_KEY", product: "acme", value: "sk-proj-new" },
+      { kind: "env", name: "RESEND_API_KEY", product: "beta", value: "re_beta_key" },
     ]);
   });
 
-  it("owns a name only on the project of the company's product that set it", () => {
+  it("owns a name only on the project of the product that set it", () => {
     keepEnvValue(acme, "prj_1", "STRIPE_WEBHOOK_SECRET", "whsec_acme");
 
     expect(teamSetEnv(acme, "prj_1", "STRIPE_WEBHOOK_SECRET")).toBe(true);
     expect(teamSetEnv(acme, "prj_live", "STRIPE_WEBHOOK_SECRET")).toBe(false);
-    expect(teamSetEnv({ companyId: "next-co", id: "acme" }, "prj_1", "STRIPE_WEBHOOK_SECRET")).toBe(
-      false,
-    );
+    expect(teamSetEnv(beta, "prj_1", "STRIPE_WEBHOOK_SECRET")).toBe(false);
     expect(teamSetEnv(acme, "prj_1", "DATABASE_URL")).toBe(false);
-  });
-
-  it("still guards a value kept before keys named the project, but owns its name on no project", () => {
-    setSecret("ENV/older/acme/DATABASE_URL", "postgres://kept-before");
-
-    expect(unshippableEnvValues()).toContainEqual({
-      company: "older",
-      kind: "env",
-      name: "DATABASE_URL",
-      product: "acme",
-      value: "postgres://kept-before",
-    });
-    expect(teamSetEnv({ companyId: "older", id: "acme" }, "prj_1", "DATABASE_URL")).toBe(false);
   });
 });

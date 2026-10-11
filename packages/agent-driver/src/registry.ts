@@ -1,7 +1,7 @@
 import type { NewSessionRequest } from "@agentclientprotocol/sdk";
 import { z } from "zod";
+import type { RunnerId } from "@repo/domain/runners";
 import type { Rates } from "./pricing";
-import type { RunnerId } from "./runner";
 
 export interface RunnerAdapter {
   /** Module specifier of the ACP subprocess. */
@@ -28,7 +28,6 @@ export interface RunnerAdapter {
   providerEnv: readonly string[];
   /** The player's CLI on PATH, and the env var that overrides where it lives. */
   cli: { command: string; override: string };
-  displayName: string;
   loginArgs: string[];
   authProbe: { args: string[]; loggedIn: (output: string) => boolean };
   /** What the CLI's default model costs, for pricing a run that reports $0. */
@@ -54,15 +53,15 @@ export interface RunnerAdapter {
  * player's can loosen what the session sets beside them.
  */
 export interface ClaudeUserSettings {
-  alwaysThinkingEnabled?: boolean;
-  apiKeyHelper?: string;
-  awsAuthRefresh?: string;
-  awsCredentialExport?: string;
-  effortLevel?: string;
-  gcpAuthRefresh?: string;
-  model?: string;
-  modelOverrides?: Readonly<Record<string, string>>;
-  modelSettings?: Readonly<Record<string, { effortLevel?: string }>>;
+  alwaysThinkingEnabled?: boolean | undefined;
+  apiKeyHelper?: string | undefined;
+  awsAuthRefresh?: string | undefined;
+  awsCredentialExport?: string | undefined;
+  effortLevel?: string | undefined;
+  gcpAuthRefresh?: string | undefined;
+  model?: string | undefined;
+  modelOverrides?: Readonly<Record<string, string>> | undefined;
+  modelSettings?: Readonly<Record<string, { effortLevel?: string | undefined }>> | undefined;
 }
 
 /**
@@ -159,7 +158,6 @@ export const RUNNERS = {
     authProbe: { args: ["auth", "status"], loggedIn: claudeLoggedIn },
     binEnvVar: "CLAUDE_CODE_EXECUTABLE",
     cli: { command: "claude", override: "CLAUDE_BIN" },
-    displayName: "Claude Code",
     fallbackRates: { cachedInput: 0.3, input: 3, output: 15 },
     loginArgs: ["auth", "login"],
     // Bedrock's bearer token signs only for Bedrock, AWS access keys for the whole account, and
@@ -180,7 +178,6 @@ export const RUNNERS = {
     authProbe: { args: ["login", "status"], loggedIn: (out) => !/not logged in/iu.test(out) },
     binEnvVar: "CODEX_PATH",
     cli: { command: "codex", override: "CODEX_BIN" },
-    displayName: "Codex",
     fallbackRates: { cachedInput: 0.125, input: 1.25, output: 10 },
     loginArgs: ["login"],
     // Bedrock as for claude; the Azure provider codex documents reads AZURE_OPENAI_API_KEY

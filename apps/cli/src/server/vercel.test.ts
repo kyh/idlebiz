@@ -1,23 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setSecret } from "./secrets";
+import { tempSave } from "./test-support/save";
+import { latestDeployment, productionHosts, visitQuery } from "./vercel";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-vercel-api-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-
-const { setSecret } = await import("./secrets");
-const { latestDeployment, productionHosts, visitQuery } = await import("./vercel");
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
-});
+tempSave();
 
 const project = { projectId: "prj_1", teamId: "team_1" };
 

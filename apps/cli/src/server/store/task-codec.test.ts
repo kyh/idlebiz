@@ -1,15 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { BlockedAskSchema, TASK_ORIGINS } from "@repo/domain/domain";
-import type { BlockedAsk, Task, TaskState } from "@repo/domain/domain";
+import type { BlockedAsk, Task, TaskProvenance, TaskState } from "@repo/domain/domain";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { docToTask, taskToDoc } from "./task-codec";
 
-const base: Omit<Task, "state"> = {
-  artifacts: ["dist/index.html"],
+const base = {
+  answers: null,
   assigneeId: "priya",
   attempts: 2,
   betId: "launch-post",
-  companyId: "acme",
   completedAt: 1_700_000_002_000,
   createdAt: 1_700_000_000_000,
   description: "Build it, then ship it.",
@@ -17,11 +16,13 @@ const base: Omit<Task, "state"> = {
   origin: "work",
   priority: "high",
   productId: "widget",
-  startedAt: 1_700_000_001_000,
   title: "Ship the thing",
-};
+} satisfies Omit<Task, "state">;
 
-const roundTrip = (t: Task): Task => docToTask(parseDoc(serializeDoc(taskToDoc(t))), t.companyId);
+/** The task's TASK.md, as boot reads it back. */
+const written = (t: Task) => parseDoc(serializeDoc(taskToDoc(t)));
+
+const roundTrip = (t: Task): Task => docToTask(written(t));
 
 describe("task codec", () => {
   it.each<TaskState>([
@@ -38,7 +39,7 @@ describe("task codec", () => {
     { kind: "done", summary: "shipped to https://x.y" },
     { kind: "done", summary: null },
     { by: "continue-ship-the-thing", kind: "superseded" },
-    { by: null, kind: "superseded" },
+    { kind: "settled" },
     { kind: "dropped", reason: "bet killed" },
     { kind: "dead", lastError: "five strikes" },
   ])("round-trips $kind", (state) => {
@@ -46,23 +47,38 @@ describe("task codec", () => {
     expect(roundTrip(task)).toEqual(task);
   });
 
-  it.each(TASK_ORIGINS)("round-trips why a %s task exists", (origin) => {
-    const task: Task = { ...base, origin, state: { kind: "todo" } };
+  it.each<TaskProvenance>([
+    ...TASK_ORIGINS.flatMap((origin) => (origin === "order" ? [] : [{ origin }])),
+    { origin: "order", subject: { kind: "order", orderId: "abc", trouble: "deliver it" } },
+    { origin: "order", subject: { kind: "link-left-on", linkId: "plink_1" } },
+    { origin: "order", subject: { kind: "pump", reason: "missed" } },
+  ])("round-trips why a task exists: %j", (provenance) => {
+    const task: Task = { ...base, ...provenance, state: { kind: "todo" } };
     expect(roundTrip(task)).toEqual(task);
   });
 
-  it("reads an unknown or missing origin as the bet's work or the founder's, never a proposal", () => {
-    const doc = taskToDoc({ ...base, origin: "propose", state: { kind: "todo" } });
-    const { origin: _unstamped, ...funded } = doc.metadata;
-    const { betId: _unfunded, ...unfunded } = funded;
-    const read = (metadata: typeof doc.metadata) => docToTask({ ...doc, metadata }, "acme").origin;
-    expect(read(funded)).toBe("work");
-    expect(read(unfunded)).toBe("founder");
-    expect(read({ ...unfunded, origin: "hunch" })).toBe("founder");
+  it("round-trips the ask whose answer a continuation carries", () => {
+    const task: Task = { ...base, answers: "ask-the-founder", state: { kind: "todo" } };
+    expect(roundTrip(task)).toEqual(task);
+  });
+
+  it("refuses an answered ask that names no continuation", () => {
+    const doc = written({ ...base, state: { by: "next", kind: "superseded" } });
+    const { supersededBy: _, ...metadata } = doc.metadata;
+    expect(() => docToTask({ ...doc, metadata })).toThrow("supersededBy");
+  });
+
+  it("reads no order card that names nothing it is about", () => {
+    const subject = { kind: "pump", reason: "missed" } as const;
+    const doc = written({ ...base, origin: "order", state: { kind: "todo" }, subject });
+    const { subject: _lost, ...unnamed } = doc.metadata;
+    expect(() => docToTask({ ...doc, metadata: unnamed })).toThrow("subject");
+    const garbled = { ...doc.metadata, subject: JSON.stringify({ kind: "pump", reason: "hunch" }) };
+    expect(() => docToTask({ ...doc, metadata: garbled })).toThrow("reason");
   });
 
   it("writes the state as the status line and that state's fields only", () => {
-    const { metadata } = taskToDoc({ ...base, state: { kind: "done", summary: "done!" } });
+    const { metadata } = written({ ...base, state: { kind: "done", summary: "done!" } });
     expect(metadata.status).toBe("done");
     expect(metadata.summary).toBe("done!");
     expect("runId" in metadata).toBe(false);
@@ -74,47 +90,16 @@ describe("task codec", () => {
     { kind: "queued", lastError: null, nextAttemptAt: null },
     { ask: { question: "ship it?", type: "question" }, kind: "blocked", summary: null },
     { kind: "done", summary: null },
-    { by: null, kind: "superseded" },
+    { kind: "settled" },
   ])("gives a $kind task's empty fields no line", (state) => {
     expect(serializeDoc(taskToDoc({ ...base, state }))).not.toContain("null");
   });
 
-  it("reads statuses older saves wrote as dead, keeping the error", () => {
-    const doc = taskToDoc({ ...base, state: { kind: "dead", lastError: "gave up" } });
-    for (const legacy of ["failed", "cancelled"]) {
-      const out = docToTask({ ...doc, metadata: { ...doc.metadata, status: legacy } }, "acme");
-      expect(out.state).toEqual({ kind: "dead", lastError: "gave up" });
-    }
-  });
-
-  it("keeps a dropped task dropped when its reason is missing", () => {
-    const doc = taskToDoc({ ...base, state: { kind: "dropped", reason: "bet closed" } });
-    const { dropReason: _lost, ...withoutReason } = doc.metadata;
-    const out = docToTask({ ...doc, metadata: withoutReason }, "acme");
-    expect(out.state).toEqual({ kind: "dropped", reason: "no reason kept" });
-  });
-
-  it("treats a running task whose lock is missing as a retry, not a run", () => {
-    const doc = taskToDoc({ ...base, state: { kind: "running", runId: "run-1" } });
-    const { runId: _lost, ...withoutLock } = doc.metadata;
-    const out = docToTask({ ...doc, metadata: withoutLock }, "acme");
-    expect(out.state).toEqual({ kind: "queued", lastError: "run lock lost", nextAttemptAt: null });
-  });
-
-  it("keeps a blocked task waiting when its ask is missing, so the founder can still unstick it", () => {
-    const doc = taskToDoc({
-      ...base,
-      state: { ask: { question: "?", type: "question" }, kind: "blocked", summary: null },
-    });
-    const { blockedQuestion: _lost, ...withoutAsk } = doc.metadata;
-    const out = docToTask({ ...doc, metadata: withoutAsk }, "acme");
-    expect(out.state.kind).toBe("blocked");
-  });
-
-  it("defaults an unknown status to todo", () => {
-    const doc = taskToDoc({ ...base, state: { kind: "todo" } });
-    const out = docToTask({ ...doc, metadata: { ...doc.metadata, status: "weird" } }, "acme");
-    expect(out.state).toEqual({ kind: "todo" });
+  it.each(["failed", "weird"])("refuses a status it never writes, %j", (status) => {
+    const doc = written({ ...base, state: { kind: "dead", lastError: "gave up" } });
+    expect(() => docToTask({ ...doc, metadata: { ...doc.metadata, status } })).toThrow(
+      "metadata.status",
+    );
   });
 });
 
@@ -124,8 +109,8 @@ const blocked = (ask: BlockedAsk): Task => ({
 });
 
 const askSavedAs = (blockedQuestion: string): TaskState => {
-  const doc = taskToDoc(blocked({ question: "?", type: "question" }));
-  return docToTask({ ...doc, metadata: { ...doc.metadata, blockedQuestion } }, "acme").state;
+  const doc = written(blocked({ question: "?", type: "question" }));
+  return docToTask({ ...doc, metadata: { ...doc.metadata, blockedQuestion } }).state;
 };
 
 describe("a blocked task's ask in TASK.md", () => {
@@ -136,9 +121,11 @@ describe("a blocked task's ask in TASK.md", () => {
     { question: "[approve] is this fine?", type: "question" },
     { question: "[ask] nested", type: "question" },
     { integration: "vercel", productId: "widget", reason: "need hosting", type: "integration" },
+    { integration: "vercel", productId: null, reason: "any product will do", type: "integration" },
     { integration: "vercel", productId: "side", reason: "to bind Side", type: "integration" },
-    { integration: "stripe-key", productId: null, reason: "to sell a plan", type: "integration" },
+    { integration: "stripe", productId: null, reason: "to sell a plan", type: "integration" },
     { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
+    { command: "npm test\ngit push origin main", rule: "git-push", type: "approval" },
     {
       action: "Post the launch thread on r/SideProject",
       draft: 'Line one\n\n"Quoted" line two: [approve] {not json}\n',
@@ -154,56 +141,15 @@ describe("a blocked task's ask in TASK.md", () => {
     expect(roundTrip(blocked(ask))).toEqual(blocked(ask));
   });
 
-  it("reads an older save's Vercel ask as about its task's product", () => {
-    expect(askSavedAs("[connect:vercel] need hosting")).toEqual(
-      blocked({
-        integration: "vercel",
-        productId: "widget",
-        reason: "need hosting",
-        type: "integration",
-      }).state,
-    );
-  });
-
-  it("reads an approval without a rule id as an ask nothing recognised", () => {
-    expect(askSavedAs("[approve] git push origin main")).toEqual(
-      blocked({ command: "git push origin main", rule: "unknown-ask", type: "approval" }).state,
-    );
-  });
-
-  it.each(["[action] not json", '[action] {"action":"no instructions"}'])(
-    "reads an action it cannot parse, %j, as the question it says",
+  it.each(["[approve:retired-rule] git push origin main", "[approve] git push origin main"])(
+    "refuses an approval naming no rule this version holds, %j",
     (saved) => {
-      expect(askSavedAs(saved)).toEqual(blocked({ question: saved, type: "question" }).state);
+      expect(() => askSavedAs(saved)).toThrow("an ask this build does not write");
     },
   );
 
-  it("preserves a retired rule through validation and TASK.md", () => {
-    const saved = "[approve:retired-rule] git push origin main";
-    const ask: BlockedAsk = {
-      command: "git push origin main",
-      rule: "retired-rule",
-      type: "approval",
-    };
-    expect(askSavedAs(saved)).toEqual(blocked(ask).state);
-    expect(BlockedAskSchema.parse(ask)).toEqual(ask);
-    expect(taskToDoc(blocked(ask)).metadata.blockedQuestion).toBe(saved);
+  it("takes no rule this version does not hold", () => {
+    const ask = { command: "git push origin main", rule: "retired-rule", type: "approval" };
+    expect(BlockedAskSchema.safeParse(ask).success).toBe(false);
   });
-});
-
-describe("a task nobody owns", () => {
-  it.each(["queued", "running"])(
-    "reads a %s task with no assignee as work to pick up",
-    (status) => {
-      const task = docToTask(
-        {
-          body: "",
-          fields: { kind: "task", name: "Orphan", slug: "orphan" },
-          metadata: { createdAt: 1, runId: "run", status },
-        },
-        "co",
-      );
-      expect(task.state).toEqual({ kind: "todo" });
-    },
-  );
 });

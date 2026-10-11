@@ -1,11 +1,10 @@
 import * as store from "./store/store";
 import { publishActivity } from "./activity";
 import { report } from "./lib/report";
-import { readActiveLinks, switchOffPaymentLink } from "./payment-links";
-import type { ActiveLinksRead } from "./payment-links";
+import { switchOffPaymentLink } from "./stripe-links";
 import { betNews } from "./prompts/briefs";
 import { STRIPE_SECRET_KEY, getSecret, hasSecret, heldKeyIn } from "./secrets";
-import { holdsStripeSecretKey, isTestKey } from "./stripe-api";
+import { holdsStripeSecretKey } from "./stripe-api";
 import { CHAT_EVENT_TEXT } from "@repo/domain/activity";
 import type { Bet } from "@repo/domain/bets";
 import { isOutOfBudget } from "@repo/domain/domain";
@@ -15,20 +14,20 @@ import type {
   ActionReply,
   Company,
   Employee,
+  OrderCardSubject,
   Product,
   ProductDraft,
   Speaker,
   Task,
 } from "@repo/domain/domain";
-import { orderCardTitle } from "./order";
 import type { Order } from "./order";
-import type { CompanyLink } from "./payment-link";
+import type { CompanyLink, LinkCore } from "./link-record";
 import { RefusalError } from "./refusal";
 
 // A change to the company that everyone should hear about: the store mutation,
 // the activity event and the team-room line, together. The scheduler, the
-// agents' tools and the founder's IPC all come through here, so a change reads
-// the same whoever made it.
+// agents' tools and the founder's calls from the page all come through here, so
+// a change reads the same whoever made it.
 
 /**
  * A line in the team room, the only way one is written, so the room agents read
@@ -127,12 +126,39 @@ export const haltForBudget = (company: Company, spentUsd = company.spentUsd): vo
   });
 };
 
+const PUMP_CARD_TITLES = {
+  missed: "Paid orders may have been missed",
+  "no-live-key": "Paid orders wait for a live Stripe key",
+  "no-printful-token": "Paid orders wait for a Printful token",
+  "unreadable-checkouts": "Paid orders can't be read from Stripe",
+} satisfies Record<Extract<OrderCardSubject, { kind: "pump" }>["reason"], string>;
+
+/** A card's title, copy for the founder: an order is named by its id's first 8 characters in every card about it. */
+const orderCardTitle = (subject: OrderCardSubject): string => {
+  switch (subject.kind) {
+    case "order": {
+      return `Order ${subject.orderId.slice(0, 8)}: ${subject.trouble}`;
+    }
+    case "link-left-on": {
+      return `Switch off payment link ${subject.linkId}`;
+    }
+    case "pump": {
+      return PUMP_CARD_TITLES[subject.reason];
+    }
+    // no default
+  }
+};
+
 /**
- * Hand the founder a card about a paid order: the Inbox shows it beside the team's asks, and
- * the digest counts it. None when one with this title still waits.
+ * Hand the founder a card about paid orders: the Inbox shows it beside the team's asks, and
+ * the digest counts it. None when one about the same subject still waits.
  */
-export const raiseOrderCard = (title: string, ask: Omit<ActionAsk, "type">): Task | null => {
-  const card = store.raiseOrderCard(title, { ...ask, type: "action" });
+export const raiseOrderCard = (
+  subject: OrderCardSubject,
+  ask: Omit<ActionAsk, "type">,
+): Task | null => {
+  const title = orderCardTitle(subject);
+  const card = store.raiseOrderCard(subject, title, { ...ask, type: "action" });
   if (card) {
     publishActivity({
       kind: "order.card",
@@ -167,16 +193,11 @@ const STRIPE_KEY_IN_TEXT = /\b[rs]k_(?:live|test)_[0-9A-Za-z]{8,}/u;
 const replyText = (reply: ActionReply): string =>
   reply.kind === "cant" ? reply.reason : reply.note;
 
-const SWITCH_OFF_CARD = "Switch off payment link ";
-
-const switchOffCard = (linkId: string): string => `${SWITCH_OFF_CARD}${linkId}`;
-
 /** The founder's Done on a link's switch-off card says they switched it off in Stripe's dashboard. */
-const switchedOffByHand = (title: string): void => {
-  const linkId = title.startsWith(SWITCH_OFF_CARD) ? title.slice(SWITCH_OFF_CARD.length) : null;
-  const link = store.paymentLinks().find((l) => l.id === linkId);
-  if (link?.state.kind === "left-on") {
-    store.setLinkState(link.id, { at: Date.now(), by: "founder", kind: "switched-off" });
+const switchedOffByHand = (linkId: string): void => {
+  const held = store.paymentLinks().find((l) => l.link.id === linkId);
+  if (held?.link.state.kind === "left-on") {
+    store.setLinkState(held, { at: Date.now(), by: "founder", kind: "switched-off" });
   }
 };
 
@@ -196,8 +217,8 @@ export const settleOrderCard = (taskId: string, reply: ActionReply): Task => {
   if (!card) {
     throw new RefusalError("that order card is already settled");
   }
-  if (reply.kind === "done") {
-    switchedOffByHand(card.title);
+  if (reply.kind === "done" && card.subject.kind === "link-left-on") {
+    switchedOffByHand(card.subject.linkId);
   }
   const told =
     reply.kind === "cant" ? `couldn't — ${said}` : `done${said === "" ? "" : ` — ${said}`}`;
@@ -215,42 +236,48 @@ const office: Speaker = { kind: "office" };
 /**
  * Hand the founder a link Stripe would not switch off, to switch off by hand; a test-mode link
  * takes no real money, so the room hears instead. The card is raised before the link is marked,
- * since cards dedupe by title and the mark is what stops the next sweep asking Stripe again.
+ * since cards dedupe by subject and the mark is what stops the next sweep asking Stripe again.
  */
-const leaveOn = (link: CompanyLink, why: string): void => {
+const leaveOn = (held: CompanyLink, why: string): void => {
+  const { link } = held;
   const named = `${JSON.stringify(link.name)} (${link.url})`;
   if (link.livemode) {
-    const sells = link.print
-      ? "it takes money, and each order paid through it still goes to Printful"
-      : "it takes money";
-    raiseOrderCard(switchOffCard(link.id), {
-      action: `Switch off ${named}, a payment link of retired ${link.productId}, in Stripe's dashboard`,
-      draft: null,
-      instructions: `${link.productId} is retired, but Stripe would not switch off its payment link ${link.id} for IdleBiz: ${why}. Until it is off, ${sells}. In Stripe's dashboard, open Payment links, find ${link.id} and deactivate it. Press Done once it is off.`,
-    });
+    const sells =
+      held.kind === "print"
+        ? "it takes money, and each order paid through it still goes to Printful"
+        : "it takes money";
+    raiseOrderCard(
+      { kind: "link-left-on", linkId: link.id },
+      {
+        action: `Switch off ${named}, a payment link of retired ${link.productId}, in Stripe's dashboard`,
+        draft: null,
+        instructions: `${link.productId} is retired, but Stripe would not switch off its payment link ${link.id} for IdleBiz: ${why}. Until it is off, ${sells}. In Stripe's dashboard, open Payment links, find ${link.id} and deactivate it. Press Done once it is off.`,
+      },
+    );
   } else {
     postToRoom(
       office,
       `🧪 Test payment link ${named} of retired ${link.productId} stays on: ${why}.`,
     );
   }
-  store.setLinkState(link.id, { kind: "left-on", why });
+  store.setLinkState(held, { kind: "left-on", why });
 };
 
 // ten sweeps is about five minutes of pulses: long enough to ride out a burst of 429s or a blip,
 // short enough that the founder hears of a link still taking money while it matters
 const MAX_SWITCH_OFF_TRIES = 10;
 
-const switchOff = async (link: CompanyLink, key: string | null): Promise<void> => {
+const switchOff = async (held: CompanyLink, key: string | null): Promise<void> => {
+  const { link } = held;
   try {
     if (key === null) {
-      leaveOn(link, "IdleBiz has no Stripe key");
+      leaveOn(held, "IdleBiz has no Stripe key");
       return;
     }
     const done = await switchOffPaymentLink(key, link.id);
     switch (done.kind) {
       case "off": {
-        store.setLinkState(link.id, { at: Date.now(), by: "idlebiz", kind: "switched-off" });
+        store.setLinkState(held, { at: Date.now(), by: "idlebiz", kind: "switched-off" });
         postToRoom(
           office,
           `🔌 Switched off ${JSON.stringify(link.name)}, a payment link of retired ${link.productId}: it takes no new money.`,
@@ -258,15 +285,15 @@ const switchOff = async (link: CompanyLink, key: string | null): Promise<void> =
         break;
       }
       case "refused": {
-        leaveOn(link, done.error);
+        leaveOn(held, done.error);
         break;
       }
       case "unanswered": {
         const tries = (link.state.kind === "retrying" ? link.state.tries : 0) + 1;
         if (tries >= MAX_SWITCH_OFF_TRIES) {
-          leaveOn(link, `Stripe did not answer ${tries} times (${done.error})`);
+          leaveOn(held, `Stripe did not answer ${tries} times (${done.error})`);
         } else {
-          store.setLinkState(link.id, { kind: "retrying", tries, why: done.error });
+          store.setLinkState(held, { kind: "retrying", tries, why: done.error });
         }
         break;
       }
@@ -275,68 +302,6 @@ const switchOff = async (link: CompanyLink, key: string | null): Promise<void> =
   } catch (error) {
     report(`payment link ${link.id}`, error);
   }
-};
-
-/** Stripe's active links, read only with a live key: a test-mode key lists none of the live ones. */
-const activeLinks = (key: string | null): Promise<ActiveLinksRead> | null =>
-  key === null || isTestKey(key) ? null : readActiveLinks(key);
-
-/** What Stripe showed of a retired product's unrecorded links, as its card says it; null when it has none. */
-const unrecordedSeen = (
-  read: Exclude<ActiveLinksRead, { kind: "failed" }>,
-  productId: string,
-  known: ReadonlySet<string>,
-): string | null => {
-  if (read.kind === "refused") {
-    return `Stripe turned IdleBiz's key away when it looked for them (${read.said}).`;
-  }
-  const found = read.links.filter((l) => l.tags.product === productId && !known.has(l.id));
-  if (read.whole && found.length === 0) {
-    return null;
-  }
-  const listed =
-    found.length === 0
-      ? []
-      : [
-          `Stripe lists these active ones tagged for it: ${found.map((l) => `${l.url} (${l.id})`).join(", ")}.`,
-        ];
-  const partial = read.whole
-    ? []
-    : ["IdleBiz read only part of the account's links, so there may be more."];
-  return [...listed, ...partial].join(" ");
-};
-
-/**
- * Hand the founder the links older builds made for a retired product and never recorded. Stripe's
- * links carry no date and older builds tagged them by product alone, so another company's tagged
- * the same would read as this one's: the founder switches them off, never IdleBiz. Each product is
- * looked for once, on a live key; a read that failed is tried again on the next sweep.
- */
-const handOverUnrecordedLinks = async (key: string | null): Promise<void> => {
-  const pending = store.unrecordedLinkProducts();
-  const retired = pending.filter((id) => store.isRetiredProduct(id));
-  const reading = retired.length === 0 ? null : activeLinks(key);
-  if (reading === null) {
-    return;
-  }
-  const read = await reading;
-  if (read.kind === "failed") {
-    report("retired links", new Error(`Stripe's payment links could not be read: ${read.reason}`));
-    return;
-  }
-  const known = new Set(store.paymentLinks().map((l) => l.id));
-  for (const productId of retired) {
-    const seen = unrecordedSeen(read, productId, known);
-    if (seen === null) {
-      continue;
-    }
-    raiseOrderCard(`Switch off ${productId}'s older payment links`, {
-      action: `Switch off the payment links older IdleBiz made for retired ${productId}, in Stripe's dashboard`,
-      draft: null,
-      instructions: `${productId} is retired. Older versions of IdleBiz kept no record of the payment links they made, and Stripe's links carry no date, so IdleBiz cannot tell its own from another company's with the same tag, and left them on. ${seen} In Stripe's dashboard, open Payment links and deactivate each whose metadata names product ${productId} and is this company's. Press Done once they are off.`,
-    });
-  }
-  store.setUnrecordedLinkProducts(pending.filter((id) => !retired.includes(id)));
 };
 
 const sweepRetiredLinks = async (): Promise<void> => {
@@ -352,15 +317,14 @@ const sweepRetiredLinks = async (): Promise<void> => {
   const due = store
     .paymentLinks()
     .filter(
-      (l) =>
-        (l.state.kind === "selling" || l.state.kind === "retrying") &&
-        store.isRetiredProduct(l.productId),
+      ({ link }) =>
+        (link.state.kind === "selling" || link.state.kind === "retrying") &&
+        store.isRetiredProduct(link.productId),
     );
   // one at a time: a burst of switch-offs is what Stripe's rate limit turns away
-  for (const link of due) {
-    await switchOff(link, key);
+  for (const held of due) {
+    await switchOff(held, key);
   }
-  await handOverUnrecordedLinks(key);
 };
 
 const sweepReported = async (after: Promise<void>): Promise<void> => {
@@ -408,10 +372,7 @@ export const makingPaymentLink = (): (() => void) => {
 };
 
 /** Why a live link still takes money once the save is gone, or null once Stripe switched it off. */
-const switchedOffForReset = async (
-  link: CompanyLink,
-  key: string | null,
-): Promise<string | null> => {
+const switchedOffForReset = async (link: LinkCore, key: string | null): Promise<string | null> => {
   if (key === null) {
     return "IdleBiz has no Stripe key it can use";
   }
@@ -423,9 +384,9 @@ const switchedOffForReset = async (
  * Before a reset deletes the save, switch off with the founder's key every live payment link the
  * company still sells through, one at a time as the sweep does: once the save is gone nothing
  * records a link, ships its prints or hands its buyers what they paid for, so it first waits for
- * each link still in the making (`makingPaymentLink`). Answers what the
- * founder must still do by hand (links left on, paid prints Printful never confirmed and the
- * founder has not settled, paid orders whose card is still open, links older builds never recorded), or null when nothing is left.
+ * each link still in the making (`makingPaymentLink`). Answers what the founder must still do by
+ * hand (links left on, paid prints Printful never confirmed and the founder has not settled, paid
+ * orders whose card is still open), or null when nothing is left.
  */
 export const switchOffBeforeReset = async (): Promise<string | null> => {
   resetting = true;
@@ -435,7 +396,7 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
   }
   const key = getSecret(STRIPE_SECRET_KEY);
   const leftOn: string[] = [];
-  for (const link of store.paymentLinks()) {
+  for (const { link } of store.paymentLinks()) {
     if (!link.livemode || link.state.kind === "switched-off") {
       continue;
     }
@@ -447,9 +408,9 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
   const paid = store.listOrders().filter((o) => o.livemode);
   const openCards = store
     .listOpenTasks()
-    .flatMap((t) => (t.origin === "order" && t.state.kind === "blocked" ? [t.title] : []));
+    .flatMap((t) => (t.origin === "order" && t.state.kind === "blocked" ? [t] : []));
   const cardOf = (o: Order): string | undefined =>
-    openCards.find((title) => title.startsWith(orderCardTitle(o, "")));
+    openCards.find(({ subject }) => subject.kind === "order" && subject.orderId === o.id)?.title;
   // A held sale whose card the founder settled is theirs already: they refunded or placed it.
   const unsent = paid.flatMap((o) =>
     o.kind === "sale" &&
@@ -471,7 +432,6 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
       `${card}: ${what}${o.email ?? "no email"}, checkout ${o.sessionId}, paid ${formatUsd(o.collectedCents / 100)}${owed}`,
     ];
   });
-  const unrecorded = store.unrecordedLinkProducts();
   const left = [
     ...(leftOn.length === 0
       ? []
@@ -487,11 +447,6 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
       ? []
       : [
           `These paid orders still wait on you, as their cards said: deliver or settle each one, or refund it in Stripe. ${waiting.join("; ")}.`,
-        ]),
-    ...(unrecorded.length === 0
-      ? []
-      : [
-          `Older versions of IdleBiz kept no record of the payment links they made for ${unrecorded.join(", ")}: deactivate those whose metadata names them.`,
         ]),
   ];
   return left.length === 0 ? null : left.join("\n\n");

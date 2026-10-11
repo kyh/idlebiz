@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { RUNNER_IDS } from "@repo/agent-driver/runner";
 import { BetStateSchema } from "./bets";
 import {
   BlockedAskSchema,
@@ -9,6 +8,7 @@ import {
   SpeakerSchema,
   TASK_STATUSES,
 } from "./domain";
+import { RUNNER_IDS } from "./runners";
 
 // The server publishes this union (apps/cli/src/server/activity.ts) and persists it as activity.jsonl
 // rows.

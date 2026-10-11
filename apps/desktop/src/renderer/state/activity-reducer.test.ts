@@ -11,7 +11,6 @@ const stamp = { createdAt: 0, id: 1 };
 const inRun = { employeeId: "priya", runId: "r1", taskId: "t1" };
 
 const employee = (id: string): Employee => ({
-  companyId: "co",
   createdAt: 0,
   deskIndex: 0,
   id,
@@ -37,7 +36,6 @@ const shipped = (id: number): Extract<ActivityEvent, { kind: "ship" }> => ({
 });
 
 const roomLine = (id: number, createdAt: number, text: string): TeamMessage => ({
-  companyId: "co",
   createdAt,
   from: { kind: "founder" },
   id,
@@ -118,6 +116,7 @@ describe("reduceActivity", () => {
       orpc.company.key(),
       orpc.products.key(),
       orpc.bets.key(),
+      orpc.stripe.keyStatus.key(),
     ]);
     expect(reduceActivity(held, killed).refetch).toEqual([
       orpc.products.key(),

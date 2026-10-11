@@ -1,8 +1,6 @@
 import { z } from "zod";
-import { HttpError, getJson } from "./lib/http";
-import { report } from "./lib/report";
-import { STRIPE_API, stripeHeaders, stripeSays } from "./stripe-api";
-import { errorMessage } from "@repo/domain/errors";
+import { getJson } from "./lib/http";
+import { STRIPE_API, answeringStripe, stripeHeaders } from "./stripe-api";
 
 // Stripe's checkout sessions, read account-wide in one list with their line items: a list per
 // payment link would multiply the reads Stripe allows an account (on average 500 a
@@ -72,35 +70,31 @@ export const CHECKOUT_READ_LIMIT = MAX_PAGES * PAGE_SIZE;
 
 /** Sessions created after `createdAfter` (seconds), with their line items. */
 export const readCheckouts = async (key: string, createdAfter: number): Promise<CheckoutsRead> => {
-  const sessions: CheckoutSession[] = [];
-  let after: string | null = null;
-  try {
+  const read = await answeringStripe("checkouts", async () => {
+    const sessions: CheckoutSession[] = [];
+    let after: string | null = null;
     for (let page = 0; page < MAX_PAGES; page += 1) {
       const from = after === null ? "" : `&starting_after=${after}`;
-      const read = PageSchema.parse(
+      const listed = PageSchema.parse(
         await getJson(
           `${STRIPE_API}/v1/checkout/sessions?limit=${PAGE_SIZE}&created[gt]=${createdAfter}&expand[]=data.line_items${from}`,
           stripeHeaders(key),
         ),
       );
-      sessions.push(...read.data);
-      after = read.has_more ? (read.data.at(-1)?.id ?? null) : null;
+      sessions.push(...listed.data);
+      after = listed.has_more ? (listed.data.at(-1)?.id ?? null) : null;
       if (after === null) {
-        return { kind: "read", sessions, whole: true };
+        return { sessions, whole: true };
       }
     }
-    return { kind: "read", sessions, whole: false };
-  } catch (error) {
-    if (error instanceof HttpError) {
-      return error.refused
-        ? { kind: "refused", said: stripeSays(error) }
-        : { kind: "failed", reason: stripeSays(error) };
-    }
-    if (error instanceof z.ZodError) {
-      report("stripe checkouts", error);
-    }
-    return { kind: "failed", reason: errorMessage(error) };
+    return { sessions, whole: false };
+  });
+  if (read.kind === "ok") {
+    return { kind: "read", ...read.value };
   }
+  return read.kind === "refused"
+    ? { kind: "refused", said: read.reason }
+    : { kind: "failed", reason: read.reason };
 };
 
 const ChargesSchema = z.object({
@@ -132,30 +126,26 @@ export const readPaymentStanding = async (
   key: string,
   paymentIntent: string,
 ): Promise<PaymentStanding> => {
-  try {
-    const { data } = ChargesSchema.parse(
+  const read = await answeringStripe("charges", async () =>
+    ChargesSchema.parse(
       await getJson(
         `${STRIPE_API}/v1/charges?payment_intent=${encodeURIComponent(paymentIntent)}&limit=10`,
         stripeHeaders(key),
       ),
-    );
-    if (data.some((charge) => charge.amount_refunded > 0 || charge.disputed)) {
-      return { kind: "taken" };
-    }
-    const paid = data.find((charge) => charge.paid);
-    return paid === undefined
-      ? { kind: "unread", reason: "Stripe lists no paid charge for it" }
-      : { kind: "kept", method: paid.payment_method_details?.type ?? null };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      report("stripe charges", error);
-    }
-    if (error instanceof HttpError && error.refused) {
-      return { kind: "refused", said: stripeSays(error) };
-    }
-    return {
-      kind: "unread",
-      reason: error instanceof HttpError ? stripeSays(error) : errorMessage(error),
-    };
+    ),
+  );
+  if (read.kind === "refused") {
+    return { kind: "refused", said: read.reason };
   }
+  if (read.kind !== "ok") {
+    return { kind: "unread", reason: read.reason };
+  }
+  const { data } = read.value;
+  if (data.some((charge) => charge.amount_refunded > 0 || charge.disputed)) {
+    return { kind: "taken" };
+  }
+  const paid = data.find((charge) => charge.paid);
+  return paid === undefined
+    ? { kind: "unread", reason: "Stripe lists no paid charge for it" }
+    : { kind: "kept", method: paid.payment_method_details?.type ?? null };
 };

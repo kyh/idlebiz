@@ -4,10 +4,11 @@ import { z } from "zod";
 import { RUNNERS } from "@repo/agent-driver/registry";
 import { isReady } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
-import { agentDriver } from "./agent-driver";
+import { agentDriver } from "./runner-pool";
 import { SANDBOX_EXEC } from "./seal";
 import { foundingTeamPrompt } from "../prompts/onboarding";
 import { errorMessage } from "@repo/domain/errors";
+import { RUNNER_NAMES } from "@repo/domain/runners";
 import { parseJson } from "@repo/domain/json";
 import type { AuthFlowEvent, BusinessTypeId } from "@repo/domain/domain";
 import { HireCandidateSchema } from "@repo/domain/hire";
@@ -55,7 +56,7 @@ const streamCommand = (
     child.on("close", (code) => resolve(code));
   });
 
-const label = (p: RunnerProbe): string => RUNNERS[p.id].displayName;
+const label = (p: RunnerProbe): string => RUNNER_NAMES[p.id];
 
 // A login codex keeps in the Keychain reads as none, to its runs and to the sign-in alike.
 const CODEX_FILE_LOGIN =

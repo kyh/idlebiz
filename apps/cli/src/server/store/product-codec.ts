@@ -1,66 +1,69 @@
-import type { Product } from "@repo/domain/domain";
-import { companyWorkspace, productWorkspace } from "../paths";
-import { PACKAGE_SCHEMA, nullableNum, optNum, optStr, reqNum, reqStr } from "./frontmatter";
+import { z } from "zod";
+import type { Product, VercelBinding } from "@repo/domain/domain";
+import { productWorkspace } from "../paths";
+import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
-/**
- * Which workspace, never where: the path is derived from ROOT_DIR at load, as
- * the company's is, so a save copied to another root works in its own tree.
- */
-export const productToDoc = (p: Product): FrontmatterDoc => {
-  const metadata: FrontmatterDoc["metadata"] = {
-    createdAt: p.createdAt,
-    ships: p.ships,
-    workspace: p.workspaceDir === companyWorkspace(p.companyId) ? "company" : "own",
-  };
-  if (p.lastShipAt !== null) {
-    metadata.lastShipAt = p.lastShipAt;
+/** A null field gets no line; a Vercel binding is its project's id and name, or neither. */
+const ProductDocSchema = z.object({
+  body: z.string(),
+  fields: packageFields("product"),
+  metadata: z.object({
+    createdAt: z.number(),
+    lastShipAt: z.number().optional(),
+    revenueUsd: z.number().optional(),
+    ships: z.number().int().nonnegative(),
+    users: z.number().optional(),
+    vercelProjectId: z.string().optional(),
+    vercelProjectName: z.string().optional(),
+    vercelTeamId: z.string().optional(),
+  }),
+});
+
+type ProductMetadata = z.output<typeof ProductDocSchema>["metadata"];
+
+const vercelOf = (m: ProductMetadata): VercelBinding | null => {
+  const { vercelProjectId: projectId, vercelProjectName: projectName, vercelTeamId } = m;
+  if (projectId === undefined && projectName === undefined) {
+    return null;
   }
-  if (p.users !== null) {
-    metadata.users = p.users;
+  if (projectId === undefined || projectName === undefined) {
+    throw new Error("a Vercel binding names its project's id and name, or neither");
   }
-  if (p.revenueUsd !== null) {
-    metadata.revenueUsd = p.revenueUsd;
-  }
-  if (p.vercel) {
-    metadata.vercelProjectId = p.vercel.projectId;
-    metadata.vercelProjectName = p.vercel.projectName;
-    if (p.vercel.teamId !== null) {
-      metadata.vercelTeamId = p.vercel.teamId;
-    }
-  }
-  return {
-    body: `${p.description}\n`,
-    fields: { kind: "product", name: p.name, schema: PACKAGE_SCHEMA, slug: p.id },
-    metadata,
-  };
+  return { projectId, projectName, teamId: vercelTeamId ?? null };
 };
 
-export const docToProduct = (doc: FrontmatterDoc, companyId: string): Product => {
-  const m = doc.metadata;
-  const projectId = optStr(m, "vercelProjectId");
-  const id = reqStr(doc.fields, "slug");
+/**
+ * No workspace: its path is derived from the slug at load, as the company's is, so a save
+ * copied to another root works in its own tree.
+ */
+export const productToDoc = (p: Product): z.input<typeof ProductDocSchema> => ({
+  body: `${p.description}\n`,
+  fields: { kind: "product", name: p.name, schema: PACKAGE_SCHEMA, slug: p.id },
+  metadata: {
+    createdAt: p.createdAt,
+    lastShipAt: p.lastShipAt ?? undefined,
+    revenueUsd: p.revenueUsd ?? undefined,
+    ships: p.ships,
+    users: p.users ?? undefined,
+    vercelProjectId: p.vercel?.projectId,
+    vercelProjectName: p.vercel?.projectName,
+    vercelTeamId: p.vercel?.teamId ?? undefined,
+  },
+});
+
+export const docToProduct = (doc: FrontmatterDoc): Product => {
+  const { body, fields, metadata: m } = decodeDoc(ProductDocSchema, doc);
   return {
-    companyId,
-    createdAt: reqNum(m, "createdAt"),
-    description: doc.body.trim(),
-    id,
-    lastShipAt: nullableNum(m, "lastShipAt"),
-    name: reqStr(doc.fields, "name"),
-    revenueUsd: nullableNum(m, "revenueUsd"),
-    ships: optNum(m, "ships", 0),
-    users: nullableNum(m, "users"),
-    vercel:
-      projectId === null
-        ? null
-        : {
-            projectId,
-            projectName: optStr(m, "vercelProjectName") ?? projectId,
-            teamId: optStr(m, "vercelTeamId"),
-          },
-    workspaceDir:
-      optStr(m, "workspace") === "own"
-        ? productWorkspace(companyId, id)
-        : companyWorkspace(companyId),
+    createdAt: m.createdAt,
+    description: body.trim(),
+    id: fields.slug,
+    lastShipAt: m.lastShipAt ?? null,
+    name: fields.name,
+    revenueUsd: m.revenueUsd ?? null,
+    ships: m.ships,
+    users: m.users ?? null,
+    vercel: vercelOf(m),
+    workspaceDir: productWorkspace(fields.slug),
   };
 };

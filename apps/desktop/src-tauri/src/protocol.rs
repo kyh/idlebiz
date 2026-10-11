@@ -34,8 +34,9 @@ pub struct Hello {
     pub packaged: bool,
     /// The dev server under `tauri dev`, whose files main hands the page in place of the built ones.
     pub page_dev_url: Option<String>,
-    /// The Keychain's Safe Storage password, which seals main's secrets; none when it would not answer.
-    pub safe_storage_password: Option<String>,
+    /// The key the Keychain keeps for sealing main's secrets, 32 bytes in base64; none in a
+    /// development build, which never touches the Keychain, or when the Keychain would not answer.
+    pub sealing_key: Option<String>,
 }
 
 /// What main answers `handoff` with: a link into its page, and the origin it is on.

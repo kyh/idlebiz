@@ -1,27 +1,19 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import type { PaymentLinker } from "./payment-links";
-import type { RunContext } from "./tools";
+import type { PaymentLinker } from "./stripe-links";
+import type { RunContext } from "./tools/define";
+import * as store from "./store/store";
+import { askBox } from "./agents/ask-box";
+import { callTool } from "./tools";
+import { switchOffBeforeReset } from "./company-actions";
+import { foundAcme, hire, tempSave } from "./test-support/save";
 
 // A file of its own: once a reset begins, this process makes no payment link again.
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-reset-during-sale-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const store = await import("./store/store");
-const { askBox } = await import("./agents/agent-driver");
-const { callTool } = await import("./tools");
-const { switchOffBeforeReset } = await import("./company-actions");
+const root = tempSave();
 
 afterAll(() => {
   vi.unstubAllGlobals();
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 const unasked = (what: string) => () => Promise.reject(new Error(`${what} without a test asking`));
@@ -29,24 +21,7 @@ const unasked = (what: string) => () => Promise.reject(new Error(`${what} withou
 describe("a reset while Stripe makes a signed payment link", () => {
   it("waits for the link, switches it off with the rest, and makes no link after", async () => {
     store.initStore();
-    const company = store.foundCompany({
-      budget: { mode: "infinite" },
-      businessType: "software",
-      founderName: "Kai",
-      founderSpriteSeed: "seed",
-      hires: [
-        {
-          name: "Priya",
-          persona: "ships",
-          role: "engineer",
-          runner: "claude",
-          spriteSeed: "Priya",
-          title: "Engineer",
-        },
-      ],
-      mission: "ship",
-      name: "Acme",
-    });
+    const company = foundAcme([hire("Priya")]);
     const employee = store.getEmployee("priya");
     if (!employee) {
       throw new Error("no priya");
@@ -95,7 +70,7 @@ describe("a reset while Stripe makes a signed payment link", () => {
     const link = { amountUsd: 9, name: "Pro plan" };
     store.grantApproval("task", 'payment link "Pro plan" at $9.00 on acme');
 
-    const making = callTool(ctx, "POST /v1/payment-link", link);
+    const making = callTool(ctx, "create_payment_link", link);
     await vi.waitFor(() => expect(links).toBe(1));
     const reset = switchOffBeforeReset();
     stripe.resolve({ id: "plink_late", kind: "made", url: "https://buy.stripe.com/late" });
@@ -105,7 +80,9 @@ describe("a reset while Stripe makes a signed payment link", () => {
     expect(switchedOff).toEqual(["plink_late"]);
 
     store.grantApproval("task", 'payment link "Pro plan" at $9.00 on acme');
-    expect(await callTool(ctx, "POST /v1/payment-link", link)).toContain("resetting");
+    const refused = await callTool(ctx, "create_payment_link", link);
+    expect(refused?.kind).toBe("refused");
+    expect(refused?.text).toContain("resetting");
     expect(links).toBe(1);
     expect(asked).toEqual([]);
   });

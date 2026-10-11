@@ -4,9 +4,12 @@ packages:
   - tools/*
 
 # One declaration per dep that more than one workspace uses, so versions
-# cannot drift between them.
+# cannot drift between them, and the ACP adapters, pinned beside codex-acp's patch.
 catalog:
-  "@agentclientprotocol/sdk": ^1.7.0
+  # Exact: a bump changes the wire acp-session.ts speaks and moves codex-acp's patch key.
+  "@agentclientprotocol/claude-agent-acp": 0.85.1
+  "@agentclientprotocol/codex-acp": 1.12.0
+  "@agentclientprotocol/sdk": 1.7.0
   "@orpc/client": 2.0.0-beta.42
   "@orpc/contract": 2.0.0-beta.42
   "@orpc/publisher": 2.0.0-beta.42

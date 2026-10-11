@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { actionAnswer, autonomousBrief, continuationBrief, roomTranscript } from "./briefs";
+import {
+  actionAnswer,
+  approvalAnswer,
+  autonomousBrief,
+  continuationBrief,
+  roomTranscript,
+} from "./briefs";
 import { RUN_COST_ESTIMATE_USD } from "@repo/domain/bets";
 import type {
   BlockedAsk,
@@ -32,7 +38,6 @@ const company: Company = {
   workspaceDir: "/tmp/acme",
 };
 const employee: Employee = {
-  companyId: "acme",
   createdAt: 0,
   deskIndex: 0,
   id: "lead",
@@ -49,7 +54,6 @@ const employee: Employee = {
   title: "Founding Engineer",
 };
 const product: Product = {
-  companyId: "acme",
   createdAt: 0,
   description: "the app",
   id: "app",
@@ -83,7 +87,6 @@ const briefFor = (
   }).description;
 
 const line = (from: TeamMessage["from"], text: string): TeamMessage => ({
-  companyId: "acme",
   createdAt: 0,
   from,
   id: 0,
@@ -214,11 +217,10 @@ describe("the brief that asks for the next bet", () => {
 
 describe("the brief that carries the founder's answer", () => {
   const task: Task = {
-    artifacts: [],
+    answers: null,
     assigneeId: "lead",
     attempts: 0,
     betId: null,
-    companyId: "acme",
     completedAt: null,
     createdAt: 0,
     description: "Wire checkout to the pricing page.",
@@ -226,7 +228,6 @@ describe("the brief that carries the founder's answer", () => {
     origin: "work",
     priority: "medium",
     productId: "app",
-    startedAt: null,
     state: { kind: "todo" },
     title: "Add checkout",
   };
@@ -274,7 +275,7 @@ describe("the brief that carries the founder's answer", () => {
     ],
     [
       { integration: "stripe", productId: null, reason: "to take payments", type: "integration" },
-      "> a Stripe connection: to take payments",
+      "> a Stripe key: to take payments",
       "[connect:stripe]",
     ],
     [
@@ -304,5 +305,27 @@ describe("the founder's reply to an action", () => {
     [{ kind: "cant", reason: "no account there" }, "They could not: no account there."],
   ] as const)("reads %j as %j", (reply, words) => {
     expect(actionAnswer(reply)).toContain(words);
+  });
+});
+
+describe("the founder's answer to a sign-off", () => {
+  it("quotes the command as sent, in a fence no line of it can close", () => {
+    const command = "npm test\ngit push origin main # ```";
+    const answer = approvalAnswer(true, { command, rule: "git-push" });
+    expect(answer).toContain(`\n\`\`\`\`\n${command}\n\`\`\`\`\n`);
+    expect(answer).toContain("character for character");
+    expect(answer).toContain("It covers one run of it.");
+  });
+
+  it("says a leased sign-off covers the rest of the run, not one run", () => {
+    const answer = approvalAnswer(true, { command: "mcp: use gmail", rule: "external-tool" });
+    expect(answer).toContain("for the rest of this run");
+    expect(answer).not.toContain("one run of it");
+  });
+
+  it("tells a refused run not to work around it", () => {
+    expect(approvalAnswer(false, { command: "git push", rule: "git-push" })).toMatch(
+      /^Not approved\./u,
+    );
   });
 });

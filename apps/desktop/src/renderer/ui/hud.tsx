@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { RUNNERS } from "@repo/agent-driver/registry";
 import { linesOf, useAuthFlow } from "@/renderer/hooks/use-auth-flow";
 import { useNow } from "@/renderer/hooks/use-now";
 import { useSubmission } from "@/renderer/hooks/use-submission";
@@ -18,6 +17,7 @@ import {
 import { setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@repo/domain/domain";
 import type { Company, Employee, Product } from "@repo/domain/domain";
+import { RUNNER_NAMES } from "@repo/domain/runners";
 import { deploymentOf, productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
 import { earliestReset, formatCompact, napLabel, usageLabel } from "@repo/domain/format";
@@ -41,7 +41,7 @@ const Stat = ({
   label: string;
   value: string;
   sub?: string;
-  accent?: string;
+  accent?: string | undefined;
   title?: string;
   /** A bust beside the figures, for a plate that is about a person. */
   face?: ReactNode;
@@ -231,7 +231,7 @@ const SignedOutRunners = ({ company, employees }: { company: Company; employees:
   if (waiting.length === 0) {
     return null;
   }
-  const runners = [...new Set(waiting.map((e) => RUNNERS[e.runner].displayName))].join(" and ");
+  const runners = [...new Set(waiting.map((e) => RUNNER_NAMES[e.runner]))].join(" and ");
   const leadWaits = waiting.some((e) => e.id === company.leaderId);
   const lines = linesOf(auth);
   return (

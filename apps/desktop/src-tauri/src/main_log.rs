@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const MAIN_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
 
-/// `main.log`, the file electron-log kept, in the folder a report has always found it.
+/// `main.log`, in the logs folder (`runtime::logs_dir`).
 pub fn main_log_path(logs_dir: &Path) -> PathBuf {
     logs_dir.join("main.log")
 }

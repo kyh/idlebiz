@@ -1,7 +1,7 @@
-//! Open at login is the app's own login item, `SMAppService.mainApp`, as Electron's
-//! `setLoginItemSettings` registered it: macOS keeps the only record, and what it answers is read
-//! back after every change. A launch it made is told by the open-application Apple event the app
-//! starts with, read as the app finishes launching (`RunEvent::Ready`), as Electron read it.
+//! Open at login is the app's own login item, `SMAppService.mainApp`: macOS keeps the only record,
+//! and what it answers is read back after every change. A launch it made is told by the
+//! open-application Apple event the app starts with, read as the app finishes launching
+//! (`RunEvent::Ready`).
 
 use crate::protocol::LaunchAtLogin;
 

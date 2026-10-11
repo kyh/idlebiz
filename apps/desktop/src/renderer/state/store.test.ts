@@ -4,7 +4,6 @@ import type { DataTag, QueryKey, QueryObserverOptions } from "@tanstack/react-qu
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityEvent } from "@repo/domain/activity";
 import type {
-  AgentRunner,
   AuthFlowEvent,
   Company,
   Employee,
@@ -12,6 +11,7 @@ import type {
   Task,
   TeamMessage,
 } from "@repo/domain/domain";
+import type { RunnerId } from "@repo/domain/runners";
 import { ORPCError } from "@orpc/client";
 import { implement } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
@@ -42,7 +42,6 @@ const company: Company = {
 };
 
 const employee = (id: string, status: Employee["status"] = "idle"): Employee => ({
-  companyId: "co",
   createdAt: 0,
   deskIndex: 0,
   id,
@@ -92,11 +91,10 @@ const hired = (employeeId: string): ActivityEvent => ({
 
 /** A question of `assigneeId`'s awaiting the founder. */
 const asking = (assigneeId: string): Task => ({
-  artifacts: [],
+  answers: null,
   assigneeId,
   attempts: 0,
   betId: null,
-  companyId: "co",
   completedAt: null,
   createdAt: 0,
   description: null,
@@ -104,7 +102,6 @@ const asking = (assigneeId: string): Task => ({
   origin: "work",
   priority: "medium",
   productId: null,
-  startedAt: null,
   state: { ask: { question: "Ship it?", type: "question" }, kind: "blocked", summary: null },
   title: "Ship it",
 });
@@ -166,7 +163,7 @@ const openStream = (): Stream => {
 
 interface MainHolds {
   authed: boolean;
-  signedOut: AgentRunner[];
+  signedOut: RunnerId[];
   employees: Employee[];
   resting: RestingRunners;
   room: TeamMessage[];
@@ -257,11 +254,10 @@ const fakeMain = (late: readonly Late[]) => {
     }),
     products: { list: os.products.list.handler(() => counted("products.list", [])) },
     save: {
-      report: os.save.report.handler(() => counted("save.report", { companies: 1, skipped: [] })),
+      report: os.save.report.handler(() => counted("save.report", { skipped: [] })),
     },
     stripe: {
       keyStatus: os.stripe.keyStatus.handler(() => ({ state: "unset" as const })),
-      status: os.stripe.status.handler(() => ({ state: "disconnected" as const })),
     },
     tasks: { list: os.tasks.list.handler(() => counted("tasks.list", main.tasks)) },
     team: {
@@ -491,7 +487,7 @@ describe("store", () => {
     const room = shown(orpc.team.messages.queryOptions({ input: { limit: FEED_LINES } }));
     await settle();
     expect(room()).toEqual([]);
-    main.room = [{ companyId: "co", createdAt: 1, from: { kind: "founder" }, id: 1, text: "hi" }];
+    main.room = [{ createdAt: 1, from: { kind: "founder" }, id: 1, text: "hi" }];
     await emit(said(1, "hi"));
     expect(room()?.map((m) => m.text)).toEqual(["hi"]);
   });

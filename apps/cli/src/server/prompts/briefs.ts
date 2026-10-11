@@ -18,7 +18,7 @@ import type {
   BlockedAsk,
   Company,
   Employee,
-  IntegrationNeed,
+  IntegrationKind,
   Product,
   Routine,
   RunMetrics,
@@ -26,6 +26,8 @@ import type {
   TeamMessage,
 } from "@repo/domain/domain";
 import { formatUsd } from "@repo/domain/format";
+import { isLeased } from "@repo/domain/hold-rules";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
 
 export interface TaskBrief {
   title: string;
@@ -77,7 +79,7 @@ const revenueLine = (
     return '- Revenue: Stripe is in test mode — no charge counts; request_integration "stripe" for the founder to swap the Stripe key IdleBiz charges with for a live one so revenue can be counted.';
   }
   return company.revenueUsd === null
-    ? '- Revenue: no source connected (Stripe) — nothing is being charged yet; request_integration "stripe" so revenue can be counted.'
+    ? '- Revenue: no source connected (no Stripe key) — nothing is being charged yet; request_integration "stripe" so revenue can be counted.'
     : `- Revenue: ${formatUsd(company.revenueUsd)} lifetime (Stripe, live${movedBy(company.revenueUsd, since?.revenueUsd, true)}).`;
 };
 
@@ -221,7 +223,7 @@ const assignmentBrief = (
           `A BET IS OUT OF BUDGET AND NEEDS YOUR CALL: "${bet.title}" (${bet.id}) has spent ${betMoney(bet)} and brought in ${betProgress(bet)}. Nobody works on it until you decide.`,
           `If the work that could move the number is really out the door — deployed, posted, reachable — call measure_bet: it then has ${bet.windowHours}h to bring in ${betGoal(bet)}.`,
           `If it is not, a clock would only produce a false verdict: kill_bet with the honest reason, and if the hypothesis still deserves a test, open it again with a budget that covers the work.`,
-          `Decide this run. Do not do the work yourself here.`,
+          `Decide this run: one that ends with no measure_bet, kill_bet or ask to the founder closes the bet unmeasured. Do not do the work yourself here.`,
         ],
         title: `Settle the bet: ${bet.title}`,
       };
@@ -354,10 +356,6 @@ export const routineBrief = (r: Routine): TaskBrief => ({
   title: r.name,
 });
 
-/** Whether a brief is a routine's run, as every build has worded it. */
-export const isRoutineBrief = (description: string | null): boolean =>
-  description?.includes(ROUTINE_NOTE) ?? false;
-
 export const founderPing = (text: string): TaskBrief => ({
   description: [
     "The founder pinged you in the team room:",
@@ -398,13 +396,15 @@ const askInWords = (ask: BlockedAsk): string => {
       return `permission to run \`${ask.command}\``;
     }
     case "integration": {
-      return `a ${INTEGRATION_LABELS[ask.integration]} connection: ${ask.reason}`;
+      return ask.integration === "stripe"
+        ? `a Stripe key: ${ask.reason}`
+        : `a ${INTEGRATION_LABELS[ask.integration]} connection: ${ask.reason}`;
     }
     // no default
   }
 };
 
-export const continuationTitle = (askTitle: string): string => `Continue: ${askTitle.slice(0, 60)}`;
+const continuationTitle = (askTitle: string): string => `Continue: ${askTitle.slice(0, 60)}`;
 
 /** Whoever runs it may not be who asked: a leaver's open asks pass to the lead. */
 export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): TaskBrief => ({
@@ -421,10 +421,10 @@ export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): 
   title: continuationTitle(task.title),
 });
 
-export const integrationConnectedAnswer = (need: IntegrationNeed): string =>
-  need === "stripe-key"
+export const integrationConnectedAnswer = (kind: IntegrationKind): string =>
+  kind === "stripe"
     ? "The founder saved a Stripe key — IdleBiz holds it and charges with it for you. Continue where you left off."
-    : `${INTEGRATION_LABELS[need]} is now connected — IdleBiz holds its key and uses it for you. Continue where you left off.`;
+    : `${INTEGRATION_LABELS[kind]} is now connected — IdleBiz holds its key and uses it for you. Continue where you left off.`;
 
 export const actionAnswer = (reply: ActionReply): string => {
   if (reply.kind === "cant") {
@@ -433,7 +433,26 @@ export const actionAnswer = (reply: ActionReply): string => {
   return reply.note === "" ? "Done." : `Done. They sent back: ${reply.note}`;
 };
 
-export const approvalAnswer = (approved: boolean, command: string): string =>
-  approved
-    ? `Approved. The sign-off is for exactly this, character for character, in this task only — a reworded command is a different command and will be held again:\n\n\`\`\`\n${command}\n\`\`\`\n\nIt covers one run of it (or, for a site or a connected tool, the rest of this run). Anything else outward-facing needs a fresh approval.`
-    : "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.";
+/** What the run reads once the founder decides `ask`: if signed, exactly what the sign-off covers. */
+export const approvalAnswer = (
+  approved: boolean,
+  ask: { command: string; rule: HoldRuleId },
+): string => {
+  if (!approved) {
+    return "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.";
+  }
+  const signed = ["", ...fenced(ask.command), ""];
+  return (
+    isLeased(ask.rule)
+      ? [
+          "Approved, in this task only, for the rest of this run:",
+          ...signed,
+          "Anything else outward-facing needs a fresh approval.",
+        ]
+      : [
+          "Approved. The sign-off is for exactly this, character for character, in this task only — a reworded command is a different command and will be held again:",
+          ...signed,
+          "It covers one run of it. Anything else outward-facing needs a fresh approval.",
+        ]
+  ).join("\n");
+};

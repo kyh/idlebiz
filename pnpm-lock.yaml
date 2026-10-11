@@ -107,8 +107,14 @@ settings:
 
 catalogs:
   default:
+    '@agentclientprotocol/claude-agent-acp':
+      specifier: 0.85.1
+      version: 0.85.1
+    '@agentclientprotocol/codex-acp':
+      specifier: 1.12.0
+      version: 1.12.0
     '@agentclientprotocol/sdk':
-      specifier: ^1.7.0
+      specifier: 1.7.0
       version: 1.7.0
     '@orpc/client':
       specifier: 2.0.0-beta.42
@@ -188,15 +194,12 @@ importers:
   apps/cli:
     dependencies:
       '@agentclientprotocol/claude-agent-acp':
-        specifier: ^0.85.1
+        specifier: 'catalog:'
         version: 0.85.1(@anthropic-ai/sdk@0.127.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.30.0(supports-color@7.2.0)(zod@4.6.5))
       '@agentclientprotocol/codex-acp':
-        specifier: ^1.12.0
+        specifier: 'catalog:'
         version: 1.12.0(patch_hash=c0ac03af3c611de6eb5c55796b830c60eaf046fa628f88c3316e4a381249607a)
     devDependencies:
-      '@agentclientprotocol/sdk':
-        specifier: 'catalog:'
-        version: 1.7.0(zod@4.6.5)
       '@orpc/client':
         specifier: 'catalog:'
         version: 2.0.0-beta.42
@@ -218,9 +221,6 @@ importers:
       '@repo/domain':
         specifier: workspace:*
         version: link:../../packages/domain
-      '@repo/stripe-connect-protocol':
-        specifier: workspace:*
-        version: link:../../packages/stripe-connect-protocol
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.1
@@ -260,9 +260,6 @@ importers:
       '@orpc/tanstack-query':
         specifier: 'catalog:'
         version: 2.0.0-beta.42(@tanstack/query-core@5.104.1)
-      '@repo/agent-driver':
-        specifier: workspace:*
-        version: link:../../packages/agent-driver
       '@repo/contract':
         specifier: workspace:*
         version: link:../../packages/contract
@@ -329,9 +326,6 @@ importers:
       '@repo/px-kit':
         specifier: workspace:*
         version: link:../../packages/px-kit
-      '@repo/stripe-connect-protocol':
-        specifier: workspace:*
-        version: link:../../packages/stripe-connect-protocol
       cn:
         specifier: 'catalog:'
         version: 0.4.0
@@ -375,6 +369,9 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: 'catalog:'
         version: 1.7.0(zod@4.6.5)
+      '@repo/domain':
+        specifier: workspace:*
+        version: link:../domain
       zod:
         specifier: 'catalog:'
         version: 4.6.5
@@ -385,6 +382,9 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1))
 
   packages/contract:
     dependencies:
@@ -404,9 +404,6 @@ importers:
 
   packages/domain:
     dependencies:
-      '@repo/agent-driver':
-        specifier: workspace:*
-        version: link:../agent-driver
       zod:
         specifier: 'catalog:'
         version: 4.6.5
@@ -419,22 +416,6 @@ importers:
         version: 5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1))
 
   packages/px-kit: {}
-
-  packages/stripe-connect-protocol:
-    dependencies:
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.5
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 24.19.1
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-      vitest:
-        specifier: 'catalog:'
-        version: 5.0.3(@types/node@24.19.1)(vite@8.3.2(@types/node@24.19.1))
 
   tools/e2e:
     devDependencies:

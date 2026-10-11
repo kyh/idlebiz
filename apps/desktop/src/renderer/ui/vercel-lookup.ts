@@ -12,7 +12,7 @@ type Lookup =
       account: string | undefined;
       projects: VercelProject[];
       /** The token that listed them; absent when it is the saved one. */
-      token?: string;
+      token?: string | undefined;
     };
 
 const lookupOf = (listing: VercelListing, token?: string): Lookup => {

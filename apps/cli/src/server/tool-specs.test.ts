@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { lexLine } from "./shell-lexer";
-import { TOOL_NAMES, TOOL_SPECS, commandOf, toolDocs, verbOf } from "./tool-specs";
+import {
+  MAX_ENV_VALUE_BYTES,
+  MAX_REQUEST_BYTES,
+  TOOL_NAMES,
+  TOOL_SPECS,
+  commandOf,
+  toolAt,
+  toolDocs,
+  toolPath,
+  verbOf,
+} from "./tool-specs";
 
 describe("tool specs", () => {
   it.each(TOOL_NAMES)("%s teaches a request its own body accepts", (name) => {
@@ -84,13 +94,30 @@ describe("tool specs", () => {
     expect(body.safeParse({ ...example, name }).success).toBe(ok);
   });
 
+  it("takes a set_env value whose request still fits what a call may send", () => {
+    const { body, example } = TOOL_SPECS.set_env;
+    const longest = { ...example, product: "product-slug", value: "x".repeat(MAX_ENV_VALUE_BYTES) };
+    expect(body.safeParse(longest).success).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(longest))).toBeLessThanOrEqual(MAX_REQUEST_BYTES);
+  });
+
+  it("counts a set_env value in bytes, as Vercel does", () => {
+    const { body, example } = TOOL_SPECS.set_env;
+    const value = "é".repeat(MAX_ENV_VALUE_BYTES / 2 + 1);
+    expect(value.length).toBeLessThan(MAX_ENV_VALUE_BYTES);
+    const parsed = body.safeParse({ ...example, value });
+    expect(parsed.error?.issues[0]?.message).toBe("value is at most 60 KiB of UTF-8");
+  });
+
   it("tells the lead each metric's floor", () => {
     expect(toolDocs(true)).toContain("at least 10 users, a whole number, or $5.00");
   });
 
-  it("serves every tool on a route of its own", () => {
-    const routes = TOOL_NAMES.map((n) => `${TOOL_SPECS[n].method} ${TOOL_SPECS[n].path}`);
-    expect(new Set(routes).size).toBe(routes.length);
+  it("serves each tool at its own name and nothing at any other path", () => {
+    expect(TOOL_NAMES.map((name) => toolAt(toolPath(name)))).toEqual(TOOL_NAMES);
+    expect(toolAt("/v1/read-team-chat")).toBeNull();
+    expect(toolAt("/v1/nothing")).toBeNull();
+    expect(toolAt("/read_team_chat")).toBeNull();
   });
 
   it("shows the lead's tools to the lead alone", () => {

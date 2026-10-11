@@ -11,8 +11,8 @@ import { z } from "zod";
 /**
  * How a failed turn bears on its runner: a login no retry clears, a refusal of access no sign-in
  * repairs (an organization yet to verify, a cloud credential claude could not load), a usage
- * limit that lifts at a known or guessed time, a provider too busy for now, a session out of
- * room, or anything else, which is only the task's.
+ * limit, a provider too busy for now, a session out of room, or anything else, which is only the
+ * task's.
  */
 export const FAILURE_CLASSES = [
   "auth",
@@ -126,32 +126,17 @@ export const classOfTypedFailure = ({ actions, category, text }: TypedFailure): 
   return category === "service" ? classOfText(text) : "other";
 };
 
-/** The first rest an overload or a refusal of access earns; each one after it in a row doubles it. */
-export const OVERLOAD_BACKOFF_MS = 60_000;
-
-/** The longest an overload or a refusal of access rests a runner: a busy provider, or a credential blip, clears in minutes. */
-const MAX_OVERLOAD_BACKOFF_MS = 15 * 60_000;
-
-/** How long the `streak`-th overload or refusal of access in a row rests its runner: 1m, 2m, 4m… up to 15m. */
-export const overloadBackoffMs = (streak: number): number =>
-  Math.min(OVERLOAD_BACKOFF_MS * 2 ** Math.max(0, streak - 1), MAX_OVERLOAD_BACKOFF_MS);
-
-/** How long to park on a usage limit when nothing names a reset time. */
-const DEFAULT_PARK_MS = 30 * 60_000;
-
-/** Cap parses that land absurdly far out (clock skew, bad zone math). */
-const MAX_PARK_MS = 12 * 3_600_000;
-
-/** claude-agent-acp's rate limit, as it rides a usage update's `_meta`. */
+/**
+ * claude-agent-acp's rate limit, as it rides a usage update's `_meta`: the CLI's
+ * `SDKRateLimitInfo`, forwarded only once the turn has had a model response, so a turn refused on
+ * its first request carries none.
+ */
 const ClaudeRateLimitMeta = z.object({
   "_claude/rateLimit": z.object({
     resetsAt: z.number().optional(),
     status: z.string(),
   }),
 });
-
-// Epoch seconds as the CLI reports them; a value already in milliseconds is taken as it is.
-const epochMs = (at: number): number => (at < 1e12 ? at * 1000 : at);
 
 /**
  * What a usage update's `meta` says of claude's rate limit: the epoch ms it lifts at while it
@@ -168,7 +153,12 @@ export const rateLimitResetIn = (meta: unknown): number | null | undefined => {
     return null;
   }
   // still refusing with no reset named: say nothing, so a reset an earlier update named stands
-  return resetsAt === undefined ? undefined : epochMs(resetsAt);
+  if (resetsAt === undefined) {
+    return undefined;
+  }
+  // epoch seconds: the CLI reads it off the `anthropic-ratelimit-unified-reset` header, and counts
+  // the retry-after it derives from it as `resetsAt - Date.now() / 1000`
+  return resetsAt * 1000;
 };
 
 /** Wall-clock minutes in an IANA zone; null for an unknown zone. */
@@ -239,13 +229,9 @@ const resetNamedIn = (text: string, now: Date): number | null => {
 };
 
 /**
- * When a usage limit lifts: the reset the provider reported (`reported`, epoch ms) while it is
- * still ahead, else the time the agent's `text` names, else a default park; never past the cap.
+ * When a usage limit lifts, as far as the provider tells it: the reset it `reported` (epoch ms)
+ * while that is still ahead, else the time the agent's `text` names, else null. How long the
+ * runner rests on it, or on none, is the caller's.
  */
-export const liftsAt = (text: string, now = new Date(), reported: number | null = null): number => {
-  const at =
-    reported !== null && reported > now.getTime()
-      ? reported
-      : (resetNamedIn(text, now) ?? now.getTime() + DEFAULT_PARK_MS);
-  return Math.min(at, now.getTime() + MAX_PARK_MS);
-};
+export const liftsAt = (text: string, reported: number | null, now = new Date()): number | null =>
+  reported !== null && reported > now.getTime() ? reported : resetNamedIn(text, now);
