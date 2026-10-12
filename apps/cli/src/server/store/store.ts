@@ -1231,32 +1231,27 @@ const dropWork = (match: (t: Task) => boolean, reason: string, now: number): voi
   }
 };
 
-const BET_MEASURING = "bet is measuring";
-const BET_CLOSED = "bet closed";
 const BET_KILLED = "bet killed";
-const PRODUCT_RETIRED = "product retired";
 
-/** Why the bet takes no more runs, as the work it drops says; null while it is open, or for work on none. */
-const stoppedBetReason = (bet: Bet | null): string | null => {
-  if (!bet || bet.state.kind === "open") {
-    return null;
-  }
-  return bet.state.kind === "measuring" ? BET_MEASURING : BET_CLOSED;
-};
+type Stop = "measuring" | "closed" | "retired";
+
+const STOP_REASON = {
+  closed: "bet closed",
+  measuring: "bet is measuring",
+  retired: "product retired",
+} satisfies Record<Stop, string>;
 
 /**
  * Why the task takes no more runs: its bet stopped taking work, or its product retired, and a
  * run would land in the company's folder, billing what takes no more work. Null while it runs on.
  */
-const stoppedReason = (
-  t: Task,
-  bet: Bet | null,
-  retired: (productId: string) => boolean,
-): string | null =>
-  stoppedBetReason(bet) ?? (t.productId !== null && retired(t.productId) ? PRODUCT_RETIRED : null);
-
-const stoppedWorkReason = (t: Task): string | null =>
-  stoppedReason(t, t.betId === null ? null : getBet(t.betId), isRetiredProduct);
+const stopOf = (t: Task): Stop | null => {
+  const bet = t.betId === null ? null : getBet(t.betId);
+  if (bet && bet.state.kind !== "open") {
+    return bet.state.kind === "measuring" ? "measuring" : "closed";
+  }
+  return t.productId !== null && isRetiredProduct(t.productId) ? "retired" : null;
+};
 
 const retune = (active: ActiveCompany): void => {
   const next = dream(active.policy, active.bets);
@@ -1280,7 +1275,7 @@ export const measureBet = (betId: string, now: number): Bet => {
     throw new RefusalError(`no open bet "${betId}"`);
   }
   const measuring = patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
-  dropWork((t) => t.betId === betId && !keptWhileMeasuring(t), BET_MEASURING, now);
+  dropWork((t) => t.betId === betId && !keptWhileMeasuring(t), STOP_REASON.measuring, now);
   return measuring;
 };
 
@@ -1314,7 +1309,7 @@ export const closeUnsettledBet = (betId: string, now: number): Bet | null => {
   const closed = patchBet(betId, {
     state: { closedAt: now, kind: "killed", moved: null, reason: UNSETTLED },
   });
-  dropWork((t) => t.betId === betId, BET_CLOSED, now);
+  dropWork((t) => t.betId === betId, STOP_REASON.closed, now);
   return closed;
 };
 
@@ -1339,7 +1334,7 @@ export const judgeBets = (now: number, pulsingSince: number | null): Bet[] => {
   }
   const closed = new Set(changed.filter(isClosed).map((b) => b.id));
   if (closed.size > 0) {
-    dropWork((t) => t.betId !== null && closed.has(t.betId), BET_CLOSED, now);
+    dropWork((t) => t.betId !== null && closed.has(t.betId), STOP_REASON.closed, now);
     try {
       retune(active);
     } catch (error) {
@@ -1597,10 +1592,10 @@ export const claimTask = (taskId: string, employeeId: string): Task | null => {
   if (!claimable || (t.assigneeId !== null && t.assigneeId !== employeeId)) {
     return null;
   }
-  const stopped = stoppedWorkReason(t);
-  if (stopped !== null && (stopped !== BET_MEASURING || kind === "dead")) {
+  const stop = stopOf(t);
+  if (stop !== null && (stop !== "measuring" || kind === "dead")) {
     throw new RefusalError(
-      `"${t.title}" won't run again: its ${stopped}, so a run would only bill what takes no more work. The lead can delegate it again under a live bet.`,
+      `"${t.title}" won't run again: its ${STOP_REASON[stop]}, so a run would only bill what takes no more work. The lead can delegate it again under a live bet.`,
     );
   }
   const patch: Partial<Task> = {
@@ -1630,9 +1625,9 @@ export const lockTaskForRun = (taskId: string, runId: string): Task | null => {
     return null;
   }
   // measuring keeps a claimed ask and an answer's continuation, so only a closed bet or a retired product drops here
-  const stopped = stoppedWorkReason(t);
-  if (stopped !== null && stopped !== BET_MEASURING) {
-    dropTask(taskId, stopped, Date.now());
+  const stop = stopOf(t);
+  if (stop !== null && stop !== "measuring") {
+    dropTask(taskId, STOP_REASON[stop], Date.now());
     return null;
   }
   return patchTask(taskId, entering({ kind: "running", runId }, Date.now()));
@@ -1644,12 +1639,15 @@ interface Dropped {
 
 /** A run whose bet or product stopped taking work while it ran drops its task rather than leave it waiting; null while both take it. */
 const droppedWhenStopped = (t: Task, attempts: number): Dropped | null => {
-  const reason = stoppedWorkReason(t);
-  if (reason === null) {
+  const stop = stopOf(t);
+  if (stop === null) {
     return null;
   }
   shelveClosed(
-    recordTask(t.id, { attempts, ...entering({ kind: "dropped", reason }, Date.now()) }),
+    recordTask(t.id, {
+      attempts,
+      ...entering({ kind: "dropped", reason: STOP_REASON[stop] }, Date.now()),
+    }),
   );
   return { kind: "dropped" };
 };
@@ -1669,9 +1667,8 @@ export const settleTask = (
   if (!t) {
     return null;
   }
-  const stopped = state.kind === "blocked" ? stoppedWorkReason(t) : null;
-  const dropped =
-    stopped !== null && stopped !== BET_MEASURING ? droppedWhenStopped(t, t.attempts) : null;
+  const stop = state.kind === "blocked" ? stopOf(t) : null;
+  const dropped = stop !== null && stop !== "measuring" ? droppedWhenStopped(t, t.attempts) : null;
   if (dropped) {
     return dropped;
   }
@@ -1728,7 +1725,7 @@ export const parkTask = (
   if (!t) {
     return null;
   }
-  const carriesAnswer = t.answers !== null && stoppedWorkReason(t) === BET_MEASURING;
+  const carriesAnswer = t.answers !== null && stopOf(t) === "measuring";
   const dropped = carriesAnswer ? null : droppedWhenStopped(t, t.attempts);
   if (dropped) {
     return dropped;
@@ -1843,7 +1840,7 @@ export const killProduct = (productId: string, reason: string, by: string | null
   if (killed.length > 0) {
     retune(active);
   }
-  dropWork((t) => t.productId === productId, PRODUCT_RETIRED, now);
+  dropWork((t) => t.productId === productId, STOP_REASON.retired, now);
   active.products.splice(active.products.indexOf(product), 1);
   for (const e of active.employees) {
     saveEmployee(e, { onlyIfChanged: true });
@@ -1986,12 +1983,11 @@ const readCompany = (): Company | null => {
  * A run the last launch never saw settle: dropped with a bet or product that stopped taking
  * work, but for one carrying the founder's answer on a measuring bet, else counted as failed.
  */
-const recoverInterrupted = (task: Task, active: ActiveCompany, now: number): Task => {
-  const bet = active.bets.find((b) => b.id === task.betId) ?? null;
-  const stopped = stoppedReason(task, bet, isRetiredProduct);
-  const carriesAnswer = task.answers !== null && stopped === BET_MEASURING;
-  if (stopped !== null && !carriesAnswer) {
-    return { ...task, ...entering({ kind: "dropped", reason: stopped }, now) };
+const recoverInterrupted = (task: Task, now: number): Task => {
+  const stop = stopOf(task);
+  const carriesAnswer = task.answers !== null && stop === "measuring";
+  if (stop !== null && !carriesAnswer) {
+    return { ...task, ...entering({ kind: "dropped", reason: STOP_REASON[stop] }, now) };
   }
   return failed(task, "Interrupted by app restart").task;
 };
@@ -2020,18 +2016,18 @@ const isUnowned = (task: Task): boolean =>
   task.assigneeId === null && (task.state.kind === "queued" || task.state.kind === "running");
 
 /** What boot makes of a task the last launch left, or null when it stands as it is. */
-const recoveredAtBoot = (task: Task, active: ActiveCompany, now: number): Task | null => {
+const recoveredAtBoot = (task: Task, now: number): Task | null => {
   if (isUnowned(task)) {
     return { ...task, state: { kind: "todo" } };
   }
-  return task.state.kind === "running" ? recoverInterrupted(task, active, now) : null;
+  return task.state.kind === "running" ? recoverInterrupted(task, now) : null;
 };
 
 /** Recover the runs the last launch never saw settle, and the work it left nobody holding. */
 const recoverInterruptedRuns = (active: ActiveCompany): void => {
   const now = Date.now();
   for (const [i, task] of active.tasks.entries()) {
-    const recovered = recoveredAtBoot(task, active, now);
+    const recovered = recoveredAtBoot(task, now);
     if (recovered) {
       active.tasks[i] = recovered;
       saveTask(recovered);
