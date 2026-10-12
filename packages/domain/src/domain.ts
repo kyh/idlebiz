@@ -275,14 +275,13 @@ export interface Company {
   maxAgents: number;
   /** The employee who coordinates: hires, releases, delegates. Null until someone is hired. */
   leaderId: string | null;
-  /** units of work the team has shipped */
   ships: number;
   /** REAL revenue (Stripe); null until a source is connected */
   revenueUsd: number | null;
   /** REAL users (analytics); null until a source is connected */
   users: number | null;
   budget: Budget;
-  /** lifetime real token spend (USD) */
+  /** Lifetime usage at API prices (USD). */
   spentUsd: number;
   createdAt: number;
 }
@@ -313,15 +312,12 @@ export interface Employee {
   name: string;
   role: string;
   title: string;
-  /** system-prompt flavor for the agent */
   persona: string;
   runner: RunnerId;
   session: RunSession | null;
   /** Digest of the instructions that session was last given; a run whose instructions differ sends them again. */
   instructionsDigest: string | null;
-  /** deterministic sprite + portrait */
   spriteSeed: string;
-  /** which desk slot in the office */
   deskIndex: number;
   /** The numbers as their last run ended, so the next brief can say what moved. Null before a first run. */
   lastRunMetrics: RunMetrics | null;

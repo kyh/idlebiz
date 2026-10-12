@@ -1,13 +1,5 @@
-// Main, the server `idlebiz serve` runs: the one process that owns the save, the keys and the runs,
-// and boot's first step claims the save, so a second main on it refuses (`save-claim.ts`).
-// It runs as the desktop shell's node child (or the dev host's), which speaks to it over its stdio
-// (`relay/stdio.ts`), and its first import is its boot (commands/serve.ts loads it for `serve`
-// alone). The shell says hello with the facts of this launch, and main boots; main asks it for
-// what only a native app does (`host.ts`), and it asks main for a handoff into the window's page.
-// Main serves that page itself, and answers its calls and sends it its events on the page's own
-// origin (`page-server.ts`), whose port the seal closes to every employee run. The runs reach the
-// company through the control plane instead (`control-plane.ts`), with the `idlebiz` command main
-// writes them at boot (`agent-launcher.ts`). Stdin's end is the shell going away.
+// Main, the server `idlebiz serve` runs, as AGENTS.md's "The page, the shell and main" describes.
+// Importing this module boots it, so commands/serve.ts loads it for `serve` alone.
 
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";

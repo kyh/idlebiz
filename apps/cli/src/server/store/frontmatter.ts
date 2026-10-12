@@ -45,7 +45,6 @@ const parseValue = (raw: string): Scalar => {
       /* fall through to raw */
     }
   }
-  // bare string (we never write these, but tolerate them)
   return t;
 };
 

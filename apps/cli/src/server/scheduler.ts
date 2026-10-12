@@ -588,7 +588,6 @@ class Scheduler {
     const runId = crypto.randomUUID();
     // a lock the save refuses throws with the task still queued: the tick reports it and retries
     const locked = store.lockTaskForRun(task.id, runId);
-    // lost race
     if (!locked) {
       return;
     }

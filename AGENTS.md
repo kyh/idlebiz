@@ -422,24 +422,16 @@ Each mechanic below is described here and nowhere else; `CLAUDE.md` holds the de
 
 Game state lives on disk at `~/.idlebiz/company/`, beside `cache/` (the runs' tool caches) and
 `bin/` (the `idlebiz` command main writes the runs at boot), as agentcompanies/v1 markdown
-packages:
+packages, laid out file by file at the top of `server/paths.ts`. Beyond the layout:
 
-- `COMPANY.md`, and beside it what the founder configured (`approvals.json`); company-level
-  running state goes in `state/` (path helpers in `server/paths.ts`).
-- `agents/<slug>/AGENTS.md`: its frontmatter is the employee, its body a mirror of the
-  instructions each run is given, rendered live and rewritten at boot.
-- `tasks/<slug>/TASK.md` for open work, `shipped/<slug>/TASK.md` once done, answered, settled or
-  dropped.
-- `products/<slug>/PRODUCT.md` for each product, the first included, with its code in
+- An employee's `AGENTS.md` frontmatter is the employee, its body a mirror of the instructions
+  each run is given, rendered live and rewritten at boot.
+- Every product has a package, the first included, with its code in
   `products/<slug>/workspace/` (placed by the slug alone, so retiring it moves one folder), whose
   root `AGENTS.md` is the team's notes on it.
-- `listings/<id>.json` for each print a product sells through Printful, `links/<id>.json` for
-  each `create_payment_link` link (by Stripe's id), and `orders/<id>.json` for each paid checkout
-  on one of the company's links, a listing's or `create_payment_link`'s. They sit outside the
-  product's package, so all outlive its retirement: its links are switched off from them, and
-  each order still ships or is still owed. Runs read them, never write them.
-- `shared/` for what teammates share across products, `bets/<slug>/BET.md`, `retired/<slug>/`
-  for killed products with their code, `routines/`, `activity.jsonl`.
+- `listings/`, `links/` and `orders/` sit outside every product's package, so all outlive its
+  retirement: its links are switched off from them, and each order still ships or is still owed.
+  Runs read them, never write them.
 
 A root holds one save or none: `company/`, a fixed folder founding publishes with one rename and
 boot reads alone (`server/paths.ts`), so no record carries a company id and no path names one.

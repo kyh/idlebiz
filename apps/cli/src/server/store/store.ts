@@ -152,7 +152,6 @@ const ProposalEndSchema = z.object({
   employeeId: z.string(),
   endedAt: z.number(),
 });
-/** A proposal that ended done: whose it was, when it was briefed and when it ended. */
 type ProposalEnd = z.infer<typeof ProposalEndSchema>;
 
 interface ActiveCompany {
@@ -206,7 +205,6 @@ const nextId = (counter: "nextActivityId" | "nextTeamMessageId"): number => {
   return id;
 };
 
-/** The company this launch runs, or null before one is founded. */
 const maybeCurrent = (): ActiveCompany | null => c().active;
 
 /** The company this launch runs. There is only ever one, so nothing takes its id; asking with none loaded is a bug in the caller. */
@@ -657,13 +655,12 @@ export const noteRunEnd = (
 
 const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
 
-/** Everything the company shelved as history. Read from disk the first time it is asked for. */
+/** Everything the company shelved as history, read from disk the first time it is asked for. */
 const shippedOf = (active: ActiveCompany): Task[] => {
   active.shipped ??= loadPackages("task", shippedDir(), shippedTaskFile, docToTask);
   return active.shipped;
 };
 
-/** Everything shelved as history, newest first. */
 export const listShippedTasks = (): Task[] => shippedOf(current()).toSorted(newestFirst);
 
 const RELEASED = " was released";
@@ -845,6 +842,7 @@ export const createProduct = (named: ProductDraft): Product => {
   return product;
 };
 
+/** What a tool is told when it names a product the company does not have. */
 export const noSuchProduct = (productId: string): string =>
   `No product "${productId}" here — the products are ${listProducts()
     .map((p) => p.id)
@@ -1084,7 +1082,6 @@ export const allocationPolicy = (): PolicyParams => current().policy;
 const patchBet = (id: string, patch: Partial<Bet>): Bet =>
   patchIn(current().bets, id, patch, saveBet);
 
-/** What a tool is told when it names a product the company does not have. */
 /**
  * Open a bet, on a product with room for another. A users bet lands on its own
  * path unless it names one; a named path over the whole site or /b, or one
@@ -1334,7 +1331,6 @@ export const judgeBets = (now: number, pulsingSince: number | null): Bet[] => {
   return changed;
 };
 
-/** How many ship summaries a brief lists. */
 const RECENT_SHIPS = 6;
 const RecentShipsSchema = z.array(z.string());
 

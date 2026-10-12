@@ -15,12 +15,7 @@ import type { Sale } from "./order";
 import { REFUND, describe } from "./order-card";
 import { takePaidCheckouts } from "./order-intake";
 
-// Each kept sale becomes one Printful order, placed with the founder's token here in main. Its
-// external id is the checkout's hash, so a restart looks it up rather than make it twice. A
-// draft charges nothing; it is confirmed only on a read that shows it still a draft, priced at
-// no more than the buyer paid less Stripe's fee on a card, with the payment made by card and
-// neither refunded nor disputed, so no restart confirms one twice or past that guard.
-// Whatever the pump cannot settle goes to the founder as a card: refunds are theirs.
+// Each kept sale through Printful, as AGENTS.md's "The order pump" describes.
 
 /** How often waiting orders are sent and sent ones' statuses read: Printful takes days to ship. */
 export const ORDER_TRACK_MS = 10 * 60_000;
