@@ -1,7 +1,14 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "../lib/fs";
+import {
+  appendJsonl,
+  atomicWrite,
+  moveDir,
+  readJsonFile,
+  readJsonlTail,
+  writeJsonFile,
+} from "../lib/fs";
 import { report } from "../lib/report";
 import {
   rootDir,
@@ -301,7 +308,7 @@ const saveRunState = (e: Employee): void => {
     sessionId: e.session?.id ?? null,
     sessionWorkspace: e.session?.workspace ?? null,
   };
-  atomicWrite(employeeRunStateFile(e.id), JSON.stringify(state, null, 2));
+  writeJsonFile(employeeRunStateFile(e.id), state);
 };
 
 const withRunState = (e: Employee): Employee => {
@@ -440,7 +447,7 @@ export const setAutopilot = (on: boolean): Company => patchCompany({ autopilot: 
 // command) would wait for anyone who later ran that exact string.
 const writeGrants = (grants: Grant[]): void => {
   const active = current();
-  atomicWrite(approvalsFile(), JSON.stringify(grants, null, 2));
+  writeJsonFile(approvalsFile(), grants);
   active.grants = grants;
 };
 
@@ -922,7 +929,7 @@ export const releaseListingId = (id: string): void => {
 };
 
 const saveListing = (listing: Listing): void => {
-  atomicWrite(listingFile(listing.id), `${JSON.stringify(listing, null, 2)}\n`);
+  writeJsonFile(listingFile(listing.id), listing);
 };
 
 /**
@@ -947,7 +954,7 @@ export const getChargeLink = (id: string): ChargeLink | null =>
   current().links.find((l) => l.id === id) ?? null;
 
 const saveChargeLink = (link: ChargeLink): void => {
-  atomicWrite(linkFile(link.id), `${JSON.stringify(link, null, 2)}\n`);
+  writeJsonFile(linkFile(link.id), link);
 };
 
 /**
@@ -1007,7 +1014,7 @@ export const setLinkState = (held: CompanyLink, state: LinkState): void => {
 export const listOrders = (): Order[] => [...current().orders];
 
 const saveOrder = (order: Order): void => {
-  atomicWrite(orderFile(order.id), `${JSON.stringify(order, null, 2)}\n`);
+  writeJsonFile(orderFile(order.id), order);
 };
 
 /**
@@ -1062,7 +1069,7 @@ export const ordersCursor = (): OrdersCursor | null =>
 
 export const setOrdersCursor = (cursor: OrdersCursor): void => {
   current();
-  atomicWrite(ordersCursorFile(), JSON.stringify(OrdersCursorSchema.parse(cursor)));
+  writeJsonFile(ordersCursorFile(), OrdersCursorSchema.parse(cursor));
 };
 
 /** Where work no bet pays for lands: the product that has waited longest for a ship. */
@@ -1243,7 +1250,7 @@ const stopOf = (t: Task): Stop | null => {
 const retune = (active: ActiveCompany): void => {
   const next = dream(active.policy, active.bets);
   if (next !== active.policy) {
-    atomicWrite(policyFile(), JSON.stringify(next, null, 2));
+    writeJsonFile(policyFile(), next);
     active.policy = next;
   }
 };
@@ -1351,7 +1358,7 @@ export const recordShip = (productId: string | null, summary: string): void => {
   // the counters are the record; the brief's list follows them
   const ships = [...active.recentShips, summary].slice(-RECENT_SHIPS);
   try {
-    atomicWrite(recentShipsFile(), JSON.stringify(ships, null, 2));
+    writeJsonFile(recentShipsFile(), ships);
   } finally {
     active.recentShips = ships;
   }
@@ -1538,7 +1545,7 @@ const noteProposalDone = (t: Task, endedAt: number): void => {
   const last: ProposalEnd = { briefedAt: t.createdAt, employeeId: t.assigneeId, endedAt };
   current().lastProposal = last;
   try {
-    atomicWrite(lastProposalFile(), JSON.stringify(last, null, 2));
+    writeJsonFile(lastProposalFile(), last);
   } catch (error) {
     report("note the last proposal", error);
   }
@@ -2139,7 +2146,7 @@ export const initStore = (): LoadReport => {
 
 // ---- activity log ----------------------------------------------------------
 const saveSinceLastLook = (active: ActiveCompany, next: Digest): void => {
-  atomicWrite(sinceLastLookFile(), JSON.stringify(next, null, 2));
+  writeJsonFile(sinceLastLookFile(), next);
   active.sinceLastLook = next;
 };
 

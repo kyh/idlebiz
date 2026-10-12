@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import path from "node:path";
 import { z } from "zod";
-import { atomicWrite, readJsonFile, readJsonFileForUpdate } from "./lib/fs";
+import { readJsonFile, readJsonFileForUpdate, writeJsonFile } from "./lib/fs";
 import { guarded } from "./lib/report";
 import { rootDir } from "./paths";
 import { jsonRecordSchema } from "@repo/domain/json";
@@ -152,7 +152,7 @@ const writeSecretsFile = ({ keys, rest }: Secrets): void => {
     ...rest,
     ...Object.fromEntries([...keys].map(([name, held]) => [name, stored(name, held)])),
   };
-  atomicWrite(secretsPath(), JSON.stringify(file, null, 2), { mode: 0o600 });
+  writeJsonFile(secretsPath(), file, { mode: 0o600 });
 };
 
 /** Seal what the founder pasted by hand; only a file that parsed gets here, so none is lost. */
