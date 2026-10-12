@@ -700,3 +700,5 @@ export const createScheduler = (
   awake: KeepAwake,
   integrations: Integrations,
 ): Scheduler => new Scheduler(driver, awake, integrations);
+
+export type { Scheduler };
