@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "@orpc/contract": "catalog:",
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.0",
     "@repo/contract": "workspace:*",
     "@repo/domain": "workspace:*",
     "@types/node": "catalog:",
