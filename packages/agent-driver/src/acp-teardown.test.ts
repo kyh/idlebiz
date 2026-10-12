@@ -78,9 +78,8 @@ const startTurn = (script: string, teardownGraceMs: number) => {
     maxSessionMs: 0,
     onEvent: () => {},
     onPermission: () => Promise.resolve({ allow: true }),
-    prompt: "work",
+    prompt: () => "work",
     signal: stop.signal,
-    systemPrompt: "",
     teardownGraceMs,
   });
   return { stop, turn };

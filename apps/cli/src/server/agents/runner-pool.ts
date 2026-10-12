@@ -28,6 +28,7 @@ import { atomicWrite, readJsonFile } from "../lib/fs";
 import { report } from "../lib/report";
 import { runnerRestFile, runBinDir, toolCacheDir, employeeMemoryDir } from "../paths";
 import { livePageOf } from "../policy/browser";
+import { turnPrompt } from "../prompts/instructions";
 import { RefusalError } from "../refusal";
 import * as store from "../store/store";
 import type { AskBox } from "./ask-box";
@@ -433,8 +434,7 @@ export class RunnerPool {
         /* empty */
       },
       onPermission: () => Promise.resolve({ allow: false }),
-      prompt,
-      systemPrompt: "",
+      prompt: () => prompt,
     });
     const outcome = this.heed(runner, res.end);
     if (outcome.kind !== "done") {
@@ -550,7 +550,6 @@ export class RunnerPool {
           PATH: pathWithLauncher(runBinDir(), agent.env.PATH),
         },
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
-        instructionsChanged: run.instructionsChanged,
         maxSessionMs: DEFAULT_MAX_SESSION_MS,
         onEvent: (e) => {
           sawOutput = true;
@@ -567,10 +566,15 @@ export class RunnerPool {
           livePage,
           taskId: run.taskId,
         }),
-        prompt: run.prompt,
+        prompt: (resumed) =>
+          turnPrompt({
+            changed: run.instructionsChanged,
+            instructions: run.instructions,
+            resumed,
+            task: run.prompt,
+          }),
         resumeSessionId,
         signal,
-        systemPrompt: run.instructions,
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
       // an ask raised before the limit hit or the login was refused must not hide it

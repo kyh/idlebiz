@@ -370,8 +370,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
         asks.push({ held, tool });
         return { allow };
       },
-      prompt: "work",
-      systemPrompt: "",
+      prompt: () => "work",
       teardownGraceMs: 500,
     });
     const pushed = execFileSync("git", ["for-each-ref"], { cwd: remote }).toString();

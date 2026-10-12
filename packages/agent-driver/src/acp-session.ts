@@ -82,12 +82,8 @@ export interface PermissionDecision {
 export interface AcpTurnOptions {
   /** Which agent to spawn, and how to make it ask before acting. */
   agent: AcpAgent;
-  /** The task, or the wake prompt when resuming. */
-  prompt: string;
-  /** AGENTS.md instructions: sent to a fresh session, and to a resumed one only when `instructionsChanged`. */
-  systemPrompt: string;
-  /** The caller's systemPrompt differs from what this resumed session was given, so send it again. */
-  instructionsChanged?: boolean;
+  /** The turn's text, given whether the stored session was resumed. */
+  prompt: (resumed: boolean) => string;
   /** Working directory — the company workspace where real work lands. */
   cwd: string;
   /** Continue this session instead of starting fresh (the employee's memory). */
@@ -145,15 +141,6 @@ export interface AcpTurnResult {
   resumed: boolean;
   usage: AgentUsage;
 }
-
-/** What the session is told this turn: the instructions ride along only when it lacks them. */
-const turnText = (opts: AcpTurnOptions, resumed: boolean): string => {
-  if (!opts.systemPrompt || (resumed && !opts.instructionsChanged)) {
-    return opts.prompt;
-  }
-  const lead = resumed ? "Your standing instructions changed. They now read:\n\n" : "";
-  return `${lead}${opts.systemPrompt}\n\n---\n\nYOUR TASK:\n\n${opts.prompt}`;
-};
 
 /**
  * How a turn ends on a failure of class `failure`: a usage limit with when the provider said it
@@ -475,7 +462,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
 
         usage.startPrompt();
         const res = await agent.request("session/prompt", {
-          prompt: [{ text: turnText(opts, resumed), type: "text" }],
+          prompt: [{ text: opts.prompt(resumed), type: "text" }],
           sessionId,
         });
         flushMessage();

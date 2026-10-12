@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runAcpTurn } from "./acp-session";
+import type { AcpTurnOptions } from "./acp-session";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 /**
@@ -37,18 +38,16 @@ afterEach(() => {
   rmSync(cwd, { force: true, recursive: true });
 });
 
-const turn = (agentScript: string, systemPrompt = "", instructionsChanged = false) =>
+const turn = (agentScript: string, prompt: AcpTurnOptions["prompt"] = () => "work") =>
   runAcpTurn({
     agent: { command: [process.execPath, "-e", agentScript], env: {}, sessionModeId: "default" },
     cwd,
     idleTimeoutMs: 0,
-    instructionsChanged,
     maxSessionMs: 0,
     onEvent: () => {},
     onPermission: () => Promise.resolve({ allow: true }),
-    prompt: "work",
+    prompt,
     resumeSessionId: "stored",
-    systemPrompt,
     teardownGraceMs: 100,
   });
 
@@ -82,24 +81,19 @@ describe("resuming a stored session", () => {
   });
 });
 
-describe("standing instructions", () => {
-  const rules = "Mark every bet link with its path.";
+/** A turn's text saying whether its stored session was resumed. */
+const sayResumed = (resumed: boolean) => `resumed: ${resumed}`;
+
+describe("the turn's text", () => {
   const rejected = JSON.stringify({ error: { code: -32_002, message: "Resource not found" } });
 
-  it("are not sent again to a resumed session that already holds them", async () => {
-    const { summary } = await turn(scriptedAgent(resumable, accepted), rules, false);
-    expect(summary).toBe("work");
+  it("is told the stored session was resumed", async () => {
+    const { summary } = await turn(scriptedAgent(resumable, accepted), sayResumed);
+    expect(summary).toBe("resumed: true");
   });
 
-  it("are sent again, said to have changed, when they differ from what the session was given", async () => {
-    const { summary } = await turn(scriptedAgent(resumable, accepted), rules, true);
-    expect(summary).toBe(
-      `Your standing instructions changed. They now read:\n\n${rules}\n\n---\n\nYOUR TASK:\n\nwork`,
-    );
-  });
-
-  it("are sent once, as to any new session, when the resume falls back to a fresh one", async () => {
-    const { summary } = await turn(scriptedAgent(resumable, rejected), rules, true);
-    expect(summary).toBe(`${rules}\n\n---\n\nYOUR TASK:\n\nwork`);
+  it("is told it was not when the resume falls back to a fresh session", async () => {
+    const { summary } = await turn(scriptedAgent(resumable, rejected), sayResumed);
+    expect(summary).toBe("resumed: false");
   });
 });

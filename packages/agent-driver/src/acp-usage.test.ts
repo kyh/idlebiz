@@ -118,8 +118,7 @@ const cutOff = (usagePerRequest?: true) =>
     maxSessionMs: 500,
     onEvent: () => {},
     onPermission: () => Promise.resolve({ allow: true }),
-    prompt: "work",
-    systemPrompt: "",
+    prompt: () => "work",
     teardownGraceMs: 100,
   });
 

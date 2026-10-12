@@ -82,9 +82,8 @@ const turn = (
     maxSessionMs: more.maxSessionMs ?? 0,
     onEvent: more.onEvent ?? (() => {}),
     onPermission: more.onPermission ?? (() => Promise.resolve({ allow: true })),
-    prompt: "work",
+    prompt: () => "work",
     resumeSessionId: more.resumeSessionId,
-    systemPrompt: "",
     teardownGraceMs: 100,
   });
 

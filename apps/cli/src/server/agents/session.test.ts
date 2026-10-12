@@ -318,8 +318,7 @@ describe("the environment an agent is spawned with", () => {
       maxSessionMs: 0,
       onEvent: () => {},
       onPermission: () => Promise.resolve({ allow: true }),
-      prompt: "work",
-      systemPrompt: "",
+      prompt: () => "work",
       teardownGraceMs: 100,
     });
     expect(end).toEqual({ kind: "completed" });
