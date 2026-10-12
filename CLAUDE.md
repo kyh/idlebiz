@@ -122,10 +122,11 @@ once: change a mechanic there, and a decision here.
   so a key an event patches is also one it refetches, or what the cancelled read carried (a hire)
   is lost.
 - **Every mutation goes through `useSubmission`** (`renderer/hooks/use-submission.ts`): a throw
-  inside an action goes to the error boundary, so the hook returns failure as state. No
-  `void action()` in a handler, no hand-rolled `mounted` refs. A read is a `useQuery` (or one of
-  the hooks over one in `queries.ts`), its failure state too, and main's answer to a change is held
-  with `setAnswer`, which outranks reads in flight as a patch does.
+  inside an action goes to the error boundary, so the hook returns failure as state. No `void` on
+  a call that can reject, which drops its refusal unseen, and no hand-rolled `mounted` refs. A
+  read is a `useQuery` (or one of the hooks over one in `queries.ts`), its failure state too, and
+  main's answer to a change is held with `setAnswer`, which outranks reads in flight as a patch
+  does.
 - **React and the office scene talk through `renderer/game/office-port.ts`**, a typed vocabulary
   over Phaser's emitter. The scene reads main's state from the window's cache, so a boot asks main
   once for each answer.

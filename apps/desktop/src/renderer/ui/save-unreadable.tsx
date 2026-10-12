@@ -1,6 +1,8 @@
 import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { api } from "@/renderer/api";
+import { useSubmission } from "@/renderer/hooks/use-submission";
 import { Curtain } from "@/renderer/ui/curtain";
+import { Failure } from "@/renderer/ui/failure";
 import { SaveIssues } from "@/renderer/ui/save-issues";
 import type { LoadSkip } from "@repo/domain/domain";
 
@@ -9,6 +11,7 @@ import type { LoadSkip } from "@repo/domain/domain";
 // loses what that build added, so it gets no Fix-or-move advice and no folder button.
 export const SaveUnreadable = ({ issues }: { issues: LoadSkip[] }) => {
   const newer = issues.every((issue) => issue.newerBuild);
+  const opening = useSubmission(() => api.save.openFolder());
   return (
     <Curtain>
       <AlertDialog.Title className="text-base text-fg">
@@ -23,16 +26,16 @@ export const SaveUnreadable = ({ issues }: { issues: LoadSkip[] }) => {
         <SaveIssues issues={issues} />
       </div>
       {newer ? null : (
-        <div className="mt-3 flex justify-end">
+        <div className="mt-3 flex flex-col items-end">
           <button
             type="button"
-            onClick={() => {
-              void api.save.openFolder();
-            }}
+            onClick={() => opening.submit()}
+            disabled={opening.submission.kind === "sending"}
             className="px-btn-accent px-btn"
           >
             Open save folder
           </button>
+          <Failure submission={opening.submission} doing="open the save folder" />
         </div>
       )}
     </Curtain>
