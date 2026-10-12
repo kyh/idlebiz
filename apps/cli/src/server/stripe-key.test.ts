@@ -5,6 +5,7 @@ import { RefusalError } from "./refusal";
 import { getSecret, setSealer, setSecret } from "./secrets";
 import { noteStripeRead, removeStripeKey, saveStripeKey, stripeKeyStatus } from "./stripe-key";
 import { fetchRealMetrics, stripeCredential } from "./metrics";
+import type { StripeAnswer } from "./metrics";
 import { tempSave } from "./test-support/save";
 
 const root = tempSave();
@@ -37,6 +38,17 @@ const stripe = (answer: (url: string) => Promise<Response>) => {
     return answer(url);
   });
   return asked;
+};
+
+/** The metrics pulse's read of the saved key, noted as the pulse notes it. */
+const pulse = async (): Promise<StripeAnswer> => {
+  const key = stripeCredential();
+  const read = await fetchRealMetrics(key, [], []);
+  if (key === null || read.stripe === null) {
+    throw new Error("the saved key was not read");
+  }
+  noteStripeRead(key, read.stripe);
+  return read.stripe;
 };
 
 const listed = () => Promise.resolve(Response.json({ data: [], has_more: false, object: "list" }));
@@ -131,20 +143,31 @@ describe("a charging key that can't read", () => {
     );
 
     await saveStripeKey("rk_live_chargesonly1234");
-    const key = stripeCredential();
-    const read = await fetchRealMetrics(key, [], []);
-    if (key === null || read.stripe === null) {
-      throw new Error("the saved key was not read");
-    }
-    noteStripeRead(key, read.stripe);
 
-    expect(read.stripe).toBe("refused");
+    expect(await pulse()).toBe("refused");
     expect(stripeKeyStatus()).toEqual({ last4: "1234", livemode: true, state: "refused" });
 
-    noteStripeRead(key, "unanswered");
+    noteStripeRead("rk_live_chargesonly1234", "unanswered");
     expect(stripeKeyStatus().state).toBe("refused");
-    noteStripeRead(key, "accepted");
+    noteStripeRead("rk_live_chargesonly1234", "accepted");
     expect(stripeKeyStatus()).toEqual({ last4: "1234", livemode: true, state: "set" });
+  });
+
+  it("reads a refused key afresh once it is saved again, since its grants are edited in place", async () => {
+    let charges = refused(403);
+    const asked = stripe((url) =>
+      url.startsWith("https://api.stripe.com/v1/payment_links") ? listed() : charges(),
+    );
+    await saveStripeKey("rk_live_grantedlater4321");
+    expect(await pulse()).toBe("refused");
+
+    charges = listed;
+    await saveStripeKey("rk_live_grantedlater4321");
+    expect(stripeKeyStatus().state).toBe("set");
+
+    expect(await pulse()).toBe("accepted");
+    expect(stripeKeyStatus()).toEqual({ last4: "4321", livemode: true, state: "set" });
+    expect(asked.filter(({ url }) => url.includes("/v1/charges"))).toHaveLength(2);
   });
 
   it("shows a key saved over a refused one as set", async () => {

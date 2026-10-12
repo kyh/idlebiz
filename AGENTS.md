@@ -992,7 +992,9 @@ buyer and the URL is where paying buyers land, so a changed one is signed anew.
   payment link and so every tagged charge is on its account; with no key saved nothing reads
   revenue. A key Stripe turns away on that read stays saved and shows in the Budget panel as
   refused (`noteStripeRead` and `stripeKeyStatus` in `server/stripe-key.ts`, asked again on each
-  pulse) until a read Stripe takes, or a key pasted over it.
+  pulse) until a read Stripe takes, or a key pasted over it. That may be the same key: a
+  restricted key's grants are edited in place, so saving one drops the read kept of it
+  (`forgetStripeRead`) and the pulse it starts asks Stripe again.
 - Stripe's and Printful's calls run through `answering` (`server/lib/vendor-call.ts`), all but the
   revenue read (`metrics.ts`, which settles each read apart) and the Printful token's check: it
   sorts how a call failed and reports an answer its schema refuses once, under the call's name,

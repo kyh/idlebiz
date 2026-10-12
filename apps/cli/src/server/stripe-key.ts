@@ -3,6 +3,7 @@ import type { VendorFault } from "./lib/vendor-call";
 import { STRIPE_SECRET_KEY, deleteSecret, getSecret, setSecret } from "./secrets";
 import { STRIPE_API, answeringStripe, isTestKey, stripeHeaders } from "./stripe-api";
 import type { StripeKeyStatus } from "@repo/domain/integrations";
+import { forgetStripeRead } from "./metrics";
 import type { StripeAnswer } from "./metrics";
 import { RefusalError } from "./refusal";
 
@@ -20,7 +21,7 @@ const SERVER_KEY = /^[rs]k_(?:live|test)_[0-9A-Za-z]+$/u;
 // them; /v1/account would turn away a restricted key granted only what charging needs.
 const PROBE = `${STRIPE_API}/v1/payment_links?limit=1`;
 
-/** The saved key the metrics pulse last found Stripe turning away, until a read Stripe takes it. */
+/** The saved key the metrics pulse last found Stripe turning away, until a read Stripe takes it or it is saved again. */
 let refusedKey: string | null = null;
 
 /** What the metrics pulse's read of `key` says of it; a refusal shows without deleting the key. */
@@ -66,6 +67,10 @@ export const saveStripeKey = async (key: string): Promise<void> => {
     throw new RefusalError(turnedAway(probed));
   }
   setSecret(STRIPE_SECRET_KEY, key);
+  // A restricted key's grants are edited in place, so the key the pulse found refused may be
+  // pasted again once it is granted Read on Charges: what was read of it no longer stands.
+  refusedKey = null;
+  forgetStripeRead();
 };
 
 export const removeStripeKey = (): void => {

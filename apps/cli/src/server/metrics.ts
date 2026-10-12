@@ -215,8 +215,8 @@ export const measureRefusal = (bet: Bet, product: Product | null): string | null
 // was refused: a null only holds the last value, and re-asking would page a
 // capped account, or every charge a restricted key may read, through again
 // every pulse. A new key reads at once, since the key is part of what is kept,
-// and so does a change to whether any money counts; only a read Stripe never
-// answered is asked again.
+// and so does a change to whether any money counts, or a key saved again
+// (`forgetStripeRead`); only a read Stripe never answered is asked again.
 const STRIPE_TTL_MS = 10 * 60_000;
 let stripeRead: {
   countTest: boolean;
@@ -225,6 +225,11 @@ let stripeRead: {
   since: number | null;
   snapshot: StripeSnapshot;
 } | null = null;
+
+/** Drop the kept read, so the next pulse asks Stripe again whatever key it reads with. */
+export const forgetStripeRead = (): void => {
+  stripeRead = null;
+};
 
 const settled = <T>(read: PromiseSettledResult<T | null>): T | null =>
   read.status === "fulfilled" ? read.value : null;
