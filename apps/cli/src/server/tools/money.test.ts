@@ -267,6 +267,74 @@ describe("create_payment_link", () => {
     expect(store.paymentLinks()).toEqual([]);
   });
 
+  it.each([
+    { replayed: { link: PAID_URL, object: "payment_link" }, what: "names no link" },
+    { replayed: { id: "plink_pro", link: PAID_URL }, what: "names a link Stripe won't look up" },
+  ])(
+    "still says the link may stand on Stripe when signed for again and the replay $what",
+    async ({ replayed }) => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { ctx } = chargingRun();
+      replayingStripe((endpoint): StripeAnswer =>
+        endpoint === "/v1/prices"
+          ? { body: { id: "price_1" }, status: 200 }
+          : { body: replayed, status: 200 },
+      );
+      const call = () => {
+        store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+        return outcomeOf(ctx, "create_payment_link", LINK);
+      };
+
+      const made = await call();
+      const replayedMade = await call();
+      expect(made.text).toContain("Stripe may have made the payment link");
+      expect(replayedMade.text).toContain("Stripe may have made the payment link");
+      expect(logged).toHaveBeenCalledTimes(2);
+      expect(store.paymentLinks()).toEqual([]);
+    },
+  );
+
+  it("records a replayed link Stripe won't look up, rather than say Stripe made none", async () => {
+    const replays = new Map<string, JsonValue>();
+    const stripe = (url: string, init: RequestInit = {}) => {
+      if (init.method !== "POST") {
+        return Promise.resolve(
+          Response.json({ error: { message: "An unknown error occurred" } }, { status: 500 }),
+        );
+      }
+      const key = new Headers(init.headers).get("Idempotency-Key") ?? "";
+      const replay = replays.get(key);
+      if (replay !== undefined) {
+        return Promise.resolve(
+          Response.json(replay, { headers: { "Idempotent-Replayed": "true" } }),
+        );
+      }
+      const made: JsonValue =
+        new URL(url).pathname === "/v1/prices"
+          ? { id: "price_1" }
+          : { active: true, id: "plink_pro", url: PAID_URL };
+      replays.set(key, made);
+      return Promise.resolve(Response.json(made));
+    };
+    const make = () => {
+      const { ctx } = chargingRun();
+      vi.stubGlobal("fetch", stripe);
+      store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+      return callTool(ctx, "create_payment_link", LINK);
+    };
+    expect(await make()).toContain(PAID_URL);
+    // the founder resets and founds Acme again, so the replay meets a save that records no link
+    rmSync(root, { force: true, recursive: true });
+    store.initStore();
+
+    expect(await make()).toContain(
+      `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL}`,
+    );
+    expect(store.paymentLinks().map(({ link }) => [link.id, link.state.kind])).toEqual([
+      ["plink_pro", "selling"],
+    ]);
+  });
+
   it("makes a new link rather than record one Stripe replays that is switched off since", async () => {
     const replays = new Map<string, JsonValue>();
     const active = new Map<string, boolean>();

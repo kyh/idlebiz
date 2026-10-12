@@ -963,7 +963,9 @@ buyer and the URL is where paying buyers land, so a changed one is signed anew.
   timeout gets back the link Stripe made rather than a second one nothing saved knows; Stripe
   replays a failure (a 500 too) for a day, so a key it answered with one moves on to the next
   (`idempotentPost`), as does a replayed link Stripe now lists as switched off (a reset, a
-  retirement or the founder switched it off since).
+  retirement or the founder switched it off since). A replayed link Stripe won't look up counts
+  as on and is read like any create's answer, since Stripe made it either way: recorded, or named
+  to the agent as one that may stand, never as no link made.
 - Before the sign-off it asks Stripe whether the key still reads payment links
   (`stripeLinkAccess`), so a key rolled, revoked or expired since it was saved leaves a Stripe
   card instead of spending a sign-off on a call that would fail; one Stripe turns away while making

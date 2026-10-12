@@ -90,15 +90,28 @@ const Switched = z.object({ active: z.boolean() });
 /**
  * Whether the link a replayed create answers with is switched off by now: Stripe replays the
  * link as it was made, and a reset, a retirement or the founder may have switched it off since.
+ *
+ * A replay naming no link, or one Stripe would not look up, counts as still on: either way Stripe
+ * made a link for this request, so it is read like any create's answer and recorded where it can
+ * be, where retiring its product switches it off. Called a failed create instead, it would tell the
+ * agent Stripe made none, and every sign-off for a day would get the same replay.
  */
 const switchedOffSince =
   (key: string) =>
   async (replayed: JsonValue): Promise<boolean> => {
-    const { id } = Created.parse(replayed);
-    const link = Switched.parse(
-      await getJson(`${STRIPE_API}/v1/payment_links/${encodeURIComponent(id)}`, stripeHeaders(key)),
+    const made = Created.safeParse(replayed);
+    if (!made.success) {
+      return false;
+    }
+    const link = await answeringStripe("payment link lookup", async () =>
+      Switched.parse(
+        await getJson(
+          `${STRIPE_API}/v1/payment_links/${encodeURIComponent(made.data.id)}`,
+          stripeHeaders(key),
+        ),
+      ),
     );
-    return !link.active;
+    return link.kind === "ok" && !link.value.active;
   };
 
 /**
