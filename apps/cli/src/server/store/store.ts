@@ -628,7 +628,7 @@ export const employeeInstructions = (employeeId: string): string => {
   return employeeBody(e, company, products);
 };
 
-export const listEmployees = (): Employee[] => [...(current().employees ?? [])];
+export const listEmployees = (): Employee[] => [...current().employees];
 
 /** A run started or settled. Memory only: a fresh boot has no live runs, so disk would only lie. */
 export const setEmployeeStatus = (id: string, status: Employee["status"]): void => {
@@ -790,7 +790,7 @@ export const requireProduct = (id: string): Product => {
   return p;
 };
 
-export const listProducts = (): Product[] => [...(current().products ?? [])];
+export const listProducts = (): Product[] => [...current().products];
 
 /**
  * Whether `id` is a product of this company, live, retired or one boot could not read: a
@@ -990,25 +990,15 @@ export const setLinkState = (held: CompanyLink, state: LinkState): void => {
   const { links, listings } = current();
   switch (held.kind) {
     case "charge": {
-      const at = links.findIndex((l) => l.id === held.link.id);
-      const link = links[at];
-      if (link === undefined) {
-        throw new Error(`no payment link ${held.link.id} is kept`);
-      }
-      const next = { ...link, state };
-      links[at] = next;
-      saveChargeLink(next);
+      recordIn(links, held.link.id, { state }, saveChargeLink);
       break;
     }
     case "print": {
-      const at = listings.findIndex((l) => l.id === held.listing.id);
-      const listing = listings[at];
-      if (listing === undefined) {
+      const cached = listings.find((l) => l.id === held.listing.id);
+      if (cached === undefined) {
         throw new Error(`no listing ${held.listing.id} is kept`);
       }
-      const next = { ...listing, paymentLink: { ...listing.paymentLink, state } };
-      listings[at] = next;
-      saveListing(next);
+      recordIn(listings, cached.id, { paymentLink: { ...cached.paymentLink, state } }, saveListing);
       break;
     }
     // no default
@@ -1079,17 +1069,17 @@ export const setOrdersCursor = (cursor: OrdersCursor): void => {
 
 /** Where work no bet pays for lands: the product that has waited longest for a ship. */
 export const attentionProduct = (): Product | null => {
-  const products = current().products ?? [];
+  const { products } = current();
   return products.toSorted((a, b) => (a.lastShipAt ?? 0) - (b.lastShipAt ?? 0))[0] ?? null;
 };
 
 // ---- bets ------------------------------------------------------------------
-export const listBets = (): Bet[] => [...(current().bets ?? [])];
+export const listBets = (): Bet[] => [...current().bets];
 
 export const getBet = (id: string): Bet | null =>
   maybeCurrent()?.bets.find((bet) => bet.id === id) ?? null;
 
-export const allocationPolicy = (): PolicyParams => current().policy ?? DEFAULT_POLICY;
+export const allocationPolicy = (): PolicyParams => current().policy;
 
 const patchBet = (id: string, patch: Partial<Bet>): Bet =>
   patchIn(current().bets, id, patch, saveBet);
@@ -1280,7 +1270,7 @@ export const measureBet = (betId: string, now: number): Bet => {
 };
 
 const closeAsKilled = (bet: Bet, reason: string, now: number): Bet =>
-  patchBet(bet.id, { state: { closedAt: now, kind: "killed", moved: bet.reading, reason } }) ?? bet;
+  patchBet(bet.id, { state: { closedAt: now, kind: "killed", moved: bet.reading, reason } });
 
 /** Someone gives up on a bet before its window does. */
 export const killBet = (betId: string, reason: string, now: number): Bet => {
@@ -1348,7 +1338,7 @@ export const judgeBets = (now: number, pulsingSince: number | null): Bet[] => {
 const RECENT_SHIPS = 6;
 const RecentShipsSchema = z.array(z.string());
 
-export const recentShips = (): readonly string[] => current().recentShips ?? [];
+export const recentShips = (): readonly string[] => current().recentShips;
 
 export const recordShip = (productId: string | null, summary: string): void => {
   const active = current();
@@ -1390,7 +1380,7 @@ export const postTeamMessage = (from: Speaker, text: string): TeamMessage => {
 };
 
 export const recentTeamMessages = (limit = 20, since = 0): TeamMessage[] => {
-  const ring = current().chat ?? [];
+  const ring = current().chat;
   const filtered = since > 0 ? ring.filter((m) => m.createdAt > since) : ring;
   return filtered.slice(-limit);
 };
@@ -1447,7 +1437,7 @@ export const getTask = (id: string): Task | null =>
   maybeCurrent()?.tasks.find((task) => task.id === id) ?? null;
 
 /** The company's open queue: everything not yet history, newest first. */
-export const listOpenTasks = (): Task[] => (current().tasks ?? []).toSorted(newestFirst);
+export const listOpenTasks = (): Task[] => current().tasks.toSorted(newestFirst);
 
 /** Open tasks by assignee and status, newest first. History is the shipping log's. */
 export const queryTasks = (query: {

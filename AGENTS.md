@@ -502,7 +502,9 @@ The store (`store/store.ts`) holds the one company this launch runs, so nothing 
 a company id: `getCompany()` is null before one is founded, and everything else throws "no
 company is loaded" — a caller that can run without one (tray, boot, the pulse) asks first.
 Lookups (`getX`) return null, `requireX` and commands throw, and null otherwise means only that a
-claim or lock race was lost. It refuses with a `RefusalError` (`server/refusal.ts`) worded as the
+claim or lock race was lost. A few reads and notes are safe with none: `listQueuedTasks` and
+`openTasksFor` answer none, and `noteRunEnd` (a run can end after a failed load drops the
+company) and `releaseListingId` note nothing. It refuses with a `RefusalError` (`server/refusal.ts`) worded as the
 sentence the agent should read; a tool turns that into its answer, refused, the page's API into
 the founder's note. Anything else thrown is a fault: answered the same way, as a fault, but
 reported to main's log.
