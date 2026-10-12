@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { ActivityEvent } from "@repo/domain/activity";
 import { BadRequestError } from "@repo/domain/errors";
-import { BET, PAID_URL, PRO_LINK, callTool, openBet, root, runAs } from "./fixtures";
+import { BET, PAID_URL, PRO_LINK, answerText, openBet, root, runAs } from "./fixtures";
 import * as store from "../store/store";
 import { fetchRealMetrics } from "../metrics";
 import { activityEvents } from "../activity";
@@ -11,7 +11,7 @@ import { activityEvents } from "../activity";
 describe("portfolio tools", () => {
   it("opens a bet for the lead and says how it is counted", async () => {
     const { ctx } = runAs("mae");
-    const answer = await callTool(ctx, "open_bet", BET);
+    const answer = await answerText(ctx, "open_bet", BET);
     const [bet] = store.listBets();
     expect(bet?.claim).toEqual({ landingPath: `/b/${bet?.id}`, metric: "users" });
     expect(answer).toContain(`/b/${bet?.id}`);
@@ -19,7 +19,7 @@ describe("portfolio tools", () => {
 
   it("opens a revenue bet counted by the money tagged with it", async () => {
     const { ctx } = runAs("mae");
-    const answer = await callTool(ctx, "open_bet", { ...BET, metric: "revenue" });
+    const answer = await answerText(ctx, "open_bet", { ...BET, metric: "revenue" });
     const [bet] = store.listBets();
     expect(bet?.claim).toEqual({ metric: "revenue" });
     expect(answer).toContain(`metadata[bet]=${bet?.id}`);
@@ -29,15 +29,15 @@ describe("portfolio tools", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     for (const name of ["Two", "Three", "Four", "Five"]) {
-      await callTool(ctx, "create_product", { description: name, name });
+      await answerText(ctx, "create_product", { description: name, name });
     }
-    expect(await callTool(ctx, "create_product", { description: "x", name: "Six" })).toBe(
+    expect(await answerText(ctx, "create_product", { description: "x", name: "Six" })).toBe(
       "The company already runs 5 products; kill_product one before starting another.",
     );
     for (const title of ["One", "Two", "Three"]) {
-      await callTool(ctx, "open_bet", { ...BET, product: "acme", title });
+      await answerText(ctx, "open_bet", { ...BET, product: "acme", title });
     }
-    expect(await callTool(ctx, "open_bet", { ...BET, product: "acme" })).toBe(
+    expect(await answerText(ctx, "open_bet", { ...BET, product: "acme" })).toBe(
       "Acme already carries 3 live bets; wait for a verdict or kill one first.",
     );
     expect(store.listProducts()).toHaveLength(5);
@@ -48,12 +48,12 @@ describe("portfolio tools", () => {
   it("starts no clock over a number nothing could read, and starts it once a source can", async () => {
     const { ctx } = runAs("mae");
     const visits = await openBet(ctx);
-    await callTool(ctx, "open_bet", { ...BET, metric: "revenue", title: "Paid tier" });
+    await answerText(ctx, "open_bet", { ...BET, metric: "revenue", title: "Paid tier" });
     const money = store.listBets().find((b) => b.claim.metric === "revenue");
     if (!money) {
       throw new Error("no revenue bet opened");
     }
-    const measure = (slug: string) => callTool(ctx, "measure_bet", { slug });
+    const measure = (slug: string) => answerText(ctx, "measure_bet", { slug });
 
     expect(await measure(money.id)).toBe(
       'No source reads revenue yet — request_integration "stripe" for the founder to add the Stripe key IdleBiz charges with in the Budget panel. Then measure_bet again.',
@@ -78,12 +78,12 @@ describe("portfolio tools", () => {
 
   it("starts no clock on revenue while Stripe is in test mode", async () => {
     const { ctx } = runAs("mae");
-    await callTool(ctx, "open_bet", { ...BET, metric: "revenue", title: "Paid tier" });
+    await answerText(ctx, "open_bet", { ...BET, metric: "revenue", title: "Paid tier" });
     const [money] = store.listBets();
     if (!money) {
       throw new Error("no revenue bet opened");
     }
-    const measure = () => callTool(ctx, "measure_bet", { slug: money.id });
+    const measure = () => answerText(ctx, "measure_bet", { slug: money.id });
     const secrets = path.join(root, "secrets.json");
 
     writeFileSync(secrets, '{"STRIPE_SECRET_KEY":"sk_test_1"}');
@@ -96,7 +96,7 @@ describe("portfolio tools", () => {
 
   it("kills a revenue bet a test key read as unmeasured, so nothing learns from it", async () => {
     const { ctx } = runAs("mae");
-    await callTool(ctx, "open_bet", { ...BET, metric: "revenue", title: "Paid tier" });
+    await answerText(ctx, "open_bet", { ...BET, metric: "revenue", title: "Paid tier" });
     const [money] = store.listBets();
     if (!money) {
       throw new Error("no revenue bet opened");
@@ -119,7 +119,7 @@ describe("portfolio tools", () => {
     for (const [betId, { reading, at }] of snap.betReadings) {
       store.setBetReading(betId, reading, at);
     }
-    await callTool(ctx, "kill_bet", {
+    await answerText(ctx, "kill_bet", {
       reason: "no live Stripe to count it",
       slug: money.id,
     });
@@ -130,7 +130,7 @@ describe("portfolio tools", () => {
   it("refuses a kill reason too long for a line in the room", async () => {
     const { ctx } = runAs("mae");
     const bet = await openBet(ctx);
-    const kill = (reason: string) => callTool(ctx, "kill_bet", { reason, slug: bet.id });
+    const kill = (reason: string) => answerText(ctx, "kill_bet", { reason, slug: bet.id });
     await expect(kill("x".repeat(201))).rejects.toThrow(BadRequestError);
     expect(store.getBet(bet.id)?.state.kind).toBe("open");
     expect(await kill("x".repeat(200))).toContain("Killed");
@@ -147,7 +147,7 @@ describe("portfolio tools", () => {
     activityEvents.on("activity", listen);
     try {
       await openBet(ctx);
-      await callTool(ctx, "message_team", { text: "on it" });
+      await answerText(ctx, "message_team", { text: "on it" });
     } finally {
       activityEvents.off("activity", listen);
     }
@@ -171,8 +171,8 @@ describe("portfolio tools", () => {
     };
     activityEvents.on("activity", listen);
     try {
-      await callTool(ctx, "open_bet", { ...BET, hypothesis });
-      await callTool(ctx, "message_team", { text: "m".repeat(500) });
+      await answerText(ctx, "open_bet", { ...BET, hypothesis });
+      await answerText(ctx, "message_team", { text: "m".repeat(500) });
     } finally {
       activityEvents.off("activity", listen);
     }
@@ -194,7 +194,7 @@ describe("name_product", () => {
     activityEvents.on("activity", listen);
     let answer: string | null = null;
     try {
-      answer = await callTool({ ...ctx, run: { ...ctx.run, productId: id } }, "name_product", {
+      answer = await answerText({ ...ctx, run: { ...ctx.run, productId: id } }, "name_product", {
         description: "Invoices that chase themselves.",
         name: "Ledgerly",
       });
@@ -220,9 +220,9 @@ describe("name_product", () => {
     const { ctx } = runAs("mae");
     const gadget = store.createProduct({ description: "x", name: "Gadget" });
     const draft = { description: "A thing.", name: "Widget" };
-    await callTool(ctx, "name_product", { ...draft, product: gadget.id });
+    await answerText(ctx, "name_product", { ...draft, product: gadget.id });
     expect(store.getProduct(gadget.id)?.name).toBe("Widget");
-    expect(await callTool(ctx, "name_product", { ...draft, product: "nope" })).toContain(
+    expect(await answerText(ctx, "name_product", { ...draft, product: "nope" })).toContain(
       'No product "nope" here',
     );
   });
@@ -230,7 +230,7 @@ describe("name_product", () => {
   it("turns anyone but the lead away", async () => {
     const { ctx } = runAs("priya");
     const before = store.listProducts()[0]?.name;
-    expect(await callTool(ctx, "name_product", { description: "x", name: "Mine" })).toContain(
+    expect(await answerText(ctx, "name_product", { description: "x", name: "Mine" })).toContain(
       "Only the team lead names a product",
     );
     expect(store.listProducts()[0]?.name).toBe(before);
@@ -261,7 +261,7 @@ describe("kill_product", () => {
       ),
     );
 
-    const answer = await callTool(ctx, "kill_product", { reason: "dud", slug: side.id });
+    const answer = await answerText(ctx, "kill_product", { reason: "dud", slug: side.id });
 
     expect(store.getProduct(side.id)).toBeNull();
     expect(answer).toContain(

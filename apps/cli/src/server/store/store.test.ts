@@ -20,7 +20,7 @@ import { parseDoc, serializeDoc } from "./frontmatter";
 import { taskToDoc } from "./task-codec";
 import * as store from "./store";
 import { createScheduler } from "../scheduler";
-import { agentDriver } from "../agents/runner-pool";
+import { runnerPool } from "../agents/runner-pool";
 import {
   alumniDir,
   companyDir,
@@ -58,7 +58,7 @@ const integrations: Integrations = {
   setEnv: unasked,
 };
 /** The app's own runner, whose seal no test has checked: its ticks start nothing. */
-const scheduler = createScheduler(agentDriver, asleep, integrations);
+const scheduler = createScheduler(runnerPool, asleep, integrations);
 
 /** A hire as `createEmployee` takes one, at the first desk. */
 const recruit = (name: string) => ({ ...hire(name), deskIndex: 0 });

@@ -351,10 +351,10 @@ tools/
   `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the idle loop,
   which alone keeps the Mac awake, through `keep-awake.ts`), `founder-actions.ts` (what the
   founder hands the team, filed and queued through the scheduler), `company-actions.ts` (a change
-  everyone hears about), `agents/` (runs: `runner-pool.ts` the runners, their rests and each
-  task's turn, `session.ts` an ACP session under its seal and every permission ask it raises,
-  `run-workspace.ts` the folders and env main readies a run, `ask-box.ts` its one ask of the
-  founder), `control-plane.ts` (HTTP on a unix socket per run, which the agents' `idlebiz`
+  everyone hears about), `agents/` (runs: `runner-pool.ts` the `RunnerPool`, its runners, their
+  rests and each task's turn, `session.ts` an ACP session under its seal and every permission ask
+  it raises, `run-workspace.ts` the folders and env main readies a run, `ask-box.ts` its one ask
+  of the founder), `control-plane.ts` (HTTP on a unix socket per run, which the agents' `idlebiz`
   command calls back into; `agent-launcher.ts` writes that command at boot),
   `tool-specs.ts` (every company tool, described once) and `tools/` (each bound to its
   implementation: `define.ts` the binding, the asks and the holds, then the team's, portfolio,
@@ -521,9 +521,9 @@ answers is shaped once (`ToolAnswerSchema`) for both ends.
 - Every call ends in one of `TOOL_OUTCOMES`, the verb's exit code, which the instructions render:
   done (0) is what the implementation returns, refused (1) a `RefusalError` or the lead-only
   refusal, a fault (2) anything else thrown, reported to main's log, and held (4) a call waiting
-  on the founder (a sign-off, an integration: `holdFor` in `server/tools/define.ts`). An ask that
-  did not reach the founder is refused; `ask_boss` and `request_integration`, whose call is the
-  ask, are done once it does. The verb prints the answer on stdout whichever it is, so
+  on the founder (a sign-off, an integration: `holdOnFounder` in `server/tools/define.ts`). An ask
+  that did not reach the founder is refused; `ask_boss` and `request_integration`, whose call is
+  the ask, are done once it does. The verb prints the answer on stdout whichever it is, so
   `idlebiz deploy && …` stops at a deploy awaiting sign-off. A call that never reached main, or
   that main could not take (a body that does not parse), exits 1 with why on stderr.
 - A change everyone should hear about (a bet, a product, autopilot) goes through

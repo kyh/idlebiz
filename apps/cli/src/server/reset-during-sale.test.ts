@@ -53,7 +53,6 @@ describe("a reset while Stripe makes a signed payment link", () => {
         return stripe.promise;
       },
       deploy: unasked("deployed"),
-      driver: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
       employee,
       linkAccess: () => Promise.resolve({ kind: "granted" }),
       printListing: {
@@ -65,6 +64,7 @@ describe("a reset while Stripe makes a signed payment link", () => {
       },
       productionHosts: unasked("read domains"),
       run: { betId: null, origin: "founder", productId: "acme", runId: "run", taskId: "task" },
+      runners: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
       setEnv: unasked("set a variable"),
     };
     const link = { amountUsd: 9, name: "Pro plan" };

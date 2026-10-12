@@ -10,7 +10,7 @@ import { holdsStripeSecretKey } from "../stripe-api";
 import { TOOL_SPECS } from "../tool-specs";
 import type { ToolName } from "../tool-specs";
 import { keepEnvValue, serverOnlyValueIn, teamSetEnv, unshippableEnvValues } from "../vercel-env";
-import { define, holdFor, post, productFor, requireSignOff } from "./define";
+import { define, holdOnFounder, post, productFor, requireSignOff } from "./define";
 import type { RunContext, Tool } from "./define";
 
 export const VERCEL_WAITING =
@@ -24,7 +24,7 @@ export const needVercel = (
   sent: string,
   why: string,
 ): never =>
-  holdFor(ctx, { integration: "vercel", productId, reason, type: "integration" }, sent, why);
+  holdOnFounder(ctx, { integration: "vercel", productId, reason, type: "integration" }, sent, why);
 
 /** What the founder signs for a deploy: the product, and the Vercel project it lands in. */
 const deployAction = (productId: string, target: DeployTarget): string =>
@@ -106,7 +106,7 @@ export const VERCEL_TOOLS = {
     }
     const token = getSecret(VERCEL_TOKEN);
     if (!token) {
-      return holdFor(
+      return holdOnFounder(
         ctx,
         {
           integration: "vercel",
@@ -132,7 +132,7 @@ export const VERCEL_TOOLS = {
     const deployed = await ctx.deploy({ cwd: product.workspaceDir, target, token, unshippable });
     if (deployed.kind === "name-taken") {
       const refused = `Nothing was deployed: Vercel already has a project named "${deployed.name}", and ${product.name} is not bound to it.`;
-      return holdFor(
+      return holdOnFounder(
         ctx,
         {
           integration: "vercel",
@@ -179,7 +179,7 @@ export const VERCEL_TOOLS = {
     }
     const token = getSecret(VERCEL_TOKEN);
     if (!token) {
-      return holdFor(
+      return holdOnFounder(
         ctx,
         {
           integration: "vercel",

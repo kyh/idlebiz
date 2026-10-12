@@ -11,14 +11,14 @@ import {
   LISTED_URL,
   TOKEN,
   VERCEL,
-  callTool,
+  answerText,
   replayingStripe,
   revenueBet,
   root,
   runAs,
 } from "./fixtures";
 import * as store from "../store/store";
-import { callTool as outcomeOf } from "./index";
+import { callTool } from "./index";
 import { printListing } from "../print-listing";
 import { productionHosts } from "../vercel";
 
@@ -176,7 +176,7 @@ describe("sell_print", () => {
   it("prices it with Printful, then holds it for the founder's sign-off before Stripe is asked", async () => {
     const { ctx, asked, sent } = sellingRun();
 
-    expect(await callTool(ctx, "sell_print", PRINT)).toBe(
+    expect(await answerText(ctx, "sell_print", PRINT)).toBe(
       `Held for the founder's sign-off on "${PRINT_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
     );
     expect(asked).toEqual([{ command: PRINT_ACTION, rule: "payments", type: "approval" }]);
@@ -193,7 +193,7 @@ describe("sell_print", () => {
     const action = `${PRINT_ACTION} for bet ${bet.id}`;
     store.grantApproval(ctx.run.taskId, action);
 
-    const answer = await callTool(ctx, "sell_print", { ...PRINT, bet: bet.id });
+    const answer = await answerText(ctx, "sell_print", { ...PRINT, bet: bet.id });
 
     expect(answer).toBe(
       `Listed "Launch tee" on Acme at $28.00 plus $7.99 shipping, US addresses only: ${LISTED_URL}\nPrintful charges up to $18.20 to print and ship each one to the US addresses IdleBiz priced it for; a buyer where tax runs higher costs more, and an order that would cost Printful more than it took waits on the founder. Each paid order goes to Printful on its own; read_orders shows them. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
@@ -267,7 +267,7 @@ describe("sell_print", () => {
     expect(store.listListings()).toMatchObject([listing]);
     store.initStore();
     expect(store.listListings()).toMatchObject([listing]);
-    expect(await callTool(ctx, "sell_print", { ...PRINT, bet: bet.id })).toContain(
+    expect(await answerText(ctx, "sell_print", { ...PRINT, bet: bet.id })).toContain(
       "Held for the founder's sign-off",
     );
   });
@@ -279,7 +279,7 @@ describe("sell_print", () => {
       PRINT_ACTION.replace("variants 4012, 4013", "variants 4012"),
     );
 
-    await callTool(ctx, "sell_print", { ...PRINT, variantIds: [4012] });
+    await answerText(ctx, "sell_print", { ...PRINT, variantIds: [4012] });
 
     const link = sent.find((s) => s.path === "/v1/payment_links");
     expect(Object.keys(link?.form ?? {}).filter((k) => k.startsWith("custom_fields"))).toEqual([]);
@@ -292,7 +292,7 @@ describe("sell_print", () => {
       const { ctx, asked, sent } = sellingRun();
 
       // (1820 + 30) / 0.956 = 1935.1…, less the $7.99 the buyer pays for shipping
-      expect(await callTool(ctx, "sell_print", { ...PRINT, priceUsd })).toBe(
+      expect(await answerText(ctx, "sell_print", { ...PRINT, priceUsd })).toBe(
         `$${priceUsd} would lose money on every sale: Printful charges up to $18.20 to print one sold at that price and ship it to the US addresses IdleBiz prices it for, the buyer pays $7.99 of that as shipping, and Stripe keeps up to 4.4% + $0.30. Every price under $11.37 loses money: price it above that, with the margin the bet needs.`,
       );
       expect(asked).toEqual([]);
@@ -302,7 +302,7 @@ describe("sell_print", () => {
 
   it("takes a price exactly at the floor to the founder", async () => {
     const { ctx, asked } = sellingRun();
-    await callTool(ctx, "sell_print", { ...PRINT, priceUsd: 11.37 });
+    await answerText(ctx, "sell_print", { ...PRINT, priceUsd: 11.37 });
     expect(asked).toEqual([
       {
         command: PRINT_ACTION.replace("$28.00", "$11.37"),
@@ -325,7 +325,7 @@ describe("sell_print", () => {
     fakeSellers();
     store.grantApproval(ctx.run.taskId, PRINT_ACTION);
 
-    const answer = await callTool(ctx, "sell_print", PRINT);
+    const answer = await answerText(ctx, "sell_print", PRINT);
 
     expect(answer).toContain(`Listed "Launch tee" on Acme at $28.00`);
     expect(answer).not.toContain("test mode");
@@ -341,7 +341,7 @@ describe("sell_print", () => {
     async ({ grants }) => {
       const { ctx, asked, sent } = sellingRun({}, grants);
 
-      expect(await callTool(ctx, "sell_print", PRINT)).toContain(
+      expect(await answerText(ctx, "sell_print", PRINT)).toContain(
         "Stripe won't let IdleBiz's key make shipping rates or read checkouts and charges: the founder has a Stripe card waiting",
       );
       expect(asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
@@ -353,7 +353,7 @@ describe("sell_print", () => {
     const { ctx, asked, sent } = sellingRun();
     store.grantApproval(ctx.run.taskId, PRINT_ACTION.replace(DESIGN_SHA, "0".repeat(64)));
 
-    expect(await callTool(ctx, "sell_print", PRINT)).toContain("Held for the founder's sign-off");
+    expect(await answerText(ctx, "sell_print", PRINT)).toContain("Held for the founder's sign-off");
     expect(asked).toEqual([{ command: PRINT_ACTION, rule: "payments", type: "approval" }]);
     expect(outward(sent).map((s) => s.host)).not.toContain("api.stripe.com");
   });
@@ -366,7 +366,7 @@ describe("sell_print", () => {
     }
 
     const answers = await Promise.all(
-      [ctx, other].map((run) => callTool(run, "sell_print", PRINT)),
+      [ctx, other].map((run) => answerText(run, "sell_print", PRINT)),
     );
 
     for (const answer of answers) {
@@ -380,7 +380,7 @@ describe("sell_print", () => {
     const keysOf = async () => {
       const sent = fakeSellers({ linkTimesOut: true });
       store.grantApproval(ctx.run.taskId, PRINT_ACTION);
-      expect(await callTool(ctx, "sell_print", PRINT)).toContain("Stripe made no payment link");
+      expect(await answerText(ctx, "sell_print", PRINT)).toContain("Stripe made no payment link");
       return outward(sent)
         .filter((s) => s.host === "api.stripe.com")
         .map((s) => s.idempotencyKey);
@@ -408,7 +408,7 @@ describe("sell_print", () => {
     }, sellers);
     const call = () => {
       store.grantApproval(ctx.run.taskId, PRINT_ACTION);
-      return callTool(ctx, "sell_print", PRINT);
+      return answerText(ctx, "sell_print", PRINT);
     };
 
     expect(await call()).toContain("Stripe made no payment link: An unknown error occurred");
@@ -428,7 +428,7 @@ describe("sell_print", () => {
     }, sellers);
     store.grantApproval(ctx.run.taskId, PRINT_ACTION);
 
-    const listed = await outcomeOf(ctx, "sell_print", PRINT);
+    const listed = await callTool(ctx, "sell_print", PRINT);
     expect(listed.kind).toBe("refused");
     expect(listed.text).toContain("Stripe may have made the payment link");
     expect(logged).toHaveBeenCalledExactlyOnceWith(
@@ -458,14 +458,14 @@ describe("sell_print", () => {
   ])("refuses a print file Printful should not fetch: $said", async ({ said, url }) => {
     const { ctx, asked, sent } = sellingRun();
     const placements = [{ ...PRINT.placements[0], fileUrl: url }];
-    expect(await callTool(ctx, "sell_print", { ...PRINT, placements })).toContain(said);
+    expect(await answerText(ctx, "sell_print", { ...PRINT, placements })).toContain(said);
     expect(asked).toEqual([]);
     expect(outward(sent)).toEqual([]);
   });
 
   it("refuses a file the site answers with its page rather than an image", async () => {
     const { ctx, sent } = sellingRun({}, { fileType: "text/html" });
-    expect(await callTool(ctx, "sell_print", PRINT)).toBe(
+    expect(await answerText(ctx, "sell_print", PRINT)).toBe(
       "Printful could not fetch https://acme-site.vercel.app/print/tee-1.png: it serves text/html, not an image. Deploy the print file first, and check it loads as an image.",
     );
     expect(outward(sent)).toEqual([]);
@@ -506,7 +506,7 @@ describe("sell_print", () => {
     "leaves the founder a $ask.integration card for a missing key",
     async ({ ask, missing, said }) => {
       const { ctx, asked, sent } = sellingRun(missing);
-      expect(await callTool(ctx, "sell_print", PRINT)).toContain(said);
+      expect(await answerText(ctx, "sell_print", PRINT)).toContain(said);
       expect(asked).toEqual([ask]);
       expect(sent).toEqual([]);
     },
@@ -529,7 +529,7 @@ describe("sell_print", () => {
       Promise.resolve(answers.get(new URL(url).host)?.() ?? new Response(null, { status: 404 })),
     );
 
-    expect(await callTool(ctx, "sell_print", PRINT)).toContain(
+    expect(await answerText(ctx, "sell_print", PRINT)).toContain(
       "Printful turned IdleBiz's token away, which happens when it expires",
     );
     expect(asked).toMatchObject([{ integration: "printful", type: "integration" }]);
@@ -537,7 +537,7 @@ describe("sell_print", () => {
 
   it("refuses a bet whose money the listing could not be counted for", async () => {
     const { ctx, sent } = sellingRun();
-    expect(await callTool(ctx, "sell_print", { ...PRINT, bet: "no-such-bet" })).toContain(
+    expect(await answerText(ctx, "sell_print", { ...PRINT, bet: "no-such-bet" })).toContain(
       '"no-such-bet" is not a revenue bet on acme',
     );
     expect(sent).toEqual([]);
@@ -549,7 +549,7 @@ describe("sell_print", () => {
     store.grantApproval(ctx.run.taskId, `${PRINT_ACTION} for bet ${bet.id}`);
     store.measureBet(bet.id, Date.now());
 
-    expect(await callTool(ctx, "sell_print", { ...PRINT, bet: bet.id })).toContain(
+    expect(await answerText(ctx, "sell_print", { ...PRINT, bet: bet.id })).toContain(
       'Listed "Launch tee" on Acme',
     );
     expect(outward(sent).filter((s) => s.host === "api.stripe.com")).not.toEqual([]);
@@ -558,7 +558,7 @@ describe("sell_print", () => {
   it("tells a product with no Vercel project to deploy the file first", async () => {
     const { ctx, sent } = sellingRun();
     store.setProductVercel("acme", null);
-    expect(await callTool(ctx, "sell_print", PRINT)).toBe(
+    expect(await answerText(ctx, "sell_print", PRINT)).toBe(
       "Acme has no Vercel project yet: deploy it with the print file, which makes one, then list it.",
     );
     expect(sent).toEqual([]);
@@ -601,7 +601,7 @@ describe("printful_catalog", () => {
       products: [CATALOG_TEE],
       total: 120,
     });
-    expect(await callTool(ctx, "printful_catalog", {})).toBe(
+    expect(await answerText(ctx, "printful_catalog", {})).toBe(
       `Printful's catalog, from product 1 of 120 that ship to the US (id: name — techniques; discontinued ones left out). Pass "product":<id> for its placements and variants. Pass "offset":50 for the next page.\n71: Unisex Staple T-Shirt (Bella + Canvas 3001) — dtg`,
     );
     expect(queries).toEqual([{ offset: 0 }]);
@@ -616,7 +616,7 @@ describe("printful_catalog", () => {
         { id: 4013, label: "Black / M" },
       ],
     });
-    expect(await callTool(ctx, "printful_catalog", { product: 71 })).toBe(
+    expect(await answerText(ctx, "printful_catalog", { product: 71 })).toBe(
       "71: Unisex Staple T-Shirt\nPlacements, as sell_print's placement (technique): front (dtg)\nVariants, as sell_print's variantIds (id: colour / size):\n4012: Black / S\n4013: Black / M",
     );
     expect(queries).toEqual([{ product: 71 }]);
@@ -624,14 +624,16 @@ describe("printful_catalog", () => {
 
   it("leaves the founder a Printful card with no token", async () => {
     const { asked, ctx, queries } = catalogRun({ kind: "refused" }, { printful: true });
-    expect(await callTool(ctx, "printful_catalog", {})).toContain("IdleBiz has no Printful token");
+    expect(await answerText(ctx, "printful_catalog", {})).toContain(
+      "IdleBiz has no Printful token",
+    );
     expect(queries).toEqual([]);
     expect(asked).toMatchObject([{ integration: "printful", type: "integration" }]);
   });
 
   it("asks for a new token once Printful turns the saved one away", async () => {
     const { asked, ctx } = catalogRun({ kind: "refused" });
-    expect(await callTool(ctx, "printful_catalog", {})).toContain(
+    expect(await answerText(ctx, "printful_catalog", {})).toContain(
       "Printful turned IdleBiz's token away",
     );
     expect(asked).toMatchObject([{ integration: "printful", type: "integration" }]);

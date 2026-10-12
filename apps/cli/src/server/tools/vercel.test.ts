@@ -10,14 +10,14 @@ import {
   DEPLOYED,
   TOKEN,
   VERCEL,
-  callTool,
+  answerText,
   connectVercel,
   deployingRun,
   root,
   runAs,
 } from "./fixtures";
 import * as store from "../store/store";
-import { callTool as outcomeOf } from "./index";
+import { callTool } from "./index";
 
 const NEW_ACTION = "deploy acme to production on a new Vercel project named acme";
 const NEW_PROJECT = { projectId: "prj_new", projectName: "acme", teamId: null };
@@ -27,7 +27,7 @@ describe("deploy", () => {
     connectVercel();
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
     store.setProductVercel("acme", VERCEL);
-    expect(await outcomeOf(ctx, "deploy", {})).toEqual({
+    expect(await callTool(ctx, "deploy", {})).toEqual({
       kind: "held",
       text: `Held for the founder's sign-off on "${BOUND_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
     });
@@ -41,7 +41,7 @@ describe("deploy", () => {
     const product = store.setProductVercel("acme", VERCEL);
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
-    expect(await callTool(ctx, "deploy", {})).toBe(
+    expect(await answerText(ctx, "deploy", {})).toBe(
       "Deployed Acme to production: https://acme-1.vercel.app",
     );
     expect(deploys).toEqual([
@@ -52,7 +52,7 @@ describe("deploy", () => {
         unshippable: [{ kind: "held", name: "VERCEL_TOKEN", value: TOKEN }],
       },
     ]);
-    expect(await callTool(ctx, "deploy", {})).toContain("Held for the founder's sign-off");
+    expect(await answerText(ctx, "deploy", {})).toContain("Held for the founder's sign-off");
     expect(deploys).toHaveLength(1);
   });
 
@@ -62,7 +62,7 @@ describe("deploy", () => {
     store.setProductVercel("acme", VERCEL);
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
-    expect(await callTool(ctx, "deploy", {})).toBe(
+    expect(await answerText(ctx, "deploy", {})).toBe(
       "Deployed Acme to production: https://acme.vercel.app (this deployment: https://acme-1.vercel.app)",
     );
   });
@@ -70,11 +70,11 @@ describe("deploy", () => {
   it("puts a product bound to nothing into a project named for it, and binds it there", async () => {
     connectVercel();
     const { ctx, asked, deploys } = deployingRun({ ...DEPLOYED, project: NEW_PROJECT });
-    expect(await callTool(ctx, "deploy", {})).toContain(`sign-off on "${NEW_ACTION}"`);
+    expect(await answerText(ctx, "deploy", {})).toContain(`sign-off on "${NEW_ACTION}"`);
     expect(asked).toEqual([{ command: NEW_ACTION, rule: "deploy", type: "approval" }]);
     store.grantApproval(ctx.run.taskId, NEW_ACTION);
 
-    expect(await callTool(ctx, "deploy", {})).toBe(
+    expect(await answerText(ctx, "deploy", {})).toBe(
       "Deployed Acme to production: https://acme-1.vercel.app\nAcme is now bound to the new Vercel project acme, which counts its visitors.",
     );
     expect(deploys.map((d) => d.target)).toEqual([{ kind: "new", name: "acme" }]);
@@ -87,7 +87,7 @@ describe("deploy", () => {
     const { ctx } = deployingRun({ kind: "failed", project: NEW_PROJECT, reason });
     store.grantApproval(ctx.run.taskId, NEW_ACTION);
 
-    expect(await callTool(ctx, "deploy", {})).toBe(
+    expect(await answerText(ctx, "deploy", {})).toBe(
       `The deploy of Acme failed: ${reason}\nAcme is now bound to the new Vercel project acme, which counts its visitors.`,
     );
     expect(store.getProduct("acme")?.vercel).toEqual(NEW_PROJECT);
@@ -105,7 +105,7 @@ describe("deploy", () => {
     };
     store.grantApproval(ctx.run.taskId, NEW_ACTION);
 
-    expect(await callTool(ctx, "deploy", {})).toBe(
+    expect(await answerText(ctx, "deploy", {})).toBe(
       "Deployed Acme to production: https://acme-1.vercel.app",
     );
     expect(store.getProduct("acme")?.vercel).toEqual(VERCEL);
@@ -116,7 +116,7 @@ describe("deploy", () => {
     const { ctx, asked } = deployingRun({ kind: "name-taken", name: "acme" });
     store.grantApproval(ctx.run.taskId, NEW_ACTION);
 
-    expect(await callTool(ctx, "deploy", {})).toContain(
+    expect(await answerText(ctx, "deploy", {})).toContain(
       'Vercel already has a project named "acme"',
     );
     expect(asked).toEqual([
@@ -139,7 +139,7 @@ describe("deploy", () => {
       `deploy ${side.id} to production on a new Vercel project named ${side.id}`,
     );
 
-    await expect(callTool(ctx, "deploy", { product: side.id })).rejects.toThrow(
+    await expect(answerText(ctx, "deploy", { product: side.id })).rejects.toThrow(
       'Unrecognized key: "product"',
     );
     expect(asked).toEqual([]);
@@ -153,7 +153,7 @@ describe("deploy", () => {
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
     store.setProductVercel("acme", VERCEL);
 
-    expect(await callTool(companyRun, "deploy", {})).toBe(
+    expect(await answerText(companyRun, "deploy", {})).toBe(
       "Your run is on no product, so it has no folder to deploy: a deploy ships the folder of the run's own product, which that run builds and checks right before the call. Hand the deploy to a teammate on the product with delegate.",
     );
     expect(asked).toEqual([]);
@@ -174,7 +174,7 @@ describe("deploy", () => {
     );
     writeFileSync(path.join(product.workspaceDir, "ai.js"), `const key = "${key}";`);
 
-    expect(await callTool(ctx, "deploy", {})).toBe(
+    expect(await answerText(ctx, "deploy", {})).toBe(
       "Nothing was deployed: ai.js holds the value set_env set as OPENAI_API_KEY on acme, and a deploy would publish it. Take it out of the folder, read it from process.env.OPENAI_API_KEY instead, then deploy again.",
     );
     expect(asked).toEqual([]);
@@ -190,7 +190,7 @@ describe("deploy", () => {
     );
     writeFileSync(path.join(product.workspaceDir, "pay.js"), 'const key = "sk_live_founders_own";');
 
-    const answer = await callTool(ctx, "deploy", {});
+    const answer = await answerText(ctx, "deploy", {});
 
     expect(answer).toContain("pay.js holds IdleBiz's own STRIPE_SECRET_KEY");
     expect(answer).not.toContain("sk_live_founders_own");
@@ -200,7 +200,7 @@ describe("deploy", () => {
 
   it("asks for Vercel, not a sign-off, while no key is saved", async () => {
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
-    expect(await callTool(ctx, "deploy", {})).toContain("Vercel is not connected");
+    expect(await answerText(ctx, "deploy", {})).toContain("Vercel is not connected");
     expect(asked).toEqual([
       { integration: "vercel", productId: "acme", reason: "to deploy Acme", type: "integration" },
     ]);
@@ -220,7 +220,7 @@ describe("deploy", () => {
       },
     };
 
-    expect(await callTool(ctx, "deploy", {})).toContain(
+    expect(await answerText(ctx, "deploy", {})).toContain(
       "Vercel turned IdleBiz's token away: the founder has a Vercel card waiting",
     );
     expect(checked).toEqual([TOKEN]);
@@ -233,7 +233,7 @@ describe("deploy", () => {
       },
     ]);
     expect(run.deploys).toEqual([]);
-    expect(await callTool(run.ctx, "deploy", {})).toBe(
+    expect(await answerText(run.ctx, "deploy", {})).toBe(
       "Deployed Acme to production: https://acme-1.vercel.app",
     );
   });
@@ -249,12 +249,12 @@ describe("deploy", () => {
       checkVercelToken: () => Promise.reject(new TypeError("fetch failed")),
     };
 
-    expect(await callTool(ctx, "deploy", {})).toBe(
+    expect(await answerText(ctx, "deploy", {})).toBe(
       "Vercel could not be asked whether IdleBiz's token still works (fetch failed); try again.",
     );
     expect(run.asked).toEqual([]);
     expect(logged).not.toHaveBeenCalled();
-    expect(await callTool(run.ctx, "deploy", {})).toContain("Deployed Acme");
+    expect(await answerText(run.ctx, "deploy", {})).toContain("Deployed Acme");
   });
 });
 
@@ -287,7 +287,7 @@ describe("set_env", () => {
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
-    const answer = await callTool(ctx, "set_env", {
+    const answer = await answerText(ctx, "set_env", {
       name: "STRIPE_KEY",
       value: "sk_live_founders_own",
     });
@@ -304,7 +304,7 @@ describe("set_env", () => {
       const { ctx, sets } = settingRun();
       store.setProductVercel("acme", VERCEL);
 
-      const answer = await callTool(ctx, "set_env", { name: "STRIPE_KEY", value });
+      const answer = await answerText(ctx, "set_env", { name: "STRIPE_KEY", value });
 
       expect(answer).toBe(
         "STRIPE_KEY was not set: that value is a Stripe secret key (sk_), which can charge, refund and pay out on the founder's whole account, and no product holds one. Charging is create_payment_link's; a product that reads Stripe itself gets a restricted key (rk_) from the founder, granted only what it reads (see \"Checking who paid\").",
@@ -320,7 +320,7 @@ describe("set_env", () => {
     store.setProductVercel("acme", VERCEL);
 
     expect(
-      await callTool(ctx, "set_env", {
+      await answerText(ctx, "set_env", {
         name: "STRIPE_CHECKOUT_READ_KEY",
         value: "rk_live_checkoutReadOnly1",
       }),
@@ -335,7 +335,7 @@ describe("set_env", () => {
     const publishable = "pk_live_acmePublishable1";
 
     expect(
-      await callTool(ctx, "set_env", {
+      await answerText(ctx, "set_env", {
         name: "NEXT_PUBLIC_STRIPE_KEY",
         value: publishable,
       }),
@@ -355,7 +355,7 @@ describe("set_env", () => {
     };
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
-    expect(await callTool(deploying, "deploy", {})).toContain("Deployed Acme");
+    expect(await answerText(deploying, "deploy", {})).toContain("Deployed Acme");
     expect(deploys[0]?.unshippable).toEqual([{ kind: "held", name: "VERCEL_TOKEN", value: TOKEN }]);
   });
 
@@ -364,7 +364,7 @@ describe("set_env", () => {
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
-    const answer = await callTool(ctx, "set_env", {
+    const answer = await answerText(ctx, "set_env", {
       name: "VITE_STRIPE_KEY",
       value: "rk_live_checkoutReadOnly1",
     });
@@ -382,7 +382,7 @@ describe("set_env", () => {
     store.setProductVercel("acme", VERCEL);
 
     expect(
-      await callTool(ctx, "set_env", {
+      await answerText(ctx, "set_env", {
         name: "NEXT_PUBLIC_STRIPE_KEY",
         value: "sk_live_foundersUnrestricted1",
       }),
@@ -396,9 +396,9 @@ describe("set_env", () => {
       connectVercel();
       const { ctx, sets } = settingRun();
       store.setProductVercel("acme", VERCEL);
-      await callTool(ctx, "set_env", { name: "DB_KEY", value: "opaqueServerOnly1234" });
+      await answerText(ctx, "set_env", { name: "DB_KEY", value: "opaqueServerOnly1234" });
 
-      const answer = await callTool(ctx, "set_env", { name: "NEXT_PUBLIC_DB_KEY", value });
+      const answer = await answerText(ctx, "set_env", { name: "NEXT_PUBLIC_DB_KEY", value });
 
       expect(answer).toBe(
         "NEXT_PUBLIC_DB_KEY was not set: that value is the one set_env keeps as DB_KEY on acme, server-only, and a NEXT_PUBLIC_ name would build it into the page, where every visitor reads it. Server code reads it as process.env.DB_KEY; a public name is only for what any visitor may see, such as a Stripe publishable key (pk_).",
@@ -414,7 +414,7 @@ describe("set_env", () => {
     const { ctx, asked, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
-    const answer = await callTool(ctx, "set_env", OPENAI);
+    const answer = await answerText(ctx, "set_env", OPENAI);
     expect(answer).toBe(
       "Set OPENAI_API_KEY on Acme's Vercel project acme-site, for production and preview. It takes effect on the next deploy; server code reads it as process.env.OPENAI_API_KEY. Never write its value into a file: deploy refuses a folder that holds it.",
     );
@@ -437,7 +437,7 @@ describe("set_env", () => {
     connectVercel();
     const { ctx } = settingRun();
     store.setProductVercel("acme", VERCEL);
-    await callTool(ctx, "set_env", OPENAI);
+    await answerText(ctx, "set_env", OPENAI);
     const deploys: DeployRequest[] = [];
     const deploying: RunContext = {
       ...ctx,
@@ -448,7 +448,7 @@ describe("set_env", () => {
     };
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
-    await callTool(deploying, "deploy", {});
+    await answerText(deploying, "deploy", {});
     expect(deploys[0]?.unshippable).toEqual([
       { ...OPENAI, kind: "env", product: "acme" },
       { kind: "held", name: "VERCEL_TOKEN", value: TOKEN },
@@ -472,7 +472,7 @@ describe("set_env", () => {
     });
     store.setProductVercel("acme", VERCEL);
 
-    expect(await callTool(refused.ctx, "set_env", OPENAI)).toBe(
+    expect(await answerText(refused.ctx, "set_env", OPENAI)).toBe(
       "OPENAI_API_KEY was not set on Acme: Vercel turned it down (403): A variable with this name already exists\nset_env only replaces a variable the team set: if acme-site already has OPENAI_API_KEY, it is the founder's, so hand them an ask_boss action to change it.",
     );
     expect(store.recentTeamMessages()).toEqual([]);
@@ -485,8 +485,8 @@ describe("set_env", () => {
         return Promise.resolve(SET);
       },
     };
-    await callTool(ctx, "set_env", OPENAI);
-    await callTool(ctx, "set_env", { ...OPENAI, value: "sk-proj-acme-rotated" });
+    await answerText(ctx, "set_env", OPENAI);
+    await answerText(ctx, "set_env", { ...OPENAI, value: "sk-proj-acme-rotated" });
     expect([...refused.sets, ...sets].map((req) => req.replaces)).toEqual([false, false, true]);
   });
 
@@ -494,13 +494,13 @@ describe("set_env", () => {
     connectVercel();
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
-    await callTool(ctx, "set_env", OPENAI);
+    await answerText(ctx, "set_env", OPENAI);
 
     const founders = { projectId: "prj_live", projectName: "founder-live", teamId: null };
     store.setProductVercel("acme", founders);
-    await callTool(ctx, "set_env", { ...OPENAI, value: "sk-proj-acme-rotated" });
+    await answerText(ctx, "set_env", { ...OPENAI, value: "sk-proj-acme-rotated" });
     store.setProductVercel("acme", VERCEL);
-    await callTool(ctx, "set_env", { ...OPENAI, value: "sk-proj-acme-rotated" });
+    await answerText(ctx, "set_env", { ...OPENAI, value: "sk-proj-acme-rotated" });
 
     expect(sets.map(({ binding, replaces }) => [binding.projectId, replaces])).toEqual([
       ["prj_1", false],
@@ -514,7 +514,7 @@ describe("set_env", () => {
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
-    await callTool(ctx, "set_env", { ...OPENAI, value: ` ${OPENAI.value}\n` });
+    await answerText(ctx, "set_env", { ...OPENAI, value: ` ${OPENAI.value}\n` });
     expect(sets[0]?.value).toBe(OPENAI.value);
   });
 
@@ -522,7 +522,7 @@ describe("set_env", () => {
     connectVercel();
     const { ctx, sets } = settingRun();
 
-    expect(await callTool(ctx, "set_env", OPENAI)).toBe(
+    expect(await answerText(ctx, "set_env", OPENAI)).toBe(
       "Acme has no Vercel project yet: deploy it first, which makes one, then set OPENAI_API_KEY.",
     );
     expect(sets).toEqual([]);
@@ -532,7 +532,7 @@ describe("set_env", () => {
     const { ctx, asked, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
-    expect(await callTool(ctx, "set_env", OPENAI)).toContain("Vercel is not connected");
+    expect(await answerText(ctx, "set_env", OPENAI)).toContain("Vercel is not connected");
     expect(asked).toEqual([
       {
         integration: "vercel",
@@ -553,7 +553,7 @@ describe("set_env", () => {
       checkVercelToken: () => Promise.resolve({ kind: "rejected" }),
     };
 
-    expect(await callTool(ctx, "set_env", OPENAI)).toContain(
+    expect(await answerText(ctx, "set_env", OPENAI)).toContain(
       "Vercel turned IdleBiz's token away: the founder has a Vercel card waiting",
     );
     expect(run.asked).toEqual([
@@ -573,7 +573,9 @@ describe("set_env", () => {
     store.setProductVercel("acme", VERCEL);
 
     for (const name of ["VERCEL_URL", "NODE_ENV", "openai_key"]) {
-      await expect(callTool(ctx, "set_env", { ...OPENAI, name })).rejects.toThrow(BadRequestError);
+      await expect(answerText(ctx, "set_env", { ...OPENAI, name })).rejects.toThrow(
+        BadRequestError,
+      );
     }
     expect(sets).toEqual([]);
   });

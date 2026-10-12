@@ -5,7 +5,7 @@ import * as store from "./store/store";
 import { publishActivity } from "./activity";
 import { guarded, report } from "./lib/report";
 import { askBox } from "./agents/ask-box";
-import type { RunResult, RunTools, agentDriver } from "./agents/runner-pool";
+import type { RunResult, RunTools, RunnerPool } from "./agents/runner-pool";
 import { announceBet, haltForBudget, ship } from "./company-actions";
 import { stripeInTestMode } from "./metrics";
 import { metricsPulse } from "./metrics-pulse";
@@ -273,9 +273,9 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskSta
   return status;
 };
 
-/** What the scheduler needs of the thing that runs employees; the real one is `agentDriver`. */
+/** What the scheduler needs of the thing that runs employees; the real one is `runnerPool`. */
 export type EmployeeRunner = Pick<
-  typeof agentDriver,
+  RunnerPool,
   "runTask" | "restingRunner" | "signedIn" | "pickRunner" | "runsSealed"
 >;
 
@@ -305,12 +305,12 @@ class Scheduler {
   private readonly runs = new Map<string, InFlight>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
-  private readonly driver: EmployeeRunner;
+  private readonly runners: EmployeeRunner;
   private readonly awake: KeepAwake;
   private readonly integrations: Integrations;
 
-  constructor(driver: EmployeeRunner, awake: KeepAwake, integrations: Integrations) {
-    this.driver = driver;
+  constructor(runners: EmployeeRunner, awake: KeepAwake, integrations: Integrations) {
+    this.runners = runners;
     this.awake = awake;
     this.integrations = integrations;
   }
@@ -399,7 +399,7 @@ class Scheduler {
 
   /** Whether the employee's runner could start a run now: signed in and not resting. */
   private canStart(emp: Employee): boolean {
-    return this.driver.signedIn(emp.runner) && this.driver.restingRunner(emp.runner) === null;
+    return this.runners.signedIn(emp.runner) && this.runners.restingRunner(emp.runner) === null;
   }
 
   private tickAutopilot(): void {
@@ -407,7 +407,7 @@ class Scheduler {
       return;
     }
     const company = store.getCompany();
-    if (!company || !company.autopilot || !admit(company) || !this.driver.runsSealed()) {
+    if (!company || !company.autopilot || !admit(company) || !this.runners.runsSealed()) {
       return;
     }
     const employees = store.listEmployees();
@@ -480,9 +480,9 @@ class Scheduler {
         this.enqueue(taskId, employeeId);
       },
       company,
-      driver: this.driver,
       employee,
       run,
+      runners: this.runners,
     };
     return { asks, call: (name, raw) => callTool(ctx, name, raw) };
   }
@@ -514,7 +514,7 @@ class Scheduler {
    */
   tick(): void {
     const company = store.getCompany();
-    if (this.stopped || !company || !this.driver.runsSealed()) {
+    if (this.stopped || !company || !this.runners.runsSealed()) {
       return;
     }
     const queued = store.listQueuedTasks();
@@ -667,7 +667,7 @@ class Scheduler {
     signal: AbortSignal,
   ): Promise<RunResult> {
     const product = task.productId === null ? null : store.getProduct(task.productId);
-    return this.driver.runTask(
+    return this.runners.runTask(
       emp,
       company,
       {
@@ -695,7 +695,7 @@ class Scheduler {
  * so it is the blocker's only owner.
  */
 export const createScheduler = (
-  driver: EmployeeRunner,
+  runners: EmployeeRunner,
   awake: KeepAwake,
   integrations: Integrations,
-): Scheduler => new Scheduler(driver, awake, integrations);
+): Scheduler => new Scheduler(runners, awake, integrations);

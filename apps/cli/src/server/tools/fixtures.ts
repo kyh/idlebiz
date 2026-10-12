@@ -12,7 +12,7 @@ import { askBox } from "../agents/ask-box";
 import { foundAcme, freshSave, hire } from "../test-support/save";
 import type { ToolName } from "../tool-specs";
 import type { RunContext } from "./define";
-import { callTool as outcomeOf } from "./index";
+import { callTool } from "./index";
 
 // What the tools' tests share. Importing this gives the importing test file a save of its own,
 // emptied before each test.
@@ -24,12 +24,12 @@ afterEach(() => {
 });
 
 /** What a call answers the agent, however it ended. */
-export const callTool = async (
+export const answerText = async (
   ctx: RunContext,
   name: ToolName,
   raw: JsonValue,
 ): Promise<string> => {
-  const { text } = await outcomeOf(ctx, name, raw);
+  const { text } = await callTool(ctx, name, raw);
   return text;
 };
 
@@ -56,7 +56,6 @@ export const runAs = (employeeId: string, more: readonly FoundingHire[] = []) =>
     company,
     createPaymentLink: () => Promise.reject(new Error("charged without a test asking for it")),
     deploy: () => Promise.reject(new Error("deployed without a test asking for it")),
-    driver: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
     employee,
     linkAccess: () =>
       Promise.reject(new Error("asked Stripe about payment links without a test asking for it")),
@@ -74,6 +73,7 @@ export const runAs = (employeeId: string, more: readonly FoundingHire[] = []) =>
     productionHosts: () =>
       Promise.reject(new Error("asked Vercel for domains without a test asking for it")),
     run: { betId: null, origin: "founder", productId: null, runId: "run", taskId: "task" },
+    runners: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
     setEnv: () => Promise.reject(new Error("set a variable without a test asking for it")),
   };
   return { asked, assigned, company, ctx };

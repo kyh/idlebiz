@@ -7,7 +7,7 @@
 import { implement } from "@orpc/server";
 import { contract } from "@repo/contract/contract";
 import { isOutOfBudget, spriteSeedFor } from "@repo/domain/domain";
-import { agentDriver } from "./agents/runner-pool";
+import { runnerPool } from "./agents/runner-pool";
 import { generateCandidates, startLogin } from "./agents/onboarding";
 import { notingSeal } from "./agents/seal";
 import {
@@ -57,12 +57,12 @@ export const createPageRouter = ({ founder, resetGame, stripeReady }: PageRouter
   os.router({
     agents: {
       hasAuth: os.agents.hasAuth.handler(async () => ({
-        ok: await agentDriver.hasAnyRunner(),
-        signedOut: await agentDriver.signedOut(),
+        ok: await runnerPool.hasAnyRunner(),
+        signedOut: await runnerPool.signedOut(),
       })),
-      resting: os.agents.resting.handler(() => agentDriver.restingRunners()),
+      resting: os.agents.resting.handler(() => runnerPool.restingRunners()),
       startLogin: os.agents.startLogin.handler(() => {
-        void startLogin(agentDriver, (e) => {
+        void startLogin(runnerPool, (e) => {
           broadcast("auth", e);
         });
         return { started: true };
@@ -117,7 +117,7 @@ export const createPageRouter = ({ founder, resetGame, stripeReady }: PageRouter
       found: os.onboarding.found.handler(({ input: { hires, ...company } }) =>
         store.foundCompany({
           ...company,
-          hires: hires.map((hire, i) => ({ runner: agentDriver.pickRunner(i), ...hire })),
+          hires: hires.map((hire, i) => ({ runner: runnerPool.pickRunner(i), ...hire })),
         }),
       ),
       hires: os.onboarding.hires.handler(async ({ input }) => {
@@ -154,7 +154,7 @@ export const createPageRouter = ({ founder, resetGame, stripeReady }: PageRouter
       }),
       // the first report waits on the seal's check, so a refusal is in it
       report: os.save.report.handler(async () => {
-        const refusal = await agentDriver.sealRefusal();
+        const refusal = await runnerPool.sealRefusal();
         return notingSeal(store.loadReport(), refusal);
       }),
       reset: os.save.reset.handler(() => resetGame()),

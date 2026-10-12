@@ -161,7 +161,7 @@ const usageRestUntil = (reportedReset: number | null): number =>
     ? Date.now() + UNNAMED_RESET_REST_MS
     : Math.min(reportedReset, Date.now() + MAX_USAGE_REST_MS);
 
-class AgentDriver {
+export class RunnerPool {
   // Boot probes in the background; callers needing a definitive answer await probing.
   private probes: RunnerProbe[] = [];
   private probing: Promise<RunnerProbe[]> = Promise.resolve([]);
@@ -595,12 +595,12 @@ class AgentDriver {
 const activeRestFile = (): string | null => (store.getCompany() === null ? null : runnerRestFile());
 
 /**
- * A driver whose runs start only once `checkSeal` finds the seal holding, each under the seal
+ * A pool whose runs start only once `checkSeal` finds the seal holding, each under the seal
  * `resolveSeal` gives its own folders then, loading the skills in the folder `skills` names, and
  * keeping its runners' rests in `restFile`: tests script them, the app checks and resolves this
  * machine's, the bundled skills and the company's state.
  */
-export const createAgentDriver = (
+export const createRunnerPool = (
   checkSeal: () => Promise<SealState> = sealRuns,
   resolveSeal: (
     writable: readonly string[],
@@ -608,6 +608,6 @@ export const createAgentDriver = (
   ) => Promise<Seal> = machineSeal,
   skills: () => string = bundledSkillsDir,
   restFile: () => string | null = activeRestFile,
-): AgentDriver => new AgentDriver(checkSeal, resolveSeal, skills, restFile);
+): RunnerPool => new RunnerPool(checkSeal, resolveSeal, skills, restFile);
 
-export const agentDriver = createAgentDriver();
+export const runnerPool = createRunnerPool();

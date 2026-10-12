@@ -22,7 +22,7 @@ import { TEAM_NOTES_MAX_BYTES } from "./team-notes";
 import { SEAL, SKILLS, found, root } from "./fixtures";
 import * as store from "../store/store";
 import { acpAgentFor, codexSessionConfig, codexSessionEnv, permissionGate } from "./session";
-import { createAgentDriver } from "./runner-pool";
+import { createRunnerPool } from "./runner-pool";
 import { browserNamespace, realPathOf, sealedCommand } from "./seal";
 
 const SETUP = { skills: SKILLS, teamNotes: null, userSettings: {} };
@@ -345,12 +345,12 @@ describe("the environment an agent is spawned with", () => {
 
     // the stand-in CLI writes what it saw where a run may write
     const scratch: Seal["scratch"][number] = { match: "subpath", path: realpathSync(cwd) };
-    const driver = createAgentDriver(
+    const pool = createRunnerPool(
       () => Promise.resolve({ kind: "sealed" }),
       () => Promise.resolve({ ...SEAL, scratch: [scratch] }),
     );
-    driver.init();
-    await driver.hasAnyRunner();
+    pool.init();
+    await pool.hasAnyRunner();
     const probedWith = names.parse(parseJson(readFileSync(seen, "utf-8")));
     expect(probedWith).not.toContain("VERCEL_TOKEN");
     expect(probedWith).toContain("ANTHROPIC_API_KEY");

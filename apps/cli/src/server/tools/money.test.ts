@@ -14,14 +14,14 @@ import {
   PRO_LINK,
   TOKEN,
   VERCEL,
-  callTool,
+  answerText,
   replayingStripe,
   revenueBet,
   root,
   runAs,
 } from "./fixtures";
 import * as store from "../store/store";
-import { callTool as outcomeOf } from "./index";
+import { callTool } from "./index";
 import { stripeLinkAccess, stripePaymentLink } from "../stripe-links";
 
 const LINK = { amountUsd: 9, name: "Pro plan" };
@@ -93,7 +93,7 @@ describe("create_payment_link", () => {
     const bet = revenueBet();
     const action = `payment link "Pro plan" at $9.00 on acme for bet ${bet.id}`;
 
-    expect(await callTool(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toBe(
+    expect(await answerText(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toBe(
       `Held for the founder's sign-off on "${action}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
     );
     expect(asked).toEqual([{ command: action, rule: "payments", type: "approval" }]);
@@ -102,9 +102,9 @@ describe("create_payment_link", () => {
 
   it("refuses a sign-off never asked for when the run already asked the founder something", async () => {
     const { ctx, asked, stripe } = chargingRun();
-    await callTool(ctx, "ask_boss", { action: "Verify the email", instructions: "..." });
+    await answerText(ctx, "ask_boss", { action: "Verify the email", instructions: "..." });
 
-    const unsent = await outcomeOf(ctx, "create_payment_link", LINK);
+    const unsent = await callTool(ctx, "create_payment_link", LINK);
     expect(unsent?.kind).toBe("refused");
     const said = unsent?.text;
     expect(said).toContain(`Held for the founder's sign-off on "payment link`);
@@ -122,7 +122,7 @@ describe("create_payment_link", () => {
       `payment link "Pro plan" at $9.00 on acme for bet ${bet.id}`,
     );
 
-    expect(await callTool(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toBe(
+    expect(await answerText(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toBe(
       `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL} Nothing names a delivery, so a buyer gets only Stripe's receipt.`,
     );
     expect(stripe).toEqual([
@@ -148,7 +148,7 @@ describe("create_payment_link", () => {
       ...PRO_LINK,
       betId: bet.id,
     });
-    expect(await callTool(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toContain(
+    expect(await answerText(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toContain(
       "Held for the founder's sign-off",
     );
     expect(stripe).toHaveLength(2);
@@ -167,7 +167,7 @@ describe("create_payment_link", () => {
       },
     };
 
-    const answer = await callTool(retiring, "create_payment_link", {
+    const answer = await answerText(retiring, "create_payment_link", {
       ...LINK,
       product: side.id,
     });
@@ -216,7 +216,7 @@ describe("create_payment_link", () => {
     });
     const call = () => {
       store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
-      return callTool(ctx, "create_payment_link", LINK);
+      return answerText(ctx, "create_payment_link", LINK);
     };
 
     expect(await call()).toContain("Stripe made no payment link");
@@ -242,7 +242,7 @@ describe("create_payment_link", () => {
     });
     const call = () => {
       store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
-      return callTool(ctx, "create_payment_link", LINK);
+      return answerText(ctx, "create_payment_link", LINK);
     };
 
     expect(await call()).toContain("Stripe made no payment link: An unknown error occurred");
@@ -260,7 +260,7 @@ describe("create_payment_link", () => {
     );
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
 
-    const made = await outcomeOf(ctx, "create_payment_link", LINK);
+    const made = await callTool(ctx, "create_payment_link", LINK);
     expect(made.kind).toBe("refused");
     expect(made.text).toContain("Stripe may have made the payment link");
     expect(logged).toHaveBeenCalledExactlyOnceWith("[Stripe payment link]", expect.any(z.ZodError));
@@ -282,7 +282,7 @@ describe("create_payment_link", () => {
       );
       const call = () => {
         store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
-        return outcomeOf(ctx, "create_payment_link", LINK);
+        return callTool(ctx, "create_payment_link", LINK);
       };
 
       const made = await call();
@@ -320,7 +320,7 @@ describe("create_payment_link", () => {
       const { ctx } = chargingRun();
       vi.stubGlobal("fetch", stripe);
       store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
-      return callTool(ctx, "create_payment_link", LINK);
+      return answerText(ctx, "create_payment_link", LINK);
     };
     expect(await make()).toContain(PAID_URL);
     // the founder resets and founds Acme again, so the replay meets a save that records no link
@@ -366,7 +366,7 @@ describe("create_payment_link", () => {
       const { ctx } = chargingRun();
       vi.stubGlobal("fetch", stripe);
       store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
-      return callTool(ctx, "create_payment_link", LINK);
+      return answerText(ctx, "create_payment_link", LINK);
     };
     expect(await make()).toContain("https://buy.stripe.com/1");
     // the founder resets, which switches the link off, and founds Acme again
@@ -387,7 +387,7 @@ describe("create_payment_link", () => {
     const side = store.createProduct({ description: "a side project", name: "Side" });
     store.grantApproval(ctx.run.taskId, `payment link "Pro plan" at $12.50 on ${side.id}`);
 
-    const answer = await callTool(ctx, "create_payment_link", {
+    const answer = await answerText(ctx, "create_payment_link", {
       amountUsd: 12.499,
       name: "  Pro plan ",
       product: side.id,
@@ -408,7 +408,7 @@ describe("create_payment_link", () => {
       'payment link "Pro plan" at $9.00 on acme delivering "Email the licence key from keys.txt"',
     );
 
-    const answer = await callTool(ctx, "create_payment_link", {
+    const answer = await answerText(ctx, "create_payment_link", {
       ...LINK,
       delivery: " Email the licence key from keys.txt ",
     });
@@ -427,7 +427,7 @@ describe("create_payment_link", () => {
     const { ctx, asked, stripe } = chargingRun();
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
 
-    const held = await callTool(ctx, "create_payment_link", {
+    const held = await answerText(ctx, "create_payment_link", {
       ...LINK,
       delivery: "Mail each buyer a signed print",
     });
@@ -455,7 +455,7 @@ describe("create_payment_link", () => {
         }),
     };
 
-    const answer = await callTool(ctx, "create_payment_link", {
+    const answer = await answerText(ctx, "create_payment_link", {
       ...LINK,
       delivery: "Email the PDF",
     });
@@ -481,7 +481,7 @@ describe("create_payment_link", () => {
     });
     const ctx: RunContext = { ...run.ctx, linkAccess: stripeLinkAccess };
 
-    const answer = await callTool(ctx, "create_payment_link", LINK);
+    const answer = await answerText(ctx, "create_payment_link", LINK);
     expect(answer).toContain(
       "Stripe won't let IdleBiz's key make payment links: the founder has a Stripe card waiting",
     );
@@ -511,7 +511,7 @@ describe("create_payment_link", () => {
     );
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
 
-    expect(await callTool(ctx, "create_payment_link", LINK)).toContain(
+    expect(await answerText(ctx, "create_payment_link", LINK)).toContain(
       "Stripe won't let IdleBiz's key make payment links: the founder has a Stripe card waiting",
     );
     expect(asked).toMatchObject([{ integration: "stripe", type: "integration" }]);
@@ -523,7 +523,7 @@ describe("create_payment_link", () => {
 
   it("quotes the name in what the founder signs, so it cannot pose as the price", async () => {
     const { ctx, asked } = chargingRun();
-    await callTool(ctx, "create_payment_link", { amountUsd: 500, name: 'Tip" at $1.00 on acme' });
+    await answerText(ctx, "create_payment_link", { amountUsd: 500, name: 'Tip" at $1.00 on acme' });
     expect(asked).toEqual([
       {
         command: String.raw`payment link "Tip\" at $1.00 on acme" at $500.00 on acme`,
@@ -542,9 +542,9 @@ describe("create_payment_link", () => {
     async ({ hidden }) => {
       const { ctx, asked, stripe } = chargingRun();
       const name = `Tip ${hidden}emca no 00.1$ ta `;
-      await expect(callTool(ctx, "create_payment_link", { amountUsd: 500, name })).rejects.toThrow(
-        BadRequestError,
-      );
+      await expect(
+        answerText(ctx, "create_payment_link", { amountUsd: 500, name }),
+      ).rejects.toThrow(BadRequestError);
       expect(asked).toEqual([]);
       expect(stripe).toEqual([]);
     },
@@ -552,7 +552,7 @@ describe("create_payment_link", () => {
 
   it("leaves the founder a Stripe card, not a sign-off, while IdleBiz has no key", async () => {
     const { ctx, asked, stripe } = chargingRun(null);
-    const answer = await callTool(ctx, "create_payment_link", LINK);
+    const answer = await answerText(ctx, "create_payment_link", LINK);
     expect(answer).toContain("a Stripe card waiting that takes them to the Budget panel");
     expect(answer).toContain("this task resumes automatically once a live key is saved");
     expect(asked).toEqual([
@@ -568,7 +568,7 @@ describe("create_payment_link", () => {
 
   it("raises no card for a link it could not make anyway", async () => {
     const { ctx, asked } = chargingRun(null);
-    expect(await callTool(ctx, "create_payment_link", { ...LINK, bet: "no-such-bet" })).toContain(
+    expect(await answerText(ctx, "create_payment_link", { ...LINK, bet: "no-such-bet" })).toContain(
       "is not a revenue bet on acme",
     );
     expect(asked).toEqual([]);
@@ -588,7 +588,7 @@ describe("create_payment_link", () => {
     store.killBet(killed.id, "dud", Date.now());
 
     for (const bet of [elsewhere, visitors, killed, { id: "no-such-bet" }]) {
-      expect(await callTool(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toBe(
+      expect(await answerText(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toBe(
         `"${bet.id}" is not a revenue bet on acme that is open or measuring — read_bets lists every live bet, what it counts and its product.`,
       );
     }
@@ -605,7 +605,7 @@ describe("create_payment_link", () => {
     );
     store.measureBet(bet.id, Date.now());
 
-    expect(await callTool(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toContain(
+    expect(await answerText(ctx, "create_payment_link", { ...LINK, bet: bet.id })).toContain(
       "Created a payment link",
     );
     expect(stripe).not.toEqual([]);
@@ -614,7 +614,7 @@ describe("create_payment_link", () => {
   it("says a test key's link takes no real money", async () => {
     const { ctx } = chargingRun("sk_test_founder");
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
-    expect(await callTool(ctx, "create_payment_link", LINK)).toBe(
+    expect(await answerText(ctx, "create_payment_link", LINK)).toBe(
       `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL} Nothing names a delivery, so a buyer gets only Stripe's receipt. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
     );
   });
@@ -623,7 +623,7 @@ describe("create_payment_link", () => {
     const { ctx, asked, hostsAsked, stripe } = landingRun();
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
 
-    expect(await callTool(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK })).toBe(
+    expect(await answerText(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK })).toBe(
       `Held for the founder's sign-off on "${UNLOCK_ACTION}". End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
     );
     expect(asked).toEqual([{ command: UNLOCK_ACTION, rule: "payments", type: "approval" }]);
@@ -650,7 +650,7 @@ describe("create_payment_link", () => {
         `payment link "Pro plan" at $9.00 on acme then send buyers to ${signed}`,
       );
 
-      const answer = await callTool(ctx, "create_payment_link", {
+      const answer = await answerText(ctx, "create_payment_link", {
         ...LINK,
         afterPaymentUrl: page,
       });
@@ -701,7 +701,7 @@ describe("create_payment_link", () => {
   ])("refuses a landing page the product does not serve: $page", async ({ page, said }) => {
     const { ctx, asked, stripe } = landingRun();
     expect(
-      await callTool(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: page }),
+      await answerText(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: page }),
     ).toContain(said);
     expect(asked).toEqual([]);
     expect(stripe).toEqual([]);
@@ -710,7 +710,7 @@ describe("create_payment_link", () => {
   it("refuses a landing page that is no URL as the caller's error", async () => {
     const { ctx, stripe } = landingRun();
     await expect(
-      callTool(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: "/unlock" }),
+      answerText(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: "/unlock" }),
     ).rejects.toThrow(BadRequestError);
     expect(stripe).toEqual([]);
   });
@@ -718,7 +718,7 @@ describe("create_payment_link", () => {
   it("tells a product with no Vercel project to deploy its landing page first", async () => {
     const { ctx, hostsAsked, stripe } = landingRun();
     store.setProductVercel("acme", null);
-    expect(await callTool(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK })).toBe(
+    expect(await answerText(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK })).toBe(
       "Acme has no Vercel project yet: deploy the page buyers land on, which makes one, then make the link.",
     );
     expect(hostsAsked).toEqual([]);
@@ -732,7 +732,7 @@ describe("create_payment_link", () => {
       JSON.stringify({ STRIPE_SECRET_KEY: "sk_live_founder" }),
     );
     expect(
-      await callTool(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK }),
+      await answerText(ctx, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK }),
     ).toContain("Vercel is not connected");
     expect(asked).toEqual([
       {
@@ -752,14 +752,14 @@ describe("create_payment_link", () => {
     const action = `payment link "Pro plan" at $9.00 on acme for bet ${bet.id} delivering "A thank-you email" then send buyers to ${UNLOCK}`;
     const call = { ...LINK, afterPaymentUrl: UNLOCK, bet: bet.id, delivery: "A thank-you email" };
 
-    expect(await callTool(ctx, "create_payment_link", call)).toContain(
+    expect(await answerText(ctx, "create_payment_link", call)).toContain(
       `Held for the founder's sign-off on "${action}".`,
     );
     expect(asked).toEqual([{ command: action, rule: "payments", type: "approval" }]);
     expect(stripe).toEqual([]);
 
     store.grantApproval(ctx.run.taskId, action);
-    expect(await callTool(ctx, "create_payment_link", call)).toContain(
+    expect(await answerText(ctx, "create_payment_link", call)).toContain(
       "The founder gets a card for each paid checkout, with the buyer's email and your delivery.",
     );
     expect(stripe[1]?.form).toMatchObject({
@@ -778,7 +778,7 @@ describe("create_payment_link", () => {
     };
 
     expect(
-      await callTool(refused, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK }),
+      await answerText(refused, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK }),
     ).toContain("Vercel turned IdleBiz's token away");
     expect(asked).toEqual([
       {
@@ -799,7 +799,7 @@ describe("create_payment_link", () => {
     };
 
     expect(
-      await callTool(unreachable, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK }),
+      await answerText(unreachable, "create_payment_link", { ...LINK, afterPaymentUrl: UNLOCK }),
     ).toBe("Vercel could not say where Acme is served (timed out); try again.");
     expect(asked).toEqual([]);
     expect(stripe).toEqual([]);
@@ -816,7 +816,7 @@ describe("create_payment_link", () => {
       ),
     );
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
-    expect(await callTool(ctx, "create_payment_link", LINK)).toBe(
+    expect(await answerText(ctx, "create_payment_link", LINK)).toBe(
       "Stripe made no payment link: Your account cannot currently make live charges.",
     );
   });
@@ -895,7 +895,7 @@ describe("read_orders", () => {
     });
 
     expect(
-      await callTool({ ...ctx, run: { ...ctx.run, productId: "acme" } }, "read_orders", {}),
+      await answerText({ ...ctx, run: { ...ctx.run, productId: "acme" } }, "read_orders", {}),
     ).toBe(
       [
         "Acme's paid orders, newest first (3 of 3):",
@@ -912,7 +912,7 @@ describe("read_orders", () => {
 
   it("says when a product has sold nothing yet", async () => {
     const { ctx } = runAs("priya");
-    expect(await callTool(ctx, "read_orders", { product: "acme" })).toBe(
+    expect(await answerText(ctx, "read_orders", { product: "acme" })).toBe(
       "Acme has no paid orders yet.",
     );
   });
@@ -943,7 +943,7 @@ describe("read_orders", () => {
       },
     );
 
-    expect(await callTool(ctx, "read_orders", { product: side.id })).toBe(
+    expect(await answerText(ctx, "read_orders", { product: side.id })).toBe(
       [
         `${side.id}'s paid orders, newest first (1 of 1):`,
         "- 2026-09-22 · Pro plan · paid $9.00 · paid through a payment link that names no delivery",
@@ -976,7 +976,7 @@ describe("read_orders", () => {
       },
     );
 
-    expect(await callTool(ctx, "read_orders", { product: side.id })).toBe(
+    expect(await answerText(ctx, "read_orders", { product: side.id })).toBe(
       [
         `${side.id} has no paid orders yet.`,
         "Its payment links:",

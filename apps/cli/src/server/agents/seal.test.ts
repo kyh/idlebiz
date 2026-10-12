@@ -440,7 +440,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     symlinkSync(at(target), at(name));
     return at(target);
   };
-  /** The folders a run on acme's workspace writes, as the driver hands them over. */
+  /** The folders a run on acme's workspace writes, as the runner pool hands them over. */
   const own = () => [
     at(".idlebiz/acme/workspace"),
     at(".idlebiz/acme/agents/ann/memory"),

@@ -20,7 +20,7 @@ import { RPC_PREFIX } from "@repo/contract/routes";
 import { packageFile } from "../paths";
 import { activityEvents } from "./activity";
 import { writeAgentLauncher } from "./agent-launcher";
-import { agentDriver } from "./agents/runner-pool";
+import { runnerPool } from "./agents/runner-pool";
 import { setAutopilot, switchOffBeforeReset } from "./company-actions";
 import { controlPlane } from "./control-plane";
 import { deployToVercel } from "./deploy";
@@ -69,7 +69,7 @@ const integrations: Integrations = {
 
 // the shell's power assertion: one at a time, since keepAwake starts at most one
 const scheduler = createScheduler(
-  agentDriver,
+  runnerPool,
   keepAwake({
     start: () => {
       host().keepAwake(true);
@@ -241,7 +241,7 @@ const boot = async (launch: Launch): Promise<void> => {
   }
   // the runs' seal and the look for their CLIs read PATH, so they wait for the login shell's;
   // the window does not
-  agentDriver.init(adoptShellPath(launch.packaged));
+  runnerPool.init(adoptShellPath(launch.packaged));
   // the command the runs call the company's tools with: this node, on the CLI it was started from
   writeAgentLauncher(runBinDir(), process.execPath, packageFile("dist/index.js"));
   await controlPlane.start();
@@ -285,7 +285,7 @@ const boot = async (launch: Launch): Promise<void> => {
 
   // the queue waits on the seal's check: drain it the moment that settles, not a tick later
   void (async () => {
-    await agentDriver.sealRefusal();
+    await runnerPool.sealRefusal();
     guarded("drain queue", () => scheduler.tick());
   })();
 };

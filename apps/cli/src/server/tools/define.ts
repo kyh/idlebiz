@@ -11,7 +11,7 @@ import { BadRequestError, errorMessage } from "@repo/domain/errors";
 import type { HoldRuleId } from "@repo/domain/hold-rules";
 import type { JsonValue } from "@repo/domain/json";
 import type { AskBox } from "../agents/ask-box";
-import type { agentDriver } from "../agents/runner-pool";
+import type { RunnerPool } from "../agents/runner-pool";
 import { postToRoom } from "../company-actions";
 import type { Deployer } from "../deploy";
 import { report } from "../lib/report";
@@ -55,7 +55,7 @@ export interface RunContext extends Integrations {
     origin: TaskOrigin;
   };
   asks: AskBox;
-  driver: Pick<typeof agentDriver, "pickRunner" | "restingRunner" | "signedIn">;
+  runners: Pick<RunnerPool, "pickRunner" | "restingRunner" | "signedIn">;
   /** Queue a task for a teammate; a busy one picks it up on a later tick. */
   assign: (taskId: string, employeeId: string) => void;
 }
@@ -131,7 +131,12 @@ export const askFounder = (ctx: RunContext, ask: BlockedAsk, sent: string, why =
 };
 
 /** Leave the founder `ask` and hold the call on their answer, saying `sent`; see askFounder. */
-export const holdFor = (ctx: RunContext, ask: BlockedAsk, sent: string, why: string): never => {
+export const holdOnFounder = (
+  ctx: RunContext,
+  ask: BlockedAsk,
+  sent: string,
+  why: string,
+): never => {
   throw new HeldError(askFounder(ctx, ask, sent, why));
 };
 
@@ -144,7 +149,7 @@ export const requireSignOff = (ctx: RunContext, action: string, rule: HoldRuleId
     return;
   }
   const held = `Held for the founder's sign-off on "${action}".`;
-  holdFor(
+  holdOnFounder(
     ctx,
     { command: action, rule, type: "approval" },
     `${held} End your turn: the task resumes on their answer, and calling the tool again then runs it.`,
@@ -159,4 +164,5 @@ export const needIntegration = (
   reason: string,
   sent: string,
   why: string,
-): never => holdFor(ctx, { integration, productId: null, reason, type: "integration" }, sent, why);
+): never =>
+  holdOnFounder(ctx, { integration, productId: null, reason, type: "integration" }, sent, why);
