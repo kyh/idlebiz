@@ -6,6 +6,7 @@ import {
   TOOL_NAMES,
   TOOL_SPECS,
   commandOf,
+  encodeRequest,
   toolAt,
   toolDocs,
   toolPath,
@@ -94,20 +95,22 @@ describe("tool specs", () => {
     expect(body.safeParse({ ...example, name }).success).toBe(ok);
   });
 
-  it("takes a set_env value whose request still fits what a call may send", () => {
-    const { body, example } = TOOL_SPECS.set_env;
-    const longest = { ...example, product: "product-slug", value: "x".repeat(MAX_ENV_VALUE_BYTES) };
-    expect(body.safeParse(longest).success).toBe(true);
-    expect(Buffer.byteLength(JSON.stringify(longest))).toBeLessThanOrEqual(MAX_REQUEST_BYTES);
-  });
-
-  it("counts a set_env value in bytes, as Vercel does", () => {
-    const { body, example } = TOOL_SPECS.set_env;
-    const value = "é".repeat(MAX_ENV_VALUE_BYTES / 2 + 1);
-    expect(value.length).toBeLessThan(MAX_ENV_VALUE_BYTES);
-    const parsed = body.safeParse({ ...example, value });
-    expect(parsed.error?.issues[0]?.message).toBe("value is at most 60 KiB of UTF-8");
-  });
+  // a quote, a backslash or a line break escapes in two bytes, a control character in six
+  it.each(["x", '"', "\\", "x\ny", "\u0001", "é", "😀"])(
+    "takes the longest set_env value of %j whose request still fits what a call may send, and no longer",
+    (unit) => {
+      const { body } = TOOL_SPECS.set_env;
+      const unitBytes = Buffer.byteLength(encodeRequest(unit)) - 2;
+      const longest = unit.repeat(Math.floor((MAX_ENV_VALUE_BYTES - 2) / unitBytes));
+      const request = { name: "A".repeat(256), product: "product-slug", value: longest };
+      expect(body.safeParse(request).success).toBe(true);
+      expect(Buffer.byteLength(encodeRequest(request))).toBeLessThanOrEqual(MAX_REQUEST_BYTES);
+      const over = body.safeParse({ ...request, value: longest + unit });
+      expect(over.error?.issues[0]?.message).toBe(
+        "value is at most 60 KiB written as JSON: UTF-8, where a quote, a backslash or a line break takes two bytes",
+      );
+    },
+  );
 
   it("tells the lead each metric's floor", () => {
     expect(toolDocs(true)).toContain("at least 10 users, a whole number, or $5.00");

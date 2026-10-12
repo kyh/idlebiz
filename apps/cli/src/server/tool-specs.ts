@@ -8,6 +8,7 @@ import {
 import { INTEGRATION_KINDS, KillReasonSchema, ProductDraftSchema } from "@repo/domain/domain";
 import { EnvNameSchema } from "./env-name";
 import { formatUsd } from "@repo/domain/format";
+import type { JsonValue } from "@repo/domain/json";
 import { CATALOG_PAGE, PrintPlacementSchema } from "./listing";
 import { shellQuote } from "./lib/shell-quote";
 
@@ -58,9 +59,18 @@ const SALE_NAME = signedText("name", 80);
 export const MAX_REQUEST_BYTES = 64 * 1024;
 
 /**
- * The longest value set_env takes, in UTF-8 bytes, as Vercel counts its 64 KB for every variable
- * of a deployment together. It stays under MAX_REQUEST_BYTES so the request carrying it, its name
- * and its JSON quoting included, still fits.
+ * A request as the verb sends it: its shortest JSON, so it weighs what its fields hold however the
+ * agent spaced or escaped what it typed (Python's json.dumps writes each non-ASCII character as a
+ * six-byte `\u` escape).
+ */
+export const encodeRequest = (request: JsonValue): string => JSON.stringify(request);
+
+/**
+ * The longest value set_env takes, counted as its request carries it (`encodeRequest`): UTF-8,
+ * quoted, each quote, backslash and control character escaped. Vercel counts the value in UTF-8
+ * alone, against 64 KB for every variable of a deployment together, and that is never more than
+ * this. It stays under MAX_REQUEST_BYTES by room for the variable's name, a product's slug and the
+ * keys, so the request carrying the longest value still fits.
  */
 export const MAX_ENV_VALUE_BYTES = MAX_REQUEST_BYTES - 4 * 1024;
 
@@ -166,8 +176,8 @@ export const TOOL_SPECS = {
         .trim()
         .min(1)
         .refine(
-          (value) => Buffer.byteLength(value) <= MAX_ENV_VALUE_BYTES,
-          `value is at most ${MAX_ENV_VALUE_BYTES / 1024} KiB of UTF-8`,
+          (value) => Buffer.byteLength(encodeRequest(value)) <= MAX_ENV_VALUE_BYTES,
+          `value is at most ${MAX_ENV_VALUE_BYTES / 1024} KiB written as JSON: UTF-8, where a quote, a backslash or a line break takes two bytes`,
         ),
     }),
     doc: "keep a secret the product needs at runtime (an API key, a signing secret) as an environment variable of its Vercel project, for production and preview, with no sign-off. It sets it on your run's product; name another with `\"product\":\"<slug>\"`. The product needs a project first, which its first deploy makes. `name` is an uppercase variable name: Vercel's own (`VERCEL_*`, `NODE_ENV`) are refused. A name with a prefix a framework builds into the page (`NEXT_PUBLIC_`, `VITE_`, `PUBLIC_`, `EXPO_PUBLIC_`…) is for what every visitor may read, such as a Stripe publishable key (`pk_`), kept out of the source; a value shaped like a secret (`sk_`, `rk_`, `whsec_`, a private key, another provider's API key), or one set_env keeps under a server-only name, is refused under one. Setting a name again replaces the value set_env gave it; a variable already on the project that set_env never set is the founder's, and is left as it is. It takes effect on the next deploy: server code reads it as `process.env.NAME`, and a page reads a public name the way its framework does (`process.env.NEXT_PUBLIC_X` in Next.js, `import.meta.env.VITE_X` in Vite); under a framework that does not read its prefix it stays server-only. Never write a server-only value into a file: deploy refuses a folder that holds one.",

@@ -1,16 +1,17 @@
 // Each company tool as a verb an employee types in its shell: `idlebiz <tool> '<json>'`. A client of
 // the control plane its run was handed (IDLEBIZ_API_SOCKET, IDLEBIZ_RUN_TOKEN) and of nothing else:
-// it sends the request as it is, and the server parses it against the tool's spec, so a refusal
-// reads the same whoever asks. The answer is the server's prose on stdout, however the call ended,
-// and the exit code says how (TOOL_OUTCOMES): 0 done, 1 refused, 2 a fault of main's, 4 held for
-// the founder. A call that never reached the server, or that it could not take, exits 1 with why
-// on stderr.
+// it sends the request in its shortest JSON (`encodeRequest`), the weight the spec's limits count,
+// and the server parses it against the tool's spec, so a refusal reads the same whoever asks. The
+// answer is the server's prose on stdout, however the call ended, and the exit code says how
+// (TOOL_OUTCOMES): 0 done, 1 refused, 2 a fault of main's, 4 held for the founder. A call that
+// never reached the server, or that it could not take, exits 1 with why on stderr.
 
 import { request } from "node:http";
 import type { IncomingMessage } from "node:http";
 import path from "node:path";
 import { text } from "node:stream/consumers";
 import { parseJson } from "@repo/domain/json";
+import type { JsonValue } from "@repo/domain/json";
 import { defineCommand } from "citty";
 import type { CommandDef } from "citty";
 import {
@@ -20,6 +21,7 @@ import {
   TOOL_SPECS,
   ToolAnswerSchema,
   commandOf,
+  encodeRequest,
   toolPath,
   verbOf,
 } from "../server/tool-specs";
@@ -84,14 +86,15 @@ const requestOf = async (
   if (argument === undefined) {
     return "{}";
   }
-  const body = argument === STDIN ? await io.stdin() : argument;
+  const typed = argument === STDIN ? await io.stdin() : argument;
+  let parsed: JsonValue;
   try {
-    parseJson(body);
+    parsed = parseJson(typed);
   } catch (error) {
     const why = error instanceof SyntaxError ? ` (${error.message})` : "";
     throw new Error(`${verb}'s request is not JSON${why}. ${HOW_TO_SEND}`, { cause: error });
   }
-  return body;
+  return encodeRequest(parsed);
 };
 
 interface Reply {

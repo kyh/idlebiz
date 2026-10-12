@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { BadRequestError } from "@repo/domain/errors";
 import type { JsonValue } from "@repo/domain/json";
 import { ControlPlane } from "../server/control-plane";
+import { MAX_ENV_VALUE_BYTES, MAX_REQUEST_BYTES, TOOL_SPECS } from "../server/tool-specs";
 import type { ToolName, ToolOutcome } from "../server/tool-specs";
 import { runCli } from "../program";
 import { callTool } from "./tools";
@@ -61,7 +62,7 @@ describe("a company tool's verb", () => {
     }
   });
 
-  it("sends a call given no request as `{}`, and any request as it is, for the server to judge", async () => {
+  it("sends a call given no request as `{}`, and any JSON request for the server to judge", async () => {
     const nobody = { kind: "done", text: "Nobody has posted yet." } as const;
     const run = await aRun(() => Promise.resolve(nobody));
     const io = { env: run.env, stdin: noStdin };
@@ -72,6 +73,21 @@ describe("a company tool's verb", () => {
         { name: "read_team_chat", raw: {} },
         { name: "read_team_chat", raw: { limit: 5 } },
       ]);
+    } finally {
+      run.release();
+    }
+  });
+
+  it("sends the shortest JSON of a request, so a value set_env takes fits however it was escaped", async () => {
+    const run = await aRun(() => done("Set."));
+    const value = '"é'.repeat(Math.floor((MAX_ENV_VALUE_BYTES - 2) / 4));
+    // as Python's json.dumps writes it: each non-ASCII character a six-byte \u escape
+    const typed = JSON.stringify({ name: "KEY", value }).replaceAll("é", String.raw`\u00e9`);
+    expect(Buffer.byteLength(typed)).toBeGreaterThan(MAX_REQUEST_BYTES);
+    try {
+      await callTool("set_env", typed, { env: run.env, stdin: noStdin });
+      expect(run.calls).toEqual([{ name: "set_env", raw: { name: "KEY", value } }]);
+      expect(TOOL_SPECS.set_env.body.safeParse(run.calls[0]?.raw).success).toBe(true);
     } finally {
       run.release();
     }

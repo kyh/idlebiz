@@ -508,7 +508,10 @@ answers is shaped once (`ToolAnswerSchema`) for both ends.
   which runs the CLI on main's own node and goes first on each run's PATH. The verb sends its
   request to the control plane its run was handed (`IDLEBIZ_API_SOCKET`, `IDLEBIZ_RUN_TOKEN`), over
   that run's own unix socket only ("A run's seal" says why the socket names the caller). `-` reads
-  the request from stdin, and `idlebiz <tool> --help` prints the tool's doc.
+  the request from stdin, and `idlebiz <tool> --help` prints the tool's doc. It sends the request
+  as its shortest JSON (`encodeRequest`), however the agent spaced or escaped it: that is what the
+  control plane's 64 KiB limit weighs and set_env's 60 KiB value limit counts, so a value set_env
+  takes fits in a call.
 - Every call ends in one of `TOOL_OUTCOMES`, the verb's exit code, which the instructions render:
   done (0) is what the implementation returns, refused (1) a `RefusalError` or the lead-only
   refusal, a fault (2) anything else thrown, reported to main's log, and held (4) a call waiting
