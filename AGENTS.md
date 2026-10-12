@@ -196,8 +196,8 @@ Don't stop at `pnpm verify` — for anything the player can see, drive it and lo
 | Office, HUD, dialogue, teams, products | finish onboarding                     | **yes**     |
 
 The last row is a hard gate, not a convenience: `renderer/ui/onboarding.tsx` calls
-`onboarding.hires`, which dispatches a real agent run (`server/agents/onboarding.ts`), and
-`finalize()` bails when no hires come back. Use `IDLEBIZ_ROOT_DIR` for fixtures; there is no
+`onboarding.hires`, which dispatches a real agent run (`server/agents/onboarding.ts`), and its
+flow (`renderer/ui/onboarding-flow.ts`) founds nothing when no hires come back. Use `IDLEBIZ_ROOT_DIR` for fixtures; there is no
 bundled seeded save. Employee runs still use the signed-in CLI.
 
 ## Platform matrix
