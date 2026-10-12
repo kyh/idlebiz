@@ -59,7 +59,7 @@ const PageSchema = z.object({ data: z.array(SessionSchema), has_more: z.boolean(
  */
 export type CheckoutsRead =
   | { kind: "read"; sessions: CheckoutSession[]; whole: boolean }
-  | { kind: "refused"; said: string }
+  | { kind: "refused"; reason: string }
   | { kind: "failed"; reason: string };
 
 // a thousand checkouts between two reads is far past what a print shop run from here sees
@@ -93,7 +93,7 @@ export const readCheckouts = async (key: string, createdAfter: number): Promise<
     return { kind: "read", ...read.value };
   }
   return read.kind === "refused"
-    ? { kind: "refused", said: read.reason }
+    ? { kind: "refused", reason: read.reason }
     : { kind: "failed", reason: read.reason };
 };
 
@@ -118,7 +118,7 @@ const ChargesSchema = z.object({
 export type PaymentStanding =
   | { kind: "kept"; method: string | null }
   | { kind: "taken" }
-  | { kind: "refused"; said: string }
+  | { kind: "refused"; reason: string }
   | { kind: "unread"; reason: string };
 
 /** Read the charges of `paymentIntent`, with the Read on Charges grant selling a print needs. */
@@ -135,7 +135,7 @@ export const readPaymentStanding = async (
     ),
   );
   if (read.kind === "refused") {
-    return { kind: "refused", said: read.reason };
+    return { kind: "refused", reason: read.reason };
   }
   if (read.kind !== "ok") {
     return { kind: "unread", reason: read.reason };

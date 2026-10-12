@@ -135,7 +135,7 @@ it("lists the saved token's projects when none is given", async () => {
 it("lists nothing, and asks Vercel nothing, with no token given or saved", async () => {
   const tokens = vercelAccount();
 
-  await expect(listVercelProjects()).resolves.toEqual({ kind: "rejected" });
+  await expect(listVercelProjects()).resolves.toEqual({ kind: "refused" });
   expect(tokens).toEqual([]);
 });
 
@@ -143,13 +143,13 @@ const status = (code: number) => Promise.resolve(new Response("{}", { status: co
 
 it("rejects a token Vercel refuses", async () => {
   vercelAccount(({ pathname }) => (pathname === "/v2/user" ? status(403) : null));
-  await expect(listVercelProjects("revoked")).resolves.toEqual({ kind: "rejected" });
+  await expect(listVercelProjects("revoked")).resolves.toEqual({ kind: "refused" });
 
   vercelAccount(({ pathname }) => (pathname === "/v2/user" ? status(401) : null));
-  await expect(listVercelProjects("mistyped")).resolves.toEqual({ kind: "rejected" });
+  await expect(listVercelProjects("mistyped")).resolves.toEqual({ kind: "refused" });
 });
 
-it("tells Vercel out of reach apart from a rejected token", async () => {
+it("tells Vercel out of reach apart from a refused token", async () => {
   vercelAccount(() => Promise.reject(new TypeError("fetch failed")));
   await expect(listVercelProjects("offline")).resolves.toEqual({
     kind: "unreachable",

@@ -148,12 +148,12 @@ const DELIVERY_GRANT: StripeGrant = {
   why: "which is how each buyer owed a delivery reaches the founder",
 };
 
-/** Ask the founder for a Stripe key with `grant` in place of one Stripe turned away, saying `said`, which ends the call. */
-export const stripeTurnedAway = (ctx: RunContext, grant: StripeGrant, said: string): never =>
+/** Ask the founder for a Stripe key with `grant` in place of one Stripe turned away, saying `reason`, which ends the call. */
+export const stripeTurnedAway = (ctx: RunContext, grant: StripeGrant, reason: string): never =>
   needIntegration(
     ctx,
     "stripe",
-    `Stripe won't let IdleBiz's key ${grant.can}, ${grant.why} (${said}): in the Budget panel, paste over it a key whose restricted permissions include ${grant.permissions}, or your secret key`,
+    `Stripe won't let IdleBiz's key ${grant.can}, ${grant.why} (${reason}): in the Budget panel, paste over it a key whose restricted permissions include ${grant.permissions}, or your secret key`,
     `Stripe won't let IdleBiz's key ${grant.can}: the founder has a Stripe card waiting to replace the key. Continue with what you can — ${RESUMES_ON_LIVE_KEY}`,
     `Stripe won't let IdleBiz's key ${grant.can}.`,
   );
@@ -170,7 +170,7 @@ export const requireStripeAccess = async (
       return;
     }
     case "refused": {
-      return stripeTurnedAway(ctx, grant, access.said);
+      return stripeTurnedAway(ctx, grant, access.reason);
     }
     case "unreachable": {
       throw new RefusalError(
@@ -351,10 +351,10 @@ export const MONEY_TOOLS = {
           product: product.id,
         });
         if (made.kind === "refused") {
-          return stripeTurnedAway(ctx, LINK_GRANT, made.said);
+          return stripeTurnedAway(ctx, LINK_GRANT, made.reason);
         }
         if (made.kind === "failed") {
-          throw new RefusalError(`Stripe made no payment link: ${made.error}`);
+          throw new RefusalError(`Stripe made no payment link: ${made.reason}`);
         }
         if (made.kind === "unrecorded") {
           throw new RefusalError(UNRECORDED_LINK);

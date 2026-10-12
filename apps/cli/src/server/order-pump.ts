@@ -363,7 +363,7 @@ const paymentRefusal = (
   if (payment.kind === "refused") {
     return {
       trouble: "Stripe won't let IdleBiz read its payment",
-      why: `Stripe won't let IdleBiz's key read charges (${payment.said}), which is how it checks the buyer's payment still stands before Printful charges you, so IdleBiz left Printful's ${formatCents(costCents)} draft unconfirmed. Give the key Read on Charges in Stripe's dashboard, or paste one that has it in the Budget panel, so later orders go out on their own. For this one, check in Stripe that the payment still stands, then confirm the draft in Printful's dashboard, or delete it.`,
+      why: `Stripe won't let IdleBiz's key read charges (${payment.reason}), which is how it checks the buyer's payment still stands before Printful charges you, so IdleBiz left Printful's ${formatCents(costCents)} draft unconfirmed. Give the key Read on Charges in Stripe's dashboard, or paste one that has it in the Budget panel, so later orders go out on their own. For this one, check in Stripe that the payment still stands, then confirm the draft in Printful's dashboard, or delete it.`,
     };
   }
   if (payment.kind === "taken") {
@@ -868,7 +868,7 @@ const takePaidCheckouts = async (now: number): Promise<void> => {
       {
         action: "Let IdleBiz's Stripe key read checkouts",
         draft: null,
-        instructions: `Stripe turned IdleBiz's key away when it read checkout sessions (${read.said}), so no paid print reaches Printful and no card tells you what a buyer is owed. In the Budget panel, paste over it a key whose restricted permissions include Read on Checkout Sessions, or your secret key. Press Done once it is saved: the waiting orders go out on their own.`,
+        instructions: `Stripe turned IdleBiz's key away when it read checkout sessions (${read.reason}), so no paid print reaches Printful and no card tells you what a buyer is owed. In the Budget panel, paste over it a key whose restricted permissions include Read on Checkout Sessions, or your secret key. Press Done once it is saved: the waiting orders go out on their own.`,
       },
     );
     return;

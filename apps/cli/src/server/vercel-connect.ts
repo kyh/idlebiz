@@ -38,11 +38,11 @@ const saveToken = (productId: string, token: string | undefined): VercelConnecti
 export const listVercelProjects = async (token?: string): Promise<VercelListing> => {
   const key = token ?? getSecret(VERCEL_TOKEN);
   if (!key) {
-    return { kind: "rejected" };
+    return { kind: "refused" };
   }
   try {
     const check = await validateToken(key);
-    if (check.kind === "rejected") {
+    if (check.kind === "refused") {
       return check;
     }
     return { account: check.account, kind: "loaded", projects: await listProjects(key) };

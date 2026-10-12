@@ -285,15 +285,15 @@ const switchOff = async (held: CompanyLink, key: string | null): Promise<void> =
         break;
       }
       case "refused": {
-        leaveOn(held, done.error);
+        leaveOn(held, done.reason);
         break;
       }
       case "unanswered": {
         const tries = (link.state.kind === "retrying" ? link.state.tries : 0) + 1;
         if (tries >= MAX_SWITCH_OFF_TRIES) {
-          leaveOn(held, `Stripe did not answer ${tries} times (${done.error})`);
+          leaveOn(held, `Stripe did not answer ${tries} times (${done.reason})`);
         } else {
-          store.setLinkState(held, { kind: "retrying", tries, why: done.error });
+          store.setLinkState(held, { kind: "retrying", tries, why: done.reason });
         }
         break;
       }
@@ -377,7 +377,7 @@ const switchedOffForReset = async (link: LinkCore, key: string | null): Promise<
     return "IdleBiz has no Stripe key it can use";
   }
   const done = await switchOffPaymentLink(key, link.id);
-  return done.kind === "off" ? null : done.error;
+  return done.kind === "off" ? null : done.reason;
 };
 
 /**

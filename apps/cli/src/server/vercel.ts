@@ -47,10 +47,10 @@ const UserSchema = z.object({
 /** Whether Vercel takes `token`; throws when Vercel cannot be asked. */
 export const validateToken = async (
   token: string,
-): Promise<{ kind: "rejected" } | { kind: "valid"; account: string | undefined }> => {
+): Promise<{ kind: "refused" } | { kind: "valid"; account: string | undefined }> => {
   const answer = await apiGetUnlessRefused("/v2/user", token);
   if (answer === null) {
-    return { kind: "rejected" };
+    return { kind: "refused" };
   }
   const parsed = UserSchema.safeParse(answer);
   return {

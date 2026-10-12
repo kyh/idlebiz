@@ -293,10 +293,10 @@ export const PRINT_TOOLS = {
         variants: quote.variants,
       });
       if (made.kind === "refused") {
-        return stripeTurnedAway(ctx, LISTING_GRANT, made.said);
+        return stripeTurnedAway(ctx, LISTING_GRANT, made.reason);
       }
       if (made.kind === "failed") {
-        throw new RefusalError(`Stripe made no payment link: ${made.error}`);
+        throw new RefusalError(`Stripe made no payment link: ${made.reason}`);
       }
       if (made.kind === "unrecorded") {
         throw new RefusalError(UNRECORDED_LINK);

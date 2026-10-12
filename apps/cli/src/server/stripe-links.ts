@@ -28,8 +28,8 @@ interface PaymentLinkRequest {
  */
 type LinkResult =
   | { kind: "made"; id: string; url: string }
-  | { kind: "refused"; said: string }
-  | { kind: "failed"; error: string }
+  | { kind: "refused"; reason: string }
+  | { kind: "failed"; reason: string }
   | { kind: "unrecorded" };
 
 export type PaymentLinker = (req: PaymentLinkRequest) => Promise<LinkResult>;
@@ -44,8 +44,8 @@ const LinkWithId = z.object({ id: StripeLinkIdSchema, url: z.url() });
 const linkOf = async (created: VendorAnswer<JsonValue>, what: string): Promise<LinkResult> => {
   if (created.kind !== "ok") {
     return created.kind === "refused"
-      ? { kind: "refused", said: created.reason }
-      : { error: created.reason, kind: "failed" };
+      ? { kind: "refused", reason: created.reason }
+      : { kind: "failed", reason: created.reason };
   }
   const link = await answeringStripe(what, () => LinkWithId.parse(created.value));
   return link.kind === "ok"
@@ -238,7 +238,7 @@ const variantChoice = (variants: readonly ListingVariant[]): Record<string, stri
 /** Whether a key may make shipping rates and read checkouts and charges, which a restricted key needs granted on their own. */
 export type StripeAccess =
   | { kind: "granted" }
-  | { kind: "refused"; said: string }
+  | { kind: "refused"; reason: string }
   | { kind: "unreachable"; reason: string };
 
 /** Whether `key` may make each read, as the founder is told to fix it. */
@@ -252,7 +252,7 @@ const accessTo = async (key: string, reads: readonly string[]): Promise<StripeAc
     return { kind: "granted" };
   }
   return asked.kind === "refused"
-    ? { kind: "refused", said: asked.reason }
+    ? { kind: "refused", reason: asked.reason }
     : { kind: "unreachable", reason: asked.reason };
 };
 
@@ -329,12 +329,12 @@ export const stripeShippedLink: ShippedLinker = async (req) => {
 /**
  * `refused` when Stripe answered no, which asking again would answer the same; `unanswered` when
  * it was busy (429), failing (5xx), out of reach or answered in a shape IdleBiz does not read,
- * which the next ask may get past. `error` is why, in Stripe's words when it gave any.
+ * which the next ask may get past. `reason` is why, in Stripe's words when it gave any.
  */
 export type SwitchOffResult =
   | { kind: "off" }
-  | { kind: "refused"; error: string }
-  | { kind: "unanswered"; error: string };
+  | { kind: "refused"; reason: string }
+  | { kind: "unanswered"; reason: string };
 
 /**
  * Switch a payment link off with the founder's key, here in main: its URL then shows the buyer
@@ -353,16 +353,16 @@ export const switchOffPaymentLink = async (key: string, id: string): Promise<Swi
   switch (answer.kind) {
     case "ok": {
       return answer.value.active
-        ? { error: "Stripe still lists it as active", kind: "refused" }
+        ? { kind: "refused", reason: "Stripe still lists it as active" }
         : { kind: "off" };
     }
     case "down": {
-      return { error: answer.reason, kind: "unanswered" };
+      return { kind: "unanswered", reason: answer.reason };
     }
     case "refused":
     case "missing":
     case "rejected": {
-      return { error: answer.reason, kind: "refused" };
+      return { kind: "refused", reason: answer.reason };
     }
     // no default
   }

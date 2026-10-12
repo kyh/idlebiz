@@ -216,7 +216,7 @@ describe("deploy", () => {
       ...run.ctx,
       checkVercelToken: (token) => {
         checked.push(token);
-        return Promise.resolve({ kind: "rejected" });
+        return Promise.resolve({ kind: "refused" });
       },
     };
 
@@ -550,7 +550,7 @@ describe("set_env", () => {
     store.setProductVercel("acme", VERCEL);
     const ctx: RunContext = {
       ...run.ctx,
-      checkVercelToken: () => Promise.resolve({ kind: "rejected" }),
+      checkVercelToken: () => Promise.resolve({ kind: "refused" }),
     };
 
     expect(await callTool(ctx, "set_env", OPENAI)).toContain(

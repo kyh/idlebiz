@@ -21,11 +21,11 @@ describe("the Vercel picker's lookup", () => {
   });
 
   it("asks for a paste when the saved token is refused or missing", () => {
-    expect(lookupFor(answered({ kind: "rejected" }))).toEqual({ state: "idle" });
+    expect(lookupFor(answered({ kind: "refused" }))).toEqual({ state: "idle" });
   });
 
   it("says a pasted token was rejected", () => {
-    const lookup = lookupFor(answered({ kind: "rejected" }), "vercel_x");
+    const lookup = lookupFor(answered({ kind: "refused" }), "vercel_x");
     expect(problemOf(lookup)).toMatch(/rejected/u);
   });
 
