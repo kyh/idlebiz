@@ -1,8 +1,5 @@
-// The Mac app: the shell, the node beside it, and the server with the page it serves as a resource, signed, notarized when
-// apps/desktop/.env names the notary's key, and the release's dmg in .output/bin. The release
-// material is read HERE, in the one process that packs, rather than from the shell's environment.
-// A pack with no Developer ID stops unless IDLEBIZ_PACK_UNSIGNED=1 asks for an ad-hoc one, and a
-// release (IDLEBIZ_RELEASE=1, which release:publish sets) stops unless it is signed and notarized.
+// The Mac app's dmg, in .output/bin. The release material is read here, in the one process that
+// packs, rather than from the shell's environment.
 //
 // `bundle.resources` and `externalBin` live in the config this writes, never in tauri.conf.json:
 // tauri-build copies both on every cargo build, so a clippy run would copy main's 600 MB, and a

@@ -1,9 +1,5 @@
-//! What the shell and main say to each other over `relay.rs`'s framing: every method's name, and
-//! the shape of what the shell sends main and reads from it. Main's end is
-//! `apps/cli/src/server/host.ts`. Neither end compiles against the other, so both are pinned to one
-//! sample of each method under `tests/fixtures/relay`: main's tests parse each with its schema, and
-//! these read each into the shell's types. A name or a field changed on one end alone fails one
-//! suite or the other.
+//! What the shell and main say over `relay.rs`'s framing, pinned to main's end
+//! (`apps/cli/src/server/host.ts`) by one sample a method under `tests/fixtures/relay`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

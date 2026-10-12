@@ -1,8 +1,4 @@
-// Main's state as the page holds it: one tanstack-query cache of the contract's answers, keyed by
-// `orpc` (api.ts). Nothing in it goes stale on its own: main's events say what moved
-// (activity-reducer.ts), and the store patches and refetches that (store.ts). React reads it through
-// the hooks here; the store and the office scene through `held`, `read`, `warm` and `watch`, so the
-// scene's boot and the window's share each answer and ask main once.
+// Main's answers as the page holds them: one tanstack-query cache, which only main's events move.
 
 import {
   CancelledError,

@@ -1,17 +1,8 @@
 //! Main is a child, and its one supervisor is this module.
 //!
-//! The shell starts main on node, and from then on main's stdio is the one channel between the
-//! window and the process that owns the save, the keys and the runs (`relay.rs`'s framing). The
-//! shell's requests go down and main's answers come back, each waited for up to a deadline of its
-//! own, so a main that stops answering holds no thread of the shell's past it. What main asks of a
-//! native app, and what it tells the window, goes to `host.rs`. Everything main prints to stderr
-//! is appended to its log.
-//!
-//! Main's stdin is also its lifeline. The shell closes it only once main has answered `quit`, so a
-//! shell that crashed or was killed ends main too, and main stops its runs on the way out. A thread
+//! Main's stdin is its lifeline: the shell closes it only once main has answered `quit`. A thread
 //! of its own writes it, so a main that stops reading holds that thread alone: never a quit's
-//! wait, which then ends main the hard way. There is no restart: main owns the save, and a second
-//! one under a first that has not let go would be refused it.
+//! wait, which then ends main the hard way.
 
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;

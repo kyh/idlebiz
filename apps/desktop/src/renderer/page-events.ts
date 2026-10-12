@@ -1,6 +1,4 @@
-// Main's events as the page hears them: the contract's one stream (`events`), opened once and
-// again whenever it drops, each event handed to whoever listens for its name. What main sent while
-// the stream was closed is lost, so the page asks main for everything again as each one opens.
+// Main's events as the page hears them: the contract's one stream, reopened whenever it drops.
 
 import type { PageEvent, PageEventName, PageEvents } from "@repo/contract/events";
 import { api } from "@/renderer/api";
@@ -15,7 +13,7 @@ const listeners: Listeners = {
   auth: new Set(),
 };
 
-/** Hears one of main's events until the answer it gives is called. */
+/** Hears one of main's events until the function it returns is called. */
 export const listen = <E extends PageEventName>(name: E, listener: Listener<E>): (() => void) => {
   const heard = listeners[name];
   heard.add(listener);

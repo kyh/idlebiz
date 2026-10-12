@@ -15,7 +15,6 @@ use tauri_plugin_opener::OpenerExt;
 use crate::protocol::{Ask, BoxKind, OpeningKind, Tell};
 use crate::{keep_awake, login_item, tray};
 
-/// Answers one request of main's, on a thread of its own.
 pub fn answer<R: Runtime>(
     app: &AppHandle<R>,
     method: &str,

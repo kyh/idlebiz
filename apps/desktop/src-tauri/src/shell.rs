@@ -1,8 +1,4 @@
-//! The shell's one state: main, the child that owns the save, and the moves around it. A launch
-//! starts main (`idlebiz serve`), says hello with what only the shell knows (whether the login item
-//! launched it, the dev server under `tauri dev`, the Keychain's sealing key), and opens the window
-//! on main's page, or keeps to the menu bar when the login item launched it. A quit asks main to
-//! stop its runs before anything ends.
+//! The shell's one state: main, the child that owns the save, and the moves around it.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

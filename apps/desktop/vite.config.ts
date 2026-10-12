@@ -1,12 +1,5 @@
-// The page: React and Phaser, which the server serves the shell's window on its own origin
-// (apps/cli/src/server/page-server.ts). `vite build` writes it to `dist/`, which the server's build
-// stages beside its bundle.
-//
-// The dev server answers the page's files to the server, which hands them on, so the page keeps the
-// server's origin and still reloads in place; its hot-reload socket dials this server directly. It
-// builds the server too (apps/cli/vite.config.ts), before it serves and again on each change:
-// `tauri dev` restarts the shell when the server changes, and `--mode browser` runs the server
-// itself, as the shell does (`idlebiz/dev-host`), with `/` here the way into its page.
+// The dev server answers the page's files to main, which hands them on, so the page keeps main's
+// origin and still reloads in place; its hot-reload socket dials this server directly.
 
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
