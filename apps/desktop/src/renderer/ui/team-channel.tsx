@@ -216,34 +216,31 @@ export const TeamChannel = () => {
           ))}
         </div>
       ) : null}
-      <div className="flex gap-1 p-1.5">
+      <form
+        className="flex gap-1 p-1.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
+      >
         <input
           value={draft}
           readOnly={submission.kind === "sending"}
           onChange={(e) => setDraft(e.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              send();
-            }
-          }}
           placeholder={focused ? "@name wakes them up" : "Message the team…"}
           className="px-field min-w-0 flex-1"
         />
         <button
-          type="button"
-          onClick={() => {
-            send();
-          }}
+          type="submit"
           disabled={!draft.trim() || submission.kind === "sending"}
           aria-label={submission.kind === "sending" ? "Sending message" : "Send message"}
           className="px-btn"
         >
           <span className="px-icon px-icon-solo">➤</span>
         </button>
-      </div>
+      </form>
       {submission.kind === "failed" ? (
         <div role="alert" className="px-2 pb-2 text-xs text-danger">
           Could not send: {submission.message}

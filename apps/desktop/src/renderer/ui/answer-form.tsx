@@ -40,16 +40,16 @@ export const AnswerForm = ({
 
   return (
     <div className="mt-2">
-      <div className="flex gap-2">
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
+      >
         <input
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              send();
-            }
-          }}
           placeholder="Your answer…"
           className="px-field min-w-0 flex-1"
           readOnly={submission.kind === "sending"}
@@ -57,16 +57,13 @@ export const AnswerForm = ({
           autoFocus={autoFocus}
         />
         <button
-          type="button"
-          onClick={() => {
-            send();
-          }}
+          type="submit"
           disabled={!answer.trim() || disabled}
           className="px-btn-accent px-btn"
         >
           {submitLabel(submission)}
         </button>
-      </div>
+      </form>
       <Failure submission={submission} doing="answer" />
     </div>
   );
