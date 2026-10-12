@@ -450,7 +450,8 @@ strict zod schema, the one its encoder writes to: a package it refuses (a hand e
 missing) is skipped and named in the load report, never read with a default. A frontmatter key
 the app does not know is still dropped on the next write of that file. Boot alone repairs what a
 hand edit or a release with no lead leaves (`initStore`): a run that names no lock is queued
-again, and queued or running work nobody holds is to do.
+again, and queued or running work nobody holds is to do. No repair stands in for a package it
+skipped: a lead whose AGENTS.md did not read stays lead, and a teammate's open work stays theirs.
 
 Only closed work is history. `done` tasks move to `shipped/` and load on demand; so does an ask
 the founder answered, `superseded` by its continuation, an order card the founder `settled`, and

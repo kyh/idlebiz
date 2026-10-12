@@ -2171,10 +2171,18 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
 const lacksProduct = (active: ActiveCompany): boolean =>
   active.products.length === 0 && !holdsPackage(productsDir(), productFile);
 
-/** Whether the save named no lead on the roster and one was elected; unsaved. */
+/**
+ * Whether the save named no lead on the roster and one was elected; unsaved. A lead whose
+ * package boot merely could not read stays lead, so fixing the file brings them back as one.
+ */
 const electMissingLead = (active: ActiveCompany): boolean => {
   const { company, employees } = active;
-  if (employees.length === 0 || employees.some((e) => e.id === company.leaderId)) {
+  const { leaderId } = company;
+  if (
+    employees.length === 0 ||
+    employees.some((e) => e.id === leaderId) ||
+    (leaderId !== null && heldIn(agentsDir())(leaderId))
+  ) {
     return false;
   }
   active.company = { ...company, leaderId: leadOf(employees) };

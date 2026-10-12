@@ -1978,4 +1978,27 @@ describe("the save format", () => {
     expect(store.requireCompany().leaderId).toBe("mae");
     expect(store.getTask(dead.id)).toMatchObject({ assigneeId: "mae", state: { kind: "dead" } });
   });
+
+  it("keeps a lead whose AGENTS.md it could not read, who leads again once it reads", () => {
+    foundAcme([hire("Mae"), hire("Priya")]);
+    const lead = store.requireCompany().leaderId;
+    if (lead === null) {
+      throw new Error("founding elected no lead");
+    }
+    const file = path.join(employeeAgentDir(lead), "AGENTS.md");
+    const written = readFileSync(file, "utf-8");
+    writeFileSync(file, written.replace(/runner: "?claude"?/u, "runner: clod"));
+    const company = readFileSync(companyFile(), "utf-8");
+
+    expect(store.initStore().skipped).toEqual([
+      expect.objectContaining({ kind: "employee", path: file }),
+    ]);
+    expect(store.requireCompany().leaderId).toBe(lead);
+    expect(readFileSync(companyFile(), "utf-8")).toBe(company);
+
+    writeFileSync(file, written);
+    store.initStore();
+    expect(store.requireCompany().leaderId).toBe(lead);
+    expect(store.getEmployee(lead)).not.toBeNull();
+  });
 });
