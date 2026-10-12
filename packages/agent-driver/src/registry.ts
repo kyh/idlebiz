@@ -46,23 +46,34 @@ export interface RunnerAdapter {
   typedFailures?: true;
 }
 
+/** A model choice that does not read is left to claude's default, not the run's sign-in with it. */
+const ignoredIfBad = <T extends z.ZodType>(schema: T) =>
+  z
+    .unknown()
+    .transform((value) => schema.safeParse(value).data)
+    .optional();
+
 /**
  * What of the player's claude user settings a session still carries, by their names there, since
  * it loads none of them: what signs their CLI in, and the model and effort they picked, which
  * claude would otherwise leave for its default and bill them for. Only these, so nothing of the
  * player's can loosen what the session sets beside them.
  */
-export interface ClaudeUserSettings {
-  alwaysThinkingEnabled?: boolean | undefined;
-  apiKeyHelper?: string | undefined;
-  awsAuthRefresh?: string | undefined;
-  awsCredentialExport?: string | undefined;
-  effortLevel?: string | undefined;
-  gcpAuthRefresh?: string | undefined;
-  model?: string | undefined;
-  modelOverrides?: Readonly<Record<string, string>> | undefined;
-  modelSettings?: Readonly<Record<string, { effortLevel?: string | undefined }>> | undefined;
-}
+export const ClaudeUserSettingsSchema = z.object({
+  alwaysThinkingEnabled: ignoredIfBad(z.boolean()),
+  apiKeyHelper: z.string().optional(),
+  awsAuthRefresh: z.string().optional(),
+  awsCredentialExport: z.string().optional(),
+  effortLevel: ignoredIfBad(z.string()),
+  gcpAuthRefresh: z.string().optional(),
+  model: ignoredIfBad(z.string()),
+  modelOverrides: ignoredIfBad(z.record(z.string(), z.string())),
+  modelSettings: ignoredIfBad(
+    z.record(z.string(), z.object({ effortLevel: z.string().optional() })),
+  ),
+});
+
+export type ClaudeUserSettings = z.output<typeof ClaudeUserSettingsSchema>;
 
 /**
  * What of a session's start is the run's to say. `skills` is the folder of IdleBiz's skills, each
