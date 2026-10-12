@@ -20,7 +20,7 @@
     "clean": "rm -rf .cache .output dist"
   },
   "devDependencies": {
-    "@base-ui/react": "1.8.0",
+    "@base-ui/react": "1.9.0",
     "@orpc/client": "catalog:",
     "@orpc/contract": "catalog:",
     "@repo/agent-driver": "workspace:*",
@@ -28,11 +28,11 @@
     "@repo/domain": "workspace:*",
     "@repo/px-kit": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
-    "@tauri-apps/cli": "^2.12.1",
+    "@tauri-apps/cli": "^2.12.2",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-react": "^6.1.2",
     "cn": "catalog:",
     "idlebiz": "workspace:*",
     "phaser": "^4.2.1",
@@ -40,7 +40,7 @@
     "react-dom": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
-    "vite": "^8.3.2",
+    "vite": "^8.3.4",
     "vitest": "catalog:",
     "zod": "catalog:"
   },
