@@ -120,15 +120,11 @@ const heartbeatBrief = (
  * get the same answer, billed again.
  */
 const lastProposalIdle = (leaderId: string, now: number): boolean => {
-  const last = store.lastProposalOf(leaderId);
-  if (
-    last?.state.kind !== "done" ||
-    last.completedAt === null ||
-    now >= last.completedAt + PROPOSAL_RETRY_MS
-  ) {
+  const last = store.lastProposalDone(leaderId);
+  if (last === null || now >= last.endedAt + PROPOSAL_RETRY_MS) {
     return false;
   }
-  const briefed = last.createdAt;
+  const briefed = last.briefedAt;
   const betNews = (bet: Bet): boolean =>
     bet.createdAt > briefed || (isClosed(bet) && bet.state.closedAt > briefed);
   return (

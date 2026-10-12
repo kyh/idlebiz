@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
@@ -14,7 +14,7 @@ import type { KeepAwake, PowerBlocker } from "./keep-awake";
 import type { EmployeeRunner } from "./scheduler";
 import type { Integrations } from "./tools/define";
 import * as store from "./store/store";
-import { activityFile, companyDir, tasksDir, betFile, routineFile } from "./paths";
+import { activityFile, companyDir, tasksDir, betFile, routineFile, shippedDir } from "./paths";
 import { activityEvents } from "./activity";
 import { createScheduler, loggedToolName } from "./scheduler";
 import { founderActions } from "./founder-actions";
@@ -904,6 +904,24 @@ describe("asking the lead for the next bet", () => {
       news();
       tick();
       expect(proposing()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("files no second proposal after a restart either, and reads no history to know", async () => {
+    vi.useFakeTimers({ now: Date.now(), toFake: ["Date"] });
+    try {
+      const tick = await proposeNothing();
+      const unreadable = path.join(shippedDir(), "unreadable", "TASK.md");
+      mkdirSync(path.dirname(unreadable), { recursive: true });
+      writeFileSync(unreadable, "garbage");
+      store.initStore();
+
+      tick();
+
+      expect(proposing()).toEqual([]);
+      expect(store.loadReport().skipped.map((s) => s.path)).not.toContain(unreadable);
     } finally {
       vi.useRealTimers();
     }

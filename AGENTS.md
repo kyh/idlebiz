@@ -576,7 +576,8 @@ floor, `MIN_BET_TARGET` (10 whole users, $5), which `open_bet`'s body refuses be
   blocked is not asked again. Nor is one whose last proposal ended done with no news on the
   ledger since it was briefed (`proposalIdle`: no bet opened or closed, no product started), the
   same brief getting the same answer, until it is `PROPOSAL_RETRY_MS` (15 minutes) old, since the
-  room or a connection may have moved meanwhile.
+  room or a connection may have moved meanwhile. A proposal that ends done is noted in
+  `state/last-proposal.json` (`store.lastProposalDone`), so allocating reads no history.
 - **Work a bet no longer funds.** A bet that leaves open (measured, killed, judged) drops its
   waiting work, and a run still on it that fails, parks or is cut off by a restart is dropped
   instead of queueing again, as is one that asks the founder once the bet has closed; measuring

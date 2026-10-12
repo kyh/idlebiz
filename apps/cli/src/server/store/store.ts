@@ -12,6 +12,7 @@ import {
   activityFile,
   recentShipsFile,
   sinceLastLookFile,
+  lastProposalFile,
   agentsDir,
   approvalsFile,
   alumniDir,
@@ -130,6 +131,14 @@ import type { ActivityEvent, PersistedActivity } from "@repo/domain/activity";
 const GrantSchema = z.object({ grantedAt: z.number(), key: z.string(), taskId: z.string() });
 type Grant = z.infer<typeof GrantSchema>;
 
+const ProposalEndSchema = z.object({
+  briefedAt: z.number(),
+  employeeId: z.string(),
+  endedAt: z.number(),
+});
+/** A proposal that ended done: whose it was, when it was briefed and when it ended. */
+type ProposalEnd = z.infer<typeof ProposalEndSchema>;
+
 interface ActiveCompany {
   company: Company;
   employees: Employee[];
@@ -154,6 +163,8 @@ interface ActiveCompany {
   chat: TeamMessage[];
   /** The latest ship summaries, oldest first: what the next brief calls "recently shipped". */
   recentShips: string[];
+  /** The latest proposal to end done, kept apart so allocating never reads the shipping log. */
+  lastProposal: ProposalEnd | null;
   /** What has happened since the founder last looked. Null until they first do, so founding a company is not news. */
   sinceLastLook: Digest | null;
 }
@@ -197,6 +208,7 @@ const emptyCompany = (company: Company): ActiveCompany => ({
   company,
   employees: [],
   grants: [],
+  lastProposal: null,
   links: [],
   listings: [],
   orders: [],
@@ -1572,14 +1584,19 @@ export const shippingLog = (): ShipLine[] =>
 export const openTasksFor = (employeeId: string): Task[] =>
   maybeCurrent()?.tasks.filter((task) => task.assigneeId === employeeId) ?? [];
 
-/** The employee's latest proposal, open or history: what came of the last time they were asked for the next bet. */
-export const lastProposalOf = (employeeId: string): Task | null => {
-  const active = current();
-  return (
-    [...active.tasks, ...shippedOf(active)]
-      .filter((t) => t.assigneeId === employeeId && t.origin === "propose")
-      .toSorted(newestFirst)[0] ?? null
+/**
+ * The employee's latest proposal to end done, unless one they were asked for since is still
+ * open: what came of the last time they were asked for the next bet.
+ */
+export const lastProposalDone = (employeeId: string): ProposalEnd | null => {
+  const { lastProposal: last, tasks } = current();
+  if (last?.employeeId !== employeeId) {
+    return null;
+  }
+  const askedSince = tasks.some(
+    (t) => t.assigneeId === employeeId && t.origin === "propose" && t.createdAt > last.briefedAt,
   );
+  return askedSince ? null : last;
 };
 
 const TASK_PRIORITY_ORDER = { high: 0, low: 2, medium: 1 } satisfies Record<TaskPriority, number>;
@@ -1625,12 +1642,30 @@ const noteShip = (t: Task): void => {
   recordIn(current().employees, t.assigneeId, { lastShip }, saveRunState);
 };
 
+/** Losing it costs one more proposal, never a settle, so a failed write is only reported. */
+const noteProposalDone = (t: Task, endedAt: number): void => {
+  if (t.origin !== "propose" || t.assigneeId === null) {
+    return;
+  }
+  const last: ProposalEnd = { briefedAt: t.createdAt, employeeId: t.assigneeId, endedAt };
+  current().lastProposal = last;
+  try {
+    atomicWrite(lastProposalFile(), JSON.stringify(last, null, 2));
+  } catch (error) {
+    report("note the last proposal", error);
+  }
+};
+
 // Persist before shelving so boot can recover a crash between the two writes.
 const close = (
   taskId: string,
   state: SettledByRun | Extract<TaskState, { kind: "superseded" }>,
 ): void => {
-  const t = recordTask(taskId, entering(state, Date.now()));
+  const now = Date.now();
+  const t = recordTask(taskId, entering(state, now));
+  if (state.kind === "done") {
+    noteProposalDone(t, now);
+  }
   if (isHistory(t) && shelveClosed(t)) {
     noteShip(t);
   }
@@ -2090,6 +2125,7 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
   loadRecentChat(active);
   active.sinceLastLook = readJsonFile(sinceLastLookFile(), DigestSchema);
   active.recentShips = readJsonFile(recentShipsFile(), RecentShipsSchema) ?? [];
+  active.lastProposal = readJsonFile(lastProposalFile(), ProposalEndSchema);
   return active;
 };
 

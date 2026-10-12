@@ -25,6 +25,7 @@ import { mkdirSync } from "node:fs";
 //     state/                running state main keeps for itself; deleting it loses nothing canonical
 //       since-last-look.json  the founder's digest, folded from each event as it happens
 //       recent-ships.json     the latest ship summaries, for the next brief
+//       last-proposal.json    when the lead's latest proposal to end done was briefed and ended, for allocate's wait
 //       policy.json           how the allocator weighs bets, retuned by replaying closed ones
 //       orders-cursor.json    where each Stripe key's next read of checkouts starts
 //       runner-rest.json      until when each runner rests on a usage limit, an overload or a refusal of access, so a restart does not spawn each parked task to be refused
@@ -73,6 +74,8 @@ const stateDir = (): string => path.join(companyDir(), "state");
 export const recentShipsFile = (): string => path.join(stateDir(), "recent-ships.json");
 /** The founder's digest-in-progress: what has happened since they last looked. */
 export const sinceLastLookFile = (): string => path.join(stateDir(), "since-last-look.json");
+/** When the lead's latest proposal to end done was briefed and ended, so allocating reads no history; deleted, the lead is asked once more. */
+export const lastProposalFile = (): string => path.join(stateDir(), "last-proposal.json");
 /** Where the next read of Stripe's checkouts starts; deleted, it reads again from the company's founding and finds each order already kept. */
 export const ordersCursorFile = (): string => path.join(stateDir(), "orders-cursor.json");
 /** Until when each runner rests on a usage limit, an overload or a refusal of access; deleted, each task waiting on one spawns once more to be refused. */
