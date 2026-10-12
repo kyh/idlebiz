@@ -7,12 +7,8 @@ import type { Call } from "./reading";
 import { RULE_PROGRAMS, ruleHolding } from "./shell-rules";
 import type { Rule } from "./shell-rules";
 
-// IdleBiz answers every permission ask both runners raise, so an unmatched command runs
-// with the founder's privileges, less what the run's Seatbelt profile seals (their logins,
-// IdleBiz's keys, every write outside the run's own folders): the CLIs' own sandboxes are
-// off, and no rule judges where a run writes. It is a tripwire for outward actions, not a
-// sandbox: what a script runs stays unseen, so `npm run deploy` or a script on disk goes
-// through.
+// A tripwire for outward actions, not a boundary: what it holds and what goes unseen is AGENTS.md's
+// "The command policy", and what the seal leaves open its "What stays open".
 
 /** What a shell command runs, read once for the rules and the browser gate alike. */
 const callsOf = (command: string): Call[][] => pipelinesOf(command, RULE_PROGRAMS);

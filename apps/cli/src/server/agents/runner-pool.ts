@@ -133,7 +133,6 @@ export const memoryAfter = (
 export const resumeIn = (session: RunSession | null, workspace: string): string | undefined =>
   session?.workspace === workspace ? session.id : undefined;
 
-/** The first rest an overload or a refusal of access earns; each one after it in a row doubles it. */
 const BACKOFF_MS = 60_000;
 
 /** The longest an overload or a refusal of access rests a runner: a busy provider, or a credential blip, clears in minutes. */
@@ -381,13 +380,10 @@ export class RunnerPool {
 
   /**
    * What a turn's end says of its runner, whatever else the run says, and how the turn ended as
-   * the runner now stands. Every rest is decided here: a usage limit rests it until the reset the
-   * provider reported, or half an hour when it named none, never past 12 hours; an overload, or a
-   * refusal of access no sign-in repairs, for a backoff that doubles with each one in a row (1m,
-   * 2m, 4m… up to 15m) and starts over once a turn ends any other way, so a credential blip clears
-   * soon and a standing refusal is not hammered. A refused login reads as signed out until the
-   * founder signs it in again. A rest never shortens one already holding, which a turn still in
-   * flight may end under.
+   * the runner now stands: every rest is decided here. A backoff's streak starts over once a turn
+   * ends any other way, so a credential blip clears soon and a standing refusal is not hammered. A
+   * refused login reads as signed out until the founder signs it in again. A rest never shortens
+   * one already holding, which a turn still in flight may end under.
    */
   heed(runner: RunnerId, end: AcpTurnEnd): TurnOutcome {
     const backsOff =

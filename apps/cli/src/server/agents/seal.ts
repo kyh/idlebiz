@@ -78,21 +78,14 @@ const LOGINS = [
 ];
 
 /**
- * Each runner's home, and in it the state its runs write: sessions, logs, caches, databases, its
- * refreshed login. Nothing else there is written, since the founder's own CLI loads and runs what
- * the rest holds (settings, instructions, hooks, skills, plugins, and any script a setting names,
- * a status line or a notifier). Each of `state` is a prefix, since a CLI writes a file through a
- * sibling it renames over it; one ending in a slash is only that folder. `account` is where the
- * CLI records the founder's account, in the home and beside it in HOME, each with every name that
- * starts with it: only the sign-in writes it. claude's transcripts and memory are `projects/`,
- * of which a run writes only its own folder's (`Seal.claudeProjects`). `personal` is what of the
- * founder's own its runs would load, in the home and in HOME, which they cannot even read: codex
- * loads every skill it can read, with no setting that leaves them all out, and their instructions
- * (`AGENTS.md`, or `AGENTS.override.md` in its place), whatever its config says; their memories
- * are kept from its prompt by the session's config, and from its reads here. A claude session
- * loads no user settings, so none of theirs. `absent` is what of the founder's its runs read as
- * missing, since the runner refuses to start on it unreadable: codex's rules, whose `allow`
- * decisions run a command without asking IdleBiz, and which codex loads whatever its config says.
+ * Each runner's home, and what of it the seal treats apart from the rest, which no run writes; why
+ * each is sealed so is AGENTS.md's "A run's seal". `state` is what its runs write, each a prefix,
+ * since a CLI writes a file through a sibling it renames over it; one ending in a slash is only
+ * that folder. claude's `projects/` is written only for the run's own folder
+ * (`Seal.claudeProjects`). `account` is where the CLI records the founder's account, in the home
+ * and beside it in HOME, each with every name that starts with it, which only the sign-in writes.
+ * `personal` is what of the founder's own its runs cannot read, in the home and in HOME, and
+ * `absent` what they read as missing.
  */
 const RUNNER_HOMES = {
   claude: {

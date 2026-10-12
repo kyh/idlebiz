@@ -57,12 +57,9 @@ export const makeBrowserNamespace = (seal: Seal, runner: RunnerId): void => {
 };
 
 /**
- * Every session an employee runs, a task or a one-shot, starts sealed: sandbox-exec cannot apply
- * a profile inside another, so neither CLI may sandbox its own commands in there. claude's
- * sandbox stays off and codex runs in external-sandbox mode (both in the registry), or every
- * command they run fails. `setup` is where IdleBiz's skills are, and how the founder's claude
- * signs in and which model it picks. `more` joins the adapter's env over main's: for codex, the
- * session config `codexSessionEnv` makes; for claude, the env of their user settings.
+ * `runner`'s agent under `seal`, for a task's session or a one-shot's alike. `setup` is where
+ * IdleBiz's skills are, and how the founder's claude signs in and which model it picks. `more`
+ * joins the adapter's env over main's: codex's session config, or claude's user-settings env.
  */
 export const acpAgentFor = (
   runner: RunnerId,
@@ -121,12 +118,10 @@ const unlisted = (why: string): RefusalError =>
   );
 
 /**
- * The session config that turns off every server `listed` (what `codex mcp list --json` printed)
- * names; apps and plugins, which bring servers of their own, and skills the seal leaves a run to
- * read (plugins keep theirs in `plugins/cache`); and memories, which would put what the founder's
- * own sessions taught codex into the run's prompt. It reads a workspace's notes as a claude run is
- * handed them (`readTeamNotes`): `AGENTS.md` or its override, never another name their config
- * falls back to, and as much of it.
+ * The session config turning off every MCP server `listed` (what `codex mcp list --json` printed)
+ * names, and apps, plugins and memories whole, which would bring servers, skills or what the
+ * founder's own sessions taught codex into the run; it reads the team's notes as a claude run is
+ * handed them (`readTeamNotes`).
  */
 export const codexSessionConfig = (listed: string) => {
   let servers: z.infer<typeof CodexMcpServers>;
@@ -145,11 +140,9 @@ export const codexSessionConfig = (listed: string) => {
 };
 
 /**
- * The adapter env whose session config keeps every MCP server of the founder's out of a codex run
- * (`codexSessionConfig`): they act as the founder, signed in as them. codex has no switch that
- * loads none, and a session's config is merged over theirs, so each is turned off by the name
- * `codex mcp list` gives it, listed as the run would load them (`env` is the run's own, a
- * CODEX_HOME in it included).
+ * The adapter env carrying `codexSessionConfig`. A session's config is merged over the founder's
+ * with no switch that loads no server, so each is listed as the run would load them (`env` is the
+ * run's own, a CODEX_HOME in it included) and turned off by name.
  */
 export const codexSessionEnv = async (
   seal: Seal,

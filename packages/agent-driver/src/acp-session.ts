@@ -60,18 +60,19 @@ const SessionFailureMeta = z.object({
   }),
 });
 
+/** The agent a turn spawns. Its session fields are a `RunnerAdapter`'s, which says why each is. */
 export interface AcpAgent {
   /** Argv of the ACP agent to spawn (e.g. the claude or codex adapter). */
   command: readonly string[];
-  /** Session mode to set every turn — see `RunnerAdapter`. */
+  /** Session mode to set every turn. */
   sessionModeId: string;
-  /** Sent as `_meta` when the session is created or resumed — see `RunnerAdapter`. */
+  /** Sent as `_meta` when the session is created or resumed. */
   sessionMeta?: NewSessionRequest["_meta"];
-  /** Folders every session is handed besides the turn's `addDirs`, to read — see `RunnerAdapter`. */
+  /** Folders every session is handed besides the turn's `addDirs`, to read. */
   readDirs?: readonly string[] | undefined;
-  /** Count the turn from its per-request usage updates — see `RunnerAdapter`. */
+  /** Count the turn from its per-request usage updates. */
   usagePerRequest?: true | undefined;
-  /** Declare typed session failures on initialize — see `RunnerAdapter`. */
+  /** Declare typed session failures on initialize. */
   typedFailures?: true | undefined;
   /** The agent's whole environment: nothing of this process's own reaches it unless named here. */
   env: Record<string, string>;

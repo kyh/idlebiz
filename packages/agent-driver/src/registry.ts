@@ -106,13 +106,9 @@ const claudeLoggedIn = (output: string): boolean => {
 };
 
 /**
- * With bypass off, no settings tier can start a session in it. No setting source is loaded: not
- * the player's user settings (their CLAUDE.md, skills, plugins, hooks), nor a project's or a
- * local one, which a run could write for the next to load. What remains is managed policy and
- * `settings`, the flag tier, whose ask rules beat allow rules from any tier. Its skills are
- * IdleBiz's, as a plugin, and none of claude's own. None of the player's MCP servers or claude.ai
- * connectors load either: those act as the player, signed in as them, and a run reaches the
- * company with the `idlebiz` command in its shell, not MCP.
+ * What a claude session loads is AGENTS.md's "A claude session". With bypass off, no settings tier
+ * can start a session in it, and `settings`, the flag tier, has ask rules that beat allow rules
+ * from any tier.
  */
 const claudeSession = ({ skills, teamNotes, userSettings }: SessionSetup): SessionStart => {
   const meta: NonNullable<SessionStart["meta"]> = {
