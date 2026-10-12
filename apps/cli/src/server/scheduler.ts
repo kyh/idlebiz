@@ -188,10 +188,14 @@ const park = (task: Task, runId: string, until: number, why: string): TaskStatus
  * dropped, and so is its ask to the founder once that bet has closed. A settle run that ends
  * done without the call it was for closes its bet unmeasured.
  */
-const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskStatus => {
-  const at = { employeeId: emp.id, runId, taskId: task.id };
+const settleRun = (
+  runId: string,
+  task: Task,
+  emp: Employee,
+  r: RunResult,
+  at: { employeeId: string; runId: string; taskId: string },
+): TaskStatus => {
   const o = r.outcome;
-  let status: TaskStatus;
   switch (o.kind) {
     case "blocked": {
       const settled = store.settleTask(task.id, runId, {
@@ -199,11 +203,9 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskSta
         kind: "blocked",
         summary: r.summary || null,
       });
-      status = settled?.kind === "dropped" ? "dropped" : "blocked";
-      break;
+      return settled?.kind === "dropped" ? "dropped" : "blocked";
     }
     case "done": {
-      status = "done";
       store.settleTask(task.id, runId, { kind: "done", summary: r.summary || null });
       ship(task, at, r.summary);
       const unsettled =
@@ -213,62 +215,62 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskSta
       if (unsettled) {
         announceBet(unsettled);
       }
-      break;
+      return "done";
     }
     case "resting": {
-      status = park(task, runId, o.until, o.error);
+      const status = park(task, runId, o.until, o.error);
       publishActivity({
         ...at,
         kind: "runner.resting",
         payload: { cause: o.cause, error: o.error, runner: emp.runner, until: o.until },
       });
-      break;
+      return status;
     }
     case "signedOut": {
-      status = park(task, runId, Date.now(), o.error);
-      break;
+      return park(task, runId, Date.now(), o.error);
     }
     case "interrupted": {
-      status = park(task, runId, Date.now(), "Interrupted by app quit");
-      break;
+      return park(task, runId, Date.now(), "Interrupted by app quit");
     }
     case "failed": {
       const verdict = store.failTask(task.id, runId, o.error);
       if (verdict?.kind === "dropped") {
-        status = "dropped";
-      } else if (verdict?.kind === "dead") {
-        status = "dead";
+        return "dropped";
+      }
+      if (verdict?.kind === "dead") {
         publishActivity({
           ...at,
           kind: "task.dead",
           payload: { attempts: verdict.attempts, error: o.error },
         });
-      } else {
-        status = "queued";
-        if (verdict) {
-          publishActivity({
-            ...at,
-            kind: "task.retry",
-            payload: {
-              attempts: verdict.attempts,
-              error: o.error,
-              maxAttempts: MAX_TASK_ATTEMPTS,
-              retryAt: verdict.retryAt,
-            },
-          });
-        }
+        return "dead";
       }
-      break;
+      if (verdict) {
+        publishActivity({
+          ...at,
+          kind: "task.retry",
+          payload: {
+            attempts: verdict.attempts,
+            error: o.error,
+            maxAttempts: MAX_TASK_ATTEMPTS,
+            retryAt: verdict.retryAt,
+          },
+        });
+      }
+      return "queued";
     }
     // no default
   }
+};
 
+const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskStatus => {
+  const at = { employeeId: emp.id, runId, taskId: task.id };
+  const status = settleRun(runId, task, emp, r, at);
   // a run that was only parked or will retry keeps its sign-off; one that ended does not
   if (status !== "queued") {
     store.revokeApprovals(task.id);
   }
   store.noteRunEnd(emp.id, { instructionsDigest: r.instructionsDigest, session: r.session });
-
   publishActivity({ ...at, kind: "status", message: status });
   return status;
 };
