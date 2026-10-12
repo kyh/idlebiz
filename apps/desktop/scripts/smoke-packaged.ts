@@ -59,7 +59,8 @@ const NO_SUCH_ITEM = 44;
 // a delete the Keychain holds on a prompt nobody answers
 const KEYCHAIN_TIMEOUT_MS = 10_000;
 
-// a cold WebKit and main's boot, its seal check and login-shell probe among it, on a CI runner
+// a cold WebKit, main's boot (its save claim, store, control plane and page server) and the
+// handoff, on a CI runner
 const BOOT_TIMEOUT_MS = 120_000;
 // past a quit's 45s and main's 5s to exit once its stdin closes (main_process.rs)
 const EXIT_TIMEOUT_MS = 60_000;
