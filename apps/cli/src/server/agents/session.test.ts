@@ -23,7 +23,8 @@ import { SEAL, SKILLS, found, root } from "./fixtures";
 import * as store from "../store/store";
 import { acpAgentFor, codexSessionConfig, codexSessionEnv, permissionGate } from "./session";
 import { createRunnerPool } from "./runner-pool";
-import { browserNamespace, realPathOf, sealedCommand } from "./seal";
+import { browserNamespace, realPathOf } from "./machine-seal";
+import { sealedCommand } from "./seal";
 
 const SETUP = { skills: SKILLS, teamNotes: null, userSettings: {} };
 

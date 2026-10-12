@@ -362,7 +362,8 @@ tools/
   `shell-lexer.ts` reads from a line as bash would, read loosely as well where another shell may
   split it apart, `shell-rules.ts` the rules over them, `browser.ts` the agent-browser gate and
   the live page it reads, `index.ts` `holdFor`), `refusal.ts`,
-  `agents/seal.ts` (the Seatbelt profile each run starts under, and its boot check),
+  `agents/seal.ts` (the Seatbelt profile each run starts under), `agents/machine-seal.ts` (what
+  it seals on this machine), `agents/seal-check.ts` (its boot check),
   `agents/bundled-skills.ts` (where IdleBiz's skills ship), `agents/claude-user-settings.ts`
   (what of the founder's claude settings a run still carries: its sign-in and model),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
@@ -670,8 +671,9 @@ product's own page and create_payment_link, so a bet counts each sale.
 
 Every run starts sealed. `acpAgentFor` starts each ACP session, a task's or the hiring
 one-shot's, under `/usr/bin/sandbox-exec -p` with a profile `server/agents/seal.ts` renders per
-run, every path a `-D` parameter. Each run resolves its own (`machineSeal`), so a path that became
-a symlink since boot is sealed where it leads from the next run on.
+run, every path a `-D` parameter. Each run resolves its own (`machineSeal`,
+`server/agents/machine-seal.ts`), so a path that became a symlink since boot is sealed where it
+leads from the next run on.
 
 - _Reads_ are open but for the founder's logins (`LOGINS`: ssh, gh, npm, netrc, git
   credentials, cloud and deploy CLIs, App Store Connect's notary keys, browser and chat-app
@@ -780,7 +782,7 @@ a symlink since boot is sealed where it leads from the next run on.
   whole `_` segments, so `SSH_AUTH_SOCK` too — and every URL with a login in it but a `*_PROXY`,
   except its runner's own login (`providerEnv` in `packages/agent-driver/src/registry.ts`;
   `runEnv` in `server/agents/run-env.ts`). AWS access keys sign for the whole account, so neither
-  runner keeps them, and the seal hides `~/.aws` (`LOGINS` in `seal.ts`), so no AWS profile loads
+  runner keeps them, and the seal hides `~/.aws` (`LOGINS` in `machine-seal.ts`), so no AWS profile loads
   either: a founder on Bedrock signs in with `AWS_BEARER_TOKEN_BEDROCK` only. On Vertex,
   `GOOGLE_APPLICATION_CREDENTIALS` must name a key file outside the sealed logins: gcloud's
   default credentials under `~/.config/gcloud` are hidden too.

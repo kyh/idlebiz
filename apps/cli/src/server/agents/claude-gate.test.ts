@@ -25,7 +25,8 @@ import type { Hold } from "../policy";
 import { parseJson } from "@repo/domain/json";
 import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 import { sessionAgent } from "./session";
-import { machineSeal, realPathOf, sealRuns } from "./seal";
+import { machineSeal, realPathOf } from "./machine-seal";
+import { sealRuns } from "./seal-check";
 import { tempSave } from "../test-support/save";
 
 // The real claude, driven through the app's claude-agent-acp inside the seal, by a stand-in

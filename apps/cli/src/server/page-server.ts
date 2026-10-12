@@ -7,9 +7,9 @@
 // it reloads in place.
 //
 // The founder's approve button is on this port. No employee run reaches it: the seal closes it to
-// every run (`pagePorts`, agents/seal.ts). Of everyone else it answers only a request that names its
-// own loopback host, and main's calls only for the page a handoff signed in, calling from its own
-// origin.
+// every run (`pagePorts`, agents/machine-seal.ts). Of everyone else it answers only a request that
+// names its own loopback host, and main's calls only for the page a handoff signed in, calling from
+// its own origin.
 
 import { once } from "node:events";
 import { readFile } from "node:fs/promises";

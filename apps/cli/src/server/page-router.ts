@@ -9,7 +9,7 @@ import { contract } from "@repo/contract/contract";
 import { isOutOfBudget, spriteSeedFor } from "@repo/domain/domain";
 import { runnerPool } from "./agents/runner-pool";
 import { generateCandidates, startLogin } from "./agents/onboarding";
-import { notingSeal } from "./agents/seal";
+import { notingSeal } from "./agents/seal-check";
 import {
   haltForBudget,
   killBet,

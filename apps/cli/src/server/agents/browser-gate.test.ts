@@ -4,7 +4,8 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Seal } from "./seal";
 import { acpAgentFor } from "./session";
-import { machineSeal, sealedCommand } from "./seal";
+import { machineSeal } from "./machine-seal";
+import { sealedCommand } from "./seal";
 import { toolCacheDir } from "../paths";
 import { tempSave } from "../test-support/save";
 

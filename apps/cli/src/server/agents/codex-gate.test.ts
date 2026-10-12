@@ -24,7 +24,8 @@ import type { Hold } from "../policy";
 import { parseJson } from "@repo/domain/json";
 import { readTeamNotes } from "./team-notes";
 import { acpAgentFor, codexSessionEnv } from "./session";
-import { machineSeal, realPathOf, sealRuns } from "./seal";
+import { machineSeal, realPathOf } from "./machine-seal";
+import { sealRuns } from "./seal-check";
 import { tempSave } from "../test-support/save";
 
 // The real codex, driven through the app's codex-acp inside the seal, by a stand-in model on

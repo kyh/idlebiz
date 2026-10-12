@@ -22,7 +22,8 @@ import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 import { claudeUserSettings } from "./claude-user-settings";
 import { runEnv } from "./run-env";
 import { runTmpdir } from "./run-workspace";
-import { browserSocketDir, namespaceUnder, SANDBOX_EXEC, sealedCommand } from "./seal";
+import { browserSocketDir, namespaceUnder } from "./machine-seal";
+import { SANDBOX_EXEC, sealedCommand } from "./seal";
 import type { Seal } from "./seal";
 import { TEAM_NOTES_MAX_BYTES, readTeamNotes } from "./team-notes";
 

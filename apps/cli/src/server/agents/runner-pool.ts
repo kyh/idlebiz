@@ -35,15 +35,11 @@ import type { AskBox } from "./ask-box";
 import { bundledSkillsDir } from "./bundled-skills";
 import { refuseDeniedTools } from "./claude-denies";
 import { runTmpdir, toolCacheEnv, ensureRepository, gitIdentity } from "./run-workspace";
-import {
-  machineSeal,
-  namespaceUnder,
-  realPathOf,
-  sealedCommand,
-  sealRuns,
-  signInCommand,
-} from "./seal";
-import type { Seal, SealState } from "./seal";
+import { machineSeal, namespaceUnder, realPathOf } from "./machine-seal";
+import { sealedCommand, signInCommand } from "./seal";
+import type { Seal } from "./seal";
+import { sealRuns } from "./seal-check";
+import type { SealState } from "./seal-check";
 import {
   acpAgentInstalled,
   makeBrowserNamespace,

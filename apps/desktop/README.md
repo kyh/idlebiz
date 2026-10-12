@@ -67,7 +67,7 @@ SameSite=Strict, a secret minted per boot) and drops the nonce from the address
 The founder's approve button is on that port, so:
 
 - the seal closes it to every employee run, beside the debug ports
-  (`apps/cli/src/server/agents/seal.ts`), whose own way in is the control plane, as
+  (`apps/cli/src/server/agents/machine-seal.ts`), whose own way in is the control plane, as
   `idlebiz <tool>`;
 - main answers only a request naming 127.0.0.1 or localhost at its own port: any other name is a
   page that rebound its own onto loopback;
