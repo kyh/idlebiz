@@ -1,9 +1,3 @@
-// The page's API, implemented: every procedure of the contract (@repo/contract/contract), each a
-// line onto the store, the founder's actions (founder-actions.ts) or the integrations. `os.router`
-// is the completeness check: a handler drifting from its contract, or a procedure nobody
-// implemented, fails to compile here. One middleware words every answer that does not return
-// (lib/answers.ts), the input's validation included, so the page shows the store's own sentence.
-
 import { implement } from "@orpc/server";
 import { contract } from "@repo/contract/contract";
 import { isOutOfBudget, spriteSeedFor } from "@repo/domain/domain";

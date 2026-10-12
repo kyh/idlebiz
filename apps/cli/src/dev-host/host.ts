@@ -1,11 +1,5 @@
-// The dev host: main as the desktop shell runs it, with a browser where the shell's window would be.
-// It runs the built server (`idlebiz serve`, `dist/index.js`) on this node, says hello as a
-// development shell does (with no sealing key: main seals a dev save with its own), and answers
-// main's asks of a native app itself: a message box, a notification and the menu-bar icon are
-// logged, the login item is unavailable, a relaunch starts main again.
-//
-// A browser reaches main as the shell's window does: on main's own page (../server/page-server.ts),
-// signed in by a link `handoff` asks main for. Nothing of this ships.
+// Main as the desktop shell runs it, with a browser where the shell's window would be, and main's
+// asks of a native app answered here. Nothing of this ships.
 
 import { spawn } from "node:child_process";
 import type { ChildProcessByStdio } from "node:child_process";
@@ -197,6 +191,7 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       openedAtLogin: false,
       packaged: false,
       pageDevUrl: options.pageDevUrl ?? null,
+      // main seals a dev save with its own key
       sealingKey: null,
     };
     try {

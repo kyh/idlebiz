@@ -3,10 +3,6 @@ import { errorMessage } from "@repo/domain/errors";
 import { HttpError } from "./http";
 import { report } from "./report";
 
-// How a call to Stripe's or Printful's API failed, sorted once here: each caller folds the answer
-// into what it acts on. An answer its schema refuses is the vendor changing its shape, which no
-// caller can act on, so it is kept in main's log as well.
-
 /**
  * How a vendor's call failed. `refused` is the credential turned away (401: not one the vendor
  * knows; 403: not granted this call), which only another fixes; `missing` a 404; `rejected` a
@@ -20,7 +16,6 @@ export type VendorFault =
   | { kind: "rejected"; reason: string }
   | { kind: "down"; reason: string };
 
-/** How a vendor answered a call: what it sent, or how the call failed. */
 export type VendorAnswer<T> = { kind: "ok"; value: T } | VendorFault;
 
 const faultOf = (error: HttpError, reason: string): VendorFault => {
@@ -36,9 +31,9 @@ const faultOf = (error: HttpError, reason: string): VendorFault => {
 };
 
 /**
- * Run `what`, a call of `vendor`'s, answering its failure as the caller acts on it, in the words
- * `says` reads off the vendor's refusal. An answer the call's schemas refuse is reported under
- * the call it answered.
+ * Run `call`, answering its failure in the words `says` reads off `vendor`'s refusal; each caller
+ * folds the answer into what it acts on. An answer the call's schemas refuse is the vendor
+ * changing its shape, which no caller can act on, so main's log keeps it too.
  */
 export const answering = async <T>(
   vendor: string,

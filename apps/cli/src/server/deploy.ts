@@ -283,7 +283,6 @@ const upload = async (call: VercelCall, root: string, entry: Entry): Promise<voi
 
 const UPLOADS_AT_ONCE = 8;
 
-/** Run `work` on each item, `width` at a time. */
 const eachAtMost = async <T>(
   items: readonly T[],
   width: number,

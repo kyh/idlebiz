@@ -1,7 +1,3 @@
-// Where the page reaches the server: on the page's own origin, which the server serves
-// (apps/cli/src/server/page-server.ts), so the app's window, a browser under `pnpm dev:browser` and
-// e2e's Chromium all call it the same way.
-
 /** The contract's procedures (contract.ts), its event stream among them, as oRPC's RPC protocol mounts them. */
 export const RPC_PREFIX = "/rpc";
 

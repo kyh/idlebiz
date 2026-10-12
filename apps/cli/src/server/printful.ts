@@ -9,10 +9,8 @@ import { CATALOG_PAGE } from "./listing";
 import type { ListingVariant, PrintPlacement } from "./listing";
 import { RefusalError } from "./refusal";
 
-// Printful's v2 API, called here in main with the founder's token, which no run holds. v2 is
-// still labelled beta, but Printful supports it in production, and only v2 builds an order
-// straight from catalog variants, with no store products to keep in step. Orders are in
-// printful-orders.ts.
+// v2 is still labelled beta, but Printful supports it in production, and only v2 builds an order
+// straight from catalog variants, with no store products to keep in step.
 
 const PRINTFUL_API = "https://api.printful.com";
 
@@ -38,7 +36,6 @@ const Said = z.object({
   title: z.string().optional(),
 });
 
-/** Why Printful refused a call, in its words when it gave any. */
 export const printfulSays = (error: HttpError): string => {
   const said = Said.safeParse(error.answer);
   const words = said.success
@@ -95,7 +92,6 @@ export const printfulGet = (
 ): Promise<JsonValue> =>
   jsonOf(printfulCall(path, { headers: printfulHeaders(token, storeId) }, backoffMs));
 
-/** POST `body` as JSON, or nothing when it is null. */
 export const printfulPost = (
   path: string,
   { token, storeId }: PrintfulCredential,
@@ -130,7 +126,6 @@ export const printfulDelete = async (
   await res.text();
 };
 
-/** Run `what`, a call of Printful's, answering its failure in Printful's words. */
 export const answeringPrintful = <T>(
   what: string,
   call: () => Promise<T>,
@@ -153,13 +148,11 @@ const readingPrintful = async <T>(
     : { kind: "failed", reason: answer.reason };
 };
 
-/** Printful's dollar string in whole cents, or null when it is none. */
 export const usdCents = (usd: string | null | undefined): number | null => {
   const amount = usd === null || usd === undefined ? Number.NaN : Number(usd);
   return Number.isFinite(amount) && amount >= 0 ? Math.round(amount * 100) : null;
 };
 
-/** Cents as Printful writes an amount in dollars. */
 export const dollars = (cents: number): string => (cents / 100).toFixed(2);
 
 /** What a listing is priced from: the variants it offers, what goes where on them, and its price. */

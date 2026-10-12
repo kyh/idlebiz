@@ -21,10 +21,8 @@ interface PaymentLinkRequest {
 }
 
 /**
- * The link Stripe made, or why none is known: `refused` is the key turned away (401/403), which
- * only another key gets past; `failed` is anything else, either reason in Stripe's words when it
- * gave any; `unrecorded` is a create Stripe took but answered in a shape IdleBiz does not read,
- * so a live link may stand on Stripe that nothing records.
+ * `unrecorded` is a create Stripe took but answered in a shape IdleBiz does not read, so a live
+ * link may stand on Stripe that nothing records.
  */
 type LinkResult =
   | { kind: "made"; id: string; url: string }
@@ -88,13 +86,10 @@ const replayedIn = (headers: Headers): boolean => headers.get("Idempotent-Replay
 const Switched = z.object({ active: z.boolean() });
 
 /**
- * Whether the link a replayed create answers with is switched off by now: Stripe replays the
- * link as it was made, and a reset, a retirement or the founder may have switched it off since.
- *
- * A replay naming no link, or one Stripe would not look up, counts as still on: either way Stripe
- * made a link for this request, so it is read like any create's answer and recorded where it can
- * be, where retiring its product switches it off. Called a failed create instead, it would tell the
- * agent Stripe made none, and every sign-off for a day would get the same replay.
+ * Whether a replayed create's link is switched off by now: Stripe replays it as it was made, and
+ * a reset, a retirement or the founder may have switched it off since. A replay naming no link,
+ * or one Stripe won't look up, counts as on: Stripe made a link for this request, so it is read
+ * like any create's answer and recorded where it can be, never told to the agent as none.
  */
 const switchedOffSince =
   (key: string) =>
@@ -115,18 +110,13 @@ const switchedOffSince =
   };
 
 /**
- * Stripe replays the first answer to a key for 24 hours, so a link tried again after a timeout
- * gets back the price, rate and link Stripe already made, rather than a second live link tagged
- * for it that nothing saved knows, which retiring its product would never switch off. The key
- * covers every field sent, since Stripe refuses a key sent again with other fields; `owner` is
- * the product, and the listing for a print.
- *
- * Stripe replays a failure too, a 500 included, so a key it answered with one would fail every
- * sign-off for a day, and so does a replayed answer `dead` finds no longer any use, such as a
- * link switched off since. Either moves on to the next key in the sequence; a key whose request
- * got no answer is never passed, so a retry after a timeout still finds what Stripe made.
- * Stripe calls a 500's outcome indeterminate, so passing one can leave a second link, which a
- * founder signing again for the same link accepts over a day with none.
+ * Stripe replays a key's first answer for 24h, so a retry after a timeout gets back what Stripe
+ * made rather than a second live link nothing records, which retiring its product never switches
+ * off. The key covers every field sent (`owner` is the product, and a print's listing), since
+ * Stripe refuses a reused key sent with other fields. A replayed failure, a 500 included, or a
+ * replay `dead` finds useless moves on to the next key; a request that got no answer never does.
+ * A 500 is indeterminate, so moving past one may leave a duplicate link, the accepted cost of not
+ * failing every sign-off for a day.
  */
 const idempotentPost =
   (key: string, owner: readonly string[]) =>
@@ -162,7 +152,6 @@ const idempotentPost =
     return send(0);
   };
 
-/** A payment link made on Stripe here in main, so an employee's process never holds the key. */
 export const stripePaymentLink: PaymentLinker = async ({
   afterPayment,
   key,
@@ -235,13 +224,12 @@ const variantChoice = (variants: readonly ListingVariant[]): Record<string, stri
         ),
       };
 
-/** Whether a key may make shipping rates and read checkouts and charges, which a restricted key needs granted on their own. */
+/** Whether Stripe lets a key make the reads asked, which a restricted key needs granted each on its own. */
 export type StripeAccess =
   | { kind: "granted" }
   | { kind: "refused"; reason: string }
   | { kind: "unreachable"; reason: string };
 
-/** Whether `key` may make each read, as the founder is told to fix it. */
 const accessTo = async (key: string, reads: readonly string[]): Promise<StripeAccess> => {
   const asked = await answeringStripe("access", async () => {
     for (const read of reads) {
@@ -259,12 +247,11 @@ const accessTo = async (key: string, reads: readonly string[]): Promise<StripeAc
 const CHECKOUTS = "/v1/checkout/sessions?limit=1";
 
 /**
- * Ask Stripe whether `key` reaches shipping rates, which a listing makes, checkout sessions,
- * which is how each paid order is found, and charges, which show its payment still stands before
- * Printful is paid for it, before the founder signs off on a listing: a restricted key made before
- * prints were sold is fixed first, rather than fail after the sign-off or leave paid orders
- * unsent. Only a read can be asked without making anything: write implies read, so this catches a
- * key with no grant on shipping rates, not one granted Read alone.
+ * Whether `key` reaches what a print sells through, asked before the founder signs off on a
+ * listing, so a restricted key is fixed first rather than leave paid orders unsent: the shipping
+ * rates a listing makes, the checkout sessions each order is found by, and the charges that show
+ * its payment still stands before Printful is paid. Write implies read, so this catches a key
+ * with no grant on shipping rates, not one granted Read alone.
  */
 export const stripeListingAccess = (key: string): Promise<StripeAccess> =>
   accessTo(key, ["/v1/shipping_rates?limit=1", CHECKOUTS, "/v1/charges?limit=1"]);
@@ -336,10 +323,7 @@ export type SwitchOffResult =
   | { kind: "refused"; reason: string }
   | { kind: "unanswered"; reason: string };
 
-/**
- * Switch a payment link off with the founder's key, here in main: its URL then shows the buyer
- * that it is deactivated. Asking again of a link already off answers the same.
- */
+/** Its URL then shows the buyer the link is deactivated. Asking again of a link already off answers the same. */
 export const switchOffPaymentLink = async (key: string, id: string): Promise<SwitchOffResult> => {
   const answer = await answeringStripe("payment link switch-off", async () =>
     Switched.parse(

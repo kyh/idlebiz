@@ -23,23 +23,26 @@ import type { ToolName, ToolOutcome, ToolSpec } from "../tool-specs";
 import type { productionHosts, validateToken } from "../vercel";
 import type { EnvSetter } from "../vercel-env";
 
-/** What only main can do for a tool call: every outward call made with one of the founder's keys. Boot makes the real ones; tests hand in fakes. */
+/**
+ * What only main can do for a tool call: every outward call made with one of the founder's keys,
+ * which the run never holds. Boot makes the real ones; tests hand in fakes.
+ */
 export interface Integrations {
-  /** Deploy with the founder's Vercel key, which the run itself never holds. */
+  /** Deploy to Vercel. */
   deploy: Deployer;
-  /** Make a payment link with the founder's Stripe key, which the run itself never holds. */
+  /** Make a payment link on Stripe. */
   createPaymentLink: PaymentLinker;
-  /** Ask Stripe whether the founder's key still reaches payment links, before a sign-off is spent on one. */
+  /** Ask Stripe whether the key still reaches payment links, before a sign-off is spent on one. */
   linkAccess: (key: string) => Promise<StripeAccess>;
-  /** Ask Stripe whether the founder's key reads checkouts, as a link owed a delivery needs. */
+  /** Ask Stripe whether the key reads checkouts, as a link owed a delivery needs. */
   checkoutAccess: (key: string) => Promise<StripeAccess>;
-  /** Set a product project's variable with the founder's Vercel key, which the run itself never holds. */
+  /** Set a product project's variable on Vercel. */
   setEnv: EnvSetter;
-  /** Ask Vercel whether it still takes the founder's token, before a sign-off is spent on a deploy. */
+  /** Ask Vercel whether it still takes the token, before a sign-off is spent on a deploy. */
   checkVercelToken: typeof validateToken;
-  /** List a print-on-demand item with the founder's Printful and Stripe keys, which the run itself never holds. */
+  /** List a print-on-demand item with Printful and Stripe. */
   printListing: PrintListing;
-  /** Read where a product's production deploys are served with the founder's Vercel key, which the run itself never holds. */
+  /** Read where a product's production deploys are served. */
   productionHosts: typeof productionHosts;
 }
 
