@@ -93,6 +93,13 @@
 .px-inset-hover:hover {
   background: var(--face-hi);
 }
+/* an inset that warns or refuses, by its edge: the inset's border beats a border utility */
+.px-inset-warn {
+  border-color: var(--warn);
+}
+.px-inset-danger {
+  border-color: var(--danger);
+}
 
 .px-btn {
   font-family: inherit;
@@ -245,6 +252,14 @@
 }
 .px-hint-danger {
   color: var(--danger);
+}
+
+/* a section's small-caps label; it sets no colour, so the label's own utility still applies */
+.px-label {
+  font-size: 0.75rem;
+  line-height: calc(1 / 0.75);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
 }
 
 /* a dialog over the office: the backdrop dims, the window centres itself */

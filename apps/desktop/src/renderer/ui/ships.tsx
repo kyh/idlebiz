@@ -293,13 +293,11 @@ export const Ships = ({
           ))}
           <NewProduct />
         </div>
-        <div className="text-xs uppercase tracking-wide text-fg-dim">Bets{selectedName}</div>
+        <div className="px-label text-fg-dim">Bets{selectedName}</div>
         <div className="space-y-2">
           <BetList bets={bets.filter((b) => selected === null || b.productId === selected)} />
         </div>
-        <div className="text-xs uppercase tracking-wide text-fg-dim">
-          Shipping log{selectedName}
-        </div>
+        <div className="px-label text-fg-dim">Shipping log{selectedName}</div>
         <div className="space-y-2">
           <ShippingLog log={log} selected={selected} employees={employees} />
         </div>

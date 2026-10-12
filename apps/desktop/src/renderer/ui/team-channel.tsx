@@ -75,9 +75,9 @@ const RoomRow = ({
   return (
     <div>
       {from.kind === "founder" ? (
-        <span style={{ color: "var(--warn)" }}>you</span>
+        <span className="text-warn">you</span>
       ) : (
-        <span style={{ color: "var(--accent-lo)" }}>{nameOf(from.id)}</span>
+        <span className="text-accent-lo">{nameOf(from.id)}</span>
       )}{" "}
       <span className="text-[#4c5064]">{text}</span>
     </div>
@@ -94,7 +94,7 @@ const NewsRow = ({
   switch (e.kind) {
     case "ship": {
       return (
-        <div style={{ color: "var(--accent-lo)" }}>
+        <div className="text-accent-lo">
           📦 <span className="text-fg">{nameOf(e.employeeId)}</span> shipped: {e.message}
         </div>
       );

@@ -83,9 +83,7 @@ const PickProject = ({ product, onClose }: { product: Product; onClose: () => vo
       ) : null}
       {lookup.state === "loaded" && lookup.projects.length > 0 ? (
         <div className="px-inset max-h-64 overflow-y-auto p-2">
-          <div className="mb-1 text-xs uppercase tracking-wide text-fg-dim">
-            Pick the product&apos;s project
-          </div>
+          <div className="px-label mb-1 text-fg-dim">Pick the product&apos;s project</div>
           <ChoiceMenu
             menu={{
               cursor,

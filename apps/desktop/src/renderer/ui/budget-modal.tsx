@@ -14,6 +14,7 @@ import type { Budget } from "@repo/domain/domain";
 import { formatUsd } from "@repo/domain/format";
 import { errorMessage } from "@repo/domain/errors";
 import type { StripeKeyStatus } from "@repo/domain/integrations";
+import { cn } from "cn";
 
 const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
   { label: "∞ Infinite", value: "infinite" },
@@ -75,12 +76,7 @@ const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm text-fg">
           {stripeKey.state === "refused" ? "✗" : "✓"} key …{stripeKey.last4}
-          <span
-            className="px-badge ml-2"
-            style={{
-              color: stripeKey.livemode ? "var(--ok)" : "var(--warn)",
-            }}
-          >
+          <span className={cn("px-badge ml-2", stripeKey.livemode ? "text-ok" : "text-warn")}>
             {stripeKey.livemode ? "live" : "test"}
           </span>
         </span>
@@ -219,17 +215,14 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
     >
       <div className="space-y-4">
         {out ? (
-          <div
-            className="px-inset p-3 text-sm"
-            style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
-          >
+          <div className="px-inset px-inset-danger p-3 text-sm text-danger">
             ❗ Out of budget — autopilot is paused. Raise the cap (or go infinite), then press ▶
             Start to get the team working again.
           </div>
         ) : null}
 
         <div>
-          <div className="mb-2 text-xs uppercase tracking-wide text-fg-dim">Usage cap</div>
+          <div className="px-label mb-2 text-fg-dim">Usage cap</div>
           <Picker
             options={BUDGET_MODES}
             value={budget.mode}
@@ -272,7 +265,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
 
         <div className="px-inset flex items-center justify-between p-3">
           <div>
-            <div className="text-xs uppercase tracking-wide text-fg-dim">Usage (at API prices)</div>
+            <div className="px-label text-fg-dim">Usage (at API prices)</div>
             <div className="text-base tabular-nums text-fg">{formatUsd(company.spentUsd)}</div>
             {budget.mode === "capped" ? (
               <div className="text-xs tabular-nums text-fg-dim">
@@ -292,9 +285,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
         <Failure submission={resetting.submission} doing="reset the meter" />
 
         <div>
-          <div className="mb-2 text-xs uppercase tracking-wide text-fg-dim">
-            Real numbers · Stripe
-          </div>
+          <div className="px-label mb-2 text-fg-dim">Real numbers · Stripe</div>
           <div className="px-inset space-y-2 p-3">
             <div className="text-sm leading-snug text-fg">
               Your Stripe key lets the team create payment links, each one you sign off, and reads
@@ -308,9 +299,7 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
         </div>
 
         <div>
-          <div className="mb-2 text-xs uppercase tracking-wide text-fg-dim">
-            Print on demand · Printful
-          </div>
+          <div className="px-label mb-2 text-fg-dim">Print on demand · Printful</div>
           <div className="px-inset space-y-2 p-3">
             <div className="text-sm leading-snug text-fg">
               A private token lets the team sell printed goods, each listing you sign off. IdleBiz

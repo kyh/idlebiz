@@ -324,7 +324,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
                   <ActionCard key={asked.id} t={asked} by={emp.name} ask={asked.state.ask} />
                 ) : null}
                 {asked.state.ask.type === "question" ? (
-                  <div className="px-inset p-2.5" style={{ borderColor: "var(--warn)" }}>
+                  <div className="px-inset px-inset-warn p-2.5">
                     <div className="text-xs text-danger">❗ {emp.name} needs your call:</div>
                     <div className="mt-1 text-sm leading-snug whitespace-pre-wrap text-fg">
                       <RichText text={asked.state.ask.question} />
