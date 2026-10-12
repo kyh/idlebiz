@@ -8,12 +8,11 @@
 // A chair that shows the camera its back is the exception: it stands between the sitter
 // and the camera, so there the sitter y-sorts behind it and draws higher up the screen.
 import { BUST } from "@/renderer/game/character-sheet";
-import type { Dir } from "@/renderer/game/character-sheet";
-import { DEPTH } from "@/renderer/game/config";
-import { characterDepth } from "@/renderer/game/office-depth";
+import { DEPTH, characterDepth } from "@/renderer/game/office-depth";
 import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 import { opaqueAt } from "@/renderer/game/opaque-mask";
 import type { OpaqueMask } from "@/renderer/game/opaque-mask";
+import type { Dir } from "@repo/domain/character-frame";
 
 /** How far above their workstation a seated employee is lifted. */
 const SEAT_LIFT = 0.25;

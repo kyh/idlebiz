@@ -5,9 +5,3 @@
 export const ZOOM = 2;
 /** px/sec, pre-zoom. */
 export const WALK_SPEED = 115;
-
-export { DEPTH } from "@/renderer/game/office-depth";
-
-export const COLORS = {
-  bg: 0x14_16_1f,
-} as const;

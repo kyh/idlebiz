@@ -3,7 +3,7 @@
 // frame, the bubble expires, and destroy() frees every object they own.
 import { Input } from "phaser";
 import type Phaser from "phaser";
-import { DEPTH } from "@/renderer/game/config";
+import { DEPTH } from "@/renderer/game/office-depth";
 import type { Emote } from "@/renderer/game/npc-look";
 
 const EMOTE_FRAME = { alert: 0, think: 1 } satisfies Record<Emote, number>;
