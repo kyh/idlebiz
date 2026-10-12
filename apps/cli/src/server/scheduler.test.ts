@@ -12,13 +12,13 @@ import type { RunResult, RunTools } from "./agents/runner-pool";
 import { keepAwake } from "./keep-awake";
 import type { KeepAwake, PowerBlocker } from "./keep-awake";
 import type { EmployeeRunner } from "./scheduler";
-import type { Integrations } from "./tools/define";
 import * as store from "./store/store";
 import { activityFile, companyDir, tasksDir, betFile, routineFile, shippedDir } from "./paths";
 import { activityEvents } from "./activity";
 import { createScheduler, loggedToolName } from "./scheduler";
 import { founderActions } from "./founder-actions";
 import { setAutopilot } from "./company-actions";
+import { unaskedIntegrations } from "./test-support/integrations";
 import { foundAcme, freshSave, hire } from "./test-support/save";
 
 const root = freshSave();
@@ -26,27 +26,6 @@ const root = freshSave();
 const NAMES = ["Priya", "Mae", "Sam", "Ana"];
 
 const asleep: KeepAwake = { hold: () => {} };
-
-const unasked = (what: string) => () =>
-  Promise.reject(new Error(`${what} without a test asking for it`));
-
-/** No test here calls out with a founder's key: a tool that would answers with the fault. */
-const integrations: Integrations = {
-  checkVercelToken: unasked("checked the Vercel token"),
-  checkoutAccess: unasked("read checkouts"),
-  createPaymentLink: unasked("made a payment link"),
-  deploy: unasked("deployed"),
-  linkAccess: unasked("read payment links"),
-  printListing: {
-    catalog: unasked("read the catalog"),
-    publish: unasked("listed a print"),
-    quote: unasked("priced a print"),
-    readFile: unasked("fetched a print file"),
-    stripeAccess: unasked("read Stripe's grants"),
-  },
-  productionHosts: unasked("read domains"),
-  setEnv: unasked("set a variable"),
-};
 
 /** A power blocker that only keeps count: the ids held now, and how many were ever started. */
 const fakeBlocker = () => {
@@ -136,7 +115,7 @@ const runEnds = () => {
 it("ignores queue drains after stop and resumes admission only after start", () => {
   found({ capUsd: 0, mode: "capped" });
   const task = queue("priya");
-  const drain = createScheduler(scripted().driver, asleep, integrations);
+  const drain = createScheduler(scripted().driver, asleep, unaskedIntegrations);
 
   drain.stop();
   drain.tick();
@@ -155,7 +134,7 @@ it("ignores queue drains after stop and resumes admission only after start", () 
 it("files the founder's pings at the cap, to run once the cap is raised", () => {
   found({ capUsd: 0, mode: "capped" });
   const { driver, started } = scripted();
-  const drain = createScheduler(driver, asleep, integrations);
+  const drain = createScheduler(driver, asleep, unaskedIntegrations);
   const founder = founderActions(drain);
   drain.start();
 
@@ -174,7 +153,7 @@ it("files the founder's pings at the cap, to run once the cap is raised", () => 
 
 it("refuses to start autopilot while the office is out of budget", () => {
   found({ capUsd: 0, mode: "capped" });
-  const drain = createScheduler(scripted().driver, asleep, integrations);
+  const drain = createScheduler(scripted().driver, asleep, unaskedIntegrations);
   drain.start();
 
   expect(() => setAutopilot(true)).toThrow(RefusalError);
@@ -197,7 +176,7 @@ describe("keeping the Mac awake", () => {
     found();
     const { driver, running } = scripted();
     const power = fakeBlocker();
-    const drain = createScheduler(driver, keepAwake(power.blocker), integrations);
+    const drain = createScheduler(driver, keepAwake(power.blocker), unaskedIntegrations);
     activityEvents.on("activity", refuseRunStart);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     queue("priya");
@@ -218,7 +197,7 @@ describe("keeping the Mac awake", () => {
     found();
     const { driver, running } = scripted();
     const power = fakeBlocker();
-    const drain = createScheduler(driver, keepAwake(power.blocker), integrations);
+    const drain = createScheduler(driver, keepAwake(power.blocker), unaskedIntegrations);
     queue("priya");
     queue("mae");
 
@@ -243,11 +222,11 @@ describe("keeping the Mac awake", () => {
       runTask: () => Promise.reject(new Error("spawn failed")),
     };
     queue("priya");
-    createScheduler(broken, keepAwake(power.blocker), integrations).tick();
+    createScheduler(broken, keepAwake(power.blocker), unaskedIntegrations).tick();
     await vi.waitFor(() => expect(power.started()).toBe(1));
     await vi.waitFor(() => expect(power.held.size).toBe(0));
 
-    const drain = createScheduler(scripted().driver, keepAwake(power.blocker), integrations);
+    const drain = createScheduler(scripted().driver, keepAwake(power.blocker), unaskedIntegrations);
     queue("mae");
     drain.tick();
     expect(power.held.size).toBe(1);
@@ -260,7 +239,7 @@ describe("draining the queue", () => {
   it("keeps a slot back for the founder", () => {
     found();
     const { driver, running } = scripted();
-    const drain = createScheduler(driver, asleep, integrations);
+    const drain = createScheduler(driver, asleep, unaskedIntegrations);
     const background = ["priya", "mae", "sam"].map((id) => queue(id));
 
     drain.tick();
@@ -273,7 +252,7 @@ describe("draining the queue", () => {
   it("gives the reserved slot to the founder's request", () => {
     found();
     const { driver } = scripted();
-    const drain = createScheduler(driver, asleep, integrations);
+    const drain = createScheduler(driver, asleep, unaskedIntegrations);
     queue("priya");
     queue("mae");
     const urgent = queue("ana", "high");
@@ -287,7 +266,7 @@ describe("draining the queue", () => {
 
   it("starts the next task when one cannot be locked, and retries it next tick", () => {
     found();
-    const drain = createScheduler(scripted().driver, asleep, integrations);
+    const drain = createScheduler(scripted().driver, asleep, unaskedIntegrations);
     const stuck = queue("priya", "high");
     const next = queue("mae");
     const taskDir = path.join(tasksDir(), stuck.id);
@@ -319,7 +298,7 @@ describe("draining the queue", () => {
         },
       },
       asleep,
-      integrations,
+      unaskedIntegrations,
     );
     queue("priya");
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -340,7 +319,7 @@ describe("draining the queue", () => {
     const parked = queue("ana");
     const free = queue("priya");
 
-    createScheduler(driver, asleep, integrations).tick();
+    createScheduler(driver, asleep, unaskedIntegrations).tick();
 
     expect(kindOf(parked)).toBe("queued");
     expect(kindOf(free)).toBe("running");
@@ -353,10 +332,38 @@ describe("draining the queue", () => {
     const parked = queue("ana");
     const free = queue("priya");
 
-    createScheduler(driver, asleep, integrations).tick();
+    createScheduler(driver, asleep, unaskedIntegrations).tick();
 
     expect(kindOf(parked)).toBe("queued");
     expect(kindOf(free)).toBe("running");
+  });
+
+  it("leaves capped work queued without spinning on its first task", () => {
+    const sealed = createScheduler(
+      {
+        pickRunner: () => "claude",
+        restingRunner: () => null,
+        runTask: () => Promise.reject(new Error("no run starts past the cap")),
+        runsSealed: () => true,
+        signedIn: () => true,
+      },
+      asleep,
+      unaskedIntegrations,
+    );
+    foundAcme([], { budget: { capUsd: 0, mode: "capped" } });
+    const employee = store.createEmployee({ ...hire("Priya"), deskIndex: 0 });
+    const teammate = store.createEmployee({ ...hire("Sana"), deskIndex: 0 });
+    const task = store.createTask({ origin: "founder", title: "First task" });
+    const next = store.createTask({ origin: "founder", title: "Next task" });
+    store.claimTask(task.id, employee.id);
+    store.claimTask(next.id, teammate.id);
+
+    sealed.tick();
+
+    expect(store.getCompany()?.autopilot).toBe(false);
+    expect(store.listQueuedTasks().map((queued) => queued.id)).toEqual([task.id, next.id]);
+    expect(store.getEmployee(employee.id)?.status).toBe("idle");
+    expect(store.getEmployee(teammate.id)?.status).toBe("idle");
   });
 });
 
@@ -365,7 +372,7 @@ describe("a seal the boot check refuses", () => {
     found();
     const { driver, seal, started } = scripted();
     seal.holds = false;
-    const drain = createScheduler(driver, asleep, integrations);
+    const drain = createScheduler(driver, asleep, unaskedIntegrations);
     const task = queue("priya");
 
     drain.start();
@@ -390,7 +397,7 @@ describe("assigning", () => {
   it("refuses a task that cannot be claimed", () => {
     found();
     const task = queue("priya");
-    const founder = founderActions(createScheduler(scripted().driver, asleep, integrations));
+    const founder = founderActions(createScheduler(scripted().driver, asleep, unaskedIntegrations));
 
     expect(() => founder.assign(task.id, "mae")).toThrow(RefusalError);
     expect(store.getTask(task.id)?.assigneeId).toBe("priya");
@@ -408,7 +415,7 @@ describe("assigning", () => {
           },
         },
         asleep,
-        integrations,
+        unaskedIntegrations,
       ),
     );
 
@@ -426,7 +433,7 @@ const runOne = async (result: RunResult, betId: string | null = null) => {
     title: "Work",
   });
   store.claimTask(task.id, "priya");
-  createScheduler(driver, asleep, integrations).tick();
+  createScheduler(driver, asleep, unaskedIntegrations).tick();
   running.get("priya")?.(result);
   await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
   return { company, task };
@@ -463,7 +470,7 @@ describe("settling a run", () => {
       title: "Post it",
     });
     store.claimTask(task.id, "priya");
-    createScheduler(driver, asleep, integrations).tick();
+    createScheduler(driver, asleep, unaskedIntegrations).tick();
     running.get("priya")?.(done(1.25));
     await vi.waitFor(() => expect(store.getBet(bet.id)?.spentUsd).toBe(1.25));
   });
@@ -472,7 +479,7 @@ describe("settling a run", () => {
     found();
     const { driver, running } = scripted();
     const task = queue("priya");
-    createScheduler(driver, asleep, integrations).tick();
+    createScheduler(driver, asleep, unaskedIntegrations).tick();
     const taskDir = path.join(tasksDir(), task.id);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const runs = runEnds();
@@ -495,7 +502,7 @@ describe("settling a run", () => {
     found();
     const { driver, running } = scripted();
     const task = queue("priya");
-    createScheduler(driver, asleep, integrations).tick();
+    createScheduler(driver, asleep, unaskedIntegrations).tick();
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     chmodSync(companyDir(), 0o555);
     try {
@@ -569,7 +576,7 @@ describe("settling a run", () => {
   it("parks a run whose runner's login was refused, spending no attempt, until a sign-in finds it", async () => {
     found();
     const { driver, running, signedOut } = scripted();
-    const drain = createScheduler(driver, asleep, integrations);
+    const drain = createScheduler(driver, asleep, unaskedIntegrations);
     const task = queue("priya");
     drain.tick();
     const error = "Failed to authenticate. API Error: 401 OAuth token has been revoked";
@@ -591,7 +598,7 @@ describe("settling a run", () => {
   it("requeues runs cut short by a quit, no attempt spent, and starts nothing after them", async () => {
     found();
     const { driver, started } = scripted();
-    const drain = createScheduler(driver, asleep, integrations);
+    const drain = createScheduler(driver, asleep, unaskedIntegrations);
     const cut = [queue("priya"), queue("mae")];
     const waiting = queue("sam");
     drain.tick();
@@ -621,7 +628,7 @@ describe("settling a run", () => {
         return interrupted;
       },
     };
-    const drain = createScheduler(slow, asleep, integrations);
+    const drain = createScheduler(slow, asleep, unaskedIntegrations);
     const task = queue("priya");
     drain.tick();
 
@@ -637,7 +644,7 @@ describe("settling a run", () => {
       ...scripted().driver,
       runTask: () => Promise.withResolvers<RunResult>().promise,
     };
-    const drain = createScheduler(stuck, asleep, integrations);
+    const drain = createScheduler(stuck, asleep, unaskedIntegrations);
     const task = queue("priya");
     drain.tick();
 
@@ -662,7 +669,7 @@ describe("settling a run", () => {
       runTask: () => Promise.reject(new Error("no CLI")),
     };
     queue("priya");
-    createScheduler(broken, asleep, integrations).tick();
+    createScheduler(broken, asleep, unaskedIntegrations).tick();
     await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
     expect(store.getEmployee("priya")).toMatchObject({
       instructionsDigest: "told",
@@ -675,7 +682,7 @@ describe("settling a run", () => {
     const { driver, running } = scripted();
     const task = queue("priya");
     store.grantApproval(task.id, "git push");
-    createScheduler(driver, asleep, integrations).tick();
+    createScheduler(driver, asleep, unaskedIntegrations).tick();
     running.get("priya")?.(done());
     await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
     expect(store.consumeApproval(task.id, "git push")).toBe(false);
@@ -699,7 +706,7 @@ const twoProducts = () => {
   const home = store.listProducts()[0]?.id ?? "";
   const side = store.createProduct({ description: "a side project", name: "Side" }).id;
   const { driver, resting, running } = scripted();
-  const drain = createScheduler(driver, asleep, integrations);
+  const drain = createScheduler(driver, asleep, unaskedIntegrations);
   return { drain, founder: founderActions(drain), home, resting, running, side };
 };
 
@@ -819,7 +826,7 @@ const MINUTE = 60_000;
 const proposeNothing = async () => {
   found();
   const { driver, running } = scripted();
-  const drain = createScheduler(driver, asleep, integrations);
+  const drain = createScheduler(driver, asleep, unaskedIntegrations);
   drain.start();
   drain.stop();
   expect(proposing()).toHaveLength(1);
@@ -842,7 +849,7 @@ const settleRun = () => {
   store.recordBetSpend(bet.id, 1);
   store.setBetReading(bet.id, 12, Date.now());
   const { driver, running } = scripted();
-  const drain = createScheduler(driver, asleep, integrations);
+  const drain = createScheduler(driver, asleep, unaskedIntegrations);
   drain.start();
   drain.stop();
   expect(settling()).toMatchObject([{ betId: bet.id }]);
@@ -855,7 +862,7 @@ describe("asking the lead for the next bet", () => {
     (origin) => {
       found();
       blockOnLead(origin);
-      const drain = createScheduler(scripted().driver, asleep, integrations);
+      const drain = createScheduler(scripted().driver, asleep, unaskedIntegrations);
 
       drain.start();
       drain.stop();
@@ -867,7 +874,7 @@ describe("asking the lead for the next bet", () => {
   it("hands the proposal tools that fund nothing but the bet it opens", async () => {
     found();
     const { driver, tools } = scripted();
-    const drain = createScheduler(driver, asleep, integrations);
+    const drain = createScheduler(driver, asleep, unaskedIntegrations);
 
     drain.start();
     drain.stop();
@@ -882,7 +889,7 @@ describe("asking the lead for the next bet", () => {
   it("waits while the lead's last proposal does", () => {
     found();
     blockOnLead("propose");
-    const drain = createScheduler(scripted().driver, asleep, integrations);
+    const drain = createScheduler(scripted().driver, asleep, unaskedIntegrations);
 
     drain.start();
     drain.stop();
@@ -985,7 +992,7 @@ describe("a file the save refuses on every tick", () => {
       store.setBetReading(bet.id, 60, Date.now());
     }
     const task = queue("priya");
-    const drain = createScheduler(scripted().driver, asleep, integrations);
+    const drain = createScheduler(scripted().driver, asleep, unaskedIntegrations);
     const dir = path.dirname(betFile(stuck.id));
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     chmodSync(dir, 0o555);
@@ -1005,7 +1012,7 @@ describe("a file the save refuses on every tick", () => {
   it("still sends idle hands to work past a due routine that cannot be marked run", () => {
     found(UNCAPPED, "game-studio");
     const [routine] = store.listRoutines();
-    const drain = createScheduler(scripted().driver, asleep, integrations);
+    const drain = createScheduler(scripted().driver, asleep, unaskedIntegrations);
     const dir = path.dirname(routineFile(routine?.id ?? ""));
     vi.useFakeTimers({ now: Date.now() + 25 * 3_600_000, toFake: ["Date"] });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -1028,7 +1035,7 @@ describe("a due routine", () => {
   it("goes only to someone whose runner can start it, and waits till one can", () => {
     found(UNCAPPED, "game-studio");
     const { driver, signedOut } = scripted();
-    const drain = createScheduler(driver, asleep, integrations);
+    const drain = createScheduler(driver, asleep, unaskedIntegrations);
     vi.useFakeTimers({ now: Date.now() + 25 * 3_600_000, toFake: ["Date"] });
     try {
       signedOut.add("claude").add("codex");
@@ -1059,7 +1066,7 @@ describe("a bet that stops taking work mid-run", () => {
       title: "Post it",
     });
     store.claimTask(task.id, "priya");
-    createScheduler(driver, asleep, integrations).tick();
+    createScheduler(driver, asleep, unaskedIntegrations).tick();
     store.measureBet(bet.id, Date.now());
     const heard: ActivityEvent[] = [];
     const listen = (e: ActivityEvent) => heard.push(e);
@@ -1098,7 +1105,7 @@ describe("a bet that stops taking work mid-run", () => {
       title: "Post it",
     });
     store.claimTask(task.id, "priya");
-    createScheduler(driver, asleep, integrations).tick();
+    createScheduler(driver, asleep, unaskedIntegrations).tick();
     store.killBet(bet.id, "dud", Date.now());
     const heard: ActivityEvent[] = [];
     const listen = (e: ActivityEvent) => heard.push(e);
@@ -1128,7 +1135,7 @@ describe("a bet that stops taking work mid-run", () => {
     const bet = openBet(5);
     store.createTask({ assigneeId: "mae", betId: bet.id, origin: "work", title: "Post it" });
     store.killBet(bet.id, "dud", Date.now());
-    const drain = createScheduler(scripted().driver, asleep, integrations);
+    const drain = createScheduler(scripted().driver, asleep, unaskedIntegrations);
 
     drain.start();
     drain.stop();
@@ -1150,7 +1157,7 @@ describe("a release", () => {
     });
     store.claimTask(task.id, "mae");
     store.archiveEmployee("mae");
-    const drain = createScheduler(scripted().driver, asleep, integrations);
+    const drain = createScheduler(scripted().driver, asleep, unaskedIntegrations);
 
     drain.start();
     drain.stop();
@@ -1167,7 +1174,7 @@ describe("a release", () => {
     found();
     const bet = openBet(5);
     const { driver, running } = scripted();
-    const drain = createScheduler(driver, asleep, integrations);
+    const drain = createScheduler(driver, asleep, unaskedIntegrations);
     const task = store.createTask({
       assigneeId: "mae",
       betId: bet.id,
@@ -1192,7 +1199,7 @@ describe("a release", () => {
     found();
     const bet = openBet(5);
     const { driver, resting, running } = scripted();
-    const drain = createScheduler(driver, asleep, integrations);
+    const drain = createScheduler(driver, asleep, unaskedIntegrations);
     const task = store.createTask({
       assigneeId: "mae",
       betId: bet.id,
@@ -1232,7 +1239,7 @@ const blockedOn = async (ask: BlockedAsk, productId?: string | null) => {
   found();
   const bet = openBet(5);
   const { driver, running } = scripted();
-  const drain = createScheduler(driver, asleep, integrations);
+  const drain = createScheduler(driver, asleep, unaskedIntegrations);
   const task = store.createTask({
     assigneeId: "mae",
     betId: bet.id,
@@ -1419,7 +1426,7 @@ describe("an action only the founder can take", () => {
 
   it("settles an order card with no run, telling the room what the founder did", () => {
     found();
-    const founder = founderActions(createScheduler(scripted().driver, asleep, integrations));
+    const founder = founderActions(createScheduler(scripted().driver, asleep, unaskedIntegrations));
     const card = store.raiseOrderCard(
       { kind: "order", orderId: "1", trouble: "Printful marked it failed" },
       "Order 1: Printful marked it failed",
@@ -1479,7 +1486,7 @@ describe("a tool call's title in the activity log", () => {
       },
     };
     queue("priya");
-    createScheduler(announcing, asleep, integrations).tick();
+    createScheduler(announcing, asleep, unaskedIntegrations).tick();
     await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
 
     const log = readFileSync(activityFile(), "utf-8");

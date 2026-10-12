@@ -532,7 +532,8 @@ answers is shaped once (`ToolAnswerSchema`) for both ends.
   assignment, a connection resuming the asks it answers) is `server/founder-actions.ts`, which
   files and queues through the scheduler's `file` and `enqueue`. The scheduler keeps the tick,
   admission, autopilot and the runs, and is handed at boot the integrations a run's tools call out
-  with (`Integrations` in `server/tools/define.ts`), so tests fake them.
+  with (`Integrations` in `server/tools/define.ts`), so tests fake them: `unaskedIntegrations`
+  (`server/test-support/integrations.ts`) fails every call a test does not override.
 
 ### Bets steer the company
 

@@ -9,6 +9,7 @@ import type { ChargeLink } from "../link-record";
 import * as store from "../store/store";
 import type { FoundingHire } from "../store/store";
 import { askBox } from "../agents/ask-box";
+import { unaskedIntegrations } from "../test-support/integrations";
 import { foundAcme, freshSave, hire } from "../test-support/save";
 import type { ToolName } from "../tool-specs";
 import type { RunContext } from "./define";
@@ -43,38 +44,17 @@ export const runAs = (employeeId: string, more: readonly FoundingHire[] = []) =>
   const asked: BlockedAsk[] = [];
   const assigned: string[] = [];
   const ctx: RunContext = {
+    ...unaskedIntegrations,
     asks: askBox((ask) => asked.push(ask)),
     // the scheduler queues what it is handed, and queued work is in flight
     assign: (taskId, assigneeId) => {
       assigned.push(taskId);
       store.claimTask(taskId, assigneeId);
     },
-    checkVercelToken: () =>
-      Promise.reject(new Error("asked Vercel about its token without a test asking for it")),
-    checkoutAccess: () =>
-      Promise.reject(new Error("asked Stripe about checkouts without a test asking for it")),
     company,
-    createPaymentLink: () => Promise.reject(new Error("charged without a test asking for it")),
-    deploy: () => Promise.reject(new Error("deployed without a test asking for it")),
     driver: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
     employee,
-    linkAccess: () =>
-      Promise.reject(new Error("asked Stripe about payment links without a test asking for it")),
-    printListing: {
-      catalog: () =>
-        Promise.reject(new Error("read Printful's catalog without a test asking for it")),
-      publish: () => Promise.reject(new Error("listed a print without a test asking for it")),
-      quote: () =>
-        Promise.reject(new Error("asked Printful for a price without a test asking for it")),
-      readFile: () =>
-        Promise.reject(new Error("fetched a print file without a test asking for it")),
-      stripeAccess: () =>
-        Promise.reject(new Error("asked Stripe about its grants without a test asking for it")),
-    },
-    productionHosts: () =>
-      Promise.reject(new Error("asked Vercel for domains without a test asking for it")),
     run: { betId: null, origin: "founder", productId: null, runId: "run", taskId: "task" },
-    setEnv: () => Promise.reject(new Error("set a variable without a test asking for it")),
   };
   return { asked, assigned, company, ctx };
 };
