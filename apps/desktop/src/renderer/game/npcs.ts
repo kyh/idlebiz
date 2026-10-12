@@ -55,7 +55,8 @@ export class NpcManager {
   private seatPlan: SeatPlan = new Map();
   private arrivals: string[] = [];
   private nextArrivalAt = 0;
-  // Phaser's loader is single-batch; serialize spawns so concurrent hires don't race it.
+  // One spawn at a time, so hires walk in and are seated in the order they were hired, not in
+  // the order their sheets load: a sheet already held would otherwise jump the queue.
   private chain: Promise<void> = Promise.resolve();
   /** Released while their spawn was still queued in the chain: never let them in. */
   private readonly released = new Set<string>();

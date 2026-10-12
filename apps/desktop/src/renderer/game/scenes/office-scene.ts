@@ -92,12 +92,8 @@ export class OfficeScene extends Scene {
   }
 
   preload() {
-    const loaded = new Set<string>();
+    // the loader skips a key it already holds or has queued, so a sprite placed twice loads once
     for (const placement of OFFICE.placements) {
-      if (loaded.has(placement.key)) {
-        continue;
-      }
-      loaded.add(placement.key);
       this.load.image(placement.key, placement.path);
     }
     this.load.spritesheet("emotes", `${WORKSPACE_KIT_PATH}/emotes.png`, {
@@ -247,8 +243,7 @@ export class OfficeScene extends Scene {
     if (generation !== this.generation) {
       return;
     }
-    // the founder and the roster are independent fetches; the colleagues wait on both,
-    // because Phaser's loader is single-batch and the founder's sheet must land first
+    // the founder's sheet and the roster are independent, so both are asked for at once
     const seed = company ? company.founderSpriteSeed : DEFAULT_FOUNDER_SEED;
     const [playerKey, employees, tasks] = await Promise.all([
       loadCharacter(this, seed),
