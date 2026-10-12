@@ -552,7 +552,6 @@ const SAVE = "/Users/me/.idlebiz";
 const WORKSPACE = `${SAVE}/acme/workspace`;
 const MEMORY = `${SAVE}/acme/agents/mae/memory`;
 const ROOM: Confinement = {
-  cwd: WORKSPACE,
   real: (file) => Promise.resolve(file),
   writable: [WORKSPACE, MEMORY, `${SAVE}/cache`],
 };

@@ -45,6 +45,7 @@ const turn = (agentScript: string, systemPrompt = "", instructionsChanged = fals
     instructionsChanged,
     maxSessionMs: 0,
     onEvent: () => {},
+    onPermission: () => Promise.resolve({ allow: true }),
     prompt: "work",
     resumeSessionId: "stored",
     systemPrompt,

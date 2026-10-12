@@ -37,9 +37,6 @@ const EXIT_CLOSE_GRACE_MS = 250;
 /** How long a dropped connection waits for the agent's exit, which says why it died. */
 const DROPPED_CONNECTION_GRACE_MS = 1000;
 
-/** The agent's own account of a tool call, as the policy layer needs it. */
-const ToolCallDescription = z.object({ description: z.string().optional() });
-
 /** How a client declares codex-acp's typed session failures (the JetBrains AIR extension). */
 const TYPED_FAILURES: ClientCapabilities = {
   _meta: { jetbrains: { air: { capabilities: ["sessionFailure"], version: 1 } } },
@@ -78,15 +75,6 @@ export interface AcpAgent {
   env: Record<string, string>;
 }
 
-/** A tool call an agent wants to make, as the policy layer sees it. */
-export interface PermissionRequest {
-  tool: ToolAsk;
-  /** The agent's own one-line account of what it is doing, when it gives one. */
-  description?: string | undefined;
-  /** ACP tool kind — "execute", "edit", "read", … */
-  kind?: string | undefined;
-}
-
 export interface PermissionDecision {
   allow: boolean;
 }
@@ -109,12 +97,10 @@ export interface AcpTurnOptions {
   /** Run-scoped additions to the agent's env (the control-plane URL and token, tool caches). */
   env?: Record<string, string>;
   /**
-   * Decides tool permissions. Omission allows everything; the caller must provide confinement.
-   * `signal` aborts when the turn ends, so an answer that comes too late acts on nothing.
+   * Decides each tool call the agent asks to make. `signal` aborts when the turn ends, so an
+   * answer that comes too late acts on nothing.
    */
-  onPermission?:
-    | ((request: PermissionRequest, signal: AbortSignal) => Promise<PermissionDecision>)
-    | undefined;
+  onPermission: (tool: ToolAsk, signal: AbortSignal) => Promise<PermissionDecision>;
   /** Kill + fail after this long with NO output (wedged process). 0 disables. */
   idleTimeoutMs: number;
   /** Absolute ceiling on one turn regardless of activity. 0 disables. */
@@ -396,20 +382,13 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         }
         pokeIdle();
         const { toolCall } = ctx.params;
-        const described = ToolCallDescription.safeParse(toolCall.rawInput);
-        const request: PermissionRequest = {
-          description: described.success ? described.data.description : undefined,
-          kind: toolCall.kind ?? undefined,
-          tool: toolAskOf({
-            kind: toolCall.kind,
-            meta: ctx.params._meta,
-            rawInput: toolCall.rawInput,
-            title: toolCall.title ?? toolTitles.get(toolCall.toolCallId),
-          }),
-        };
-        const decision = opts.onPermission
-          ? await opts.onPermission(request, ended.signal)
-          : { allow: true };
+        const tool = toolAskOf({
+          kind: toolCall.kind,
+          meta: ctx.params._meta,
+          rawInput: toolCall.rawInput,
+          title: toolCall.title ?? toolTitles.get(toolCall.toolCallId),
+        });
+        const decision = await opts.onPermission(tool, ended.signal);
         // Match protocol kinds, not adapter-specific ids. Only one-command approval:
         // an allow_always would outlive the founder's signature.
         const pick = (kind: string): string | undefined =>

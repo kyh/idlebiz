@@ -1,11 +1,8 @@
 import { runnerBin } from "@repo/agent-driver/detect";
 import { RUNNERS } from "@repo/agent-driver/registry";
 import type { RunnerAdapter, SessionSetup } from "@repo/agent-driver/registry";
-import type {
-  AcpAgent,
-  PermissionDecision,
-  PermissionRequest,
-} from "@repo/agent-driver/acp-session";
+import type { AcpAgent, PermissionDecision } from "@repo/agent-driver/acp-session";
+import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 import { execFile } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -74,9 +71,7 @@ export const acpAgentFor = (
     ...more,
     ...browserEnv(seal, runner),
   };
-  if (adapter.binEnvVar) {
-    env[adapter.binEnvVar] = runnerBin(runner);
-  }
+  env[adapter.binEnvVar] = runnerBin(runner);
   if (runner === "claude") {
     // claude kills a shell command after 2 minutes by default: `idlebiz deploy` would die before
     // Vercel answers, with the founder's sign-off already spent on it
@@ -220,14 +215,11 @@ export const permissionGate = ({
   taskId: string;
 }) => {
   const leases = new Set<string>();
-  return async (
-    request: PermissionRequest,
-    turnEnded: AbortSignal,
-  ): Promise<PermissionDecision> => {
-    if (request.tool.kind === "sandbox") {
+  return async (tool: ToolAsk, turnEnded: AbortSignal): Promise<PermissionDecision> => {
+    if (tool.kind === "sandbox") {
       return { allow: false };
     }
-    const held = await holdFor(request.tool, leases, livePage, confinement);
+    const held = await holdFor(tool, leases, livePage, confinement);
     // reading the browser can outlast the turn; its sign-off and its ask belong to a live one
     if (turnEnded.aborted) {
       return { allow: false };

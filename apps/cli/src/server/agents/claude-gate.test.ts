@@ -16,7 +16,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { runnerBin } from "@repo/agent-driver/detect";
 import { endAllAgents, runAcpTurn } from "@repo/agent-driver/acp-session";
-import type { AcpAgent, PermissionRequest } from "@repo/agent-driver/acp-session";
+import type { AcpAgent } from "@repo/agent-driver/acp-session";
+import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { holdFor } from "../policy";
@@ -343,8 +344,8 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     if (state.kind !== "sealed") {
       throw new Error(state.reason);
     }
-    const asks: { request: PermissionRequest; held: Hold | null }[] = [];
-    const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
+    const asks: { held: Hold | null; tool: ToolAsk }[] = [];
+    const room = { real: realPathOf, writable: [workspace] };
     const { port } = Listening.parse(model?.address());
     const agent = await asFounderAt(home, async () =>
       standInAgent(await sessionAgent("claude", await machineSeal([workspace]), skills, workspace)),
@@ -361,12 +362,12 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       idleTimeoutMs: 60_000,
       maxSessionMs: 90_000,
       onEvent: () => {},
-      onPermission: async (request) => {
+      onPermission: async (tool) => {
         const held =
-          request.tool.kind === "sandbox"
+          tool.kind === "sandbox"
             ? null
-            : await holdFor(request.tool, new Set(), () => Promise.resolve(null), room);
-        asks.push({ held, request });
+            : await holdFor(tool, new Set(), () => Promise.resolve(null), room);
+        asks.push({ held, tool });
         return { allow };
       },
       prompt: "work",
@@ -386,7 +387,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     { timeout: 60_000 },
     async () => {
       const { asks, pushed } = await turn("git push origin main", false);
-      expect(asks.map(({ held, request }) => ({ held, tool: request.tool }))).toEqual([
+      expect(asks).toEqual([
         {
           held: { key: "git push origin main", rule: "git-push" },
           tool: { command: "git push origin main", kind: "shell" },
@@ -491,9 +492,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       writeFileSync(outside, "read from outside");
       const { asks, result } = await turnOf({ input: { file_path: outside }, name: "Read" }, true);
       expect(result.end).toEqual({ kind: "completed" });
-      expect(asks.map(({ held, request }) => ({ held, tool: request.tool }))).toEqual([
-        { held: null, tool: { kind: "read" } },
-      ]);
+      expect(asks).toEqual([{ held: null, tool: { kind: "read" } }]);
       expect(outputs.join("\n")).toContain("read from outside");
     },
   );

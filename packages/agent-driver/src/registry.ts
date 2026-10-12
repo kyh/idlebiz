@@ -19,7 +19,7 @@ export interface RunnerAdapter {
    */
   session: (setup: SessionSetup) => SessionStart;
   /** Adapter env var pointing at the player's CLI; bundled optional binaries may be absent. */
-  binEnvVar?: string;
+  binEnvVar: string;
   /**
    * Prefixes of the env vars this CLI signs in and is configured with: a run's env drops
    * every other credential-shaped name, and without these the CLI could not reach its model.

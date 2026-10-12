@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { runnerBin } from "@repo/agent-driver/detect";
 import { endAllAgents, runAcpTurn } from "@repo/agent-driver/acp-session";
-import type { PermissionRequest } from "@repo/agent-driver/acp-session";
+import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { holdFor } from "../policy";
@@ -257,8 +257,8 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     if (state.kind !== "sealed") {
       throw new Error(state.reason);
     }
-    const asks: { request: PermissionRequest; held: Hold | null }[] = [];
-    const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
+    const asks: { held: Hold | null; tool: ToolAsk }[] = [];
+    const room = { real: realPathOf, writable: [workspace] };
     const agent = await asFounderAt(home, async () => {
       const seal = await machineSeal([workspace]);
       const setup = { skills, teamNotes: null, userSettings: {} };
@@ -276,12 +276,12 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       idleTimeoutMs: 60_000,
       maxSessionMs: 90_000,
       onEvent: () => {},
-      onPermission: async (request) => {
+      onPermission: async (tool) => {
         const held =
-          request.tool.kind === "sandbox"
+          tool.kind === "sandbox"
             ? null
-            : await holdFor(request.tool, new Set(), () => Promise.resolve(null), room);
-        asks.push({ held, request });
+            : await holdFor(tool, new Set(), () => Promise.resolve(null), room);
+        asks.push({ held, tool });
         return { allow };
       },
       prompt: "work",
@@ -300,7 +300,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
         { cmd: "git push origin main", tool: "exec_command" },
         false,
       );
-      expect(asks.map(({ held, request }) => ({ held, tool: request.tool }))).toEqual([
+      expect(asks).toEqual([
         {
           held: { key: "git push origin main", rule: "git-push" },
           tool: { command: "git push origin main", kind: "shell" },
@@ -426,9 +426,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
         "*** End Patch",
       ].join("\n");
       const { asks } = await turn({ patch, tool: "apply_patch" }, true);
-      expect(asks.map(({ held, request }) => ({ held, tool: request.tool }))).toEqual([
-        { held: null, tool: { kind: "edit" } },
-      ]);
+      expect(asks).toEqual([{ held: null, tool: { kind: "edit" } }]);
       expect(existsSync(approvals)).toBe(false);
       expect(readFileSync(path.join(workspace, "notes.md"), "utf-8")).toBe("a\n");
     },

@@ -77,6 +77,7 @@ const startTurn = (script: string, teardownGraceMs: number) => {
     idleTimeoutMs: 0,
     maxSessionMs: 0,
     onEvent: () => {},
+    onPermission: () => Promise.resolve({ allow: true }),
     prompt: "work",
     signal: stop.signal,
     systemPrompt: "",

@@ -511,7 +511,6 @@ export class RunnerPool {
     const memory = employeeMemoryDir(emp.id);
     const addDirs = [...shared, memory, toolCacheDir()];
     const confinement = {
-      cwd: run.workspace,
       real: realPathOf,
       writable: [run.workspace, ...addDirs],
     };

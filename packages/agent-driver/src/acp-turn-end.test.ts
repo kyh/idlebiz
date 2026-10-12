@@ -103,6 +103,7 @@ const turn = (agentScript: string, maxSessionMs = 0) =>
     idleTimeoutMs: 0,
     maxSessionMs,
     onEvent: () => {},
+    onPermission: () => Promise.resolve({ allow: true }),
     prompt: "work",
     systemPrompt: "",
     teardownGraceMs: 100,

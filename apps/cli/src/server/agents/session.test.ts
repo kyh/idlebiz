@@ -32,9 +32,9 @@ const noPage: LivePage = () => Promise.resolve(null);
 const live = () => new AbortController().signal;
 
 describe("permissionGate", () => {
-  const push = { tool: { command: "git push", kind: "shell" } } as const;
+  const push = { command: "git push", kind: "shell" } as const;
   const workspace = path.join(root, "acme", "workspace");
-  const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
+  const room = { real: realPathOf, writable: [workspace] };
 
   /** The gate of an attempt at `taskId`, and every ask it raised. */
   const gateOf = (taskId: string) => {
@@ -66,16 +66,16 @@ describe("permissionGate", () => {
 
   it.each([
     { key: "mcp: use gmail", leased: true, tool: { kind: "mcp", server: "gmail" } },
-    { key: "git push", leased: false, tool: push.tool },
+    { key: "git push", leased: false, tool: push },
   ] as const)(
     "leases a sign-off for the attempt only when its rule says so: $key",
     async (signed) => {
       found();
       store.grantApproval("deploy", signed.key);
       const { gate } = gateOf("deploy");
-      expect(await gate({ tool: signed.tool }, live())).toEqual({ allow: true });
-      expect(await gate({ tool: signed.tool }, live())).toEqual({ allow: signed.leased });
-      expect(await gateOf("deploy").gate({ tool: signed.tool }, live())).toEqual({ allow: false });
+      expect(await gate(signed.tool, live())).toEqual({ allow: true });
+      expect(await gate(signed.tool, live())).toEqual({ allow: signed.leased });
+      expect(await gateOf("deploy").gate(signed.tool, live())).toEqual({ allow: false });
     },
   );
 
@@ -87,7 +87,7 @@ describe("permissionGate", () => {
     async ({ allow, tool }) => {
       found();
       const { asked, gate } = gateOf("deploy");
-      expect(await gate({ tool }, live())).toEqual({ allow });
+      expect(await gate(tool, live())).toEqual({ allow });
       expect(asked).toEqual([]);
     },
   );
@@ -101,12 +101,7 @@ describe("permissionGate", () => {
     const { asked, gate } = gateOf("qa");
     const open = (file: string) =>
       gate(
-        {
-          tool: {
-            command: `agent-browser open file://${path.join(workspace, file)}`,
-            kind: "shell",
-          },
-        },
+        { command: `agent-browser open file://${path.join(workspace, file)}`, kind: "shell" },
         live(),
       );
     expect(await open("index.html")).toEqual({ allow: true });
@@ -322,6 +317,7 @@ describe("the environment an agent is spawned with", () => {
       idleTimeoutMs: 0,
       maxSessionMs: 0,
       onEvent: () => {},
+      onPermission: () => Promise.resolve({ allow: true }),
       prompt: "work",
       systemPrompt: "",
       teardownGraceMs: 100,

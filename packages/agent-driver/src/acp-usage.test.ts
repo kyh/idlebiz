@@ -117,6 +117,7 @@ const cutOff = (usagePerRequest?: true) =>
     idleTimeoutMs: 0,
     maxSessionMs: 500,
     onEvent: () => {},
+    onPermission: () => Promise.resolve({ allow: true }),
     prompt: "work",
     systemPrompt: "",
     teardownGraceMs: 100,
