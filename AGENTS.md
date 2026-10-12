@@ -376,7 +376,8 @@ tools/
   `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
   `env-name.ts` (what set_env may name),
   `stripe-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make, and the
-  switch-off of a retired product's links), `link-record.ts` (a payment link as the save keeps
+  switch-off of a retired product's links), `reset-links.ts` (every live link switched off before
+  a reset deletes the save), `link-record.ts` (a payment link as the save keeps
   it: a `create_payment_link` link on its own, a listing's inside the listing),
   `printful.ts` (Printful's API: its catalog, and pricing a print),
   `printful-orders.ts` (Printful's order calls), `stripe-checkouts.ts` (the read of Stripe's
@@ -1108,7 +1109,7 @@ the switch and paid after is kept like any other.
 
 **A reset** waits for each signed link Stripe is still making to be recorded and refuses a new one
 (`makingPaymentLink`), then switches off every live link not yet off before it deletes the save
-(`switchOffBeforeReset`), since nothing is left after to ship its prints or record a buyer. Its
+(`switchOffBeforeReset` in `server/reset-links.ts`), since nothing is left after to ship its prints or record a buyer. Its
 warning names each link Stripe left on, each paid print Printful never confirmed (but a held one
 whose card the founder settled), and each paid order whose card still waits on the founder (a
 delivery, one IdleBiz cannot send).

@@ -1,6 +1,6 @@
 import type { Product, VercelBinding } from "@repo/domain/domain";
 import { formatCents } from "@repo/domain/format";
-import { makingPaymentLink } from "../company-actions";
+import { makingPaymentLink } from "../reset-links";
 import { CATALOG_PAGE } from "../listing";
 import type { ListedPlacement, ListingVariant, PrintPlacement } from "../listing";
 import { STRIPE_FEE_LABEL, priceFloorCents } from "../print-listing";

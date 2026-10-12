@@ -6,7 +6,7 @@ import type { RunContext } from "./tools/define";
 import * as store from "./store/store";
 import { askBox } from "./agents/ask-box";
 import { callTool } from "./tools";
-import { switchOffBeforeReset } from "./company-actions";
+import { switchOffBeforeReset } from "./reset-links";
 import { foundAcme, hire, tempSave } from "./test-support/save";
 
 // A file of its own: once a reset begins, this process makes no payment link again.

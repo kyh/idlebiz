@@ -11,9 +11,9 @@ import {
   raiseOrderCard,
   retireProduct,
   settleOrderCard,
-  switchOffBeforeReset,
   switchOffRetiredLinks,
 } from "./company-actions";
+import { switchOffBeforeReset } from "./reset-links";
 import { foundAcme, freshSave } from "./test-support/save";
 
 const root = freshSave();
