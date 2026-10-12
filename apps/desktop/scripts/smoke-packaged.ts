@@ -53,6 +53,11 @@ const SINGLE_INSTANCE_SOCKET = "/tmp/com_idlebiz_desktop_si.sock";
 // (src-tauri/src/keychain.rs)
 const KEYCHAIN_SERVICE = "IdleBiz";
 const KEYCHAIN_ACCOUNT = "sealing-key";
+const KEYCHAIN_ITEM = ["-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT];
+// `security`'s exit when no item matches
+const NO_SUCH_ITEM = 44;
+// a delete the Keychain holds on a prompt nobody answers
+const KEYCHAIN_TIMEOUT_MS = 10_000;
 
 // a cold WebKit and main's boot, its seal check and login-shell probe among it, on a CI runner
 const BOOT_TIMEOUT_MS = 120_000;
@@ -138,6 +143,26 @@ const killGroup = (pgid: number): void => {
     process.kill(-pgid, "SIGKILL");
   } catch {
     // already gone
+  }
+};
+
+/**
+ * Deletes the key a launch made on a Mac whose Keychain held none: it sealed only the scratch save,
+ * and kept, it would stop the next smoke here and meet the first IdleBiz installed after with a
+ * prompt, being this ad-hoc pack's.
+ */
+const forgetKey = (): void => {
+  const deleted = spawnSync("security", ["delete-generic-password", ...KEYCHAIN_ITEM], {
+    stdio: "ignore",
+    timeout: KEYCHAIN_TIMEOUT_MS,
+  });
+  if (deleted.status === 0) {
+    log("deleted the key the launch made, leaving the Keychain as the smoke found it");
+  } else if (deleted.status !== NO_SUCH_ITEM) {
+    process.exitCode = 1;
+    process.stderr.write(
+      `smoke: the Keychain kept the key the launch made (security exited ${deleted.status ?? deleted.signal}): delete "${KEYCHAIN_SERVICE}" in Keychain Access before the next smoke\n`,
+    );
   }
 };
 
@@ -293,11 +318,10 @@ if (await answers(SINGLE_INSTANCE_SOCKET)) {
 }
 // held, the key is an installed IdleBiz's, and an ad-hoc pack is not the app that made it: its read
 // would wait on a Keychain prompt nobody answers. Absent, the launch makes one, as a first launch
-// does
+// does, which the smoke deletes as it ends (`forgetKey`)
 const keyHeld =
-  spawnSync("security", ["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT], {
-    stdio: "ignore",
-  }).status === 0;
+  spawnSync("security", ["find-generic-password", ...KEYCHAIN_ITEM], { stdio: "ignore" }).status ===
+  0;
 if (keyHeld) {
   throw new Error(
     `the Keychain holds IdleBiz's key ("${KEYCHAIN_SERVICE}", "${KEYCHAIN_ACCOUNT}"), which this pack would wait on a prompt to read: smoke on a Mac without it, as CI's`,
@@ -377,5 +401,6 @@ try {
   if (mainGroup !== undefined && processes().some((running) => running.pgid === mainGroup)) {
     killGroup(mainGroup);
   }
+  forgetKey();
   await rm(scratch, { force: true, recursive: true });
 }

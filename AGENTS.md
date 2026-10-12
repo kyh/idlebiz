@@ -287,7 +287,8 @@ nothing, and `apps/desktop` has no `dependencies` at all, since the page is bund
 main on the pack's node, the window loads main's page, a second launch hands over, and a quit
 leaves nothing main started running. It refuses where an IdleBiz is running or the Keychain holds
 IdleBiz's key, which an ad-hoc pack would wait on a prompt to read, so on a Mac that runs IdleBiz
-it stops before it launches anything. CI's `test-macos` job runs it on an ad-hoc pack.
+it stops before it launches anything; the key its own launch makes it deletes as it ends, so a Mac
+is left as it found it. CI's `test-macos` job runs it on an ad-hoc pack.
 
 ## Map
 

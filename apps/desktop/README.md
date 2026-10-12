@@ -150,8 +150,9 @@ a scratch `IDLEBIZ_ROOT_DIR`: hello boots main on the pack's node, the window lo
 anything without a handoff, a second launch hands over to the first, and a SIGTERM quits as Quit
 does, leaving nothing main started running. It refuses where an IdleBiz is running, or where the
 Keychain holds IdleBiz's key, which an ad-hoc pack is not the app to read without a prompt; a
-launch where it holds none makes one, as a first launch does. CI's `test-macos` job runs it on an
-ad-hoc pack (`IDLEBIZ_PACK_UNSIGNED=1`).
+launch where it holds none makes one, as a first launch does, and the smoke deletes it as it ends,
+since kept it would stop the next smoke and prompt the first IdleBiz installed after. CI's
+`test-macos` job runs it on an ad-hoc pack (`IDLEBIZ_PACK_UNSIGNED=1`).
 
 ## What is deliberately not here
 
