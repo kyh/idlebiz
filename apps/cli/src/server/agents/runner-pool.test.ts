@@ -8,7 +8,8 @@ import type { Seal } from "./seal";
 import type { SealState } from "./seal-check";
 import { SEAL, SKILLS, found, root } from "./fixtures";
 import * as store from "../store/store";
-import { runnerPool, createRunnerPool, memoryAfter, outcomeOf, resumeIn } from "./runner-pool";
+import { createRunnerPool, memoryAfter, outcomeOf, resumeIn } from "./runner-pool";
+import type { RunnerPoolDeps } from "./runner-pool";
 import { askBox } from "./ask-box";
 import { signInCommand } from "./seal";
 import { controlPlane } from "../control-plane";
@@ -84,34 +85,37 @@ describe("outcomeOf", () => {
   });
 });
 
-/** A pool whose check holds, keeping its runners' rests in `rest`. */
-const poolOn = (rest: string | null) =>
-  createRunnerPool(
-    () => Promise.resolve({ kind: "sealed" }),
-    () => Promise.resolve(SEAL),
-    () => SKILLS,
-    () => rest,
-  );
+/** A pool whose check holds, sealing runs with SEAL and keeping no rests, but for what `deps` say. */
+const poolOf = (deps: Partial<RunnerPoolDeps> = {}) =>
+  createRunnerPool({
+    checkSeal: () => Promise.resolve({ kind: "sealed" }),
+    resolveSeal: () => Promise.resolve(SEAL),
+    restFile: () => null,
+    skills: () => SKILLS,
+    ...deps,
+  });
 
 describe("a limit a turn hit", () => {
   const hour = 3_600_000;
 
   it("parks a runner until the reset its provider reported, and only that runner", () => {
+    const pool = poolOf();
     const until = Date.now() + 60_000;
-    runnerPool.heed("claude", { ...limited, reportedReset: until });
-    expect(runnerPool.restingRunner("claude")).toBe(until);
-    expect(runnerPool.restingRunner("codex")).toBeNull();
-    expect(runnerPool.restingRunners()).toEqual({ claude: until });
+    pool.heed("claude", { ...limited, reportedReset: until });
+    expect(pool.restingRunner("claude")).toBe(until);
+    expect(pool.restingRunner("codex")).toBeNull();
+    expect(pool.restingRunners()).toEqual({ claude: until });
   });
 
   it("wakes a runner once its limit has lifted", () => {
-    runnerPool.heed("codex", { ...limited, reportedReset: Date.now() - 1 });
-    expect(runnerPool.restingRunner("codex")).toBeNull();
-    expect(runnerPool.restingRunners()).not.toHaveProperty("codex");
+    const pool = poolOf();
+    pool.heed("codex", { ...limited, reportedReset: Date.now() - 1 });
+    expect(pool.restingRunner("codex")).toBeNull();
+    expect(pool.restingRunners()).not.toHaveProperty("codex");
   });
 
   it("rests a runner half an hour when its provider named no reset", () => {
-    const pool = poolOn(null);
+    const pool = poolOf();
     const before = Date.now();
     const outcome = pool.heed("claude", limited);
     expect(outcome).toMatchObject({ cause: "usage-limit", error: limited.error, kind: "resting" });
@@ -121,7 +125,7 @@ describe("a limit a turn hit", () => {
   });
 
   it("never rests a runner past 12 hours, whatever reset was named", () => {
-    const pool = poolOn(null);
+    const pool = poolOf();
     const before = Date.now();
     const outcome = pool.heed("claude", { ...limited, reportedReset: before + 72 * hour });
     expect(untilOf(outcome)).toBeGreaterThanOrEqual(before + 12 * hour);
@@ -129,7 +133,7 @@ describe("a limit a turn hit", () => {
   });
 
   it("fails the task, resting no runner, on any failure that is not the runner's", () => {
-    const pool = poolOn(null);
+    const pool = poolOf();
     expect(pool.heed("codex", failed)).toEqual({ error: failed.error, kind: "failed" });
     const spent = { class: "context", error: "context window exceeded", kind: "failed" } as const;
     expect(pool.heed("codex", spent)).toEqual({ error: spent.error, kind: "failed" });
@@ -140,12 +144,7 @@ describe("a limit a turn hit", () => {
 
 describe("an overloaded provider", () => {
   const minute = 60_000;
-  const pool = createRunnerPool(
-    () => Promise.resolve({ kind: "sealed" }),
-    () => Promise.resolve(SEAL),
-    () => SKILLS,
-    () => null,
-  );
+  const pool = poolOf();
 
   /** How long the next overload rests codex, by the outcome heed hands back. */
   const restAfterOverload = (): number => {
@@ -160,12 +159,7 @@ describe("an overloaded provider", () => {
   });
 
   it("starts at a minute again once a turn ends another way", () => {
-    const fresh = createRunnerPool(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve(SEAL),
-      () => SKILLS,
-      () => null,
-    );
+    const fresh = poolOf();
     const rest = (): number => {
       const before = Date.now();
       return Math.round((untilOf(fresh.heed("claude", overloaded)) - before) / minute);
@@ -181,12 +175,7 @@ describe("an overloaded provider", () => {
   });
 
   it("never shortens a usage limit's rest, which a turn still in flight may end under", () => {
-    const fresh = createRunnerPool(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve(SEAL),
-      () => SKILLS,
-      () => null,
-    );
+    const fresh = poolOf();
     const lifts = Date.now() + 3 * 3_600_000;
     fresh.heed("claude", { ...limited, reportedReset: lifts });
     expect(fresh.heed("claude", overloaded)).toMatchObject({ until: lifts });
@@ -203,7 +192,7 @@ describe("a provider refusing access no sign-in repairs", () => {
     Math.round((untilOf(outcome) - before) / minute);
 
   it("rests the runner on an overload's backoff, never signing it out or spending the session", () => {
-    const pool = poolOn(null);
+    const pool = poolOf();
     const signedInClaude = {
       authed: true,
       bin: "claude",
@@ -222,7 +211,7 @@ describe("a provider refusing access no sign-in repairs", () => {
   });
 
   it("shares one streak with an overload, which a turn ending another way starts over", () => {
-    const pool = poolOn(null);
+    const pool = poolOf();
     expect(restOf(pool.heed("codex", overloaded), Date.now())).toBe(1);
     expect(restOf(pool.heed("codex", accessRefused), Date.now())).toBe(2);
     pool.heed("codex", failed);
@@ -239,10 +228,10 @@ describe("a rest the last launch left", () => {
 
   it("holds after a restart, so no parked task spawns once to be refused", async () => {
     const lifts = Date.now() + 3_600_000;
-    poolOn(file).heed("claude", { ...limited, reportedReset: lifts });
+    poolOf({ restFile: () => file }).heed("claude", { ...limited, reportedReset: lifts });
     expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ claude: lifts });
 
-    const restarted = poolOn(file);
+    const restarted = poolOf({ restFile: () => file });
     restarted.init();
     await restarted.sealRefusal();
     expect(restarted.restingRunners()).toEqual({ claude: lifts });
@@ -250,21 +239,21 @@ describe("a rest the last launch left", () => {
 
   it("drops a rest that lifted while the app was closed, and reads a missing or broken file as none", async () => {
     writeFileSync(file, JSON.stringify({ claude: Date.now() - 1, codex: Date.now() + 60_000 }));
-    const restarted = poolOn(file);
+    const restarted = poolOf({ restFile: () => file });
     restarted.init();
     await restarted.sealRefusal();
     expect(Object.keys(restarted.restingRunners())).toEqual(["codex"]);
 
     writeFileSync(file, "{ not json");
-    const broken = poolOn(file);
+    const broken = poolOf({ restFile: () => file });
     broken.init();
     expect(broken.restingRunners()).toEqual({});
 
-    const missing = poolOn(path.join(box, "missing", "runner-rest.json"));
+    const missing = poolOf({ restFile: () => path.join(box, "missing", "runner-rest.json") });
     missing.init();
     expect(missing.restingRunners()).toEqual({});
 
-    const none = poolOn(null);
+    const none = poolOf();
     none.init();
     expect(none.restingRunners()).toEqual({});
     expect(none.heed("codex", { ...limited, reportedReset: Date.now() + 60_000 }).kind).toBe(
@@ -358,9 +347,11 @@ describe("a seal the boot check refuses", () => {
   it("starts no run and says why, then checks again when the CLIs are looked for again", async () => {
     const verdicts = [refused, holding];
     let checks = 0;
-    const pool = createRunnerPool(() => {
-      checks += 1;
-      return Promise.resolve(verdicts[checks - 1] ?? holding);
+    const pool = poolOf({
+      checkSeal: () => {
+        checks += 1;
+        return Promise.resolve(verdicts[checks - 1] ?? holding);
+      },
     });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -386,7 +377,7 @@ const onMac = process.platform === "darwin";
 
 /** Whether a pool whose check holds finds a CLI ready, each probe under the seal `resolveSeal` gives. */
 const anyRunnerUnder = async (resolveSeal: () => Promise<Seal>): Promise<boolean> => {
-  const pool = createRunnerPool(() => Promise.resolve({ kind: "sealed" }), resolveSeal);
+  const pool = poolOf({ resolveSeal });
   pool.init();
   return await pool.hasAnyRunner();
 };
@@ -418,18 +409,15 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
   });
 
   it("signs a CLI in under its runner's seal, free to open the browser, and not at all while the seal is refused", async () => {
-    const sealed = createRunnerPool(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve(sealing()),
-    );
+    const sealed = poolOf({ resolveSeal: () => Promise.resolve(sealing()) });
     sealed.init();
     expect(await sealed.sealedSignIn("codex", ["codex", "login"])).toEqual(
       signInCommand(sealing(), "codex", ["codex", "login"]),
     );
-    const refused = createRunnerPool(
-      () => Promise.resolve({ kind: "refused", reason: "no sandbox-exec here." }),
-      () => Promise.resolve(sealing()),
-    );
+    const refused = poolOf({
+      checkSeal: () => Promise.resolve({ kind: "refused", reason: "no sandbox-exec here." }),
+      resolveSeal: () => Promise.resolve(sealing()),
+    });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       refused.init();
@@ -445,13 +433,13 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
   it("checks the seal only once main's PATH has settled, and starts no run before", async () => {
     const shellAnswered = Promise.withResolvers<null>();
     let checked = 0;
-    const pool = createRunnerPool(
-      () => {
+    const pool = poolOf({
+      checkSeal: () => {
         checked += 1;
         return Promise.resolve({ kind: "sealed" });
       },
-      () => Promise.resolve(sealing()),
-    );
+      resolveSeal: () => Promise.resolve(sealing()),
+    });
     pool.init(
       (async () => {
         await shellAnswered.promise;
@@ -470,15 +458,14 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
 
   it("is resolved again for every run, and none starts without one", async () => {
     let resolved = 0;
-    const pool = createRunnerPool(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => {
+    const pool = poolOf({
+      resolveSeal: () => {
         resolved += 1;
         return resolved === 1
           ? Promise.resolve(sealing())
           : Promise.reject(new Error(`no seal ${resolved}`));
       },
-    );
+    });
     pool.init();
     expect(await pool.hasAnyRunner()).toBe(true);
     await expect(pool.completeOneShot("hire")).rejects.toThrow("no seal 2");
@@ -487,10 +474,7 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
 
   it("reads a runner whose login a turn found refused as signed out, however often its stored login is read again", async () => {
     storedLoginClaude(0);
-    const pool = createRunnerPool(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve(SEAL),
-    );
+    const pool = poolOf();
     pool.init();
     expect(await pool.hasAnyRunner()).toBe(true);
     expect(await pool.signedOut()).toEqual(["codex"]);
@@ -504,10 +488,7 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
   });
 
   it("signs a refused login in again, though its stored login reads as signed in, and counts it only once that sign-in succeeds", async () => {
-    const pool = createRunnerPool(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve(SEAL),
-    );
+    const pool = poolOf();
     storedLoginClaude(1);
     pool.init();
     pool.heed("claude", refusedLogin);
@@ -527,15 +508,14 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
 
   it("lets a task's run write only its own folders in the save, and the hiring one-shot none", async () => {
     const asked: (readonly string[])[] = [];
-    const pool = createRunnerPool(
-      () => Promise.resolve({ kind: "sealed" }),
-      (writable) => {
+    const pool = poolOf({
+      resolveSeal: (writable) => {
         asked.push(writable);
         return asked.length === 1
           ? Promise.resolve(sealing())
           : Promise.reject(new Error("no seal"));
       },
-    );
+    });
     pool.init();
     await pool.hasAnyRunner();
     const company = found();

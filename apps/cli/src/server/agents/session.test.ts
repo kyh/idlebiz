@@ -341,10 +341,10 @@ describe("the environment an agent is spawned with", () => {
 
     // the stand-in CLI writes what it saw where a run may write
     const scratch: Seal["scratch"][number] = { match: "subpath", path: realpathSync(cwd) };
-    const pool = createRunnerPool(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve({ ...SEAL, scratch: [scratch] }),
-    );
+    const pool = createRunnerPool({
+      checkSeal: () => Promise.resolve({ kind: "sealed" }),
+      resolveSeal: () => Promise.resolve({ ...SEAL, scratch: [scratch] }),
+    });
     pool.init();
     await pool.hasAnyRunner();
     const probedWith = names.parse(parseJson(readFileSync(seen, "utf-8")));

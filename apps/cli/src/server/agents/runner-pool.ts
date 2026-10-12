@@ -157,6 +157,19 @@ const usageRestUntil = (reportedReset: number | null): number =>
     ? Date.now() + UNNAMED_RESET_REST_MS
     : Math.min(reportedReset, Date.now() + MAX_USAGE_REST_MS);
 
+/**
+ * What a pool checks and resolves the seal with, finds IdleBiz's skills in and keeps its runners'
+ * rests in: tests script them, the app checks and resolves this machine's, the bundled skills and
+ * the company's state.
+ */
+export interface RunnerPoolDeps {
+  checkSeal: () => Promise<SealState>;
+  resolveSeal: (writable: readonly string[], apiSocket: string | null) => Promise<Seal>;
+  skills: () => string;
+  /** null before a company is founded. */
+  restFile: () => string | null;
+}
+
 export class RunnerPool {
   // Boot probes in the background; callers needing a definitive answer await probing.
   private probes: RunnerProbe[] = [];
@@ -174,20 +187,12 @@ export class RunnerPool {
   // runners whose login a turn found refused; only a sign-in clears one, since its probe reads
   // the stored login, which a revoked token still is
   private readonly refusedLogins = new Set<RunnerId>();
-  private readonly checkSeal: () => Promise<SealState>;
-  private readonly resolveSeal: (
-    writable: readonly string[],
-    apiSocket: string | null,
-  ) => Promise<Seal>;
-  private readonly skills: () => string;
-  private readonly restFile: () => string | null;
+  private readonly checkSeal: RunnerPoolDeps["checkSeal"];
+  private readonly resolveSeal: RunnerPoolDeps["resolveSeal"];
+  private readonly skills: RunnerPoolDeps["skills"];
+  private readonly restFile: RunnerPoolDeps["restFile"];
 
-  constructor(
-    checkSeal: () => Promise<SealState>,
-    resolveSeal: (writable: readonly string[], apiSocket: string | null) => Promise<Seal>,
-    skills: () => string,
-    restFile: () => string | null,
-  ) {
+  constructor({ checkSeal, resolveSeal, restFile, skills }: RunnerPoolDeps) {
     this.checkSeal = checkSeal;
     this.resolveSeal = resolveSeal;
     this.skills = skills;
@@ -591,18 +596,16 @@ const activeRestFile = (): string | null => (store.getCompany() === null ? null 
 
 /**
  * A pool whose runs start only once `checkSeal` finds the seal holding, each under the seal
- * `resolveSeal` gives its own folders then, loading the skills in the folder `skills` names, and
- * keeping its runners' rests in `restFile`: tests script them, the app checks and resolves this
- * machine's, the bundled skills and the company's state.
+ * `resolveSeal` gives its own folders then; what `deps` leaves out is this machine's and the
+ * company's.
  */
-export const createRunnerPool = (
-  checkSeal: () => Promise<SealState> = sealRuns,
-  resolveSeal: (
-    writable: readonly string[],
-    apiSocket: string | null,
-  ) => Promise<Seal> = machineSeal,
-  skills: () => string = bundledSkillsDir,
-  restFile: () => string | null = activeRestFile,
-): RunnerPool => new RunnerPool(checkSeal, resolveSeal, skills, restFile);
+export const createRunnerPool = (deps: Partial<RunnerPoolDeps> = {}): RunnerPool =>
+  new RunnerPool({
+    checkSeal: sealRuns,
+    resolveSeal: machineSeal,
+    restFile: activeRestFile,
+    skills: bundledSkillsDir,
+    ...deps,
+  });
 
 export const runnerPool = createRunnerPool();
