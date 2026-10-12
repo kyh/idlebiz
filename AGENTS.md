@@ -1293,4 +1293,4 @@ founding reads the company, its team and their work again before the scene resta
 The tray and HUD label it `usage` (`usageLabel` in `@repo/domain/format`), never spend; the Budget
 panel, the digest, onboarding and the HUD's tooltip say it is at API prices. A turn cut off before
 its agent answers (the watchdog, Stop, a quit, a crash) still bills what its usage updates
-reported, as uncached input (`runAcpTurn`).
+reported, as uncached input (`usageMeter` in `@repo/agent-driver/acp-usage`).

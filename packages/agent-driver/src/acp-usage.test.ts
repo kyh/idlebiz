@@ -1,34 +1,12 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { SessionUpdate } from "@agentclientprotocol/sdk";
 import { priceUsage } from "./pricing";
 import { RUNNERS } from "./registry";
 import { runAcpTurn } from "./acp-session";
+import { usageMeter } from "./acp-usage";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
-/**
- * An ACP agent shaped like codex-acp: resuming replays one usage update, the turn sends
- * one per model request (the second repeated), and the response covers only the last.
- */
-const codexLikeAgent = `
-const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
-const used = (sessionId, tokens) =>
-  send({ method: "session/update", params: { sessionId, update: { sessionUpdate: "usage_update", size: 400000, used: tokens } } });
-require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
-  const { id, method, params } = JSON.parse(line);
-  if (method === "initialize") send({ id, result: { agentCapabilities: { sessionCapabilities: { resume: {} } }, protocolVersion: 1 } });
-  if (method === "session/resume") {
-    used(params.sessionId, 90000);
-    send({ id, result: {} });
-  }
-  if (method === "session/set_mode") send({ id, result: {} });
-  if (method === "session/prompt") {
-    for (const tokens of [1000, 2000, 2000, 3000]) used(params.sessionId, tokens);
-    const usage = { cachedReadTokens: 1500, inputTokens: 900, outputTokens: 600, totalTokens: 3000 };
-    send({ id, result: { stopReason: "end_turn", usage } });
-  }
-});
-`;
 
 let cwd = "";
 
@@ -40,28 +18,51 @@ afterEach(() => {
   rmSync(cwd, { force: true, recursive: true });
 });
 
-const turn = (usagePerRequest?: true) =>
-  runAcpTurn({
-    agent: {
-      command: [process.execPath, "-e", codexLikeAgent],
-      env: {},
-      sessionModeId: "read-only",
-      usagePerRequest,
-    },
-    cwd,
-    idleTimeoutMs: 0,
-    maxSessionMs: 0,
-    onEvent: () => {},
-    prompt: "work",
-    resumeSessionId: "stored",
-    systemPrompt: "",
-    teardownGraceMs: 100,
+const used = (tokens: number): Extract<SessionUpdate, { sessionUpdate: "usage_update" }> => ({
+  sessionUpdate: "usage_update",
+  size: 400_000,
+  used: tokens,
+});
+
+/**
+ * A turn shaped like codex-acp's: resuming replays one usage update, the turn sends one per model
+ * request (the second repeated), and the response covers only the last.
+ */
+const meteredTurn = (perRequest: boolean) => {
+  const meter = usageMeter(perRequest);
+  meter.onUpdate(used(90_000));
+  meter.startPrompt();
+  for (const tokens of [1000, 2000, 2000, 3000]) {
+    meter.onUpdate(used(tokens));
+  }
+  meter.onResponse({
+    cachedReadTokens: 1500,
+    inputTokens: 900,
+    outputTokens: 600,
+    totalTokens: 3000,
   });
+  return meter.total();
+};
 
 describe("a turn's token usage", () => {
-  it("counts every model request of the turn when the agent reports only the last", async () => {
-    const { usage } = await turn(true);
-    expect(usage).toEqual({
+  it("counts no update a resume replays before the prompt", () => {
+    const meter = usageMeter(true);
+    meter.onUpdate(used(90_000));
+    meter.startPrompt();
+    meter.onUpdate(used(1000));
+    expect(meter.total().inputTokens).toBe(1000);
+  });
+
+  it("counts a request the agent re-sends unchanged once", () => {
+    const meter = usageMeter(true);
+    meter.startPrompt();
+    meter.onUpdate(used(2000));
+    meter.onUpdate(used(2000));
+    expect(meter.total().inputTokens).toBe(2000);
+  });
+
+  it("counts every model request of the turn when the agent reports only the last", () => {
+    expect(meteredTurn(true)).toEqual({
       cachedTokens: 3000,
       costUsd: 0,
       inputTokens: 1800,
@@ -69,9 +70,22 @@ describe("a turn's token usage", () => {
     });
   });
 
-  it("is the response's own when the agent's updates are not per request", async () => {
-    const { usage } = await turn();
-    expect(usage).toEqual({ cachedTokens: 1500, costUsd: 0, inputTokens: 900, outputTokens: 600 });
+  it("is the response's own when the agent's updates are not per request", () => {
+    expect(meteredTurn(false)).toEqual({
+      cachedTokens: 1500,
+      costUsd: 0,
+      inputTokens: 900,
+      outputTokens: 600,
+    });
+  });
+
+  it("keeps the largest running cost the agent reports, past its answer", () => {
+    const meter = usageMeter(false);
+    meter.startPrompt();
+    meter.onUpdate({ ...used(1000), cost: { amount: 0.5, currency: "USD" } });
+    meter.onUpdate({ ...used(2000), cost: { amount: 0.25, currency: "USD" } });
+    meter.onResponse({ inputTokens: 900, outputTokens: 600, totalTokens: 1500 });
+    expect(meter.total().costUsd).toBe(0.5);
   });
 });
 

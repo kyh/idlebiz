@@ -11,14 +11,14 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { z } from "zod";
 import { errorMessage } from "@repo/domain/errors";
-import { zeroUsage } from "./events";
-import { classOfRequestError, classOfTypedFailure, liftsAt, rateLimitResetIn } from "./rate-limit";
+import { usageMeter } from "./acp-usage";
+import { classOfRequestError, classOfTypedFailure, liftsAt } from "./rate-limit";
 import type { FailureClass } from "./rate-limit";
 import { toolAskOf } from "./tool-ask";
 import type { ToolAsk } from "./tool-ask";
 import type { AgentEvent, AgentUsage } from "./events";
 
-// One ACP turn. Owns subprocess teardown, watchdogs and usage accounting;
+// One ACP turn. Owns subprocess teardown and watchdogs, and bills what `usageMeter` counts;
 // adapters own the CLI wire formats.
 
 /** Keep only the tail of stderr — used solely for final error reporting. */
@@ -36,9 +36,6 @@ const EXIT_CLOSE_GRACE_MS = 250;
 
 /** How long a dropped connection waits for the agent's exit, which says why it died. */
 const DROPPED_CONNECTION_GRACE_MS = 1000;
-
-// Claude's cost extension reports this process's running total, including on resume.
-const RunCost = z.object({ cost: z.object({ amount: z.number() }) });
 
 /** The agent's own account of a tool call, as the policy layer needs it. */
 const ToolCallDescription = z.object({ description: z.string().optional() });
@@ -194,6 +191,22 @@ const failureEnd = (meta: PromptResponse["_meta"], reported: number | null): Tur
   return endOf(classOfTypedFailure({ actions, category, text: error }), error, reported);
 };
 
+/** What an agent wrote to stderr, read only when its turn fails: kept as chunks, bounded, joined then. */
+const stderrTail = () => {
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  return {
+    keep: (chunk: Buffer): void => {
+      chunks.push(chunk);
+      bytes += chunk.length;
+      while (bytes > 2 * STDERR_TAIL_MAX && chunks.length > 1) {
+        bytes -= chunks.shift()?.length ?? 0;
+      }
+    },
+    text: (): string => Buffer.concat(chunks).toString().slice(-STDERR_TAIL_MAX).trim(),
+  };
+};
+
 /** Every agent spawned whose process group has not been killed yet, its leader alive or not. */
 const unkilled = new Set<ChildProcess>();
 
@@ -244,32 +257,14 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     let child: ChildProcess | undefined;
     let settled = false;
     const ended = new AbortController();
-    // stderr is read only when the run fails: kept as chunks, bounded, joined then
-    const stderrChunks: Buffer[] = [];
-    let stderrBytes = 0;
-    const keepStderr = (chunk: Buffer): void => {
-      stderrChunks.push(chunk);
-      stderrBytes += chunk.length;
-      while (stderrBytes > 2 * STDERR_TAIL_MAX && stderrChunks.length > 1) {
-        stderrBytes -= stderrChunks.shift()?.length ?? 0;
-      }
-    };
-    const stderrTail = (): string =>
-      Buffer.concat(stderrChunks).toString().slice(-STDERR_TAIL_MAX).trim();
+    const agentStderr = stderrTail();
+    const usage = usageMeter(opts.agent.usagePerRequest === true);
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionId: string | undefined;
     let resumed = false;
     let lastMessage = "";
     let pending = "";
-    let total = zeroUsage();
-    // a resume may replay what the session spent before, so only the prompt's updates count
-    let prompted = false;
-    // per request, their sum; for any other agent `used` is its context size, so the largest
-    let reportedTokens = 0;
-    let lastRequestTokens: number | undefined;
-    // when the provider said its rate limit lifts, while it refuses requests (claude's usage updates)
-    let rateLimitReset: number | null = null;
 
     // ACP has no message-end marker. Flush prose before a tool call or at turn end.
     const flushMessage = (): void => {
@@ -325,7 +320,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       resumed,
       sessionId,
       summary: lastMessage,
-      usage: total,
+      usage: usage.total(),
     });
     /** A failure no agent reported (a watchdog, a crash, a refused spawn): only the task's. */
     const failed = (error: string): AcpTurnResult =>
@@ -376,10 +371,10 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     const input: ReadableStream<Uint8Array> = Readable.toWeb(stdout);
     stderr.on("data", (d: Buffer) => {
       pokeIdle();
-      keepStderr(d);
+      agentStderr.keep(d);
     });
     const died = (code: number | null): void =>
-      settle(failed(stderrTail() || `${bin} exited with code ${code} mid-turn`));
+      settle(failed(agentStderr.text() || `${bin} exited with code ${code} mid-turn`));
     child.on("error", (err: Error) => settle(failed(`${bin}: ${err.message}`)));
     child.on("close", died);
     child.on("exit", (code) => setTimeout(() => died(code), EXIT_CLOSE_GRACE_MS).unref());
@@ -445,28 +440,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           });
           return;
         }
-        if (update.sessionUpdate === "usage_update") {
-          const reset = rateLimitResetIn(update._meta);
-          if (reset !== undefined) {
-            rateLimitReset = reset;
-          }
-        }
-        if (update.sessionUpdate === "usage_update" && prompted) {
-          if (!opts.agent.usagePerRequest) {
-            reportedTokens = Math.max(reportedTokens, update.used);
-          } else if (update.used !== lastRequestTokens) {
-            // codex re-sends a request's count unchanged; a repeat is not another request
-            reportedTokens += update.used;
-            lastRequestTokens = update.used;
-          }
-          // Until the agent's answer accounts for the turn, a turn cut off before it still bills
-          // what was reported: as uncached input, since an update carries no split.
-          total = { ...total, inputTokens: reportedTokens };
-        }
-        const cost = RunCost.safeParse(update);
-        if (cost.success && cost.data.cost.amount > total.costUsd) {
-          total = { ...total, costUsd: cost.data.cost.amount };
-        }
+        usage.onUpdate(update);
       });
 
     const stream = ndJsonStream(output, input);
@@ -519,34 +493,23 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           sessionId,
         });
 
-        prompted = true;
+        usage.startPrompt();
         const res = await agent.request("session/prompt", {
           prompt: [{ text: turnText(opts, resumed), type: "text" }],
           sessionId,
         });
         flushMessage();
-        const u = res.usage;
-        if (u) {
-          // Updates carry only each request's total, so the whole turn takes the last
-          // request's split. For any other agent `used` is its context size, not a request.
-          const scale =
-            opts.agent.usagePerRequest && u.totalTokens > 0
-              ? Math.max(1, reportedTokens / u.totalTokens)
-              : 1;
-          const scaled = (tokens: number): number => Math.round(tokens * scale);
-          total = {
-            cachedTokens: scaled(u.cachedReadTokens ?? 0),
-            costUsd: total.costUsd,
-            inputTokens: scaled((u.inputTokens ?? 0) + (u.cachedWriteTokens ?? 0)),
-            outputTokens: scaled(u.outputTokens ?? 0),
-          };
-        }
-        return { failure: failureEnd(res._meta, rateLimitReset), stopReason: res.stopReason };
+        usage.onResponse(res.usage);
+        return {
+          failure: failureEnd(res._meta, usage.rateLimitReset()),
+          stopReason: res.stopReason,
+        };
       });
       if (failure !== null) {
         // a synthetic failure's title is generic; codex-acp logs the throw behind it on stderr. A
         // failure of the runner's keeps only the provider's words, which the founder is shown.
-        const tail = failure.class === "other" || failure.class === "context" ? stderrTail() : "";
+        const tail =
+          failure.class === "other" || failure.class === "context" ? agentStderr.text() : "";
         settle(result(tail ? { ...failure, error: `${failure.error}\n${tail}` } : failure));
         return;
       }
@@ -554,7 +517,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         settle(result({ kind: "completed" }));
         return;
       }
-      const tail = stderrTail();
+      const tail = agentStderr.text();
       settle(
         failed(tail ? `agent stopped: ${stopReason}\n${tail}` : `agent stopped: ${stopReason}`),
       );
@@ -565,7 +528,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       } catch (error) {
         if (error instanceof RequestError) {
           // only the agent's own rejection is read: a watchdog's or a crash's text never is
-          settle(result(endOf(classOfRequestError(error), error.message, rateLimitReset)));
+          settle(result(endOf(classOfRequestError(error), error.message, usage.rateLimitReset())));
           return;
         }
         // Anything else is the connection dropping, and a dying agent drops it before its exit
