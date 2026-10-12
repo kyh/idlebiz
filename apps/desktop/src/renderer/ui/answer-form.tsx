@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import type { Submission } from "@/renderer/hooks/use-submission";
-import { answerQuestion } from "@/renderer/state/store";
+import { api } from "@/renderer/api";
 import { Failure } from "@/renderer/ui/failure";
 import type { Task } from "@repo/domain/domain";
 
@@ -26,7 +26,7 @@ export const AnswerForm = ({
 }) => {
   const [answer, setAnswer] = useState("");
   const { submission, submit } = useSubmission(async (text: string) => {
-    await answerQuestion(task.id, text);
+    await api.tasks.answer({ answer: text, taskId: task.id });
     onSent?.();
   });
   const disabled = submission.kind === "sending" || submission.kind === "sent";

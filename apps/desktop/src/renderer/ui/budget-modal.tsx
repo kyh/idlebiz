@@ -4,8 +4,8 @@ import { api, orpc } from "@/renderer/api";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { Failure } from "@/renderer/ui/failure";
-import { queryClient, useCompany, useStripeKey } from "@/renderer/state/queries";
-import { setBudget, resetSpend, saveStripeKey, removeStripeKey } from "@/renderer/state/store";
+import { queryClient, stripeKeyQuery, useCompany, useStripeKey } from "@/renderer/state/queries";
+import { setBudget, resetSpend } from "@/renderer/state/store";
 import { Modal } from "@/renderer/ui/modal";
 import { Picker } from "@/renderer/ui/picker";
 import type { PickerOption } from "@/renderer/ui/picker";
@@ -23,13 +23,21 @@ const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
 const REFUSED_KEY =
   "Stripe won't let this key read charges, so no revenue is counted — grant it Read on Charges, or paste a key over it.";
 
+const stripeKeyMoved = async (): Promise<void> => {
+  await queryClient.invalidateQueries({ queryKey: stripeKeyQuery.queryKey });
+};
+
 const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
   const [draft, setDraft] = useState("");
   const saving = useSubmission(async (key: string) => {
-    await saveStripeKey(key);
+    await api.stripe.saveKey({ key });
+    await stripeKeyMoved();
     setDraft("");
   });
-  const removing = useSubmission(removeStripeKey);
+  const removing = useSubmission(async () => {
+    await api.stripe.removeKey();
+    await stripeKeyMoved();
+  });
   const key = draft.trim();
   const sending = saving.submission.kind === "sending";
   const set = stripeKey.state !== "unset";

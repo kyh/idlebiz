@@ -1,14 +1,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 import type { QueryKey } from "@tanstack/react-query";
 import type { ActivityEvent } from "@repo/domain/activity";
-import type {
-  ActionReply,
-  AuthFlowEvent,
-  Budget,
-  Company,
-  Employee,
-  Task,
-} from "@repo/domain/domain";
+import type { AuthFlowEvent, Budget, Company, Employee, Task } from "@repo/domain/domain";
 import type { Digest } from "@repo/domain/digest";
 import { api, orpc } from "@/renderer/api";
 import { hearMain, listen } from "@/renderer/page-events";
@@ -151,15 +144,6 @@ const productsMoved = async (): Promise<void> => {
   await queryClient.invalidateQueries({ queryKey: orpc.products.key() });
 };
 
-// main answers both with `bet.changed` / `product.killed`, and those events refetch what moved
-export const killBet = async (betId: string, reason: string): Promise<void> => {
-  await api.bets.kill({ betId, reason });
-};
-
-export const killProduct = async (productId: string, reason: string): Promise<void> => {
-  await api.products.kill({ productId, reason });
-};
-
 export const createProduct = (name: string, description: string): Promise<void> =>
   withCompany(async () => {
     await api.products.create({ description, name });
@@ -180,20 +164,6 @@ export const digest = (): Promise<Digest | null> =>
 
 export const setMaxAgents = (maxAgents: number): Promise<void> =>
   updateCompany(() => api.company.setMaxAgents({ maxAgents }));
-
-const stripeKeyMoved = async (): Promise<void> => {
-  await queryClient.invalidateQueries({ queryKey: stripeKeyQuery.queryKey });
-};
-
-export const saveStripeKey = async (key: string): Promise<void> => {
-  await api.stripe.saveKey({ key });
-  await stripeKeyMoved();
-};
-
-export const removeStripeKey = async (): Promise<void> => {
-  await api.stripe.removeKey();
-  await stripeKeyMoved();
-};
 
 export const connectVercel = async (input: {
   productId: string;
@@ -228,30 +198,12 @@ export const sendFounderChat = (text: string): Promise<void> =>
     }
   });
 
-/** Founder decides on a held outward-facing command; the task resumes either way. */
-export const resolveApproval = async (taskId: string, approved: boolean): Promise<void> => {
-  await api.tasks.resolveApproval({ approved, taskId });
-};
-
-/** Founder took, or could not take, a step only they could; the task resumes either way. */
-export const resolveAction = async (taskId: string, reply: ActionReply): Promise<void> => {
-  await api.tasks.resolveAction({ reply, taskId });
-};
-
-export const copyText = async (text: string): Promise<void> => {
-  await api.app.copyText({ text });
-};
-
 /** Revive a dead-lettered / failed task: re-assign it (the claim resets retries). */
 export const retryTask = async (task: Task): Promise<void> => {
   if (!task.assigneeId) {
     return;
   }
   await api.tasks.assign({ employeeId: task.assigneeId, taskId: task.id });
-};
-
-export const answerQuestion = async (taskId: string, answer: string): Promise<void> => {
-  await api.tasks.answer({ answer, taskId });
 };
 
 // ---- activity --------------------------------------------------------------
