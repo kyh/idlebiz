@@ -210,33 +210,45 @@ export const sealedBrowser =
     return stdout;
   };
 
-/** An approval permits one execution of the exact command, or — for a site or a server — the rest of the run. */
-export const decidePermission = async (
-  taskId: string,
-  request: PermissionRequest,
-  leases: Set<string>,
-  livePage: LivePage,
-  confinement: Confinement,
-  hold: (ask: BlockedAsk) => void,
-  signal: AbortSignal,
-): Promise<PermissionDecision> => {
-  if (request.tool.kind === "sandbox") {
-    return { allow: false };
-  }
-  const held = await holdFor(request.tool, leases, livePage, confinement);
-  // reading the browser can outlast the turn; its sign-off and its ask belong to a live one
-  if (signal.aborted) {
-    return { allow: false };
-  }
-  if (held === null) {
-    return { allow: true };
-  }
-  if (store.consumeApproval(taskId, held.key)) {
-    if (isLeased(held.rule)) {
-      leases.add(held.key);
+/**
+ * What answers each permission ask of one attempt at task `taskId`. An approval permits one
+ * execution of the exact command, or — for a site or a server — the rest of the attempt, which
+ * the gate's leases hold, so build one per attempt.
+ */
+export const permissionGate = ({
+  confinement,
+  hold,
+  livePage,
+  taskId,
+}: {
+  confinement: Confinement;
+  hold: (ask: BlockedAsk) => void;
+  livePage: LivePage;
+  taskId: string;
+}) => {
+  const leases = new Set<string>();
+  return async (
+    request: PermissionRequest,
+    turnEnded: AbortSignal,
+  ): Promise<PermissionDecision> => {
+    if (request.tool.kind === "sandbox") {
+      return { allow: false };
     }
-    return { allow: true };
-  }
-  hold({ command: held.key, rule: held.rule, type: "approval" });
-  return { allow: false };
+    const held = await holdFor(request.tool, leases, livePage, confinement);
+    // reading the browser can outlast the turn; its sign-off and its ask belong to a live one
+    if (turnEnded.aborted) {
+      return { allow: false };
+    }
+    if (held === null) {
+      return { allow: true };
+    }
+    if (store.consumeApproval(taskId, held.key)) {
+      if (isLeased(held.rule)) {
+        leases.add(held.key);
+      }
+      return { allow: true };
+    }
+    hold({ command: held.key, rule: held.rule, type: "approval" });
+    return { allow: false };
+  };
 };

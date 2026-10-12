@@ -45,8 +45,8 @@ import {
 import type { Seal, SealState } from "./seal";
 import {
   acpAgentInstalled,
-  decidePermission,
   makeBrowserNamespace,
+  permissionGate,
   runnerEnv,
   sealedBrowser,
   sessionAgent,
@@ -524,7 +524,6 @@ class AgentDriver {
     mkdirSync(runTmpdir(), { recursive: true });
     // the run's own socket, which its seal alone lets it connect to: the boundary between runs
     const handle = await controlPlane.registerRun(tools.call);
-    const leases = new Set<string>();
     let sawOutput = false;
     try {
       const seal = await this.seal(confinement.writable, handle.socket);
@@ -567,16 +566,12 @@ class AgentDriver {
             report("run.onEvent", error);
           }
         },
-        onPermission: (request, turnEnded) =>
-          decidePermission(
-            run.taskId,
-            request,
-            leases,
-            livePage,
-            confinement,
-            tools.asks.raise,
-            turnEnded,
-          ),
+        onPermission: permissionGate({
+          confinement,
+          hold: tools.asks.raise,
+          livePage,
+          taskId: run.taskId,
+        }),
         prompt: run.prompt,
         resumeSessionId,
         signal,

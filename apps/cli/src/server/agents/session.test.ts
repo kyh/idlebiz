@@ -21,7 +21,7 @@ import type { Seal } from "./seal";
 import { TEAM_NOTES_MAX_BYTES } from "./team-notes";
 import { SEAL, SKILLS, found, root } from "./fixtures";
 import * as store from "../store/store";
-import { acpAgentFor, codexSessionConfig, codexSessionEnv, decidePermission } from "./session";
+import { acpAgentFor, codexSessionConfig, codexSessionEnv, permissionGate } from "./session";
 import { createAgentDriver } from "./runner-pool";
 import { browserNamespace, realPathOf, sealedCommand } from "./seal";
 
@@ -29,18 +29,31 @@ const SETUP = { skills: SKILLS, teamNotes: null, userSettings: {} };
 
 const noPage: LivePage = () => Promise.resolve(null);
 
-describe("decidePermission", () => {
+const live = () => new AbortController().signal;
+
+describe("permissionGate", () => {
   const push = { tool: { command: "git push", kind: "shell" } } as const;
   const workspace = path.join(root, "acme", "workspace");
   const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
+
+  /** The gate of an attempt at `taskId`, and every ask it raised. */
+  const gateOf = (taskId: string) => {
+    const asked: BlockedAsk[] = [];
+    const gate = permissionGate({
+      confinement: room,
+      hold: (ask) => asked.push(ask),
+      livePage: noPage,
+      taskId,
+    });
+    return { asked, gate };
+  };
 
   /** A company whose founder signed for one `git push` on task "deploy". */
   const signedFor = () => {
     found();
     store.grantApproval("deploy", "git push");
-    const asked: BlockedAsk[] = [];
-    const decide = (signal: AbortSignal) =>
-      decidePermission("deploy", push, new Set(), noPage, room, (ask) => asked.push(ask), signal);
+    const { asked, gate } = gateOf("deploy");
+    const decide = (signal: AbortSignal) => gate(push, signal);
     return { asked, decide };
   };
 
@@ -54,22 +67,17 @@ describe("decidePermission", () => {
   it.each([
     { key: "mcp: use gmail", leased: true, tool: { kind: "mcp", server: "gmail" } },
     { key: "git push", leased: false, tool: push.tool },
-  ] as const)("leases a sign-off for the run only when its rule says so: $key", async (signed) => {
-    found();
-    store.grantApproval("deploy", signed.key);
-    const leases = new Set<string>();
-    const decision = await decidePermission(
-      "deploy",
-      { tool: signed.tool },
-      leases,
-      noPage,
-      room,
-      () => null,
-      new AbortController().signal,
-    );
-    expect(decision).toEqual({ allow: true });
-    expect(leases.has(signed.key)).toBe(signed.leased);
-  });
+  ] as const)(
+    "leases a sign-off for the attempt only when its rule says so: $key",
+    async (signed) => {
+      found();
+      store.grantApproval("deploy", signed.key);
+      const { gate } = gateOf("deploy");
+      expect(await gate({ tool: signed.tool }, live())).toEqual({ allow: true });
+      expect(await gate({ tool: signed.tool }, live())).toEqual({ allow: signed.leased });
+      expect(await gateOf("deploy").gate({ tool: signed.tool }, live())).toEqual({ allow: false });
+    },
+  );
 
   it.each([
     { allow: true, tool: { kind: "edit" } },
@@ -78,17 +86,8 @@ describe("decidePermission", () => {
     "answers a $tool.kind ask with no card: the seal judges edits, and no widening is signed",
     async ({ allow, tool }) => {
       found();
-      const asked: BlockedAsk[] = [];
-      const decision = await decidePermission(
-        "deploy",
-        { tool },
-        new Set(),
-        noPage,
-        room,
-        (ask) => asked.push(ask),
-        new AbortController().signal,
-      );
-      expect(decision).toEqual({ allow });
+      const { asked, gate } = gateOf("deploy");
+      expect(await gate({ tool }, live())).toEqual({ allow });
       expect(asked).toEqual([]);
     },
   );
@@ -99,21 +98,16 @@ describe("decidePermission", () => {
     writeFileSync(path.join(workspace, "index.html"), "own");
     writeFileSync(path.join(root, "outside.html"), "outside");
     symlinkSync(path.join(root, "outside.html"), path.join(workspace, "linked.html"));
-    const asked: BlockedAsk[] = [];
+    const { asked, gate } = gateOf("qa");
     const open = (file: string) =>
-      decidePermission(
-        "qa",
+      gate(
         {
           tool: {
             command: `agent-browser open file://${path.join(workspace, file)}`,
             kind: "shell",
           },
         },
-        new Set(),
-        noPage,
-        room,
-        (ask) => asked.push(ask),
-        new AbortController().signal,
+        live(),
       );
     expect(await open("index.html")).toEqual({ allow: true });
     expect(await open("linked.html")).toEqual({ allow: false });
