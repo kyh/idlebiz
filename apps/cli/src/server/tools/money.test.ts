@@ -413,9 +413,11 @@ describe("create_payment_link", () => {
     });
     const ctx: RunContext = { ...run.ctx, linkAccess: stripeLinkAccess };
 
-    expect(await callTool(ctx, "create_payment_link", LINK)).toContain(
+    const answer = await callTool(ctx, "create_payment_link", LINK);
+    expect(answer).toContain(
       "Stripe won't let IdleBiz's key make payment links: the founder has a Stripe card waiting",
     );
+    expect(answer).toContain("this task resumes automatically once a live key is saved");
     expect(asked).toEqual(["/v1/payment_links"]);
     expect(run.asked).toEqual([
       {
@@ -484,7 +486,7 @@ describe("create_payment_link", () => {
     const { ctx, asked, stripe } = chargingRun(null);
     const answer = await callTool(ctx, "create_payment_link", LINK);
     expect(answer).toContain("a Stripe card waiting that takes them to the Budget panel");
-    expect(answer).toContain("this task resumes automatically once the key is saved");
+    expect(answer).toContain("this task resumes automatically once a live key is saved");
     expect(asked).toEqual([
       {
         integration: "stripe",

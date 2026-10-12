@@ -31,8 +31,11 @@ export const TEST_MODE =
 export const UNRECORDED_LINK =
   "Stripe may have made the payment link: it took the create but answered in a shape IdleBiz does not read, so IdleBiz recorded no link and would never switch one off. Ask the founder to look under Payment Links in their Stripe Dashboard and switch off any it made, rather than sign off again: for a day Stripe answers the same request the same way.";
 
-export const NO_STRIPE_KEY =
-  "IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the key is saved.";
+/** When a task waiting on a Stripe key resumes: main resumes none while `stripeInTestMode`. */
+const RESUMES_ON_LIVE_KEY =
+  "this task resumes automatically once a live key is saved: a test-mode one counts no money, so it keeps waiting.";
+
+export const NO_STRIPE_KEY = `IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. Continue with what you can — ${RESUMES_ON_LIVE_KEY}`;
 
 /** Why buyers cannot be sent to `url` once they have paid, or null when they can. */
 const afterPaymentRefusal = (url: URL): string | null => {
@@ -151,7 +154,7 @@ export const stripeTurnedAway = (ctx: RunContext, grant: StripeGrant, said: stri
     ctx,
     "stripe",
     `Stripe won't let IdleBiz's key ${grant.can}, ${grant.why} (${said}): in the Budget panel, paste over it a key whose restricted permissions include ${grant.permissions}, or your secret key`,
-    `Stripe won't let IdleBiz's key ${grant.can}: the founder has a Stripe card waiting to replace the key. Continue with what you can — this task resumes automatically once it is saved.`,
+    `Stripe won't let IdleBiz's key ${grant.can}: the founder has a Stripe card waiting to replace the key. Continue with what you can — ${RESUMES_ON_LIVE_KEY}`,
     `Stripe won't let IdleBiz's key ${grant.can}.`,
   );
 
