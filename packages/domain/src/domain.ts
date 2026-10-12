@@ -467,7 +467,7 @@ export type OrderCard = Extract<Task, { origin: "order" }>;
 
 interface TaskFields {
   id: string;
-  /** The product this work is for; null for a propose run no product has room for, an order card (which outlives its product's retirement) and saves from before products. */
+  /** The product this work is for; null for a propose run no product has room for and an order card, which outlives its product's retirement. */
   productId: string | null;
   /** The bet this work spends against; null is work no bet pays for: a founder ping, a routine, a proposal, or what a ping or routine delegates. */
   betId: string | null;

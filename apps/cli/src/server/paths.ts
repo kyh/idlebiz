@@ -101,9 +101,9 @@ export const employeeMemoryDir = (employeeSlug: string): string =>
 export const tasksDir = (): string => path.join(companyDir(), "tasks");
 export const taskFile = (taskSlug: string): string => path.join(tasksDir(), taskSlug, "TASK.md");
 /**
- * Closed tasks move here: ships, answered asks and dropped work. The open queue is
- * what boot reads and the scheduler scans; history grows without bound and is read
- * when a panel asks.
+ * Closed tasks move here: ships, answered asks, settled order cards and dropped work. The
+ * open queue is what boot reads and the scheduler scans; history grows without bound and is
+ * read when a panel asks.
  */
 export const shippedDir = (): string => path.join(companyDir(), "shipped");
 export const shippedTaskFile = (taskSlug: string): string =>
