@@ -60,7 +60,6 @@ const IDLE_POIS: readonly Poi[] = [
   ),
 ];
 
-/** Tiled office assembled from Modern Office object sprites. */
 const roundQuad = (obj: Phaser.GameObjects.GameObject): void => {
   obj.vertexRoundMode = "fullAuto";
 };

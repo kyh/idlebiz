@@ -13,7 +13,7 @@ import { characterDepth } from "@/renderer/game/office-depth";
 import { findPath, nearestFloor } from "@/renderer/game/office-grid";
 import type { WalkGrid } from "@/renderer/game/office-grid";
 
-/** A desk seat (px) an employee occupies. Owned by the office scene, sized to the active tier. */
+/** A desk seat (px) an employee occupies. Owned by the office scene. */
 export interface Seat {
   readonly x: number;
   readonly y: number;
