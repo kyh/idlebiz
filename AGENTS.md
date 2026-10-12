@@ -381,8 +381,9 @@ tools/
   it: a `create_payment_link` link on its own, a listing's inside the listing),
   `printful.ts` (Printful's API: its catalog, and pricing a print),
   `printful-orders.ts` (Printful's order calls), `stripe-checkouts.ts` (the read of Stripe's
-  checkout sessions and a payment's charges), `order-pump.ts` (each paid print order to Printful,
-  each link sale's delivery, and the founder's order cards),
+  checkout sessions and a payment's charges), `order-intake.ts` (each paid checkout on the
+  company's links kept as an order, and each link sale's delivery carded), `order-pump.ts` (each
+  kept print order to Printful), `order-card.ts` (how the founder's order cards name an order),
   `printful-token.ts` (the Printful token the founder enters and the one store it sells
   through, kept as one credential), `print-listing.ts` (what `sell_print` checks before it
   lists), `secrets.ts`, `metrics.ts`, `tray.ts`, `login-item.ts` (open at login).
@@ -1042,14 +1043,15 @@ Printful unsigned, since the founder signed the listing and its price floor. Its
 Stripe, the product's site and Printful at `fetch` (`server/order-pump.test.ts`).
 
 - While a Stripe key is saved, every 30 minutes it makes one account-wide read of Stripe's
-  checkout sessions (`server/stripe-checkouts.ts`, line items expanded; a list per link, or a
-  faster beat, would spend the reads Stripe allows, which metrics already mostly spends on a quiet
-  store) from a `created[gt]` cursor in `state/orders-cursor.json`, one per key that has read
-  (named by its mode and a digest, never the key), since a key of another mode or account lists
-  none of this one's sessions: a key new to a mode already read starts from the oldest of that
-  mode's cursors, one of a mode never read from the founding. Each is held behind any checkout
-  that may still be paid and re-reads the last 10 minutes. A read that cannot reach the cursor
-  (Stripe lists newest first) moves it up to what it read and cards the founder.
+  checkout sessions (`server/order-intake.ts`, through `server/stripe-checkouts.ts`, line items
+  expanded; a list per link, or a faster beat, would spend the reads Stripe allows, which metrics
+  already mostly spends on a quiet store) from a `created[gt]` cursor in
+  `state/orders-cursor.json`, one per key that has read (named by its mode and a digest, never the
+  key), since a key of another mode or account lists none of this one's sessions: a key new to a
+  mode already read starts from the oldest of that mode's cursors, one of a mode never read from
+  the founding. Each is held behind any checkout that may still be paid and re-reads the last 10
+  minutes. A read that cannot reach the cursor (Stripe lists newest first) moves it up to what it
+  read and cards the founder.
 - A session on a listing's link with `payment_status` `paid` (complete alone is not paid) is kept
   as an order under `orders/`, on disk before Printful hears of it; its Printful `external_id` is
   the session id's hash, looked up (`/v2/orders/@<id>`) before a draft is made
