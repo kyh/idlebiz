@@ -439,8 +439,10 @@ boot reads alone (`server/paths.ts`), so no record carries a company id and no p
 Its paths are read when asked for, never at import, and refused until a save is open: serve opens
 its launch's (`IDLEBIZ_ROOT_DIR`, or `~/.idlebiz`) first, a test its own. Founding refuses while
 it exists, and one boot cannot read (its COMPANY.md missing or refused) blocks the office like a
-save of another format. A reset deletes the whole root, `secrets.json` included; to start over
-otherwise, move `company/` out.
+save of another format. So does a COMPANY.md stamped below this build's format, or not at all,
+in another folder of the root: a save from before `company/`, which would otherwise be founded
+beside. A reset deletes the whole root, `secrets.json` included; to start over otherwise, move
+`company/` out.
 
 COMPANY.md carries `format` (`SAVE_FORMAT`, `store/company-codec.ts`), and a save stamped at any
 other blocks loading and founding (`SaveFormatError`). Each codec reads its kind through one

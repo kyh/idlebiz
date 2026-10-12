@@ -101,10 +101,16 @@ export const companyToDoc = (co: Company): z.input<typeof CompanyDocSchema> => {
   };
 };
 
-export const docToCompany = (doc: FrontmatterDoc): Company => {
+/** The format a COMPANY.md is stamped with; null when it carries none. */
+export const formatOf = (doc: FrontmatterDoc): number | null => {
   const stamp = z.number().safeParse(doc.metadata.format);
-  if (!stamp.success || stamp.data !== SAVE_FORMAT) {
-    throw new SaveFormatError(stamp.success ? stamp.data : null);
+  return stamp.success ? stamp.data : null;
+};
+
+export const docToCompany = (doc: FrontmatterDoc): Company => {
+  const format = formatOf(doc);
+  if (format !== SAVE_FORMAT) {
+    throw new SaveFormatError(format);
   }
   const { fields, metadata: m } = decodeDoc(CompanyDocSchema, doc);
   return {
