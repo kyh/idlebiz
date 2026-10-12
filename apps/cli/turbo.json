@@ -9,9 +9,12 @@
       "dependsOn": ["^topo", "@repo/desktop#build"],
       "outputs": ["dist/**"]
     },
-    // The gate suites run or skip on which CLIs this machine has installed, which no input names.
+    // The gate suites run or skip on which CLIs this machine has installed, which no input names,
+    // and find them by the shell's CLAUDE_BIN and CODEX_BIN, as the seal suites find TMPDIR and the
+    // ssh-agent: strict mode would strip each, so the whole env reaches a run nothing replays.
     "test": {
-      "cache": false
+      "cache": false,
+      "passThroughEnv": ["*"]
     }
   }
 }

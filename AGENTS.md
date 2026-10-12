@@ -240,7 +240,9 @@ No test needs a window or Phaser.
   a stand-in main on node, the navigation pin, the runtime's paths, main's log).
 - The root `pnpm test` runs every suite and `test:rust` through turbo, `TEST_CONCURRENCY` at a
   time (4 unless set), and replays any suite but main's whose inputs have not changed: main's gates
-  run or skip on the CLIs this machine has.
+  run or skip on the CLIs this machine has. turbo hands every other suite only the env its config
+  names, and main's the shell's whole env, as `pnpm --filter idlebiz test` does, so `CLAUDE_BIN`,
+  `CODEX_BIN`, TMPDIR and `SSH_AUTH_SOCK` reach its gate and seal suites (`apps/cli/turbo.json`).
 
 Drive anything requiring a window live instead, or cover it in the e2e suite.
 
@@ -255,7 +257,8 @@ rather than crashing boot.
   both drop (`scrubbed_env`, `mainEnv`): none loads code into main, and no `NODE_ENV` of a
   terminal's or vitest's reaches the runs, which inherit main's env less its credential-shaped
   names, as in a terminal launch ("A run's env, login and notes").
-- `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths (`packages/agent-driver/src/detect.ts`).
+- `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths, for main and the gate suites alike
+  (`packages/agent-driver/src/detect.ts`).
 - `IDLEBIZ_COUNT_TEST_MONEY=1` counts test-mode Stripe charges toward revenue and bets, for
   an end-to-end run of a revenue bet on a test key. Without it only live-mode money counts:
   a test-mode key reads as "Stripe is in test mode — no charge counts" in the brief and
