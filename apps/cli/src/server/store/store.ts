@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "../lib/fs";
@@ -46,6 +46,17 @@ import {
 } from "../paths";
 import { parseDoc, serializeDoc, slugify } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
+import {
+  byAge,
+  holdsPackage,
+  loadPackages,
+  loadRecords,
+  loadReport,
+  resetLoadReport,
+  safeReaddir,
+  skip,
+} from "./load";
+import { archiveTo, heldIn, uniqueSlug } from "./slugs";
 import { z } from "zod";
 import { continuationBrief } from "../prompts/briefs";
 import { defaultRoutines } from "../prompts/routines";
@@ -79,8 +90,6 @@ import {
   windowEnd,
 } from "@repo/domain/bets";
 import type { Bet, PolicyParams } from "@repo/domain/bets";
-import { errorMessage } from "@repo/domain/errors";
-import { parseJson } from "@repo/domain/json";
 import { ListingSchema } from "../listing";
 import type { Listing } from "../listing";
 import { OrderSchema } from "../order";
@@ -99,7 +108,6 @@ import type {
   Employee,
   FailureVerdict,
   LoadReport,
-  LoadSkip,
   OpenTaskStatus,
   OrderCard,
   OrderCardSubject,
@@ -375,119 +383,10 @@ const shelveClosed = (t: Task): boolean => {
   return true;
 };
 
-// ---- slug allocation ---------------------------------------------------------
-const firstFree = (root: string, taken: (slug: string) => boolean): string => {
-  let slug = root;
-  for (let n = 2; taken(slug); n += 1) {
-    slug = `${root}-${n}`;
-  }
-  return slug;
-};
-
-/** onDisk also protects packages skipped during loading. */
-const uniqueSlug = (
-  base: string,
-  existing: Iterable<string>,
-  onDisk: (slug: string) => boolean = () => false,
-): string => {
-  const ids = new Set(existing);
-  return firstFree(slugify(base), (slug) => ids.has(slug) || onDisk(slug));
-};
-
-/** A slug stays taken while any package, live or archived, holds its directory. */
-const heldIn =
-  (...dirs: string[]) =>
-  (slug: string): boolean =>
-    dirs.some((dir) => existsSync(path.join(dir, slug)));
-
-/**
- * A namesake retired earlier keeps its folder; the newcomer takes the next free name. Never
- * re-slugified: an id past the slug length would lose its suffix and leave itself free.
- */
-const archiveTo = (dir: string, id: string): string => path.join(dir, firstFree(id, heldIn(dir)));
-
 // ---- loading ----------------------------------------------------------------
-/** Oldest first; ties (same millisecond) by id, so boot order is stable. */
-const byAge = <T extends { createdAt: number; id: string }>(a: T, b: T): number =>
-  a.createdAt - b.createdAt || a.id.localeCompare(b.id);
-
-// Failed company loads must surface in the UI instead of presenting onboarding over a save.
-let lastLoad: LoadReport = { skipped: [] };
-
-export const loadReport = (): LoadReport => lastLoad;
-
-const skip = (kind: LoadSkip["kind"], file: string, cause: unknown): void => {
-  lastLoad.skipped.push({
-    error: errorMessage(cause),
-    kind,
-    newerBuild: cause instanceof SaveFormatError && cause.writtenBy === "newer",
-    path: file,
-  });
-};
-
+export { loadReport } from "./load";
 /** Report a file boot needed but could not read, alongside the packages the store skipped. */
-export const noteUnreadable = skip;
-
-const safeReaddir = (dir: string): string[] => {
-  try {
-    return readdirSync(dir);
-  } catch {
-    return [];
-  }
-};
-
-/** Whether `dir` holds any package, read or skipped: one boot skipped is the load report's to name, never replaced. */
-const holdsPackage = (dir: string, fileFor: (slug: string) => string): boolean =>
-  safeReaddir(dir).some((slug) => existsSync(fileFor(slug)));
-
-/** Report corrupt packages individually so one hand-edited file cannot prevent loading. */
-const loadPackages = <T extends { id: string }>(
-  kind: LoadSkip["kind"],
-  dir: string,
-  fileFor: (slug: string) => string,
-  decode: (doc: FrontmatterDoc) => T,
-): T[] => {
-  const rows: T[] = [];
-  for (const slug of safeReaddir(dir)) {
-    const file = fileFor(slug);
-    if (!existsSync(file)) {
-      continue;
-    }
-    try {
-      const row = decode(parseDoc(readFileSync(file, "utf-8")));
-      if (row.id !== slug) {
-        throw new Error("package slug does not match its directory");
-      }
-      rows.push(row);
-    } catch (error) {
-      skip(kind, file, error);
-    }
-  }
-  return rows;
-};
-
-/** Each `<id>.json` of `dir` that `schema` reads; one naming another id is skipped. */
-const loadRecords = <T extends { createdAt: number; id: string }>(
-  kind: LoadSkip["kind"],
-  dir: string,
-  schema: z.ZodType<T>,
-): T[] =>
-  safeReaddir(dir)
-    .filter((name) => name.endsWith(".json"))
-    .flatMap((name) => {
-      const file = path.join(dir, name);
-      try {
-        const record = schema.parse(parseJson(readFileSync(file, "utf-8")));
-        if (`${record.id}.json` !== name) {
-          throw new Error(`${kind} does not match its file's name`);
-        }
-        return [record];
-      } catch (error) {
-        skip(kind, file, error);
-        return [];
-      }
-    })
-    .toSorted(byAge);
+export { skip as noteUnreadable } from "./load";
 
 const TEAM_CHAT_RING = 200;
 
@@ -2222,11 +2121,11 @@ const releaseOrphanedTasks = (active: ActiveCompany): void => {
 
 export const initStore = (): LoadReport => {
   ensureAppDirs();
-  lastLoad = { skipped: [] };
+  resetLoadReport();
   cache = { active: null, nextActivityId: 1, nextTeamMessageId: 1 };
   const company = readCompany();
   if (!company) {
-    return lastLoad;
+    return loadReport();
   }
   try {
     const active = loadActiveCompany(company);
@@ -2253,7 +2152,7 @@ export const initStore = (): LoadReport => {
     cache.active = null;
     skip("company", companyFile(), error);
   }
-  return lastLoad;
+  return loadReport();
 };
 
 // ---- activity log ----------------------------------------------------------

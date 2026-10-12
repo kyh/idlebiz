@@ -346,6 +346,8 @@ tools/
   `page-session.ts` the sign-in), `page-router.ts` (the page's contract implemented, its event
   stream fed by `lib/broadcast.ts`; `lib/answers.ts` words what does not return),
   `store/store.ts` (the one company in memory, every command on it, and its writes),
+  `store/load.ts` (reading packages and records off disk, and the load report naming each one
+  skipped), `store/slugs.ts` (the free id a new package takes),
   `store/*-codec.ts` (one strict zod schema per package kind, which its encoder is typed against
   and its decoder parses; `company-codec.ts` owns the save format stamp),
   `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the idle loop,
