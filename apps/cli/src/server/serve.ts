@@ -50,7 +50,6 @@ import { stripeCheckoutAccess, stripeLinkAccess, stripePaymentLink } from "./str
 import type { Integrations } from "./tools/define";
 import { appTray } from "./tray";
 import { productionHosts, validateToken } from "./vercel";
-import { initVercelConnect } from "./vercel-connect";
 import { setVercelEnv } from "./vercel-env";
 
 initLog();
@@ -113,12 +112,6 @@ const resetGame = async (): Promise<void> => {
       host().relaunch();
     });
   }
-};
-
-/** A Stripe key was saved: read revenue with it at once, and resume the work that waited on it. */
-const stripeReady = (): void => {
-  metricsPulse.now();
-  founder.resumeIntegrationAsks("stripe");
 };
 
 /** "Seen" is the last moment the founder had the office in front of them; the
@@ -246,7 +239,7 @@ const boot = async (launch: Launch): Promise<void> => {
   writeAgentLauncher(runBinDir(), process.execPath, packageFile("dist/index.js"));
   await controlPlane.start();
   // the largest call a page makes: a pasted key, a long answer to a question
-  const rpc = new RPCHandler(createPageRouter({ founder, resetGame, stripeReady }), {
+  const rpc = new RPCHandler(createPageRouter({ founder, resetGame }), {
     plugins: [new BodyLimitPlugin({ maxBodySize: 1024 * 1024 })],
   });
   const served = await startPageServer({
@@ -264,13 +257,6 @@ const boot = async (launch: Launch): Promise<void> => {
   scheduler.start();
 
   metricsPulse.start();
-
-  initVercelConnect({
-    onConnected: (connection) => {
-      metricsPulse.now();
-      founder.resumeVercelAsks(connection);
-    },
-  });
 
   appTray.init({
     setAutopilot: (on) => {
