@@ -210,8 +210,8 @@ export const measureRefusal = (bet: Bet, product: Product | null): string | null
 // A refund can land on any old charge, so every read re-reads them all. The numbers move in hours,
 // so one read is kept this long, short or refused (its null only holds the last value), rather
 // than page the account through again every pulse. Only a read Stripe never answered is asked
-// again sooner; a new key, a change to whether any money counts or a key saved again
-// (`forgetStripeRead`) reads at once, since each is part of what is kept.
+// again sooner. A new key or a change to whether any money counts reads at once, since each is
+// part of what is kept, and so does a key saved again, since `forgetStripeRead` drops the read.
 const STRIPE_TTL_MS = 10 * 60_000;
 let stripeRead: {
   countTest: boolean;
