@@ -1,7 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeEach } from "vitest";
+import { afterAll, beforeAll, beforeEach } from "vitest";
 import type { Company } from "@repo/domain/domain";
 import type { RunnerId } from "@repo/domain/runners";
 import { openSave } from "../paths";
@@ -12,10 +13,17 @@ import type { FoundingHire } from "../store/store";
 // test file calls tempSave or freshSave at its top; a path read before either throws, never
 // reaching the founder's save.
 
-/** Opens a save root of the calling test file's own for each of its tests, deleted after its last. */
+/**
+ * Opens a save root of the calling test file's own for each of its tests, deleted after its last.
+ * The folder is made before the first test, not when the file is collected: a file whose every
+ * test skips runs no afterAll, and would leave one behind.
+ */
 export const tempSave = (): string => {
-  const root = mkdtempSync(path.join(tmpdir(), "idlebiz-test-"));
+  const root = path.join(tmpdir(), `idlebiz-test-${randomUUID()}`);
   openSave(root);
+  beforeAll(() => {
+    mkdirSync(root);
+  });
   afterAll(() => {
     rmSync(root, { force: true, recursive: true });
   });
