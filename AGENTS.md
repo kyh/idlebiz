@@ -521,11 +521,11 @@ a company id: `getCompany()` is null before one is founded, and everything else 
 company is loaded" — a caller that can run without one (tray, boot, the pulse) asks first.
 Lookups (`getX`) return null, `requireX` and commands throw, and null otherwise means only that a
 claim or lock race was lost. A few reads and notes are safe with none: `listQueuedTasks` and
-`openTasksFor` answer none, and `noteRunEnd` (a run can end after a failed load drops the
-company) and `releaseListingId` note nothing. It refuses with a `RefusalError` (`server/refusal.ts`) worded as the
-sentence the agent should read; a tool turns that into its answer, refused, the page's API into
-the founder's note. Anything else thrown is a fault: answered the same way, as a fault, but
-reported to main's log.
+`openTasksFor` answer none, `logActivity` numbers its event for the renderer and records nothing,
+and `noteRunEnd` and `releaseListingId` note nothing. It refuses with a `RefusalError`
+(`server/refusal.ts`) worded as the sentence the agent should read; a tool turns that into its
+answer, refused, the page's API into the founder's note. Anything else thrown is a fault:
+answered the same way, as a fault, but reported to main's log.
 
 A company tool is described once, in `server/tool-specs.ts`: body, lead-only refusal, doc and
 example. The agents' instructions are rendered from it, `server/tools/` binds each implementation
