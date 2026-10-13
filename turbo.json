@@ -11,11 +11,6 @@
       "dependsOn": ["^topo"],
       "outputs": []
     },
-    "dev": {
-      "dependsOn": ["^dev"],
-      "cache": false,
-      "persistent": false
-    },
     "typecheck": {
       "dependsOn": ["^topo"],
       "outputs": []
