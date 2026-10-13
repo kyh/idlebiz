@@ -27,7 +27,8 @@ jobs:
           cache: true
 
       # Tauri compiles the desktop shell against WebKitGTK on Linux (the Mac ships its own
-      # WebKit), and its menu-bar icon loads the appindicator at runtime
+      # WebKit), and its menu-bar icon loads the appindicator at runtime: AGENTS.md's Linux list,
+      # less the C toolchain the runner ships
       - name: Desktop system libraries
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 

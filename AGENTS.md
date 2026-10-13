@@ -33,11 +33,13 @@ pnpm e2e           # builds the page and main, then drives them in Chromium (loc
 ```
 
 No database, no Docker, no server to provision: past `pnpm install`, the one thing to install is
-Rust through rustup, since `pnpm verify` runs clippy and `cargo test` over the shell and
-`pnpm dev:desktop` builds it (`apps/desktop/rust-toolchain.toml` pins the toolchain, and the first
-`cargo` call installs it; on Linux, Tauri's prerequisites too: `libwebkit2gtk-4.1-dev`,
-`libayatana-appindicator3-dev`, `librsvg2-dev`, `libxdo-dev`, `libssl-dev`, `build-essential`).
-There is no bootstrap script and nothing to seed.
+Rust through rustup, since `pnpm verify` runs clippy (pedantic, `-D warnings`), `cargo test` and
+`cargo fmt --check` over the shell and `pnpm dev:desktop` builds it
+(`apps/desktop/rust-toolchain.toml` pins the toolchain, and the first `cargo` call installs it). On
+Linux the shell also links WebKitGTK, the appindicator its menu-bar icon loads and librsvg, and
+needs a C toolchain: `build-essential`, `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`,
+`librsvg2-dev` (CI's `ci` job installs the three libraries; its runner ships the toolchain). There
+is no bootstrap script and nothing to seed.
 
 **`pnpm dev:desktop` and `pnpm dev:browser` are not plain dev servers.** Each runs `pnpm dev:kill`
 first (`apps/desktop/scripts/devkill.sh`), which terminates this checkout's desktop session —
@@ -47,9 +49,12 @@ and a running `pnpm e2e` survive it. It leaves an unrelated process on TCP **311
 server's port, alone, and startup fails while that port is occupied.
 
 Both build main (`apps/cli`'s bundle, `apps/cli/dist`) before the page is served and again on each
-change: `tauri dev` restarts the shell when main's bundle changes
-(`--additional-watch-folders ../cli/dist`), and `dev:browser` restarts main itself. A change to the
-page is hot-reloaded; a change to the shell's Rust rebuilds and relaunches it.
+change (`apps/desktop/vite.config.ts` watch-builds it): `tauri dev` restarts the shell when main's
+bundle changes (`--additional-watch-folders ../cli/dist`; its watcher skips what `.gitignore`
+names, so `apps/cli/.taurignore` brings `dist/` back), and `dev:browser` restarts main itself.
+Either way the page stays main's: main hands it Vite's files, so a change to the page hot-reloads
+on main's origin, and its hot-reload socket dials Vite directly. A change to the shell's Rust
+rebuilds and relaunches it.
 
 ## The one hard prerequisite
 
@@ -261,28 +266,56 @@ rather than crashing boot.
 
 ## Packaging and release
 
-`pnpm -F @repo/desktop package` packs the app on a Mac (`apps/desktop/scripts/package.ts`),
-signed with the keychain's Developer ID (none stops it, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for
-an ad-hoc pack) and notarized when `apps/desktop/.env` names the notary key: the id and issuer of
-the App Store Connect key. Its `.p8` sits in `~/.appstoreconnect/private_keys/` (`package.ts`
-reads it there alone), which the seal keeps from every run; never keep it in the checkout, which
-runs can read. `release:publish` refuses a pack that is not both signed and notarized.
+```sh
+pnpm -F @repo/desktop package               # build, sign, notarize → apps/desktop/.output/bin/*.dmg
+pnpm -F @repo/desktop release:publish       # the same as a release, then published to GitHub
+IDLEBIZ_PACK_UNSIGNED=1 pnpm smoke:desktop  # an ad-hoc pack, booted on a scratch save
+```
 
-The pack stages the `idlebiz` package with `pnpm deploy` (`apps/desktop/scripts/stage-server.ts`)
-into `Contents/Resources/server`: its bundle (the page staged inside it), its `resources/`, and the
-dependencies it does not bundle — the ACP adapters main spawns (they bring their own zod and ACP
-sdk). So `apps/cli` `dependencies` is exactly what the server ships: everything Vite bundles —
-zod, oRPC, citty, the ACP sdk, `@repo/*` — goes in `devDependencies`, or the app ships it for
-nothing, and `apps/desktop` has no `dependencies` at all, since the page is bundled whole.
-`pnpm add` defaults to `dependencies`.
+`package` packs the app on a Mac with Xcode's command line tools and the Rust toolchain
+(`apps/desktop/scripts/package.ts`):
 
-`pnpm smoke:desktop` packs and boots the .app on a scratch save
-(`apps/desktop/scripts/smoke-packaged.ts`): every resource the server ships is in it, hello boots
-main on the pack's node, the window loads main's page, a second launch hands over, and a quit
-leaves nothing main started running. It refuses where an IdleBiz is running or the Keychain holds
+1. it fetches the node the app runs main on, pinned by sha-256 (`scripts/fetch-node.ts`), into
+   `src-tauri/binaries/` (`bundle.externalBin`, beside the shell in `Contents/MacOS`), with its
+   licence for `Contents/Resources/notices/node`;
+2. builds the page and the server, and stages the `idlebiz` package with `pnpm deploy`, the
+   workspace's patches applied (`scripts/stage-server.ts`), into `Contents/Resources/server`: its
+   bundle (the page staged inside it), its `resources/`, and the dependencies it does not bundle,
+   the ACP adapters main spawns (they bring their own zod and ACP sdk);
+3. signs every Mach-O those dependencies carry with the hardened runtime and the app's
+   entitlements (`scripts/sign-resources.ts`), since notarization refuses an unsigned one inside;
+4. writes the licences of the Rust crates the shell links (`scripts/rust-notices.ts`) to
+   `Contents/Resources/notices`;
+5. runs `tauri build` with a config of its own (the resources, the sidecar, the signing identity,
+   macOS 13.5 as the floor, node 24's) and copies the dmg to `.output/bin`.
+
+So `apps/cli` `dependencies` is exactly what the server ships: everything Vite bundles — zod,
+oRPC, citty, the ACP sdk, `@repo/*` — goes in `devDependencies`, or the app ships it for nothing,
+and `apps/desktop` has no `dependencies` at all, since the page is bundled whole. `pnpm add`
+defaults to `dependencies`.
+
+It signs with the keychain's Developer ID (`APPLE_SIGNING_IDENTITY` names another; with none it
+stops, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack, for this Mac alone) and notarizes
+when `apps/desktop/.env` names the notary key by the id and issuer of its App Store Connect key
+(see `.env.example`), saying it did not when `.env` names none. The key's `.p8` sits in
+`~/.appstoreconnect/private_keys/` (`package.ts` reads it there alone), which the seal keeps from
+every run; never keep it in the checkout, which runs can read. `release:publish` packs as a
+release (`IDLEBIZ_RELEASE=1`), which stops unless the pack is both signed and notarized, then
+publishes the dmg as the release tagged `v<version>`, where the site's download link finds it, so
+bump `version` in `apps/desktop/package.json` and `apps/cli/package.json` together first.
+
+`pnpm smoke:desktop` packs, then boots the .app on a scratch `IDLEBIZ_ROOT_DIR`
+(`apps/desktop/scripts/smoke-packaged.ts`; `pnpm -F @repo/desktop smoke <path/to/IdleBiz.app>`
+boots another, a release's from its dmg): the pack carries every file the server ships under
+`resources/` (the skills, which main reads only once a company hires and runs) and the licences,
+hello boots main on the pack's node, the window loads main's page (the shell prints
+`[shell] window loaded`), main answers that page on loopback signed out to anything without a
+handoff, a second launch hands over to the first, and a SIGTERM quits as Quit does, leaving
+nothing main started running. It refuses where an IdleBiz is running or the Keychain holds
 IdleBiz's key, which an ad-hoc pack would wait on a prompt to read, so on a Mac that runs IdleBiz
-it stops before it launches anything; the key its own launch makes it deletes as it ends, so a Mac
-is left as it found it. CI's `test-macos` job runs it on an ad-hoc pack.
+it stops before it launches anything. A launch where the Keychain holds none makes one, as a first
+launch does, and the smoke deletes it as it ends, since kept it would stop the next smoke and
+prompt the first IdleBiz installed after. CI's `test-macos` job runs it on an ad-hoc pack.
 
 ## Map
 
@@ -296,7 +329,9 @@ apps/
   cli/           idlebiz — the server and the binary. `idlebiz serve` is main (src/server/); every
                  other verb is a company tool (src/commands/tools.ts); src/dev-host/ runs main as
                  the shell would; resources/ holds what main reads. The build is dist/index.js
-                 with its chunks flat beside it, and the page staged as dist/page.
+                 with its chunks flat beside it (src/paths.ts counts on that), and the desktop
+                 page's build staged as dist/page (scripts/stage-page.ts), which serve hands the
+                 window.
   web/           @repo/web — the landing page (Next.js on Vercel): the download and the trust
                  pages.
 packages/
@@ -499,14 +534,15 @@ and `control-plane.ts` is only transport, which serves each tool at its name alo
 posted to `/v1/<tool_name>` on the run's socket), so `callTool` takes a `ToolName` and what it
 answers is shaped once (`ToolAnswerSchema`) for both ends.
 
-- Main writes a launcher at each boot (`server/agent-launcher.ts`, `~/.idlebiz/bin/idlebiz`),
-  which runs the CLI on main's own node and goes first on each run's PATH. The verb sends its
-  request to the control plane its run was handed (`IDLEBIZ_API_SOCKET`, `IDLEBIZ_RUN_TOKEN`), over
-  that run's own unix socket only ("A run's seal" says why the socket names the caller). `-` reads
-  the request from stdin, and `idlebiz <tool> --help` prints the tool's doc. It sends the request
-  as its shortest JSON (`encodeRequest`), however the agent spaced or escaped it: that is what the
-  control plane's 64 KiB limit weighs and set_env's 60 KiB value limit counts, so a value set_env
-  takes fits in a call.
+- Main writes a launcher at each boot (`server/agent-launcher.ts`, `~/.idlebiz/bin/idlebiz`), since
+  a Mac may have no node for the package's `#!/usr/bin/env node` bin: a `sh` script that runs the
+  bundle main was started from on main's own node, first on each run's PATH, outside every folder a
+  run writes. The verb sends its request to the control plane its run was handed
+  (`IDLEBIZ_API_SOCKET`, `IDLEBIZ_RUN_TOKEN`), over that run's own unix socket only ("A run's seal"
+  says why the socket names the caller). `-` reads the request from stdin, and
+  `idlebiz <tool> --help` prints the tool's doc. It sends the request as its shortest JSON
+  (`encodeRequest`), however the agent spaced or escaped it: that is what the control plane's 64 KiB
+  limit weighs and set_env's 60 KiB value limit counts, so a value set_env takes fits in a call.
 - Every call ends in one of `TOOL_OUTCOMES`, the verb's exit code, which the instructions render:
   done (0) is what the implementation returns, refused (1) a `RefusalError` or the lead-only
   refusal, a fault (2) anything else thrown, reported to main's log, and held (4) a call waiting
@@ -514,7 +550,8 @@ answers is shaped once (`ToolAnswerSchema`) for both ends.
   did not reach the founder is refused; `ask_boss` and `request_integration`, whose call is the
   ask, are done once it does. The verb prints the answer on stdout whichever it is, so
   `idlebiz deploy && …` stops at a deploy awaiting sign-off. A call that never reached main, or
-  that main could not take (a body that does not parse), exits 1 with why on stderr.
+  that main could not take (a body that does not parse), exits 1 with why on stderr. Outside a run
+  there is nothing to call, and it says so.
 - A change everyone should hear about (a bet, a product, autopilot) goes through
   `server/company-actions.ts`, whoever made it: a tool, the scheduler or the founder's page. Its
   `postToRoom` is the team room's only writer, and names the speaker (founder, office or
@@ -861,9 +898,11 @@ every run. They are IdleBiz's own: main reads each where it uses it (`getSecret`
 so a misspelt name fails typecheck rather than reading as no key.
 
 - Each value is also sealed with a key the macOS Keychain keeps for IdleBiz (service "IdleBiz",
-  account "sealing-key": 32 random bytes, which the shell reads and hands main at hello as
-  `sealingKey`), since a claude run can still reach the Keychain: AES-256-GCM with a random nonce
-  and the key's name as associated data, as `sealed:v2:<base64 of nonce, ciphertext and tag>`
+  account "sealing-key": 32 random bytes, base64, made on the first launch that finds none,
+  `src-tauri/src/keychain.rs`), since a claude run can still reach the Keychain. The shell reads
+  it with no prompt, being the signed app that made it, and hands it main at hello as
+  `sealingKey`; main never reaches the Keychain. It seals with AES-256-GCM, a random nonce and the
+  key's name as associated data, as `sealed:v2:<base64 of nonce, ciphertext and tag>`
   (`sealerFor` in `server/secrets.ts`, `setSealer` at boot).
 - Keys are entered in the app: `VERCEL_TOKEN` through a product's Vercel button (under users),
   Stripe and Printful in the Budget panel (under revenue). A key pasted into the file as plain
@@ -1224,37 +1263,64 @@ never one. The page's carries the founder's session cookie and answers on the pa
 which the seal closes to every run; the control plane's is a unix socket main opens for each run,
 which only that run's seal reaches, and what it does is the run's.
 
-- **The page's API.** `packages/contract` declares every procedure the page calls of main (oRPC,
-  one folder per domain, `<domain>-contract.ts` beside `<domain>-schema.ts`, whose zod schemas
-  are the inputs' types), and `server/page-router.ts` implements it, so a procedure missing or
-  mistyped fails to compile. Main serves the window its page on loopback, signed in by a one-time
-  handoff (`server/page-server.ts`, `server/page-session.ts`). The page calls
-  `api.<domain>.<procedure>()` (`renderer/api.ts`, one client for the page) on its own origin:
-  under `/rpc`, behind the session cookie and same-origin guards. One middleware words every
-  answer that does not return (`server/lib/answers.ts`): a `RefusalError` is the store's bare
-  sentence, which the page shows; text over a field's limit says the limit; anything else is a
-  fault, answered with its message and reported to main's log.
+- **The page's API.** `packages/contract` declares every procedure the page calls of main (oRPC, one
+  folder per domain, `<domain>-contract.ts` beside `<domain>-schema.ts`, whose zod schemas are the
+  inputs' types), and `server/page-router.ts` implements it, so a procedure missing or mistyped
+  fails to compile. The page calls `api.<domain>.<procedure>()` (`renderer/api.ts`, one client for
+  the page) on its own origin: under `/rpc`, behind the session cookie and same-origin guards ("The
+  window", below). One middleware words every answer that does not return (`server/lib/answers.ts`):
+  a `RefusalError` is the store's bare sentence, which the page shows; text over a field's limit
+  says the limit; anything else is a fault, answered with its message and reported to main's log.
 - **Main's events** are the contract's `events` stream, each a `PageEvent` whose zod schema
   `@repo/contract/events` declares: `server/lib/broadcast.ts` parses each as it publishes it, and
   logs and drops one that fails, which would otherwise end every page's stream at the contract's
   own check. The page hears them through `listen()` (`renderer/page-events.ts`), which reopens a
   stream that drops a second later, and asks main for everything again as each one opens, since
   what main sent meanwhile is lost.
-- **The relay.** The shell reaches no part of the page's API: it talks to main over main's stdio
-  (JSON-RPC 2.0, one message a line: `server/relay/rpc.ts`, `src-tauri/src/relay.rs`), and the
-  page reaches no command of the shell's. Main asks the shell for what only a native app does
-  (`server/host.ts`): a message box, the clipboard, Finder and the browser, the menu-bar icon (main
-  decides it, `server/tray.ts`; the shell draws it, `src-tauri/src/tray.rs`), a notification, the
-  login item, the Mac kept awake, a relaunch. The shell says hello first, with what only it knows:
-  whether it is the packaged app, the dev server's address in dev, whether the login item launched
-  it, the Keychain's sealing key. Each end names every method once (`RELAY_METHODS` and its zod
-  schemas in `server/host.ts`; the consts and serde types of `src-tauri/src/protocol.rs`), and
-  both are pinned to one sample a method, `src-tauri/tests/fixtures/relay/<method>.json`:
-  `server/host.test.ts` parses each with main's schema, `cargo test` reads each into the shell's
-  types and writes it back unchanged, and each checks its own methods are the samples'. Both ends
-  refuse a field they do not know, and a development shell shows a box for a notification it
-  cannot read. Main's stdin is its lifeline: the shell closes it only after main answers `quit`,
-  so a shell that crashed or was killed ends main too, after its runs.
+- **The window** is main's own page, served on loopback (`server/page-server.ts`). The shell asks
+  main for a `handoff` each time it makes the window, waiting ten seconds, and opens it there: a
+  one-time link, spent at its first use and dead unspent after five minutes, whose answer sets the
+  page's session cookie (HttpOnly, SameSite=Strict, a secret minted per boot) and drops the nonce
+  from the address (`server/page-session.ts`). The founder's approve button is on that port, so the
+  seal closes it to every run ("A run's seal"); main answers only a request naming 127.0.0.1 or
+  localhost at its own port, since any other name is a page that rebound its own onto loopback; its
+  calls and events need the session and the page's own origin (`Sec-Fetch-Site`, else `Origin`),
+  since another loopback port is the same site and carries the cookie; and the page's content
+  security policy is main's (`@repo/contract/page-policy`). No capability grants the page a command
+  of the shell's, and `removeUnusedCommands` leaves none in the binary. The window is pinned to
+  main's origin, compared by its parts: a link to any other page opens in the browser, `window.open`
+  makes no second window, and every device permission is refused (`src-tauri/src/window.rs`).
+  Closing it hides it and the dock icon: the office keeps working in the menu bar, and Open brings
+  the same page back, or makes it on a fresh handoff when a launch at login never did. Each boot
+  binds a port of its own, so nothing of the page is kept between boots (`no-store`), and the page
+  keeps nothing in the browser's storage.
+- **The relay.** The shell starts main on node (`src-tauri/src/main_process.rs`):
+  `node <server>/dist/index.js serve`, where `<server>` is `Contents/Resources/server` in the .app
+  and `apps/cli` in a checkout (`src-tauri/src/runtime.rs`). It reaches no part of the page's API:
+  it talks to main over main's stdio (JSON-RPC 2.0, one message a line, requests both ways:
+  `server/relay/rpc.ts`, `src-tauri/src/relay.rs`), and main's stdout carries the protocol alone:
+  anything else main or a library writes there is moved to stderr. Main asks the shell for what only
+  a native app does (`server/host.ts`): a message box, the clipboard, Finder and the browser, the
+  menu-bar icon (main decides it, `server/tray.ts`; the shell draws it, `src-tauri/src/tray.rs`), a
+  notification, the login item, the Mac kept awake, a relaunch. The shell says hello first, with
+  what only it knows: whether it is the packaged app, the dev server's address in dev, whether the
+  login item launched it, the Keychain's sealing key; main finds its own files beside itself (the
+  skills in `resources/`, the built page in `dist/page`). Each end names every method once
+  (`RELAY_METHODS` and its zod schemas in `server/host.ts`; the consts and serde types of
+  `src-tauri/src/protocol.rs`), and both are pinned to one sample a method,
+  `src-tauri/tests/fixtures/relay/<method>.json`: `server/host.test.ts` parses each with main's
+  schema, `cargo test` reads each into the shell's types and writes it back unchanged, and each
+  checks its own methods are the samples'. Both ends refuse a field they do not know. A notification
+  the shell cannot read goes to its stderr, and under `tauri dev` to a box too, once a method: main
+  waits on no answer, so would never hear of it.
+- **Main's lifetime.** Main boots on the hello; one that fails says where the log is, in a box, and
+  the app quits, as does one not booted within a minute, killed with its process group first, since
+  its quit would wait the stuck boot out. A quit asks main to stop its runs (`quit`) and waits up to
+  45 seconds for the answer, then closes main's stdin, its lifeline, so a shell that crashed or was
+  killed ends main too, after its runs; a main still there five seconds later is killed with its
+  process group. Main leads a group of its own, so a Ctrl-C under `tauri dev` reaches the shell
+  alone, which stops main once. There is no restart: main owns the save, and a second main under one
+  that has not let go would be refused it (`server/save-claim.ts`).
 - **Awake and at login.** The scheduler alone keeps the Mac out of idle sleep, and only while a
   run is in flight (`keepAwake`, `server/keep-awake.ts`: a user-initiated activity the shell
   holds, `src-tauri/src/keep_awake.rs`, never past a closed lid). Settings can open IdleBiz at

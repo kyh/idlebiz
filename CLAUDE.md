@@ -3,7 +3,8 @@
 Tauri game where AI employees — real `claude` / `codex` CLI sessions — operate a business. This
 file holds the premises and the decisions, each in a line or two with its reason. The workflow,
 the map and how each mechanic works are `AGENTS.md`'s, imported at the end, each described there
-once: change a mechanic there, and a decision here.
+once: change a mechanic there, and a decision here. The READMEs orient a reader and link into
+`AGENTS.md`, never telling a mechanic again.
 
 ## Premises
 
