@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterEach, vi } from "vitest";
+import { vi } from "vitest";
 import type { BlockedAsk } from "@repo/domain/domain";
 import type { JsonValue } from "@repo/domain/json";
 import type { DeployRequest, DeployResult } from "../deploy";
@@ -9,20 +9,11 @@ import type { ChargeLink } from "../link-record";
 import * as store from "../store/store";
 import type { FoundingHire } from "../store/store";
 import { askBox } from "../agents/ask-box";
-import { unaskedIntegrations } from "../test-support/integrations";
-import { foundAcme, freshSave, hire } from "../test-support/save";
+import { unaskedIntegrations } from "./integrations";
+import { foundAcme, hire } from "./save";
 import type { ToolName } from "../tool-specs";
-import type { RunContext } from "./define";
-import { callTool as outcomeOf } from "./index";
-
-// What the tools' tests share. Importing this gives the importing test file a save of its own,
-// emptied before each test.
-export const root = freshSave();
-
-afterEach(() => {
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
+import type { RunContext } from "../tools/define";
+import { callTool as outcomeOf } from "../tools/index";
 
 /** What a call answers the agent, however it ended. */
 export const callTool = async (
@@ -105,7 +96,7 @@ export const deployingRun = (result: DeployResult) => {
   return { ...run, ctx, deploys };
 };
 
-export const connectVercel = () =>
+export const connectVercel = (root: string) =>
   writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ VERCEL_TOKEN: TOKEN }));
 
 export const PAID_URL = "https://buy.stripe.com/pro";

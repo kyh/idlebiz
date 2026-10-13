@@ -3,10 +3,13 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { ActivityEvent } from "@repo/domain/activity";
 import { BadRequestError } from "@repo/domain/errors";
-import { BET, PAID_URL, PRO_LINK, callTool, openBet, root, runAs } from "./fixtures";
+import { BET, PAID_URL, PRO_LINK, callTool, openBet, runAs } from "../test-support/tools";
+import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { fetchRealMetrics } from "../metrics";
 import { activityEvents } from "../activity";
+
+const root = freshSave();
 
 describe("portfolio tools", () => {
   it("opens a bet for the lead and says how it is counted", async () => {

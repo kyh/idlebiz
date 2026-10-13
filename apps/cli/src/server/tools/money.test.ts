@@ -5,7 +5,7 @@ import { z } from "zod";
 import { BadRequestError } from "@repo/domain/errors";
 import type { JsonValue } from "@repo/domain/json";
 import type { RunContext } from "./define";
-import type { StripeAnswer } from "./fixtures";
+import type { StripeAnswer } from "../test-support/tools";
 import {
   BET,
   DESIGN_SHA,
@@ -17,12 +17,14 @@ import {
   callTool,
   replayingStripe,
   revenueBet,
-  root,
   runAs,
-} from "./fixtures";
+} from "../test-support/tools";
+import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { callTool as outcomeOf } from "./index";
 import { stripeLinkAccess, stripePaymentLink } from "../stripe-links";
+
+const root = freshSave();
 
 const LINK = { amountUsd: 9, name: "Pro plan" };
 

@@ -1,9 +1,5 @@
-import { foundAcme, freshSave, hire } from "../test-support/save";
-import type { Seal } from "./seal";
-
-// What the runs' tests share. Importing this gives the importing test file a save of its own,
-// emptied before each test.
-export const root = freshSave();
+import type { Seal } from "../agents/seal";
+import { foundAcme, hire } from "./save";
 
 export const SEAL: Seal = {
   apiSocket: [],

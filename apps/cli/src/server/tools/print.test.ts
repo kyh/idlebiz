@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { CatalogQuery, CatalogRead } from "../printful";
 import type { RunContext } from "./define";
-import type { StripeAnswer } from "./fixtures";
+import type { StripeAnswer } from "../test-support/tools";
 import {
   DESIGN,
   DESIGN_SHA,
@@ -14,13 +14,15 @@ import {
   callTool,
   replayingStripe,
   revenueBet,
-  root,
   runAs,
-} from "./fixtures";
+} from "../test-support/tools";
+import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { callTool as outcomeOf } from "./index";
 import { printListing } from "../print-listing";
 import { productionHosts } from "../vercel";
+
+const root = freshSave();
 
 const PRINT = {
   name: "Launch tee",

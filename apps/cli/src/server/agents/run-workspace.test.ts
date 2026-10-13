@@ -4,9 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
-import { found, root } from "./fixtures";
+import { found } from "../test-support/seal";
+import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { ensureRepository, gitIdentity } from "./run-workspace";
+
+const root = freshSave();
 
 const execFileAsync = promisify(execFile);
 

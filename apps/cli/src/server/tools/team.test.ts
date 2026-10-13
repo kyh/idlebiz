@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TaskOrigin } from "@repo/domain/domain";
 import type { RunContext } from "./define";
-import { hire } from "../test-support/save";
-import { BET, HANDOFF, callTool, openBet, runAs } from "./fixtures";
+import { freshSave, hire } from "../test-support/save";
+import { BET, HANDOFF, callTool, openBet, runAs } from "../test-support/tools";
 import * as store from "../store/store";
+
+freshSave();
 
 describe("team tools", () => {
   it("turns a hire away at the seat cap as an answer, not a fault", async () => {

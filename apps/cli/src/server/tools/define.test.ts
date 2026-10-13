@@ -14,11 +14,14 @@ import {
   connectVercel,
   deployingRun,
   runAs,
-} from "./fixtures";
+} from "../test-support/tools";
+import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { callTool as outcomeOf } from "./index";
 import { ControlPlane } from "../control-plane";
 import { runCli } from "../../program";
+
+const root = freshSave();
 
 describe("company tools", () => {
   it("turns the lead's tools away from anyone else, before looking at the body", async () => {
@@ -170,7 +173,7 @@ describe("an idlebiz verb, through the control plane to the tools", () => {
   });
 
   it("exits 4 on a deploy held for the founder's sign-off, so a chain after it stops", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, deploys } = deployingRun(DEPLOYED);
     store.setProductVercel("acme", VERCEL);
     expect(await typed(ctx, ["deploy"])).toEqual({

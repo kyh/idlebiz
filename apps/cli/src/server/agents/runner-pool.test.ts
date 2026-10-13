@@ -5,13 +5,16 @@ import { addUsage, zeroUsage } from "@repo/agent-driver/events";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthFlowEvent, RunOutcome } from "@repo/domain/domain";
 import type { Seal, SealState } from "./seal";
-import { SEAL, SKILLS, found, root } from "./fixtures";
+import { SEAL, SKILLS, found } from "../test-support/seal";
+import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { agentDriver, createAgentDriver, memoryAfter, outcomeOf, resumeIn } from "./runner-pool";
 import { askBox } from "./ask-box";
 import { signInCommand } from "./seal";
 import { controlPlane } from "../control-plane";
 import { startLogin } from "./onboarding";
+
+const root = freshSave();
 
 const failed = {
   class: "other",

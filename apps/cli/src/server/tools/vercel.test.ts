@@ -13,18 +13,20 @@ import {
   callTool,
   connectVercel,
   deployingRun,
-  root,
   runAs,
-} from "./fixtures";
+} from "../test-support/tools";
+import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { callTool as outcomeOf } from "./index";
+
+const root = freshSave();
 
 const NEW_ACTION = "deploy acme to production on a new Vercel project named acme";
 const NEW_PROJECT = { projectId: "prj_new", projectName: "acme", teamId: null };
 
 describe("deploy", () => {
   it("holds the first call for the founder's sign-off on the product and the project it lands in", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
     store.setProductVercel("acme", VERCEL);
     expect(await outcomeOf(ctx, "deploy", {})).toEqual({
@@ -36,7 +38,7 @@ describe("deploy", () => {
   });
 
   it("deploys once signed off, into the product's project, and spends the sign-off", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, deploys } = deployingRun(DEPLOYED);
     const product = store.setProductVercel("acme", VERCEL);
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
@@ -57,7 +59,7 @@ describe("deploy", () => {
   });
 
   it("leads with the production domain, since the deployment's own URL sits behind Vercel's login", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx } = deployingRun({ ...DEPLOYED, alias: "https://acme.vercel.app" });
     store.setProductVercel("acme", VERCEL);
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
@@ -68,7 +70,7 @@ describe("deploy", () => {
   });
 
   it("puts a product bound to nothing into a project named for it, and binds it there", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, asked, deploys } = deployingRun({ ...DEPLOYED, project: NEW_PROJECT });
     expect(await callTool(ctx, "deploy", {})).toContain(`sign-off on "${NEW_ACTION}"`);
     expect(asked).toEqual([{ command: NEW_ACTION, rule: "deploy", type: "approval" }]);
@@ -82,7 +84,7 @@ describe("deploy", () => {
   });
 
   it("binds a new project its failed deploy made, so the next deploy lands there too", async () => {
-    connectVercel();
+    connectVercel(root);
     const reason = 'Vercel\'s build failed: Command "npm run build" exited with 1.';
     const { ctx } = deployingRun({ kind: "failed", project: NEW_PROJECT, reason });
     store.grantApproval(ctx.run.taskId, NEW_ACTION);
@@ -94,7 +96,7 @@ describe("deploy", () => {
   });
 
   it("leaves a binding the founder made while the deploy ran", async () => {
-    connectVercel();
+    connectVercel(root);
     const run = deployingRun(DEPLOYED);
     const ctx: RunContext = {
       ...run.ctx,
@@ -112,7 +114,7 @@ describe("deploy", () => {
   });
 
   it("asks the founder to bind a product whose name another Vercel project holds", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, asked } = deployingRun({ kind: "name-taken", name: "acme" });
     store.grantApproval(ctx.run.taskId, NEW_ACTION);
 
@@ -131,7 +133,7 @@ describe("deploy", () => {
   });
 
   it("deploys only its run's own product, the folder a signed run has to itself", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
     const side = store.createProduct({ description: "a side project", name: "Side" });
     store.grantApproval(
@@ -147,7 +149,7 @@ describe("deploy", () => {
   });
 
   it("deploys nothing from a run on no product", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
     const companyRun: RunContext = { ...ctx, run: { ...ctx.run, productId: null } };
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
@@ -161,7 +163,7 @@ describe("deploy", () => {
   });
 
   it("refuses a folder holding a key set_env set before the founder is asked to sign off", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
     const product = store.setProductVercel("acme", VERCEL);
     const key = "sk-proj-acme-runtime";
@@ -207,7 +209,7 @@ describe("deploy", () => {
     expect(deploys).toEqual([]);
   });
   it("asks for Vercel anew, and spends no sign-off, while Vercel turns the saved token away", async () => {
-    connectVercel();
+    connectVercel(root);
     const run = deployingRun(DEPLOYED);
     store.setProductVercel("acme", VERCEL);
     store.grantApproval(run.ctx.run.taskId, BOUND_ACTION);
@@ -240,7 +242,7 @@ describe("deploy", () => {
 
   it("spends no sign-off while Vercel cannot be asked about the token", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    connectVercel();
+    connectVercel(root);
     const run = deployingRun(DEPLOYED);
     store.setProductVercel("acme", VERCEL);
     store.grantApproval(run.ctx.run.taskId, BOUND_ACTION);
@@ -300,7 +302,7 @@ describe("set_env", () => {
   it.each(["sk_live_foundersUnrestricted1", "sk_test_foundersUnrestricted1"])(
     "refuses a Stripe secret key IdleBiz does not hold: %s",
     async (value) => {
-      connectVercel();
+      connectVercel(root);
       const { ctx, sets } = settingRun();
       store.setProductVercel("acme", VERCEL);
 
@@ -315,7 +317,7 @@ describe("set_env", () => {
   );
 
   it("sets a restricted Stripe key the founder made for the product", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
@@ -329,7 +331,7 @@ describe("set_env", () => {
   });
 
   it("sets a publishable key under a public name, and lets a deploy ship a file holding it", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, sets } = settingRun();
     const product = store.setProductVercel("acme", VERCEL);
     const publishable = "pk_live_acmePublishable1";
@@ -360,7 +362,7 @@ describe("set_env", () => {
   });
 
   it("refuses a secret under a public name, pointing at a server-only one", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
@@ -377,7 +379,7 @@ describe("set_env", () => {
   });
 
   it("answers a Stripe secret key under a public name as the secret key it is", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
@@ -393,7 +395,7 @@ describe("set_env", () => {
   it.each(["opaqueServerOnly1234", "Bearer opaqueServerOnly1234", "ServerOnly1234"])(
     "refuses a public name over a value kept under a server-only one: %s",
     async (value) => {
-      connectVercel();
+      connectVercel(root);
       const { ctx, sets } = settingRun();
       store.setProductVercel("acme", VERCEL);
       await callTool(ctx, "set_env", { name: "DB_KEY", value: "opaqueServerOnly1234" });
@@ -410,7 +412,7 @@ describe("set_env", () => {
   );
 
   it("sets the variable on the run's product's project with the founder's token, unsigned, and says when it takes effect", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, asked, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
@@ -434,7 +436,7 @@ describe("set_env", () => {
   });
 
   it("keeps the value in secrets.json, out of the save, and hands it to the next deploy to refuse", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx } = settingRun();
     store.setProductVercel("acme", VERCEL);
     await callTool(ctx, "set_env", OPENAI);
@@ -465,7 +467,7 @@ describe("set_env", () => {
   });
 
   it("replaces only a name the team set, and keeps nothing Vercel turned down", async () => {
-    connectVercel();
+    connectVercel(root);
     const refused = settingRun({
       error: "Vercel turned it down (403): A variable with this name already exists",
       ok: false,
@@ -491,7 +493,7 @@ describe("set_env", () => {
   });
 
   it("replaces a name only on the project the team set it on, never on one the product is rebound to", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
     await callTool(ctx, "set_env", OPENAI);
@@ -510,7 +512,7 @@ describe("set_env", () => {
   });
 
   it("sends the value without the whitespace a paste carries", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
@@ -519,7 +521,7 @@ describe("set_env", () => {
   });
 
   it("tells a run whose product has no project yet to deploy first", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, sets } = settingRun();
 
     expect(await callTool(ctx, "set_env", OPENAI)).toBe(
@@ -545,7 +547,7 @@ describe("set_env", () => {
   });
 
   it("asks for Vercel anew while Vercel turns the saved token away", async () => {
-    connectVercel();
+    connectVercel(root);
     const run = settingRun();
     store.setProductVercel("acme", VERCEL);
     const ctx: RunContext = {
@@ -568,7 +570,7 @@ describe("set_env", () => {
   });
 
   it("refuses a name Vercel keeps as the caller's error", async () => {
-    connectVercel();
+    connectVercel(root);
     const { ctx, sets } = settingRun();
     store.setProductVercel("acme", VERCEL);
 
