@@ -92,8 +92,8 @@ pack ("Packaging and release").
 
 **The compiler's strictness is `tsconfig.base.json`** (`strict`, `noUncheckedIndexedAccess`,
 `exactOptionalPropertyTypes`, `noImplicitReturns`, `noImplicitOverride`, unused locals and
-parameters). Every workspace's tsconfig extends it but `apps/web`'s, which Next writes, and adds
-only what is its own (`lib`, `types`, `include`, `paths`, the renderer's `jsx`). The code the page
+parameters). Every workspace's tsconfig extends it and adds only what is its own (`lib`, `types`,
+`include`, `paths`, `jsx`, and `apps/web`'s Next plugin and `allowJs`). The code the page
 runs (the renderer, `@repo/domain`, `@repo/contract`) extends `tsconfig.page.json`, the ES2023
 ceiling of the window's WebKit; the renderer adds the DOM in `renderer/env.d.ts`.
 
