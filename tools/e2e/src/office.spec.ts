@@ -2,6 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { apiOf, expect, foundCompany, test } from "./harness";
 import type { Locator, Page } from "@playwright/test";
+import type { BlockedAsk, Task } from "@repo/domain/domain";
+import { serializeTask } from "idlebiz/task-file";
 import { z } from "zod";
 import type { Founded } from "./harness";
 
@@ -25,37 +27,31 @@ test("a founded company boots into the office", async ({ launch }) => {
 
 const INBOX_BUTTON = "Questions, steps only you can take and stuck tasks waiting on you";
 
-/** A task of the lead's, left blocked on `ask` as TASK.md stores it, for the next launch to load. */
+/** A task of the lead's, left blocked on `ask` as the store writes it, for the next launch to load. */
 const blockLead = async (
   root: string,
   { company, product }: Founded,
   slug: string,
-  ask: string,
+  ask: BlockedAsk,
 ): Promise<void> => {
+  const task: Task = {
+    answers: null,
+    assigneeId: company.leaderId,
+    attempts: 0,
+    betId: null,
+    completedAt: null,
+    createdAt: Date.now(),
+    description: "Ship the tip jar.",
+    id: slug,
+    origin: "founder",
+    priority: "high",
+    productId: product.id,
+    state: { ask, kind: "blocked", summary: null },
+    title: "Ship the tip jar",
+  };
   const taskDir = path.join(root, "company", "tasks", slug);
   await mkdir(taskDir, { recursive: true });
-  await writeFile(
-    path.join(taskDir, "TASK.md"),
-    [
-      "---",
-      'kind: "task"',
-      'name: "Ship the tip jar"',
-      'schema: "agentcompanies/v1"',
-      `slug: ${JSON.stringify(slug)}`,
-      "metadata:",
-      "  attempts: 0",
-      `  createdAt: ${Date.now()}`,
-      '  origin: "founder"',
-      '  priority: "high"',
-      '  status: "blocked"',
-      `  assigneeId: ${JSON.stringify(company.leaderId)}`,
-      `  productId: ${JSON.stringify(product.id)}`,
-      `  blockedQuestion: ${JSON.stringify(ask)}`,
-      "---",
-      "Ship the tip jar.",
-      "",
-    ].join("\n"),
-  );
+  await writeFile(path.join(taskDir, "TASK.md"), serializeTask(task));
 };
 
 test("a held command waits in #team and the inbox until the founder denies it", async ({
@@ -65,7 +61,11 @@ test("a held command waits in #team and the inbox until the founder denies it", 
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
-  await blockLead(root, founded, "e2e-deploy", `[approve:deploy] ${HELD_COMMAND}`);
+  await blockLead(root, founded, "e2e-deploy", {
+    command: HELD_COMMAND,
+    rule: "deploy",
+    type: "approval",
+  });
 
   const { page } = await launch();
   await page.getByTitle(INBOX_BUTTON).click();
@@ -93,7 +93,7 @@ test("an action card hands the founder its draft and carries their answer back",
     draft: "We built a tip jar.\nTry it!",
     instructions: "Post it from your account, then send me its URL.",
   };
-  await blockLead(root, founded, "e2e-post", `[action] ${JSON.stringify(action)}`);
+  await blockLead(root, founded, "e2e-post", { ...action, type: "action" });
 
   const { page } = await launch();
   await page.getByTitle(INBOX_BUTTON).click();
@@ -231,7 +231,7 @@ test("a long question keeps its lines and the dialogue stays on screen", async (
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
-  await blockLead(root, founded, "e2e-long-ask", LONG_QUESTION);
+  await blockLead(root, founded, "e2e-long-ask", { question: LONG_QUESTION, type: "question" });
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
   if (!lead) {
     throw new Error("the founded company has no lead");
@@ -260,7 +260,7 @@ test("hovering the dialogue's menu leaves the typed answer where the founder is 
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
-  await blockLead(root, founded, "e2e-color", "Which color?");
+  await blockLead(root, founded, "e2e-color", { question: "Which color?", type: "question" });
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
   if (!lead) {
     throw new Error("the founded company has no lead");
@@ -282,7 +282,7 @@ test("an answer being typed survives a status event of the asker's", async ({ la
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
-  await blockLead(root, founded, "e2e-color", "Which color?");
+  await blockLead(root, founded, "e2e-color", { question: "Which color?", type: "question" });
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
   if (!lead) {
     throw new Error("the founded company has no lead");
@@ -313,7 +313,7 @@ test("Talk… keeps the keys while an ask waits and a status event of the asker'
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
-  await blockLead(root, founded, "e2e-color", "Which color?");
+  await blockLead(root, founded, "e2e-color", { question: "Which color?", type: "question" });
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
   if (!lead) {
     throw new Error("the founded company has no lead");
@@ -389,7 +389,7 @@ test("an answer main refuses in the inbox keeps the keys", async ({ launch, root
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
-  await blockLead(root, founded, "e2e-color", "Which color?");
+  await blockLead(root, founded, "e2e-color", { question: "Which color?", type: "question" });
 
   const { page } = await launch();
   await page.getByTitle(INBOX_BUTTON).click();

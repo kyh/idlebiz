@@ -14,7 +14,8 @@
   ],
   "type": "module",
   "exports": {
-    "./dev-host": "./src/dev-host/host.ts"
+    "./dev-host": "./src/dev-host/host.ts",
+    "./task-file": "./src/server/test-support/task-file.ts"
   },
   "scripts": {
     "build": "vite build && node scripts/stage-page.ts",
