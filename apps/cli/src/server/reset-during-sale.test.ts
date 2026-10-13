@@ -6,7 +6,8 @@ import type { RunContext } from "./tools/define";
 import * as store from "./store/store";
 import { askBox } from "./agents/ask-box";
 import { callTool } from "./tools";
-import { switchOffBeforeReset } from "./company-actions";
+import { switchOffBeforeReset } from "./reset-links";
+import { unaskedIntegrations } from "./test-support/integrations";
 import { foundAcme, hire, tempSave } from "./test-support/save";
 
 // A file of its own: once a reset begins, this process makes no payment link again.
@@ -15,8 +16,6 @@ const root = tempSave();
 afterAll(() => {
   vi.unstubAllGlobals();
 });
-
-const unasked = (what: string) => () => Promise.reject(new Error(`${what} without a test asking`));
 
 describe("a reset while Stripe makes a signed payment link", () => {
   it("waits for the link, switches it off with the rest, and makes no link after", async () => {
@@ -43,29 +42,18 @@ describe("a reset while Stripe makes a signed payment link", () => {
     let links = 0;
     const asked: unknown[] = [];
     const ctx: RunContext = {
+      ...unaskedIntegrations,
       asks: askBox((ask) => asked.push(ask)),
       assign: (taskId) => asked.push(taskId),
-      checkVercelToken: unasked("checked the Vercel token"),
-      checkoutAccess: unasked("read checkouts"),
       company,
       createPaymentLink: () => {
         links += 1;
         return stripe.promise;
       },
-      deploy: unasked("deployed"),
       driver: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
       employee,
       linkAccess: () => Promise.resolve({ kind: "granted" }),
-      printListing: {
-        catalog: unasked("read the catalog"),
-        publish: unasked("listed a print"),
-        quote: unasked("priced a print"),
-        readFile: unasked("fetched a print file"),
-        stripeAccess: unasked("read Stripe's grants"),
-      },
-      productionHosts: unasked("read domains"),
       run: { betId: null, origin: "founder", productId: "acme", runId: "run", taskId: "task" },
-      setEnv: unasked("set a variable"),
     };
     const link = { amountUsd: 9, name: "Pro plan" };
     store.grantApproval("task", 'payment link "Pro plan" at $9.00 on acme');

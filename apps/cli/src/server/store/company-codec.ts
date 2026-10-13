@@ -5,12 +5,7 @@ import { sharedDir } from "../paths";
 import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
-/**
- * What this build writes, and the only stamp it reads. A save stamped higher was written by a
- * newer build: writers rebuild every file from what they understand, so opening it would quietly
- * drop whatever the newer build added. One stamped lower was written by a pre-release build whose
- * shapes nothing here reads. Both are refused, and a bump starts every save over.
- */
+/** What this build writes, and the only stamp it reads: CLAUDE.md's "No users yet" says why. */
 export const SAVE_FORMAT = 16;
 
 /**

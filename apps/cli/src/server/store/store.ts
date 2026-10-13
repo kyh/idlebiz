@@ -1,7 +1,14 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "../lib/fs";
+import {
+  appendJsonl,
+  atomicWrite,
+  moveDir,
+  readJsonFile,
+  readJsonlTail,
+  writeJsonFile,
+} from "../lib/fs";
 import { report } from "../lib/report";
 import {
   rootDir,
@@ -46,6 +53,17 @@ import {
 } from "../paths";
 import { parseDoc, serializeDoc, slugify } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
+import {
+  byAge,
+  holdsPackage,
+  loadPackages,
+  loadRecords,
+  loadReport,
+  resetLoadReport,
+  safeReaddir,
+  skip,
+} from "./load";
+import { archiveTo, heldIn, uniqueSlug } from "./slugs";
 import { z } from "zod";
 import { continuationBrief } from "../prompts/briefs";
 import { defaultRoutines } from "../prompts/routines";
@@ -79,8 +97,6 @@ import {
   windowEnd,
 } from "@repo/domain/bets";
 import type { Bet, PolicyParams } from "@repo/domain/bets";
-import { errorMessage } from "@repo/domain/errors";
-import { parseJson } from "@repo/domain/json";
 import { ListingSchema } from "../listing";
 import type { Listing } from "../listing";
 import { OrderSchema } from "../order";
@@ -99,7 +115,6 @@ import type {
   Employee,
   FailureVerdict,
   LoadReport,
-  LoadSkip,
   OpenTaskStatus,
   OrderCard,
   OrderCardSubject,
@@ -144,7 +159,6 @@ const ProposalEndSchema = z.object({
   employeeId: z.string(),
   endedAt: z.number(),
 });
-/** A proposal that ended done: whose it was, when it was briefed and when it ended. */
 type ProposalEnd = z.infer<typeof ProposalEndSchema>;
 
 interface ActiveCompany {
@@ -198,7 +212,6 @@ const nextId = (counter: "nextActivityId" | "nextTeamMessageId"): number => {
   return id;
 };
 
-/** The company this launch runs, or null before one is founded. */
 const maybeCurrent = (): ActiveCompany | null => c().active;
 
 /** The company this launch runs. There is only ever one, so nothing takes its id; asking with none loaded is a bug in the caller. */
@@ -295,7 +308,7 @@ const saveRunState = (e: Employee): void => {
     sessionId: e.session?.id ?? null,
     sessionWorkspace: e.session?.workspace ?? null,
   };
-  atomicWrite(employeeRunStateFile(e.id), JSON.stringify(state, null, 2));
+  writeJsonFile(employeeRunStateFile(e.id), state);
 };
 
 const withRunState = (e: Employee): Employee => {
@@ -375,119 +388,10 @@ const shelveClosed = (t: Task): boolean => {
   return true;
 };
 
-// ---- slug allocation ---------------------------------------------------------
-const firstFree = (root: string, taken: (slug: string) => boolean): string => {
-  let slug = root;
-  for (let n = 2; taken(slug); n += 1) {
-    slug = `${root}-${n}`;
-  }
-  return slug;
-};
-
-/** onDisk also protects packages skipped during loading. */
-const uniqueSlug = (
-  base: string,
-  existing: Iterable<string>,
-  onDisk: (slug: string) => boolean = () => false,
-): string => {
-  const ids = new Set(existing);
-  return firstFree(slugify(base), (slug) => ids.has(slug) || onDisk(slug));
-};
-
-/** A slug stays taken while any package, live or archived, holds its directory. */
-const heldIn =
-  (...dirs: string[]) =>
-  (slug: string): boolean =>
-    dirs.some((dir) => existsSync(path.join(dir, slug)));
-
-/**
- * A namesake retired earlier keeps its folder; the newcomer takes the next free name. Never
- * re-slugified: an id past the slug length would lose its suffix and leave itself free.
- */
-const archiveTo = (dir: string, id: string): string => path.join(dir, firstFree(id, heldIn(dir)));
-
 // ---- loading ----------------------------------------------------------------
-/** Oldest first; ties (same millisecond) by id, so boot order is stable. */
-const byAge = <T extends { createdAt: number; id: string }>(a: T, b: T): number =>
-  a.createdAt - b.createdAt || a.id.localeCompare(b.id);
-
-// Failed company loads must surface in the UI instead of presenting onboarding over a save.
-let lastLoad: LoadReport = { skipped: [] };
-
-export const loadReport = (): LoadReport => lastLoad;
-
-const skip = (kind: LoadSkip["kind"], file: string, cause: unknown): void => {
-  lastLoad.skipped.push({
-    error: errorMessage(cause),
-    kind,
-    newerBuild: cause instanceof SaveFormatError && cause.writtenBy === "newer",
-    path: file,
-  });
-};
-
+export { loadReport } from "./load";
 /** Report a file boot needed but could not read, alongside the packages the store skipped. */
-export const noteUnreadable = skip;
-
-const safeReaddir = (dir: string): string[] => {
-  try {
-    return readdirSync(dir);
-  } catch {
-    return [];
-  }
-};
-
-/** Whether `dir` holds any package, read or skipped: one boot skipped is the load report's to name, never replaced. */
-const holdsPackage = (dir: string, fileFor: (slug: string) => string): boolean =>
-  safeReaddir(dir).some((slug) => existsSync(fileFor(slug)));
-
-/** Report corrupt packages individually so one hand-edited file cannot prevent loading. */
-const loadPackages = <T extends { id: string }>(
-  kind: LoadSkip["kind"],
-  dir: string,
-  fileFor: (slug: string) => string,
-  decode: (doc: FrontmatterDoc) => T,
-): T[] => {
-  const rows: T[] = [];
-  for (const slug of safeReaddir(dir)) {
-    const file = fileFor(slug);
-    if (!existsSync(file)) {
-      continue;
-    }
-    try {
-      const row = decode(parseDoc(readFileSync(file, "utf-8")));
-      if (row.id !== slug) {
-        throw new Error("package slug does not match its directory");
-      }
-      rows.push(row);
-    } catch (error) {
-      skip(kind, file, error);
-    }
-  }
-  return rows;
-};
-
-/** Each `<id>.json` of `dir` that `schema` reads; one naming another id is skipped. */
-const loadRecords = <T extends { createdAt: number; id: string }>(
-  kind: LoadSkip["kind"],
-  dir: string,
-  schema: z.ZodType<T>,
-): T[] =>
-  safeReaddir(dir)
-    .filter((name) => name.endsWith(".json"))
-    .flatMap((name) => {
-      const file = path.join(dir, name);
-      try {
-        const record = schema.parse(parseJson(readFileSync(file, "utf-8")));
-        if (`${record.id}.json` !== name) {
-          throw new Error(`${kind} does not match its file's name`);
-        }
-        return [record];
-      } catch (error) {
-        skip(kind, file, error);
-        return [];
-      }
-    })
-    .toSorted(byAge);
+export { skip as noteUnreadable } from "./load";
 
 const TEAM_CHAT_RING = 200;
 
@@ -543,7 +447,7 @@ export const setAutopilot = (on: boolean): Company => patchCompany({ autopilot: 
 // command) would wait for anyone who later ran that exact string.
 const writeGrants = (grants: Grant[]): void => {
   const active = current();
-  atomicWrite(approvalsFile(), JSON.stringify(grants, null, 2));
+  writeJsonFile(approvalsFile(), grants);
   active.grants = grants;
 };
 
@@ -729,7 +633,7 @@ export const employeeInstructions = (employeeId: string): string => {
   return employeeBody(e, company, products);
 };
 
-export const listEmployees = (): Employee[] => [...(current().employees ?? [])];
+export const listEmployees = (): Employee[] => [...current().employees];
 
 /** A run started or settled. Memory only: a fresh boot has no live runs, so disk would only lie. */
 export const setEmployeeStatus = (id: string, status: Employee["status"]): void => {
@@ -758,13 +662,12 @@ export const noteRunEnd = (
 
 const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
 
-/** Everything the company shelved as history. Read from disk the first time it is asked for. */
+/** Everything the company shelved as history, read from disk the first time it is asked for. */
 const shippedOf = (active: ActiveCompany): Task[] => {
   active.shipped ??= loadPackages("task", shippedDir(), shippedTaskFile, docToTask);
   return active.shipped;
 };
 
-/** Everything shelved as history, newest first. */
 export const listShippedTasks = (): Task[] => shippedOf(current()).toSorted(newestFirst);
 
 const RELEASED = " was released";
@@ -891,7 +794,7 @@ export const requireProduct = (id: string): Product => {
   return p;
 };
 
-export const listProducts = (): Product[] => [...(current().products ?? [])];
+export const listProducts = (): Product[] => [...current().products];
 
 /**
  * Whether `id` is a product of this company, live, retired or one boot could not read: a
@@ -946,6 +849,7 @@ export const createProduct = (named: ProductDraft): Product => {
   return product;
 };
 
+/** What a tool is told when it names a product the company does not have. */
 export const noSuchProduct = (productId: string): string =>
   `No product "${productId}" here — the products are ${listProducts()
     .map((p) => p.id)
@@ -1025,7 +929,7 @@ export const releaseListingId = (id: string): void => {
 };
 
 const saveListing = (listing: Listing): void => {
-  atomicWrite(listingFile(listing.id), `${JSON.stringify(listing, null, 2)}\n`);
+  writeJsonFile(listingFile(listing.id), listing);
 };
 
 /**
@@ -1050,7 +954,7 @@ export const getChargeLink = (id: string): ChargeLink | null =>
   current().links.find((l) => l.id === id) ?? null;
 
 const saveChargeLink = (link: ChargeLink): void => {
-  atomicWrite(linkFile(link.id), `${JSON.stringify(link, null, 2)}\n`);
+  writeJsonFile(linkFile(link.id), link);
 };
 
 /**
@@ -1091,25 +995,15 @@ export const setLinkState = (held: CompanyLink, state: LinkState): void => {
   const { links, listings } = current();
   switch (held.kind) {
     case "charge": {
-      const at = links.findIndex((l) => l.id === held.link.id);
-      const link = links[at];
-      if (link === undefined) {
-        throw new Error(`no payment link ${held.link.id} is kept`);
-      }
-      const next = { ...link, state };
-      links[at] = next;
-      saveChargeLink(next);
+      recordIn(links, held.link.id, { state }, saveChargeLink);
       break;
     }
     case "print": {
-      const at = listings.findIndex((l) => l.id === held.listing.id);
-      const listing = listings[at];
-      if (listing === undefined) {
+      const cached = listings.find((l) => l.id === held.listing.id);
+      if (cached === undefined) {
         throw new Error(`no listing ${held.listing.id} is kept`);
       }
-      const next = { ...listing, paymentLink: { ...listing.paymentLink, state } };
-      listings[at] = next;
-      saveListing(next);
+      recordIn(listings, cached.id, { paymentLink: { ...cached.paymentLink, state } }, saveListing);
       break;
     }
     // no default
@@ -1120,7 +1014,7 @@ export const setLinkState = (held: CompanyLink, state: LinkState): void => {
 export const listOrders = (): Order[] => [...current().orders];
 
 const saveOrder = (order: Order): void => {
-  atomicWrite(orderFile(order.id), `${JSON.stringify(order, null, 2)}\n`);
+  writeJsonFile(orderFile(order.id), order);
 };
 
 /**
@@ -1175,27 +1069,26 @@ export const ordersCursor = (): OrdersCursor | null =>
 
 export const setOrdersCursor = (cursor: OrdersCursor): void => {
   current();
-  atomicWrite(ordersCursorFile(), JSON.stringify(OrdersCursorSchema.parse(cursor)));
+  writeJsonFile(ordersCursorFile(), OrdersCursorSchema.parse(cursor));
 };
 
 /** Where work no bet pays for lands: the product that has waited longest for a ship. */
 export const attentionProduct = (): Product | null => {
-  const products = current().products ?? [];
+  const { products } = current();
   return products.toSorted((a, b) => (a.lastShipAt ?? 0) - (b.lastShipAt ?? 0))[0] ?? null;
 };
 
 // ---- bets ------------------------------------------------------------------
-export const listBets = (): Bet[] => [...(current().bets ?? [])];
+export const listBets = (): Bet[] => [...current().bets];
 
 export const getBet = (id: string): Bet | null =>
   maybeCurrent()?.bets.find((bet) => bet.id === id) ?? null;
 
-export const allocationPolicy = (): PolicyParams => current().policy ?? DEFAULT_POLICY;
+export const allocationPolicy = (): PolicyParams => current().policy;
 
 const patchBet = (id: string, patch: Partial<Bet>): Bet =>
   patchIn(current().bets, id, patch, saveBet);
 
-/** What a tool is told when it names a product the company does not have. */
 /**
  * Open a bet, on a product with room for another. A users bet lands on its own
  * path unless it names one; a named path over the whole site or /b, or one
@@ -1332,37 +1225,32 @@ const dropWork = (match: (t: Task) => boolean, reason: string, now: number): voi
   }
 };
 
-const BET_MEASURING = "bet is measuring";
-const BET_CLOSED = "bet closed";
 const BET_KILLED = "bet killed";
-const PRODUCT_RETIRED = "product retired";
 
-/** Why the bet takes no more runs, as the work it drops says; null while it is open, or for work on none. */
-const stoppedBetReason = (bet: Bet | null): string | null => {
-  if (!bet || bet.state.kind === "open") {
-    return null;
-  }
-  return bet.state.kind === "measuring" ? BET_MEASURING : BET_CLOSED;
-};
+type Stop = "measuring" | "closed" | "retired";
+
+const STOP_REASON = {
+  closed: "bet closed",
+  measuring: "bet is measuring",
+  retired: "product retired",
+} satisfies Record<Stop, string>;
 
 /**
  * Why the task takes no more runs: its bet stopped taking work, or its product retired, and a
  * run would land in the company's folder, billing what takes no more work. Null while it runs on.
  */
-const stoppedReason = (
-  t: Task,
-  bet: Bet | null,
-  retired: (productId: string) => boolean,
-): string | null =>
-  stoppedBetReason(bet) ?? (t.productId !== null && retired(t.productId) ? PRODUCT_RETIRED : null);
-
-const stoppedWorkReason = (t: Task): string | null =>
-  stoppedReason(t, t.betId === null ? null : getBet(t.betId), isRetiredProduct);
+const stopOf = (t: Task): Stop | null => {
+  const bet = t.betId === null ? null : getBet(t.betId);
+  if (bet && bet.state.kind !== "open") {
+    return bet.state.kind === "measuring" ? "measuring" : "closed";
+  }
+  return t.productId !== null && isRetiredProduct(t.productId) ? "retired" : null;
+};
 
 const retune = (active: ActiveCompany): void => {
   const next = dream(active.policy, active.bets);
   if (next !== active.policy) {
-    atomicWrite(policyFile(), JSON.stringify(next, null, 2));
+    writeJsonFile(policyFile(), next);
     active.policy = next;
   }
 };
@@ -1381,12 +1269,12 @@ export const measureBet = (betId: string, now: number): Bet => {
     throw new RefusalError(`no open bet "${betId}"`);
   }
   const measuring = patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
-  dropWork((t) => t.betId === betId && !keptWhileMeasuring(t), BET_MEASURING, now);
+  dropWork((t) => t.betId === betId && !keptWhileMeasuring(t), STOP_REASON.measuring, now);
   return measuring;
 };
 
 const closeAsKilled = (bet: Bet, reason: string, now: number): Bet =>
-  patchBet(bet.id, { state: { closedAt: now, kind: "killed", moved: bet.reading, reason } }) ?? bet;
+  patchBet(bet.id, { state: { closedAt: now, kind: "killed", moved: bet.reading, reason } });
 
 /** Someone gives up on a bet before its window does. */
 export const killBet = (betId: string, reason: string, now: number): Bet => {
@@ -1415,7 +1303,7 @@ export const closeUnsettledBet = (betId: string, now: number): Bet | null => {
   const closed = patchBet(betId, {
     state: { closedAt: now, kind: "killed", moved: null, reason: UNSETTLED },
   });
-  dropWork((t) => t.betId === betId, BET_CLOSED, now);
+  dropWork((t) => t.betId === betId, STOP_REASON.closed, now);
   return closed;
 };
 
@@ -1440,7 +1328,7 @@ export const judgeBets = (now: number, pulsingSince: number | null): Bet[] => {
   }
   const closed = new Set(changed.filter(isClosed).map((b) => b.id));
   if (closed.size > 0) {
-    dropWork((t) => t.betId !== null && closed.has(t.betId), BET_CLOSED, now);
+    dropWork((t) => t.betId !== null && closed.has(t.betId), STOP_REASON.closed, now);
     try {
       retune(active);
     } catch (error) {
@@ -1450,11 +1338,10 @@ export const judgeBets = (now: number, pulsingSince: number | null): Bet[] => {
   return changed;
 };
 
-/** How many ship summaries a brief lists. */
 const RECENT_SHIPS = 6;
 const RecentShipsSchema = z.array(z.string());
 
-export const recentShips = (): readonly string[] => current().recentShips ?? [];
+export const recentShips = (): readonly string[] => current().recentShips;
 
 export const recordShip = (productId: string | null, summary: string): void => {
   const active = current();
@@ -1471,7 +1358,7 @@ export const recordShip = (productId: string | null, summary: string): void => {
   // the counters are the record; the brief's list follows them
   const ships = [...active.recentShips, summary].slice(-RECENT_SHIPS);
   try {
-    atomicWrite(recentShipsFile(), JSON.stringify(ships, null, 2));
+    writeJsonFile(recentShipsFile(), ships);
   } finally {
     active.recentShips = ships;
   }
@@ -1496,7 +1383,7 @@ export const postTeamMessage = (from: Speaker, text: string): TeamMessage => {
 };
 
 export const recentTeamMessages = (limit = 20, since = 0): TeamMessage[] => {
-  const ring = current().chat ?? [];
+  const ring = current().chat;
   const filtered = since > 0 ? ring.filter((m) => m.createdAt > since) : ring;
   return filtered.slice(-limit);
 };
@@ -1553,7 +1440,7 @@ export const getTask = (id: string): Task | null =>
   maybeCurrent()?.tasks.find((task) => task.id === id) ?? null;
 
 /** The company's open queue: everything not yet history, newest first. */
-export const listOpenTasks = (): Task[] => (current().tasks ?? []).toSorted(newestFirst);
+export const listOpenTasks = (): Task[] => current().tasks.toSorted(newestFirst);
 
 /** Open tasks by assignee and status, newest first. History is the shipping log's. */
 export const queryTasks = (query: {
@@ -1658,7 +1545,7 @@ const noteProposalDone = (t: Task, endedAt: number): void => {
   const last: ProposalEnd = { briefedAt: t.createdAt, employeeId: t.assigneeId, endedAt };
   current().lastProposal = last;
   try {
-    atomicWrite(lastProposalFile(), JSON.stringify(last, null, 2));
+    writeJsonFile(lastProposalFile(), last);
   } catch (error) {
     report("note the last proposal", error);
   }
@@ -1698,10 +1585,10 @@ export const claimTask = (taskId: string, employeeId: string): Task | null => {
   if (!claimable || (t.assigneeId !== null && t.assigneeId !== employeeId)) {
     return null;
   }
-  const stopped = stoppedWorkReason(t);
-  if (stopped !== null && (stopped !== BET_MEASURING || kind === "dead")) {
+  const stop = stopOf(t);
+  if (stop !== null && (stop !== "measuring" || kind === "dead")) {
     throw new RefusalError(
-      `"${t.title}" won't run again: its ${stopped}, so a run would only bill what takes no more work. The lead can delegate it again under a live bet.`,
+      `"${t.title}" won't run again: its ${STOP_REASON[stop]}, so a run would only bill what takes no more work. The lead can delegate it again under a live bet.`,
     );
   }
   const patch: Partial<Task> = {
@@ -1731,9 +1618,9 @@ export const lockTaskForRun = (taskId: string, runId: string): Task | null => {
     return null;
   }
   // measuring keeps a claimed ask and an answer's continuation, so only a closed bet or a retired product drops here
-  const stopped = stoppedWorkReason(t);
-  if (stopped !== null && stopped !== BET_MEASURING) {
-    dropTask(taskId, stopped, Date.now());
+  const stop = stopOf(t);
+  if (stop !== null && stop !== "measuring") {
+    dropTask(taskId, STOP_REASON[stop], Date.now());
     return null;
   }
   return patchTask(taskId, entering({ kind: "running", runId }, Date.now()));
@@ -1745,12 +1632,15 @@ interface Dropped {
 
 /** A run whose bet or product stopped taking work while it ran drops its task rather than leave it waiting; null while both take it. */
 const droppedWhenStopped = (t: Task, attempts: number): Dropped | null => {
-  const reason = stoppedWorkReason(t);
-  if (reason === null) {
+  const stop = stopOf(t);
+  if (stop === null) {
     return null;
   }
   shelveClosed(
-    recordTask(t.id, { attempts, ...entering({ kind: "dropped", reason }, Date.now()) }),
+    recordTask(t.id, {
+      attempts,
+      ...entering({ kind: "dropped", reason: STOP_REASON[stop] }, Date.now()),
+    }),
   );
   return { kind: "dropped" };
 };
@@ -1770,9 +1660,8 @@ export const settleTask = (
   if (!t) {
     return null;
   }
-  const stopped = state.kind === "blocked" ? stoppedWorkReason(t) : null;
-  const dropped =
-    stopped !== null && stopped !== BET_MEASURING ? droppedWhenStopped(t, t.attempts) : null;
+  const stop = state.kind === "blocked" ? stopOf(t) : null;
+  const dropped = stop !== null && stop !== "measuring" ? droppedWhenStopped(t, t.attempts) : null;
   if (dropped) {
     return dropped;
   }
@@ -1829,7 +1718,7 @@ export const parkTask = (
   if (!t) {
     return null;
   }
-  const carriesAnswer = t.answers !== null && stoppedWorkReason(t) === BET_MEASURING;
+  const carriesAnswer = t.answers !== null && stopOf(t) === "measuring";
   const dropped = carriesAnswer ? null : droppedWhenStopped(t, t.attempts);
   if (dropped) {
     return dropped;
@@ -1944,7 +1833,7 @@ export const killProduct = (productId: string, reason: string, by: string | null
   if (killed.length > 0) {
     retune(active);
   }
-  dropWork((t) => t.productId === productId, PRODUCT_RETIRED, now);
+  dropWork((t) => t.productId === productId, STOP_REASON.retired, now);
   active.products.splice(active.products.indexOf(product), 1);
   for (const e of active.employees) {
     saveEmployee(e, { onlyIfChanged: true });
@@ -2087,12 +1976,11 @@ const readCompany = (): Company | null => {
  * A run the last launch never saw settle: dropped with a bet or product that stopped taking
  * work, but for one carrying the founder's answer on a measuring bet, else counted as failed.
  */
-const recoverInterrupted = (task: Task, active: ActiveCompany, now: number): Task => {
-  const bet = active.bets.find((b) => b.id === task.betId) ?? null;
-  const stopped = stoppedReason(task, bet, isRetiredProduct);
-  const carriesAnswer = task.answers !== null && stopped === BET_MEASURING;
-  if (stopped !== null && !carriesAnswer) {
-    return { ...task, ...entering({ kind: "dropped", reason: stopped }, now) };
+const recoverInterrupted = (task: Task, now: number): Task => {
+  const stop = stopOf(task);
+  const carriesAnswer = task.answers !== null && stop === "measuring";
+  if (stop !== null && !carriesAnswer) {
+    return { ...task, ...entering({ kind: "dropped", reason: STOP_REASON[stop] }, now) };
   }
   return failed(task, "Interrupted by app restart").task;
 };
@@ -2121,18 +2009,18 @@ const isUnowned = (task: Task): boolean =>
   task.assigneeId === null && (task.state.kind === "queued" || task.state.kind === "running");
 
 /** What boot makes of a task the last launch left, or null when it stands as it is. */
-const recoveredAtBoot = (task: Task, active: ActiveCompany, now: number): Task | null => {
+const recoveredAtBoot = (task: Task, now: number): Task | null => {
   if (isUnowned(task)) {
     return { ...task, state: { kind: "todo" } };
   }
-  return task.state.kind === "running" ? recoverInterrupted(task, active, now) : null;
+  return task.state.kind === "running" ? recoverInterrupted(task, now) : null;
 };
 
 /** Recover the runs the last launch never saw settle, and the work it left nobody holding. */
 const recoverInterruptedRuns = (active: ActiveCompany): void => {
   const now = Date.now();
   for (const [i, task] of active.tasks.entries()) {
-    const recovered = recoveredAtBoot(task, active, now);
+    const recovered = recoveredAtBoot(task, now);
     if (recovered) {
       active.tasks[i] = recovered;
       saveTask(recovered);
@@ -2222,11 +2110,11 @@ const releaseOrphanedTasks = (active: ActiveCompany): void => {
 
 export const initStore = (): LoadReport => {
   ensureAppDirs();
-  lastLoad = { skipped: [] };
+  resetLoadReport();
   cache = { active: null, nextActivityId: 1, nextTeamMessageId: 1 };
   const company = readCompany();
   if (!company) {
-    return lastLoad;
+    return loadReport();
   }
   try {
     const active = loadActiveCompany(company);
@@ -2253,12 +2141,12 @@ export const initStore = (): LoadReport => {
     cache.active = null;
     skip("company", companyFile(), error);
   }
-  return lastLoad;
+  return loadReport();
 };
 
 // ---- activity log ----------------------------------------------------------
 const saveSinceLastLook = (active: ActiveCompany, next: Digest): void => {
-  atomicWrite(sinceLastLookFile(), JSON.stringify(next, null, 2));
+  writeJsonFile(sinceLastLookFile(), next);
   active.sinceLastLook = next;
 };
 

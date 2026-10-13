@@ -1,6 +1,7 @@
 import type { Product } from "@repo/domain/domain";
 import { formatCents } from "@repo/domain/format";
-import { makingPaymentLink, switchOffRetiredLinks } from "../company-actions";
+import { switchOffRetiredLinks } from "../company-actions";
+import { makingPaymentLink } from "../reset-links";
 import type { LinkCore, LinkState } from "../link-record";
 import type { Order } from "../order";
 import { RefusalError } from "../refusal";

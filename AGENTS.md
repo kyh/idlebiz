@@ -346,6 +346,8 @@ tools/
   `page-session.ts` the sign-in), `page-router.ts` (the page's contract implemented, its event
   stream fed by `lib/broadcast.ts`; `lib/answers.ts` words what does not return),
   `store/store.ts` (the one company in memory, every command on it, and its writes),
+  `store/load.ts` (reading packages and records off disk, and the load report naming each one
+  skipped), `store/slugs.ts` (the free id a new package takes),
   `store/*-codec.ts` (one strict zod schema per package kind, which its encoder is typed against
   and its decoder parses; `company-codec.ts` owns the save format stamp),
   `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the idle loop,
@@ -374,12 +376,14 @@ tools/
   `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
   `env-name.ts` (what set_env may name),
   `stripe-links.ts` (the Stripe calls `create_payment_link` and `sell_print` make, and the
-  switch-off of a retired product's links), `link-record.ts` (a payment link as the save keeps
+  switch-off of a retired product's links), `reset-links.ts` (every live link switched off before
+  a reset deletes the save), `link-record.ts` (a payment link as the save keeps
   it: a `create_payment_link` link on its own, a listing's inside the listing),
   `printful.ts` (Printful's API: its catalog, and pricing a print),
   `printful-orders.ts` (Printful's order calls), `stripe-checkouts.ts` (the read of Stripe's
-  checkout sessions and a payment's charges), `order-pump.ts` (each paid print order to Printful,
-  each link sale's delivery, and the founder's order cards),
+  checkout sessions and a payment's charges), `order-intake.ts` (each paid checkout on the
+  company's links kept as an order, and each link sale's delivery carded), `order-pump.ts` (each
+  kept print order to Printful), `order-card.ts` (how the founder's order cards name an order),
   `printful-token.ts` (the Printful token the founder enters and the one store it sells
   through, kept as one credential), `print-listing.ts` (what `sell_print` checks before it
   lists), `secrets.ts`, `metrics.ts`, `tray.ts`, `login-item.ts` (open at login).
@@ -418,24 +422,16 @@ Each mechanic below is described here and nowhere else; `CLAUDE.md` holds the de
 
 Game state lives on disk at `~/.idlebiz/company/`, beside `cache/` (the runs' tool caches) and
 `bin/` (the `idlebiz` command main writes the runs at boot), as agentcompanies/v1 markdown
-packages:
+packages, laid out file by file at the top of `server/paths.ts`. Beyond the layout:
 
-- `COMPANY.md`, and beside it what the founder configured (`approvals.json`); company-level
-  running state goes in `state/` (path helpers in `server/paths.ts`).
-- `agents/<slug>/AGENTS.md`: its frontmatter is the employee, its body a mirror of the
-  instructions each run is given, rendered live and rewritten at boot.
-- `tasks/<slug>/TASK.md` for open work, `shipped/<slug>/TASK.md` once done, answered, settled or
-  dropped.
-- `products/<slug>/PRODUCT.md` for each product, the first included, with its code in
+- An employee's `AGENTS.md` frontmatter is the employee, its body a mirror of the instructions
+  each run is given, rendered live and rewritten at boot.
+- Every product has a package, the first included, with its code in
   `products/<slug>/workspace/` (placed by the slug alone, so retiring it moves one folder), whose
   root `AGENTS.md` is the team's notes on it.
-- `listings/<id>.json` for each print a product sells through Printful, `links/<id>.json` for
-  each `create_payment_link` link (by Stripe's id), and `orders/<id>.json` for each paid checkout
-  on one of the company's links, a listing's or `create_payment_link`'s. They sit outside the
-  product's package, so all outlive its retirement: its links are switched off from them, and
-  each order still ships or is still owed. Runs read them, never write them.
-- `shared/` for what teammates share across products, `bets/<slug>/BET.md`, `retired/<slug>/`
-  for killed products with their code, `routines/`, `activity.jsonl`.
+- `listings/`, `links/` and `orders/` sit outside every product's package, so all outlive its
+  retirement: its links are switched off from them, and each order still ships or is still owed.
+  Runs read them, never write them.
 
 A root holds one save or none: `company/`, a fixed folder founding publishes with one rename and
 boot reads alone (`server/paths.ts`), so no record carries a company id and no path names one.
@@ -498,7 +494,9 @@ The store (`store/store.ts`) holds the one company this launch runs, so nothing 
 a company id: `getCompany()` is null before one is founded, and everything else throws "no
 company is loaded" — a caller that can run without one (tray, boot, the pulse) asks first.
 Lookups (`getX`) return null, `requireX` and commands throw, and null otherwise means only that a
-claim or lock race was lost. It refuses with a `RefusalError` (`server/refusal.ts`) worded as the
+claim or lock race was lost. A few reads and notes are safe with none: `listQueuedTasks` and
+`openTasksFor` answer none, and `noteRunEnd` (a run can end after a failed load drops the
+company) and `releaseListingId` note nothing. It refuses with a `RefusalError` (`server/refusal.ts`) worded as the
 sentence the agent should read; a tool turns that into its answer, refused, the page's API into
 the founder's note. Anything else thrown is a fault: answered the same way, as a fault, but
 reported to main's log.
@@ -534,7 +532,8 @@ answers is shaped once (`ToolAnswerSchema`) for both ends.
   assignment, a connection resuming the asks it answers) is `server/founder-actions.ts`, which
   files and queues through the scheduler's `file` and `enqueue`. The scheduler keeps the tick,
   admission, autopilot and the runs, and is handed at boot the integrations a run's tools call out
-  with (`Integrations` in `server/tools/define.ts`), so tests fake them.
+  with (`Integrations` in `server/tools/define.ts`), so tests fake them: `unaskedIntegrations`
+  (`server/test-support/integrations.ts`) fails every call a test does not override.
 
 ### Bets steer the company
 
@@ -1039,14 +1038,15 @@ Printful unsigned, since the founder signed the listing and its price floor. Its
 Stripe, the product's site and Printful at `fetch` (`server/order-pump.test.ts`).
 
 - While a Stripe key is saved, every 30 minutes it makes one account-wide read of Stripe's
-  checkout sessions (`server/stripe-checkouts.ts`, line items expanded; a list per link, or a
-  faster beat, would spend the reads Stripe allows, which metrics already mostly spends on a quiet
-  store) from a `created[gt]` cursor in `state/orders-cursor.json`, one per key that has read
-  (named by its mode and a digest, never the key), since a key of another mode or account lists
-  none of this one's sessions: a key new to a mode already read starts from the oldest of that
-  mode's cursors, one of a mode never read from the founding. Each is held behind any checkout
-  that may still be paid and re-reads the last 10 minutes. A read that cannot reach the cursor
-  (Stripe lists newest first) moves it up to what it read and cards the founder.
+  checkout sessions (`server/order-intake.ts`, through `server/stripe-checkouts.ts`, line items
+  expanded; a list per link, or a faster beat, would spend the reads Stripe allows, which metrics
+  already mostly spends on a quiet store) from a `created[gt]` cursor in
+  `state/orders-cursor.json`, one per key that has read (named by its mode and a digest, never the
+  key), since a key of another mode or account lists none of this one's sessions: a key new to a
+  mode already read starts from the oldest of that mode's cursors, one of a mode never read from
+  the founding. Each is held behind any checkout that may still be paid and re-reads the last 10
+  minutes. A read that cannot reach the cursor (Stripe lists newest first) moves it up to what it
+  read and cards the founder.
 - A session on a listing's link with `payment_status` `paid` (complete alone is not paid) is kept
   as an order under `orders/`, on disk before Printful hears of it; its Printful `external_id` is
   the session id's hash, looked up (`/v2/orders/@<id>`) before a draft is made
@@ -1106,7 +1106,7 @@ the switch and paid after is kept like any other.
 
 **A reset** waits for each signed link Stripe is still making to be recorded and refuses a new one
 (`makingPaymentLink`), then switches off every live link not yet off before it deletes the save
-(`switchOffBeforeReset`), since nothing is left after to ship its prints or record a buyer. Its
+(`switchOffBeforeReset` in `server/reset-links.ts`), since nothing is left after to ship its prints or record a buyer. Its
 warning names each link Stripe left on, each paid print Printful never confirmed (but a held one
 whose card the founder settled), and each paid order whose card still waits on the founder (a
 delivery, one IdleBiz cannot send).

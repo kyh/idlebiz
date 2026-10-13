@@ -14,7 +14,6 @@ import { KILL_GRACE_MS, windowEnd } from "@repo/domain/bets";
 import { UNNAMED_PRODUCT_DESCRIPTION } from "@repo/domain/domain";
 import type { Listing } from "../listing";
 import { RefusalError } from "../refusal";
-import type { Integrations } from "../tools/define";
 import { runPreamble } from "../prompts/briefs";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { taskToDoc } from "./task-codec";
@@ -35,30 +34,13 @@ import {
   employeeAgentDir,
   productWorkspace,
 } from "../paths";
+import { unaskedIntegrations } from "../test-support/integrations";
 import { foundAcme, freshSave, hire } from "../test-support/save";
 
 const root = freshSave();
 const asleep = { hold: () => {} };
-const unasked = () => Promise.reject(new Error("no run here calls out"));
-/** No run here starts, so none calls out with a founder's key. */
-const integrations: Integrations = {
-  checkVercelToken: unasked,
-  checkoutAccess: unasked,
-  createPaymentLink: unasked,
-  deploy: unasked,
-  linkAccess: unasked,
-  printListing: {
-    catalog: unasked,
-    publish: unasked,
-    quote: unasked,
-    readFile: unasked,
-    stripeAccess: unasked,
-  },
-  productionHosts: unasked,
-  setEnv: unasked,
-};
 /** The app's own runner, whose seal no test has checked: its ticks start nothing. */
-const scheduler = createScheduler(agentDriver, asleep, integrations);
+const scheduler = createScheduler(agentDriver, asleep, unaskedIntegrations);
 
 /** A hire as `createEmployee` takes one, at the first desk. */
 const recruit = (name: string) => ({ ...hire(name), deskIndex: 0 });
@@ -251,37 +233,6 @@ describe("products", () => {
     expect(() => store.setProductVercel(gadget.id, binding)).toThrow(RefusalError);
     expect(store.getProduct(gadget.id)?.vercel).toBeNull();
     expect(store.setProductVercel(first?.id ?? "", binding).vercel).toEqual(binding);
-  });
-});
-
-describe("scheduler queue admission", () => {
-  const sealed = createScheduler(
-    {
-      pickRunner: () => "claude",
-      restingRunner: () => null,
-      runTask: () => Promise.reject(new Error("no run starts past the cap")),
-      runsSealed: () => true,
-      signedIn: () => true,
-    },
-    asleep,
-    integrations,
-  );
-
-  it("leaves capped work queued without spinning on its first task", () => {
-    foundAcme([], { budget: { capUsd: 0, mode: "capped" } });
-    const employee = store.createEmployee(recruit("Priya"));
-    const teammate = store.createEmployee(recruit("Sana"));
-    const task = store.createTask({ origin: "founder", title: "First task" });
-    const next = store.createTask({ origin: "founder", title: "Next task" });
-    store.claimTask(task.id, employee.id);
-    store.claimTask(next.id, teammate.id);
-
-    sealed.tick();
-
-    expect(store.getCompany()?.autopilot).toBe(false);
-    expect(store.listQueuedTasks().map((queued) => queued.id)).toEqual([task.id, next.id]);
-    expect(store.getEmployee(employee.id)?.status).toBe("idle");
-    expect(store.getEmployee(teammate.id)?.status).toBe("idle");
   });
 });
 

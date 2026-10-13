@@ -70,14 +70,12 @@ export interface Revenue {
   byBet: ReadonlyMap<string, readonly KeptCharge[]>;
 }
 
-/** Add a charge's kept cents, as dollars, to whatever its tag names. */
 const credit = (bucket: Map<string, number>, tag: string | undefined, kept: number): void => {
   if (tag !== undefined) {
     bucket.set(tag, (bucket.get(tag) ?? 0) + kept / 100);
   }
 };
 
-/** File a charge under the bet its tag names. */
 const fileCharge = (
   bucket: Map<string, KeptCharge[]>,
   tag: string | undefined,
@@ -94,7 +92,6 @@ const fileCharge = (
   }
 };
 
-/** Dollars a bet's tagged charges kept, counting only those made by `until`. */
 const keptBy = (revenue: Revenue, betId: string, until: number): number =>
   (revenue.byBet.get(betId) ?? [])
     .filter((charge) => charge.created <= until)
@@ -210,13 +207,11 @@ export const measureRefusal = (bet: Bet, product: Product | null): string | null
     : `No source reads users of ${product?.name ?? bet.productId} yet — ask the founder to bind Vercel to it (request_integration "vercel"), then measure_bet again.`;
 };
 
-// Every charge is re-read, since a refund can land on any old one. The numbers move in hours, so
-// one read of the account is kept this long, even one that came back short or
-// was refused: a null only holds the last value, and re-asking would page a
-// capped account, or every charge a restricted key may read, through again
-// every pulse. A new key reads at once, since the key is part of what is kept,
-// and so does a change to whether any money counts, or a key saved again
-// (`forgetStripeRead`); only a read Stripe never answered is asked again.
+// A refund can land on any old charge, so every read re-reads them all. The numbers move in hours,
+// so one read is kept this long, short or refused (its null only holds the last value), rather
+// than page the account through again every pulse. Only a read Stripe never answered is asked
+// again sooner; a new key, a change to whether any money counts or a key saved again
+// (`forgetStripeRead`) reads at once, since each is part of what is kept.
 const STRIPE_TTL_MS = 10 * 60_000;
 let stripeRead: {
   countTest: boolean;

@@ -14,13 +14,13 @@ import {
 } from "./prompts/briefs";
 import type { TaskBrief } from "./prompts/briefs";
 import { RefusalError } from "./refusal";
-import type { createScheduler } from "./scheduler";
+import type { Scheduler } from "./scheduler";
 import type { VercelConnection } from "./vercel-connect";
 import { resolveMentions } from "@repo/domain/domain";
 import type { ActionReply, IntegrationAsk, IntegrationKind, Task } from "@repo/domain/domain";
 
 /** The scheduler's doors for new work: queue a task that exists, or file one and queue it. */
-type Queue = Pick<ReturnType<typeof createScheduler>, "enqueue" | "file">;
+type Queue = Pick<Scheduler, "enqueue" | "file">;
 
 export const founderActions = (queue: Queue) => {
   const assign = (taskId: string, employeeId: string): Task => {
