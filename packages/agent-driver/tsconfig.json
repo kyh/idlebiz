@@ -2,8 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ESNext"],
-    "types": ["node"],
-    "paths": { "@repo/agent-driver/*": ["./src/*"] }
+    "types": ["node"]
   },
   "include": ["src", "vitest.config.ts"]
 }
