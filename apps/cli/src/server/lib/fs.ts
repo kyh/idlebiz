@@ -67,7 +67,6 @@ export const appendJsonl = (file: string, row: object): void => {
   }
 };
 
-/** A JSON file as `schema` sees it; null when missing, unparseable, or not that. */
 /** Pretty-printed with a trailing newline, the shape of every state file main keeps. */
 export const writeJsonFile = (
   file: string,
@@ -78,6 +77,7 @@ export const writeJsonFile = (
   atomicWrite(file, `${JSON.stringify(value, null, 2)}\n`, options);
 };
 
+/** A JSON file as `schema` sees it; null when missing, unparseable, or not that. */
 export const readJsonFile = <T>(file: string, schema: z.ZodType<T>): T | null => {
   try {
     const parsed = schema.safeParse(parseJson(readFileSync(file, "utf-8")));
