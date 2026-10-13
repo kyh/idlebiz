@@ -67,7 +67,7 @@ export const appendJsonl = (file: string, row: object): void => {
   }
 };
 
-/** Pretty-printed with a trailing newline, the shape of every state file main keeps. */
+/** Pretty-printed with a trailing newline, the shape of every JSON file main keeps. */
 export const writeJsonFile = (
   file: string,
   // oxlint-disable-next-line anti-slop/no-object-parameters -- a sink, not an input: any value JSON.stringify can write

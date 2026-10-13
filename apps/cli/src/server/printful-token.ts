@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { atomicWrite, readJsonFile } from "./lib/fs";
+import { readJsonFile, writeJsonFile } from "./lib/fs";
 import { HttpError } from "./lib/http";
 import { rootDir } from "./paths";
 import { printfulGet, printfulSays } from "./printful";
@@ -35,7 +35,7 @@ const keepStore = (store: PrintfulStore | null): void => {
   if (store === null) {
     rmSync(storePath(), { force: true });
   } else {
-    atomicWrite(storePath(), `${JSON.stringify(store, null, 2)}\n`);
+    writeJsonFile(storePath(), store);
   }
 };
 

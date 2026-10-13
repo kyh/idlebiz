@@ -24,7 +24,7 @@ import type { RunnerId } from "@repo/domain/runners";
 import { pathWithLauncher } from "../agent-launcher";
 import { controlPlane } from "../control-plane";
 import type { ToolCaller } from "../control-plane";
-import { atomicWrite, readJsonFile } from "../lib/fs";
+import { readJsonFile, writeJsonFile } from "../lib/fs";
 import { report } from "../lib/report";
 import { runnerRestFile, runBinDir, toolCacheDir, employeeMemoryDir } from "../paths";
 import { livePageOf } from "../policy/browser";
@@ -234,7 +234,7 @@ class AgentDriver {
       return;
     }
     try {
-      atomicWrite(file, JSON.stringify(this.restingRunners(), null, 2));
+      writeJsonFile(file, this.restingRunners());
     } catch (error) {
       report("runner rest", error);
     }
