@@ -222,11 +222,12 @@ No test needs a window or Phaser.
   `server/paths.ts` reads the root when a path is asked for and refuses one before any save is
   open, so a test that opens none fails rather than writing the founder's. Command policy rules
   each need a matching example; everyday commands must remain allowed.
-- On macOS main's suite also runs the seal on canary files under a stand-in home (`seal.test.ts`)
-  and main's login-shell probe on a stand-in home's startup files (`shell-path.test.ts`). Where a
-  `claude` or `codex` CLI is installed, the gate suites (`server/agents/claude-gate.test.ts`,
-  `codex-gate.test.ts`) drive the real CLI through the app's ACP adapter, sealed, against a
-  stand-in model on loopback, billing nothing, on a scratch config that never touches its login.
+- On macOS main's suite also runs the seal on canary files under a stand-in home
+  (`seal.mac.test.ts`) and main's login-shell probe on a stand-in home's startup files
+  (`shell-path.test.ts`). Where a `claude` or `codex` CLI is installed, the gate suites
+  (`server/agents/claude-gate.test.ts`, `codex-gate.test.ts`) drive the real CLI through the app's
+  ACP adapter, sealed, against a stand-in model on loopback, billing nothing, on a scratch config
+  that never touches its login.
   They fail once a command nests a sandbox or runs unasked (a push must reach `holdFor`), a
   founder's MCP server starts, a command escapes the seal, or a run rewrites the founder's config;
   claude's runs under founder settings that turn its sandbox on, and codex's checks that the seal
