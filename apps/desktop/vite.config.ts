@@ -150,7 +150,7 @@ export default defineConfig(({ mode }) => ({
   clearScreen: false,
   plugins: [tailwindcss(), react(), devContentSecurityPolicy(), devServer(mode)],
   publicDir: path.resolve(configDir, "public"),
-  resolve: { alias: { "@": path.resolve(configDir, "src") } },
+  resolve: { tsconfigPaths: true },
   root: path.resolve(configDir, "src/renderer"),
   server: {
     // the page's files reach the page through the server, but its hot-reload socket dials here
