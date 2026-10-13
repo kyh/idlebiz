@@ -229,7 +229,6 @@ describe("stripeCredential", () => {
 describe("stripeInTestMode", () => {
   beforeEach(() => rmSync(secretsFile, { force: true }));
   afterEach(() => {
-    vi.unstubAllEnvs();
     rmSync(secretsFile, { force: true });
   });
 
@@ -255,8 +254,6 @@ describe("fetchRealMetrics", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", () => Promise.resolve(new Response("{}", { status: 401 })));
   });
-  afterEach(() => vi.unstubAllGlobals());
-
   it("reports a refused key", async () => {
     const snap = await fetchRealMetrics("rolled", [], []);
 
@@ -274,8 +271,6 @@ describe("fetchRealMetrics", () => {
 describe("fetchRealMetrics reading Stripe", () => {
   afterEach(() => {
     rmSync(secretsFile, { force: true });
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
     vi.useRealTimers();
   });
 
@@ -518,7 +513,6 @@ describe("fetchRealMetrics reading Vercel", () => {
   beforeEach(() => writeFileSync(secretsFile, '{"VERCEL_TOKEN":"token"}'));
   afterEach(() => {
     rmSync(secretsFile, { force: true });
-    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 

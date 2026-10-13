@@ -369,7 +369,6 @@ describe("store", () => {
     for (const stop of stops.splice(0)) {
       stop();
     }
-    vi.unstubAllGlobals();
   });
 
   it("asks main once for the company, the roster and the tasks as the window and the office boot", async () => {

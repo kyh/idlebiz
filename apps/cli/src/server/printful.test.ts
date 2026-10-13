@@ -1,14 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
 import { createHash } from "node:crypto";
 import { printfulCatalog, printfulQuote } from "./printful";
 import { priceFloorCents, readPrintFile } from "./print-listing";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 const CREDENTIAL = { storeId: 42, token: "pf_token" };
 const FRONT = {

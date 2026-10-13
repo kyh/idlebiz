@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
@@ -293,10 +293,6 @@ const pumpUntilSettled = async (pulses = 3) => {
     await pumpOrders(NOW, "price");
   }
 };
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("the order pump", () => {
   it("sends only paid checkouts on a listing's link to Printful, as drafts built from the listing", async () => {

@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { OrderCard } from "@repo/domain/domain";
 import type { ChargeLink } from "./link-record";
 import type { Listing } from "./listing";
@@ -147,10 +147,6 @@ const statesOf = () =>
   Object.fromEntries(store.paymentLinks().map(({ link }) => [link.id, link.state.kind]));
 
 const roomSays = () => store.recentTeamMessages(50).map((m) => m.text);
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("retiring a product", () => {
   it("switches off every payment link it sells through with the founder's key, and says so", async () => {

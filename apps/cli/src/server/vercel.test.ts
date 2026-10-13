@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setSecret } from "./secrets";
 import { tempSave } from "./test-support/save";
 import { latestDeployment, productionHosts, visitQuery } from "./vercel";
@@ -44,8 +44,6 @@ const status = (code: number) => () => Promise.resolve(new Response("{}", { stat
 
 describe("latestDeployment", () => {
   beforeEach(() => setSecret("VERCEL_TOKEN", "saved-token"));
-  afterEach(() => vi.unstubAllGlobals());
-
   it("reads the latest production deploy", async () => {
     vercel(() =>
       Promise.resolve(
@@ -100,8 +98,6 @@ describe("latestDeployment", () => {
 });
 
 describe("productionHosts", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
   const binding = { projectId: "prj_1", projectName: "acme", teamId: "team_1" };
 
   it("lists the verified domains production answers on, as a URL's host reads", async () => {

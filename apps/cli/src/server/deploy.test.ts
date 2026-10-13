@@ -162,7 +162,6 @@ beforeEach(() => mkdirSync(workspace, { recursive: true }));
 
 afterEach(() => {
   rmSync(workspace, { force: true, recursive: true });
-  vi.unstubAllGlobals();
 });
 
 afterAll(() => {

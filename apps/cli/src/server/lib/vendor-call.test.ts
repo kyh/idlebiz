@@ -1,11 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { HttpError } from "./http";
 import { answering } from "./vendor-call";
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 const says = (error: HttpError): string => `the vendor answered ${error.status}`;
 

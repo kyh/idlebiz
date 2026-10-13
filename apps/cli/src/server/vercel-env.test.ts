@@ -1,14 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import { tempSave } from "./test-support/save";
 import { keepEnvValue, unshippableEnvValues, setVercelEnv, teamSetEnv } from "./vercel-env";
 
 tempSave();
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 const TOKEN = "vercel-token";
 const REQUEST = {

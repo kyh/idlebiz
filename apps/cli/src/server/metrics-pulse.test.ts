@@ -46,8 +46,6 @@ describe("metricsPulse.pulsingSince", () => {
 });
 
 describe("a pulse", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
   it("lands each product's and bet's numbers when the company's cannot write", async () => {
     writeFileSync(
       path.join(root, "secrets.json"),

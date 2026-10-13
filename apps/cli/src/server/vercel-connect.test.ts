@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 import type { VercelConnection } from "./vercel-connect";
 import * as store from "./store/store";
 import { getSecret, setSecret } from "./secrets";
@@ -12,8 +12,6 @@ import {
 import { foundAcme, freshSave } from "./test-support/save";
 
 freshSave();
-
-afterEach(() => vi.unstubAllGlobals());
 
 const foundProduct = () => {
   foundAcme();

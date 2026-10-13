@@ -1,15 +1,11 @@
 import { ORPCError } from "@orpc/server";
 import { ValidationError } from "@orpc/contract";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { RefusalError } from "../refusal";
 import { answerOf } from "./answers";
 
 const seatCap = "the office is at its 12-seat cap";
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 describe("the answer to a call that threw", () => {
   it("turns a refusal into the store's bare sentence, and reports nothing", () => {

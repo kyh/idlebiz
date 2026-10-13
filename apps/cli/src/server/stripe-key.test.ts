@@ -23,7 +23,6 @@ beforeEach(() => {
 
 afterEach(() => {
   setSealer(null);
-  vi.unstubAllGlobals();
 });
 
 /** Stripe answering every call with `answer`; keeps what each call asked for, and with which key. */

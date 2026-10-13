@@ -31,7 +31,6 @@ beforeEach(() => {
 
 afterEach(() => {
   setSealer(null);
-  vi.unstubAllGlobals();
 });
 
 const ORDERS = { data: [{ name: "View and manage orders", value: "orders" }] };
