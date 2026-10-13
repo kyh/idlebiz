@@ -97,15 +97,15 @@ parameters). Every workspace's tsconfig extends it and adds only what is its own
 runs (the renderer, `@repo/domain`, `@repo/contract`) extends `tsconfig.page.json`, the ES2023
 ceiling of the window's WebKit; the renderer adds the DOM in `renderer/env.d.ts`.
 
-**Lint is a clean gate.** `oxlint.config.ts` extends the ultracite presets (`ultracite/oxlint/core`, `react`, `anti-slop`; `next` scoped to `apps/web`); every rule is an error and `lint` fails on the first one. It is type-aware (`options.typeAware`, run by the `oxlint-tsgolint` devDependency): without it the presets' `no-floating-promises`, `no-misused-promises`, `switch-exhaustiveness-check`, `no-deprecated` and `no-unsafe-*` are skipped without a word. Fix the code, don't add overrides; the deliberate ones, each with its reason beside it in the config:
-
-- `no-await-in-loop` off: sequential awaits are intentional (ordered agent turns, paced writes).
-- `switch-exhaustiveness-check` takes a `default` as exhaustive: it is how a consumer says every other kind means nothing to it. A switch that must name every kind has none; the activity reducer's table of slices is typed over every kind instead (`satisfies Record<ActivityKind, …>`).
-- `no-confusing-void-expression` off: `() => set(x)` is the house style.
-- `strict-boolean-expressions` off: truthiness checks on optionals are idiomatic here.
-- `promise-function-async` and `strict-void-return` off: taste; a dropped or misplaced promise is still `no-floating-promises`' and `no-misused-promises`' to catch.
-- `consistent-return` off: a bare `return` in a `T | undefined` helper is deliberate.
-- `consistent-type-assertions` takes `assertionStyle: "never"`: no `as` and no `<T>x`, only `as const`; parse at the boundary or narrow with a guard. anti-slop's `require-safety-comment-for-type-assertion` is off with it, since a `// SAFETY:` comment no longer admits one.
+**Lint is a clean gate.** `oxlint.config.ts` extends the ultracite presets
+(`ultracite/oxlint/core`, `react`, `anti-slop`; `next` scoped to `apps/web`); every rule is an
+error and `lint` fails on the first one. It is type-aware (`options.typeAware`, run by the
+`oxlint-tsgolint` devDependency): without it the presets' `no-floating-promises`,
+`no-misused-promises`, `switch-exhaustiveness-check`, `no-deprecated` and `no-unsafe-*` are skipped
+without a word. Fix the code, don't add overrides: the deliberate ones are in `oxlint.config.ts`,
+each with its reason beside it. `switch-exhaustiveness-check` takes a `default` as exhaustive, so a
+switch that must name every kind has none; the activity reducer's table of slices is typed over
+every kind instead (`satisfies Record<ActivityKind, …>`).
 
 Prefer fixing code over `oxlint-disable` comments; when a rule is genuinely wrong for a line, disable that line with a stated reason (`// oxlint-disable-next-line rule -- why`).
 
@@ -115,18 +115,8 @@ Chromium (`tools/e2e/`): each launch starts the built main through the dev host
 and opens the built page main serves on the handoff link main hands it, as the shell's window
 opens. `pnpm -F @repo/e2e e2e` reruns it on the last build. The shell itself (the window, the
 menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test`, booted packaged by
-`pnpm smoke:desktop` and driven by hand.
-The suite covers the title screen, a founded company's
-office (HUD, #team, one NPC per hire), Vercel and Stripe key entry (a key taken is sealed,
-shown as set and, for Stripe, replaceable and removable; a key refused is never saved), Printful token entry
-(a token Printful takes is sealed, shown with its store, replaceable and removable), a key pasted into
-secrets.json being sealed, a held command denied from #team, an action card answered, keys
-held into a window let go of when it closes, #team kept on its newest line and shown again when
-its window reopens, a long ask kept on screen, a typed answer kept while the dialogue's menu is
-hovered, the dialogue's cursor kept on Talk… as rows come ahead of it, Start refused while out of
-budget, retiring the selected product, a file
-boot skipped named in full, and a save a newer build wrote asking for an update. It is local only, not part
-of `pnpm verify` or CI:
+`pnpm smoke:desktop` and driven by hand. What the suite covers is its tests, in
+`tools/e2e/src/*.spec.ts`. It is local only, not part of `pnpm verify` or CI:
 
 - It needs Playwright's Chromium (`pnpm -F @repo/e2e exec playwright install chromium`, once).
 - Every test that founds a company (the office, the #team approval, the panels, Vercel,
