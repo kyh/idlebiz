@@ -32,7 +32,7 @@ pnpm dev:desktop   # the app's own window (tauri dev)
 pnpm e2e           # builds the page and main, then drives them in Chromium (local only)
 ```
 
-No database, no Docker, no server to provision: past `pnpm install`, the one thing to install is
+No database and no server to provision: past `pnpm install`, the one thing to install is
 Rust through rustup, since `pnpm verify` runs clippy (pedantic, `-D warnings`), `cargo test` and
 `cargo fmt --check` over the shell and `pnpm dev:desktop` builds it
 (`apps/desktop/rust-toolchain.toml` pins the toolchain, and the first `cargo` call installs it). On
