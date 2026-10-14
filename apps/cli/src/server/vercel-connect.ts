@@ -3,7 +3,7 @@ import * as store from "./store/store";
 import { listProjects, validateToken } from "./vercel";
 import { errorMessage } from "@repo/domain/errors";
 import type { z } from "zod";
-import type { connectInput, saveTokenInput } from "@repo/contract/vercel/vercel-schema";
+import type { connectInput, saveTokenInput } from "@repo/contract/vercel-contract";
 import type { VercelListing } from "@repo/domain/integrations";
 
 // One token per founder; each product binds its own project.
@@ -14,16 +14,6 @@ import type { VercelListing } from "@repo/domain/integrations";
  * token answers only its own product.
  */
 export type VercelConnection = { kind: "token" } | { kind: "product"; productId: string };
-
-let onConnected: (connection: VercelConnection) => void = () => {
-  /* empty */
-};
-
-export const initVercelConnect = (hooks: {
-  onConnected: (connection: VercelConnection) => void;
-}): void => {
-  ({ onConnected } = hooks);
-};
 
 const saveToken = (productId: string, token: string | undefined): VercelConnection => {
   if (token === undefined) {
@@ -38,11 +28,11 @@ const saveToken = (productId: string, token: string | undefined): VercelConnecti
 export const listVercelProjects = async (token?: string): Promise<VercelListing> => {
   const key = token ?? getSecret(VERCEL_TOKEN);
   if (!key) {
-    return { kind: "rejected" };
+    return { kind: "refused" };
   }
   try {
     const check = await validateToken(key);
-    if (check.kind === "rejected") {
+    if (check.kind === "refused") {
       return check;
     }
     return { account: check.account, kind: "loaded", projects: await listProjects(key) };
@@ -51,18 +41,21 @@ export const listVercelProjects = async (token?: string): Promise<VercelListing>
   }
 };
 
-export const connectVercel = (input: z.infer<typeof connectInput>): void => {
+export const connectVercel = (input: z.infer<typeof connectInput>): VercelConnection => {
   const { productId, token, projectId, projectName, teamId } = input;
   store.requireProduct(productId);
   const connection = saveToken(productId, token);
   store.setProductVercel(productId, { projectId, projectName, teamId: teamId ?? null });
-  onConnected(connection);
+  return connection;
 };
 
 /** Save a token with no project picked: the product's first deploy makes one named after it and binds it. */
-export const saveVercelToken = ({ productId, token }: z.infer<typeof saveTokenInput>): void => {
+export const saveVercelToken = ({
+  productId,
+  token,
+}: z.infer<typeof saveTokenInput>): VercelConnection => {
   store.requireProduct(productId);
-  onConnected(saveToken(productId, token));
+  return saveToken(productId, token);
 };
 
 export const disconnectVercel = (productId: string): void => {

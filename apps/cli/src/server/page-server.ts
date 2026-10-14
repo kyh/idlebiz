@@ -1,10 +1,5 @@
-// The window's page, and main's door for it, on loopback. The shell opens its window on a one-time
-// handoff link main mints when asked over stdio (`handoff`), the link signs the page in
-// (page-session.ts), and the page then calls the contract's procedures, main's event stream among
-// them (RPC_PREFIX, page-router.ts), on its own origin: the window, a browser under
-// `pnpm dev:browser` and e2e's Chromium alike. The page's files are the ones main ships beside it,
-// or under `tauri dev` and `pnpm dev:browser` Vite's, forwarded so the page keeps this origin while
-// it reloads in place.
+// Under a dev shell the page's files are Vite's, forwarded so the page keeps this origin while it
+// reloads in place.
 //
 // The founder's approve button is on this port. No employee run reaches it: the seal closes it to
 // every run (`pagePorts`, agents/machine-seal.ts). Of everyone else it answers only a request that

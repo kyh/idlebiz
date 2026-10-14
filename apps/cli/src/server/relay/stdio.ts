@@ -1,7 +1,6 @@
-// Main's end of the channel is its own stdio: the host writes to main's stdin and reads main's
-// stdout. Everything else main or a library prints goes to stderr, which the host keeps as the
-// log, so no stray write can land inside a message. Stdin's end is the host going away: the host
-// never closes it while it runs, so a host that quit, crashed or was killed ends main too.
+// Everything but a message that main or a library prints goes to stderr, which the host keeps as
+// the log, so no stray write lands inside a message. The host never closes stdin while it runs, so
+// a host that quit, crashed or was killed ends main too.
 
 import { createInterface } from "node:readline";
 import type { RelayMethod } from "../host";

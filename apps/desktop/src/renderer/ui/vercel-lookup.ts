@@ -20,7 +20,7 @@ const lookupOf = (listing: VercelListing, token?: string): Lookup => {
     case "loaded": {
       return { account: listing.account, projects: listing.projects, state: "loaded", token };
     }
-    case "rejected": {
+    case "refused": {
       // A saved token that is refused, or missing, only means one has to be pasted.
       return token === undefined
         ? { state: "idle" }

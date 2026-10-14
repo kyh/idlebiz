@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { HttpError, fetchOk } from "./lib/http";
-import { ENV_PREFIX, hasSecret, secretsUnder, setSecret } from "./secrets";
+import { HttpError } from "./lib/http";
+import { ENV_PREFIX, MIN_SECRET_LENGTH, hasSecret, secretsUnder, setSecret } from "./secrets";
 import type { EnvSecretName } from "./secrets";
-import { VERCEL_API } from "./vercel";
+import { VercelSaid, vercelCall, vercelRefusalOf, vercelSays } from "./vercel-api";
 import type { Product, VercelBinding } from "@repo/domain/domain";
 import { isPublicEnvName } from "./env-name";
 import { errorMessage } from "@repo/domain/errors";
@@ -73,9 +73,6 @@ export const unshippableEnvValues = (): KeptEnvValue[] =>
       : [{ kind: "env", name, product, value }];
   });
 
-// a flag or a port turns up in any value, and no key is this short
-const MIN_KEPT_LENGTH = 8;
-
 /**
  * The server-only variable whose value a public one would build into the page: one that holds
  * `value` or is held in it. The deploy guard reads only the folder, never what a build inlines,
@@ -84,15 +81,13 @@ const MIN_KEPT_LENGTH = 8;
 export const serverOnlyValueIn = (value: string): KeptEnvValue | null =>
   unshippableEnvValues().find(
     (kept) =>
-      (kept.value.length >= MIN_KEPT_LENGTH && value.includes(kept.value)) ||
-      (value.length >= MIN_KEPT_LENGTH && kept.value.includes(value)),
+      (kept.value.length >= MIN_SECRET_LENGTH && value.includes(kept.value)) ||
+      (value.length >= MIN_SECRET_LENGTH && kept.value.includes(value)),
   ) ?? null;
 
 const ENV_TIMEOUT_MS = 10_000;
 
-const Said = z.object({ code: z.string().optional(), message: z.string().optional() });
-const Refusal = z.object({ error: Said });
-const Answer = z.object({ failed: z.array(z.object({ error: Said })).default([]) });
+const Answer = z.object({ failed: z.array(z.object({ error: VercelSaid })).default([]) });
 const Listed = z.object({
   envs: z.array(
     z.object({
@@ -104,12 +99,8 @@ const Listed = z.object({
   ),
 });
 
-const envRoute = (binding: VercelBinding, query: URLSearchParams): string => {
-  if (binding.teamId !== null) {
-    query.set("teamId", binding.teamId);
-  }
-  return `${VERCEL_API}/v10/projects/${encodeURIComponent(binding.projectId)}/env?${query.toString()}`;
-};
+const envRoute = ({ projectId }: VercelBinding): string =>
+  `/v10/projects/${encodeURIComponent(projectId)}/env`;
 
 /**
  * Whether the variable a call whose answer was lost sent now stands on the project, changed
@@ -123,10 +114,11 @@ const landedSince = async (
   startedAt: number,
 ): Promise<boolean> => {
   try {
-    const res = await fetchOk(envRoute(binding, new URLSearchParams()), {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(ENV_TIMEOUT_MS),
-    });
+    const res = await vercelCall(
+      envRoute(binding),
+      { teamId: binding.teamId, token },
+      { signal: AbortSignal.timeout(ENV_TIMEOUT_MS) },
+    );
     const vercelNow = Date.parse(res.headers.get("date") ?? "");
     if (Number.isNaN(vercelNow)) {
       return false;
@@ -146,11 +138,8 @@ const landedSince = async (
   }
 };
 
-/** Vercel's words, less anything they quote of what was sent. */
-const reasonOf = (said: z.infer<typeof Said>, { token, value }: EnvRequest): string =>
-  (said.message ?? said.code ?? "no reason given")
-    .replaceAll(value, "[the value]")
-    .replaceAll(token, "[the token]");
+const reasonOf = (said: z.infer<typeof VercelSaid>, { token, value }: EnvRequest): string =>
+  vercelSays(said, [value, "[the value]"], [token, "[the token]"]);
 
 /**
  * Set a variable on the product's project through Vercel's API, here in main so an
@@ -163,17 +152,21 @@ export const setVercelEnv: EnvSetter = async (req) => {
   const { binding, name, replaces, token, value } = req;
   const startedAt = Date.now();
   try {
-    const res = await fetchOk(
-      envRoute(binding, new URLSearchParams(replaces ? { upsert: "true" } : {})),
+    const res = await vercelCall(
+      envRoute(binding),
+      { teamId: binding.teamId, token },
       {
-        body: JSON.stringify({
-          key: name,
-          target: ["production", "preview"],
-          type: "sensitive",
-          value,
-        }),
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        method: "POST",
+        init: {
+          body: JSON.stringify({
+            key: name,
+            target: ["production", "preview"],
+            type: "sensitive",
+            value,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        },
+        query: replaces ? { upsert: "true" } : {},
         signal: AbortSignal.timeout(ENV_TIMEOUT_MS),
       },
     );
@@ -187,8 +180,8 @@ export const setVercelEnv: EnvSetter = async (req) => {
         ? { ok: true }
         : { error: errorMessage(error), ok: false };
     }
-    const said = Refusal.safeParse(error.answer);
-    const why = said.success ? `: ${reasonOf(said.data.error, req)}` : "";
+    const said = vercelRefusalOf(error);
+    const why = said === null ? "" : `: ${reasonOf(said, req)}`;
     return { error: `Vercel turned it down (${error.status})${why}`, ok: false };
   }
 };

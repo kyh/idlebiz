@@ -1,37 +1,20 @@
 import { z } from "zod";
-import { getJson, HttpError } from "./lib/http";
+import { HttpError } from "./lib/http";
 import type { JsonValue } from "@repo/domain/json";
-import { VERCEL_TOKEN, getSecret } from "./secrets";
 import type { VercelBinding } from "@repo/domain/domain";
 import { errorMessage } from "@repo/domain/errors";
 import type { DeployRead, VercelProject } from "@repo/domain/integrations";
+import { vercelGetJson } from "./vercel-api";
+import type { VercelScope } from "./vercel-api";
 
-export const VERCEL_API = "https://api.vercel.com";
-
-const apiGet = (
-  path: string,
-  token: string,
-  params: Readonly<Record<string, string | undefined>> = {},
-): Promise<JsonValue> => {
-  const given = Object.entries(params).filter(
-    (entry): entry is [string, string] => entry[1] !== undefined,
-  );
-  const qs = new URLSearchParams(given).toString();
-  return getJson(
-    `${VERCEL_API}${path}${qs ? `?${qs}` : ""}`,
-    { Authorization: `Bearer ${token}` },
-    10_000,
-  );
-};
-
-/** `apiGet`'s answer, or null when Vercel refuses the token this call; anything else still throws. */
-const apiGetUnlessRefused = async (
-  path: string,
-  token: string,
-  params: Readonly<Record<string, string | undefined>> = {},
+/** `vercelGetJson`'s answer, or null when Vercel refuses the token this call; anything else still throws. */
+const getUnlessRefused = async (
+  route: string,
+  scope: VercelScope,
+  query?: Readonly<Record<string, string>>,
 ): Promise<JsonValue | null> => {
   try {
-    return await apiGet(path, token, params);
+    return await vercelGetJson(route, scope, query);
   } catch (error) {
     if (error instanceof HttpError && error.refused) {
       return null;
@@ -47,10 +30,10 @@ const UserSchema = z.object({
 /** Whether Vercel takes `token`; throws when Vercel cannot be asked. */
 export const validateToken = async (
   token: string,
-): Promise<{ kind: "rejected" } | { kind: "valid"; account: string | undefined }> => {
-  const answer = await apiGetUnlessRefused("/v2/user", token);
+): Promise<{ kind: "refused" } | { kind: "valid"; account: string | undefined }> => {
+  const answer = await getUnlessRefused("/v2/user", { teamId: null, token });
   if (answer === null) {
-    return { kind: "rejected" };
+    return { kind: "refused" };
   }
   const parsed = UserSchema.safeParse(answer);
   return {
@@ -78,10 +61,10 @@ export const productionHosts = async (
   token: string,
 ): Promise<HostsRead> => {
   try {
-    const answer = await apiGetUnlessRefused(
+    const answer = await getUnlessRefused(
       `/v9/projects/${encodeURIComponent(binding.projectId)}/domains`,
-      token,
-      { limit: "100", production: "true", teamId: binding.teamId ?? undefined },
+      { teamId: binding.teamId, token },
+      { limit: "100", production: "true" },
     );
     if (answer === null) {
       return { kind: "refused" };
@@ -112,19 +95,19 @@ const TeamsSchema = z.object({
 export const listProjects = async (token: string): Promise<VercelProject[]> => {
   const out: VercelProject[] = [];
   const personal = ProjectsSchema.safeParse(
-    await apiGetUnlessRefused("/v9/projects", token, { limit: "100" }),
+    await getUnlessRefused("/v9/projects", { teamId: null, token }, { limit: "100" }),
   );
   if (personal.success) {
     out.push(...personal.data.projects.map((p) => ({ id: p.id, name: p.name })));
   }
   const teams = TeamsSchema.safeParse(
-    await apiGetUnlessRefused("/v2/teams", token, { limit: "20" }),
+    await getUnlessRefused("/v2/teams", { teamId: null, token }, { limit: "20" }),
   );
   if (teams.success) {
     const perTeam = await Promise.all(
       teams.data.teams.map(async (team) => {
         const projs = ProjectsSchema.safeParse(
-          await apiGetUnlessRefused("/v9/projects", token, { limit: "100", teamId: team.id }),
+          await getUnlessRefused("/v9/projects", { teamId: team.id, token }, { limit: "100" }),
         );
         if (!projs.success) {
           return [];
@@ -163,20 +146,16 @@ export interface VisitWindow {
  */
 export interface VisitQuery {
   projectId: string;
-  teamId?: string;
   since?: string;
   until?: string;
   filter?: string;
 }
 
 export const visitQuery = (
-  project: { projectId: string; teamId: string | null },
+  { projectId }: Pick<VercelBinding, "projectId">,
   window: VisitWindow,
 ): VisitQuery => {
-  const params: VisitQuery = { projectId: project.projectId };
-  if (project.teamId !== null) {
-    params.teamId = project.teamId;
-  }
+  const params: VisitQuery = { projectId };
   if (window.span !== undefined) {
     params.since = new Date(window.span.since).toISOString();
     params.until = new Date(window.span.until).toISOString();
@@ -191,18 +170,17 @@ export const visitQuery = (
 
 /** Visitors to a product's deploy, from the Web Analytics the dashboard reads. */
 export const webAnalyticsVisitors = async (
-  project: { projectId: string; teamId: string | null },
+  binding: VercelBinding,
+  token: string,
   window: VisitWindow = {},
 ): Promise<number | null> => {
-  const token = getSecret(VERCEL_TOKEN);
-  if (!token) {
-    return null;
-  }
   try {
     const parsed = VisitsCountSchema.safeParse(
-      await apiGet("/v1/query/web-analytics/visits/count", token, {
-        ...visitQuery(project, window),
-      }),
+      await vercelGetJson(
+        "/v1/query/web-analytics/visits/count",
+        { teamId: binding.teamId, token },
+        { ...visitQuery(binding, window) },
+      ),
     );
     return parsed.success ? (parsed.data.data.visitors ?? null) : null;
   } catch {
@@ -231,21 +209,23 @@ const DEPLOY_CACHE_TTL_MS = 60_000;
 const deployCache = new Map<string, { at: number; token: string; read: DeployRead }>();
 
 /** The latest production deployment — the product panel's "LIVE" state. */
-export const latestDeployment = async (projectId: string, teamId?: string): Promise<DeployRead> => {
-  const token = getSecret(VERCEL_TOKEN);
-  if (!token) {
-    return { kind: "none" };
-  }
+export const latestDeployment = async (
+  { projectId, teamId }: VercelBinding,
+  token: string,
+): Promise<DeployRead> => {
   const cached = deployCache.get(projectId);
   if (cached && cached.token === token && Date.now() - cached.at < DEPLOY_CACHE_TTL_MS) {
     return cached.read;
   }
-  const params: Record<string, string> = teamId
-    ? { limit: "1", projectId, target: "production", teamId }
-    : { limit: "1", projectId, target: "production" };
   let read: DeployRead = { kind: "none" };
   try {
-    const parsed = DeploymentsSchema.safeParse(await apiGet("/v6/deployments", token, params));
+    const parsed = DeploymentsSchema.safeParse(
+      await vercelGetJson(
+        "/v6/deployments",
+        { teamId, token },
+        { limit: "1", projectId, target: "production" },
+      ),
+    );
     const d = parsed.success ? parsed.data.deployments[0] : undefined;
     if (d?.url) {
       read = {

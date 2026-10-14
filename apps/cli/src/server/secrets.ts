@@ -238,7 +238,7 @@ export interface HeldKey {
 }
 
 // a flag or a port turns up in any text, and no key is this short
-const MIN_KEY_LENGTH = 8;
+export const MIN_SECRET_LENGTH = 8;
 
 /**
  * Every key IdleBiz itself uses (Stripe's, Vercel's, Printful's…), by name: never a value set_env
@@ -247,7 +247,7 @@ const MIN_KEY_LENGTH = 8;
  */
 export const heldKeys = (): HeldKey[] =>
   [...secretsUnder("")]
-    .filter(([name, value]) => !name.startsWith(ENV_PREFIX) && value.length >= MIN_KEY_LENGTH)
+    .filter(([name, value]) => !name.startsWith(ENV_PREFIX) && value.length >= MIN_SECRET_LENGTH)
     .map(([name, value]) => ({ kind: "held", name, value }));
 
 /** The name of a key IdleBiz holds whose value `text` carries, or null. */

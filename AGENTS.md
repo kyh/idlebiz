@@ -397,8 +397,9 @@ tools/
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
   (every write, atomic and behind the reset gate), `lib/vendor-call.ts` (how a Stripe or
   Printful call failed, sorted once), `vercel-connect.ts` (the Vercel token the
-  founder pastes and each product's project binding), `stripe-api.ts` (what every Stripe call
-  shares), `stripe-key.ts` (the Stripe key the founder enters, which charges and reads revenue),
+  founder pastes and each product's project binding), `vercel-api.ts` (what every Vercel call
+  shares), `stripe-api.ts` (what every Stripe call shares), `stripe-key.ts` (the Stripe key the
+  founder enters, which charges and reads revenue),
   `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
   `env-name.ts` (what set_env may name),
@@ -426,7 +427,7 @@ tools/
   (a sheet's frames: the box, the walk and sit strips, the origin and soles) and
   `character-seed.ts` (which sheet a sprite seed wears, which the save keeps, and the founder's
   looks).
-- `packages/contract` — the page's API: the oRPC contract (`contract.ts`, one folder per domain),
+- `packages/contract` — the page's API: the oRPC contract (`contract.ts`, one file per domain),
   its routes (`routes.ts`), the page's content security policy (`page-policy.ts`), which main
   stamps on the page and the dev server writes into it, and the schemas of its event stream
   (`events.ts`).
@@ -1266,13 +1267,13 @@ which the seal closes to every run; the control plane's is a unix socket main op
 which only that run's seal reaches, and what it does is the run's.
 
 - **The page's API.** `packages/contract` declares every procedure the page calls of main (oRPC, one
-  folder per domain, `<domain>-contract.ts` beside `<domain>-schema.ts`, whose zod schemas are the
-  inputs' types), and `server/page-router.ts` implements it, so a procedure missing or mistyped
-  fails to compile. The page calls `api.<domain>.<procedure>()` (`renderer/api.ts`, one client for
-  the page) on its own origin: under `/rpc`, behind the session cookie and same-origin guards ("The
-  window", below). One middleware words every answer that does not return (`server/lib/answers.ts`):
-  a `RefusalError` is the store's bare sentence, which the page shows; text over a field's limit
-  says the limit; anything else is a fault, answered with its message and reported to main's log.
+  file per domain, `<domain>-contract.ts`, whose zod schemas are the inputs' types), and
+  `server/page-router.ts` implements it, so a procedure missing or mistyped fails to compile. The
+  page calls `api.<domain>.<procedure>()` (`renderer/api.ts`, one client for the page) on its own
+  origin: under `/rpc`, behind the session cookie and same-origin guards ("The window", below). One
+  middleware words every answer that does not return (`server/lib/answers.ts`): a `RefusalError` is
+  the store's bare sentence, which the page shows; text over a field's limit says the limit;
+  anything else is a fault, answered with its message and reported to main's log.
 - **Main's events** are the contract's `events` stream, each a `PageEvent` whose zod schema
   `@repo/contract/events` declares: `server/lib/broadcast.ts` parses each as it publishes it, and
   logs and drops one that fails, which would otherwise end every page's stream at the contract's

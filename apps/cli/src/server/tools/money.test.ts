@@ -453,7 +453,7 @@ describe("create_payment_link", () => {
       checkoutAccess: () =>
         Promise.resolve({
           kind: "refused",
-          said: "The provided key does not have rak_checkout_session_read",
+          reason: "The provided key does not have rak_checkout_session_read",
         }),
     };
 

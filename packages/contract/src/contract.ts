@@ -1,24 +1,20 @@
-// The page's API: every call the window makes of the server, one folder per domain, each its
-// contract and its inputs' schemas, and the stream of the server's events (events.ts). The page
-// compiles against it (apps/desktop/src/renderer/api.ts) and `idlebiz serve` implements it
-// (apps/cli/src/server/page-router.ts), which fails to compile while a procedure is missing or
-// mistyped. Both ends ship in one app, so it may break freely.
+// Both ends ship in one app, so the page's API may break freely: nothing here is versioned.
 
 import { asyncIteratorObject, oc } from "@orpc/contract";
-import { agentsContract } from "./agents/agents-contract";
-import { appContract } from "./app/app-contract";
-import { betsContract } from "./bets/bets-contract";
-import { companyContract } from "./company/company-contract";
-import { employeesContract } from "./employees/employees-contract";
+import { agentsContract } from "./agents-contract";
+import { appContract } from "./app-contract";
+import { betsContract } from "./bets-contract";
+import { companyContract } from "./company-contract";
+import { employeesContract } from "./employees-contract";
 import { PageEventSchema } from "./events";
-import { onboardingContract } from "./onboarding/onboarding-contract";
-import { printfulContract } from "./printful/printful-contract";
-import { productsContract } from "./products/products-contract";
-import { saveContract } from "./save/save-contract";
-import { stripeContract } from "./stripe/stripe-contract";
-import { tasksContract } from "./tasks/tasks-contract";
-import { teamContract } from "./team/team-contract";
-import { vercelContract } from "./vercel/vercel-contract";
+import { onboardingContract } from "./onboarding-contract";
+import { printfulContract } from "./printful-contract";
+import { productsContract } from "./products-contract";
+import { saveContract } from "./save-contract";
+import { stripeContract } from "./stripe-contract";
+import { tasksContract } from "./tasks-contract";
+import { teamContract } from "./team-contract";
+import { vercelContract } from "./vercel-contract";
 
 export const contract = {
   agents: agentsContract,

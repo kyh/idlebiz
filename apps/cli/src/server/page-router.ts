@@ -1,9 +1,3 @@
-// The page's API, implemented: every procedure of the contract (@repo/contract/contract), each a
-// line onto the store, the founder's actions (founder-actions.ts) or the integrations. `os.router`
-// is the completeness check: a handler drifting from its contract, or a procedure nobody
-// implemented, fails to compile here. One middleware words every answer that does not return
-// (lib/answers.ts), the input's validation included, so the page shows the store's own sentence.
-
 import { implement } from "@orpc/server";
 import { contract } from "@repo/contract/contract";
 import { isOutOfBudget, spriteSeedFor } from "@repo/domain/domain";
@@ -35,14 +29,13 @@ import {
   listVercelProjects,
   saveVercelToken,
 } from "./vercel-connect";
+import type { VercelConnection } from "./vercel-connect";
 
 /** What the router acts through that only the server's boot makes. */
 export interface PageRouterDeps {
   founder: FounderActions;
   /** Deletes the save, then starts the app again. */
   resetGame: () => Promise<void>;
-  /** A Stripe key was saved: read revenue with it now, and resume what waited on it. */
-  stripeReady: () => void;
 }
 
 const os = implement(contract).use(async ({ next, path }) => {
@@ -53,8 +46,12 @@ const os = implement(contract).use(async ({ next, path }) => {
   }
 });
 
-export const createPageRouter = ({ founder, resetGame, stripeReady }: PageRouterDeps) =>
-  os.router({
+export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
+  const vercelConnected = (connection: VercelConnection): void => {
+    metricsPulse.now();
+    founder.resumeVercelAsks(connection);
+  };
+  return os.router({
     agents: {
       hasAuth: os.agents.hasAuth.handler(async () => ({
         ok: await runnerPool.hasAnyRunner(),
@@ -167,7 +164,8 @@ export const createPageRouter = ({ founder, resetGame, stripeReady }: PageRouter
       }),
       saveKey: os.stripe.saveKey.handler(async ({ input }) => {
         await saveStripeKey(input.key);
-        stripeReady();
+        metricsPulse.now();
+        founder.resumeIntegrationAsks("stripe");
       }),
     },
     tasks: {
@@ -193,9 +191,14 @@ export const createPageRouter = ({ founder, resetGame, stripeReady }: PageRouter
       post: os.team.post.handler(({ input }) => founder.founderMessage(input.text.trim())),
     },
     vercel: {
-      connect: os.vercel.connect.handler(({ input }) => connectVercel(input)),
+      connect: os.vercel.connect.handler(({ input }) => {
+        vercelConnected(connectVercel(input));
+      }),
       disconnect: os.vercel.disconnect.handler(({ input }) => disconnectVercel(input.productId)),
       projects: os.vercel.projects.handler(({ input }) => listVercelProjects(input.token)),
-      saveToken: os.vercel.saveToken.handler(({ input }) => saveVercelToken(input)),
+      saveToken: os.vercel.saveToken.handler(({ input }) => {
+        vercelConnected(saveVercelToken(input));
+      }),
     },
   });
+};

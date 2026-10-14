@@ -34,7 +34,7 @@ const switchedOffForReset = async (link: LinkCore, key: string | null): Promise<
     return "IdleBiz has no Stripe key it can use";
   }
   const done = await switchOffPaymentLink(key, link.id);
-  return done.kind === "off" ? null : done.error;
+  return done.kind === "off" ? null : done.reason;
 };
 
 /**

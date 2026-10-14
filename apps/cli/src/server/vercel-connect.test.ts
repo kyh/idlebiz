@@ -1,11 +1,9 @@
 import { expect, it, vi } from "vitest";
-import type { VercelConnection } from "./vercel-connect";
 import * as store from "./store/store";
 import { getSecret, setSecret } from "./secrets";
 import {
   connectVercel,
   disconnectVercel,
-  initVercelConnect,
   listVercelProjects,
   saveVercelToken,
 } from "./vercel-connect";
@@ -89,26 +87,22 @@ it("binds a product with the saved token when none is given, leaving it as it wa
 
 it("saves a token with no project picked, leaving the product for its first deploy to bind", () => {
   const product = foundProduct();
-  const answered: VercelConnection[] = [];
-  initVercelConnect({ onConnected: (connection) => answered.push(connection) });
 
-  saveVercelToken({ productId: product.id, token: "fresh-token" });
+  const connection = saveVercelToken({ productId: product.id, token: "fresh-token" });
 
   expect(getSecret("VERCEL_TOKEN")).toBe("fresh-token");
   expect(store.requireProduct(product.id).vercel).toBeNull();
-  expect(answered).toEqual([{ kind: "token" }]);
+  expect(connection).toEqual({ kind: "token" });
 });
 
 it("answers every product with the first token, however it is saved, and only the one bound after", () => {
   const product = foundProduct();
-  const answered: VercelConnection[] = [];
-  initVercelConnect({ onConnected: (connection) => answered.push(connection) });
 
-  connectVercel({ productId: product.id, projectId: "prj_a", projectName: "a", token: "first" });
-  saveVercelToken({ productId: product.id, token: "second" });
-  connectVercel({ productId: product.id, projectId: "prj_b", projectName: "b" });
-
-  expect(answered).toEqual([
+  expect([
+    connectVercel({ productId: product.id, projectId: "prj_a", projectName: "a", token: "first" }),
+    saveVercelToken({ productId: product.id, token: "second" }),
+    connectVercel({ productId: product.id, projectId: "prj_b", projectName: "b" }),
+  ]).toEqual([
     { kind: "token" },
     { kind: "product", productId: product.id },
     { kind: "product", productId: product.id },
@@ -133,7 +127,7 @@ it("lists the saved token's projects when none is given", async () => {
 it("lists nothing, and asks Vercel nothing, with no token given or saved", async () => {
   const tokens = vercelAccount();
 
-  await expect(listVercelProjects()).resolves.toEqual({ kind: "rejected" });
+  await expect(listVercelProjects()).resolves.toEqual({ kind: "refused" });
   expect(tokens).toEqual([]);
 });
 
@@ -141,13 +135,13 @@ const status = (code: number) => Promise.resolve(new Response("{}", { status: co
 
 it("rejects a token Vercel refuses", async () => {
   vercelAccount(({ pathname }) => (pathname === "/v2/user" ? status(403) : null));
-  await expect(listVercelProjects("revoked")).resolves.toEqual({ kind: "rejected" });
+  await expect(listVercelProjects("revoked")).resolves.toEqual({ kind: "refused" });
 
   vercelAccount(({ pathname }) => (pathname === "/v2/user" ? status(401) : null));
-  await expect(listVercelProjects("mistyped")).resolves.toEqual({ kind: "rejected" });
+  await expect(listVercelProjects("mistyped")).resolves.toEqual({ kind: "refused" });
 });
 
-it("tells Vercel out of reach apart from a rejected token", async () => {
+it("tells Vercel out of reach apart from a refused token", async () => {
   vercelAccount(() => Promise.reject(new TypeError("fetch failed")));
   await expect(listVercelProjects("offline")).resolves.toEqual({
     kind: "unreachable",

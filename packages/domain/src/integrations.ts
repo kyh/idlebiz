@@ -26,7 +26,7 @@ export interface VercelProject {
  */
 export type VercelListing =
   | { kind: "loaded"; account: string | undefined; projects: VercelProject[] }
-  | { kind: "rejected" }
+  | { kind: "refused" }
   | { kind: "unreachable"; reason: string };
 
 /** The latest production deployment of the bound Vercel project. */

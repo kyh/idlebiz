@@ -1,22 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { setSecret } from "./secrets";
+import { describe, expect, it, vi } from "vitest";
 import { tempSave } from "./test-support/save";
-import { latestDeployment, productionHosts, visitQuery } from "./vercel";
+import { latestDeployment, productionHosts, visitQuery, webAnalyticsVisitors } from "./vercel";
 
 tempSave();
 
-const project = { projectId: "prj_1", teamId: "team_1" };
+const project = { projectId: "prj_1", projectName: "acme", teamId: "team_1" };
+const ownProject = (projectId: string) => ({ projectId, projectName: "acme", teamId: null });
 
 describe("visitQuery", () => {
   it("asks for every visit when given no window", () => {
-    expect(visitQuery({ projectId: "prj_1", teamId: null }, {})).toEqual({ projectId: "prj_1" });
+    expect(visitQuery({ projectId: "prj_1" }, {})).toEqual({ projectId: "prj_1" });
   });
 
   it("sends since and until together: the API refuses one without the other", () => {
     const query = visitQuery(project, { span: { since: 0, until: 86_400_000 } });
     expect(query).toMatchObject({
       since: "1970-01-01T00:00:00.000Z",
-      teamId: "team_1",
       until: "1970-01-02T00:00:00.000Z",
     });
   });
@@ -42,8 +41,29 @@ const vercel = (answer: () => Promise<Response>) => {
 };
 const status = (code: number) => () => Promise.resolve(new Response("{}", { status: code }));
 
+describe("webAnalyticsVisitors", () => {
+  it("counts the project's visitors in its team, as the founder", async () => {
+    const asked: { url: URL; auth: string | null }[] = [];
+    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+      asked.push({ auth: new Headers(init?.headers).get("authorization"), url: new URL(url) });
+      return Promise.resolve(Response.json({ data: { visitors: 7 } }));
+    });
+
+    await expect(webAnalyticsVisitors(project, "tok", { under: "/b/launch" })).resolves.toBe(7);
+    expect(asked.map(({ auth, url }) => [auth, Object.fromEntries(url.searchParams)])).toEqual([
+      [
+        "Bearer tok",
+        {
+          filter: "requestPath eq '/b/launch' or startswith(requestPath, '/b/launch/')",
+          projectId: "prj_1",
+          teamId: "team_1",
+        },
+      ],
+    ]);
+  });
+});
+
 describe("latestDeployment", () => {
-  beforeEach(() => setSecret("VERCEL_TOKEN", "saved-token"));
   it("reads the latest production deploy", async () => {
     vercel(() =>
       Promise.resolve(
@@ -53,7 +73,7 @@ describe("latestDeployment", () => {
       ),
     );
 
-    await expect(latestDeployment("prj_live")).resolves.toEqual({
+    await expect(latestDeployment(ownProject("prj_live"), "saved-token")).resolves.toEqual({
       deployment: { createdAt: 5, state: "READY", url: "https://acme.vercel.app" },
       kind: "deployed",
     });
@@ -61,39 +81,50 @@ describe("latestDeployment", () => {
 
   it("tells a refused token apart from nothing deployed", async () => {
     vercel(status(401));
-    await expect(latestDeployment("prj_revoked")).resolves.toEqual({ kind: "refused" });
+    await expect(latestDeployment(ownProject("prj_revoked"), "saved-token")).resolves.toEqual({
+      kind: "refused",
+    });
 
     vercel(status(403));
-    await expect(latestDeployment("prj_other_team", "team_1")).resolves.toEqual({
+    await expect(
+      latestDeployment({ ...project, projectId: "prj_other_team" }, "saved-token"),
+    ).resolves.toEqual({
       kind: "refused",
     });
   });
 
   it("reads an outage or an empty project as nothing deployed", async () => {
     vercel(status(500));
-    await expect(latestDeployment("prj_down")).resolves.toEqual({ kind: "none" });
+    await expect(latestDeployment(ownProject("prj_down"), "saved-token")).resolves.toEqual({
+      kind: "none",
+    });
 
     vercel(() => Promise.reject(new TypeError("fetch failed")));
-    await expect(latestDeployment("prj_offline")).resolves.toEqual({ kind: "none" });
+    await expect(latestDeployment(ownProject("prj_offline"), "saved-token")).resolves.toEqual({
+      kind: "none",
+    });
 
     vercel(() => Promise.resolve(Response.json({ deployments: [] })));
-    await expect(latestDeployment("prj_empty")).resolves.toEqual({ kind: "none" });
+    await expect(latestDeployment(ownProject("prj_empty"), "saved-token")).resolves.toEqual({
+      kind: "none",
+    });
   });
 
   it("asks again once the founder reconnects, not after the refusal's cache runs out", async () => {
     const refused = vercel(status(401));
-    await latestDeployment("prj_reconnect");
-    await latestDeployment("prj_reconnect");
+    await latestDeployment(ownProject("prj_reconnect"), "saved-token");
+    await latestDeployment(ownProject("prj_reconnect"), "saved-token");
     expect(refused.calls).toBe(1);
 
-    setSecret("VERCEL_TOKEN", "fresh-token");
     vercel(() =>
       Promise.resolve(
         Response.json({ deployments: [{ createdAt: 1, state: "READY", url: "acme.app" }] }),
       ),
     );
 
-    await expect(latestDeployment("prj_reconnect")).resolves.toMatchObject({ kind: "deployed" });
+    await expect(
+      latestDeployment(ownProject("prj_reconnect"), "fresh-token"),
+    ).resolves.toMatchObject({ kind: "deployed" });
   });
 });
 

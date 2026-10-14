@@ -19,7 +19,9 @@ import {
 import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { callTool } from "./index";
-import { printListing } from "../print-listing";
+import { readPrintFile } from "../print-listing";
+import { printfulCatalog, printfulQuote } from "../printful";
+import { stripeListingAccess, stripeShippedLink } from "../stripe-links";
 import { productionHosts } from "../vercel";
 
 const root = freshSave();
@@ -165,8 +167,12 @@ const sellingRun = (missing: Keys = {}, sellers: Parameters<typeof fakeSellers>[
   const sent = fakeSellers(sellers);
   const ctx: RunContext = {
     ...run.ctx,
-    printListing,
+    createPrintLink: stripeShippedLink,
+    listingAccess: stripeListingAccess,
+    printCatalog: printfulCatalog,
     productionHosts,
+    quotePrint: printfulQuote,
+    readPrintFile,
     run: { ...run.ctx.run, productId: "acme" },
   };
   return { ...run, ctx, sent };
@@ -584,12 +590,9 @@ const catalogRun = (read: CatalogRead, missing: Keys = {}) => {
   const queries: CatalogQuery[] = [];
   const ctx: RunContext = {
     ...run.ctx,
-    printListing: {
-      ...run.ctx.printListing,
-      catalog: (query) => {
-        queries.push(query);
-        return Promise.resolve(read);
-      },
+    printCatalog: (query) => {
+      queries.push(query);
+      return Promise.resolve(read);
     },
   };
   return { ...run, ctx, queries };

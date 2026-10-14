@@ -121,7 +121,7 @@ const servedFiles = async (
         `${fileUrl} is not on ${product.name}'s production domains (${domainsLabel(hosts)}): Printful prints only a file the product itself serves, so deploy it there and name that URL.`,
       );
     }
-    const file = await ctx.printListing.readFile(fileUrl);
+    const file = await ctx.readPrintFile(fileUrl);
     if (file.kind === "unfit") {
       throw new RefusalError(
         `Printful could not fetch ${fileUrl}: ${file.reason}. Deploy the print file first, and check it loads as an image.`,
@@ -144,7 +144,7 @@ const printfulTurnedAway = (ctx: RunContext): never =>
 
 /** Printful's price for a listing; a token it turns away is asked for anew, which ends the call. */
 const quotePrint = async (ctx: RunContext, req: QuoteRequest): Promise<PrintQuote> => {
-  const quoted = await ctx.printListing.quote(req);
+  const quoted = await ctx.quotePrint(req);
   switch (quoted.kind) {
     case "quoted": {
       return quoted.quote;
@@ -214,7 +214,7 @@ export const PRINT_TOOLS = {
         NO_PRINTFUL_TOKEN,
         "IdleBiz has no Printful token.",
       );
-    const read = await ctx.printListing.catalog(
+    const read = await ctx.printCatalog(
       product === undefined ? { offset: offset ?? 0 } : { product },
       credential,
     );
@@ -271,7 +271,7 @@ export const PRINT_TOOLS = {
         `${price} would lose money on every sale: Printful charges up to ${formatCents(quote.costCents)} to print one sold at that price and ship it to the US addresses IdleBiz prices it for, the buyer pays ${shipping} of that as shipping, and Stripe keeps up to ${STRIPE_FEE_LABEL}. Every price under ${formatCents(floor)} loses money: price it above that, with the margin the bet needs.`,
       );
     }
-    await requireStripeAccess(ctx, ctx.printListing.stripeAccess(keys.stripe), PRINT_GRANT);
+    await requireStripeAccess(ctx, ctx.listingAccess(keys.stripe), PRINT_GRANT);
     // the digest pins the design the founder signs for: a later deploy can change what the URL serves
     const printed = placements
       .map((p) => `${p.placement} (${p.technique}) ${p.fileUrl} sha256:${p.sha256}`)
@@ -282,7 +282,7 @@ export const PRINT_TOOLS = {
     const listingId = store.newListingId(name);
     const kept = makingPaymentLink();
     try {
-      const made = await ctx.printListing.publish({
+      const made = await ctx.createPrintLink({
         bet: bet ?? null,
         key: keys.stripe,
         listing: listingId,
@@ -293,10 +293,10 @@ export const PRINT_TOOLS = {
         variants: quote.variants,
       });
       if (made.kind === "refused") {
-        return stripeTurnedAway(ctx, LISTING_GRANT, made.said);
+        return stripeTurnedAway(ctx, LISTING_GRANT, made.reason);
       }
       if (made.kind === "failed") {
-        throw new RefusalError(`Stripe made no payment link: ${made.error}`);
+        throw new RefusalError(`Stripe made no payment link: ${made.reason}`);
       }
       if (made.kind === "unrecorded") {
         throw new RefusalError(UNRECORDED_LINK);

@@ -64,7 +64,7 @@ const requireLiveVercelToken = async (
   doing: string,
 ): Promise<void> => {
   const check = await vercelTakes(ctx, token);
-  if (check.kind === "rejected") {
+  if (check.kind === "refused") {
     vercelTurnedAway(ctx, product, doing);
   }
 };

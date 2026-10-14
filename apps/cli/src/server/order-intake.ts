@@ -10,6 +10,7 @@ import type { CheckoutSession } from "./stripe-checkouts";
 import type { OrdersCursor } from "./store/store";
 import { formatCents } from "@repo/domain/format";
 import type { Listing } from "./listing";
+import { orderIdOf } from "./order";
 import type { Order, Recipient } from "./order";
 import type { LinkState } from "./link-record";
 import { REFUND, describe } from "./order-card";
@@ -29,10 +30,6 @@ const OVERLAP_S = 10 * 60;
 // An unpaid completed checkout is one whose payment (a bank debit) may still land: the cursor
 // waits for it this long.
 const UNPAID_WAIT_MS = 7 * 24 * 3_600_000;
-
-/** Printful's external id for a checkout: its hash, since a session id is longer than the 32 characters Printful keeps. */
-export const orderIdOf = (sessionId: string): string =>
-  createHash("sha256").update(sessionId).digest("base64url").slice(0, 32);
 
 /** Where the buyer asked for it to go, or null when Stripe's checkout holds no whole US address. */
 const recipientOf = (session: CheckoutSession): Recipient | null => {
@@ -330,7 +327,7 @@ export const takePaidCheckouts = async (now: number): Promise<void> => {
       {
         action: "Let IdleBiz's Stripe key read checkouts",
         draft: null,
-        instructions: `Stripe turned IdleBiz's key away when it read checkout sessions (${read.said}), so no paid print reaches Printful and no card tells you what a buyer is owed. In the Budget panel, paste over it a key whose restricted permissions include Read on Checkout Sessions, or your secret key. Press Done once it is saved: the waiting orders go out on their own.`,
+        instructions: `Stripe turned IdleBiz's key away when it read checkout sessions (${read.reason}), so no paid print reaches Printful and no card tells you what a buyer is owed. In the Budget panel, paste over it a key whose restricted permissions include Read on Checkout Sessions, or your secret key. Press Done once it is saved: the waiting orders go out on their own.`,
       },
     );
     return;

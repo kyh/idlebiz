@@ -297,9 +297,14 @@ const stripeSnapshot = async (
  */
 const productVisitors = async (
   products: readonly Product[],
+  token: string | null,
 ): Promise<{ each: Map<string, number | null>; total: number | null }> => {
   const bound = products.flatMap(({ id, vercel }) => (vercel ? [{ id, vercel }] : []));
-  const counts = await Promise.all(bound.map(({ vercel }) => webAnalyticsVisitors(vercel)));
+  const counts = await Promise.all(
+    bound.map(({ vercel }) =>
+      token ? webAnalyticsVisitors(vercel, token) : Promise.resolve(null),
+    ),
+  );
   const each = new Map(bound.map(({ id }, i) => [id, counts[i] ?? null]));
   const known = counts.filter((n): n is number => n !== null);
   return {
@@ -320,6 +325,7 @@ const betReading = async (
   bet: Bet,
   products: readonly Product[],
   stripe: StripeSnapshot,
+  vercelToken: string | null,
   now: number,
 ): Promise<BetRead> => {
   const closes = bet.state.kind === "measuring" ? bet.state.until : Infinity;
@@ -329,12 +335,13 @@ const betReading = async (
   const deploy = products.find((p) => p.id === bet.productId)?.vercel;
   return {
     at: now,
-    reading: deploy
-      ? await webAnalyticsVisitors(deploy, {
-          span: { since: bet.createdAt, until: Math.min(now, closes) },
-          under: bet.claim.landingPath,
-        })
-      : null,
+    reading:
+      deploy && vercelToken
+        ? await webAnalyticsVisitors(deploy, vercelToken, {
+            span: { since: bet.createdAt, until: Math.min(now, closes) },
+            under: bet.claim.landingPath,
+          })
+        : null,
   };
 };
 
@@ -357,15 +364,16 @@ export const fetchRealMetrics = async (
   bets: readonly Bet[],
 ): Promise<RealSnapshot> => {
   const now = Date.now();
+  const vercelToken = getSecret(VERCEL_TOKEN);
   const [stripe, vercel] = await Promise.all([
     stripeSnapshot(key, revenueSince(bets), revenueCloses(bets)),
-    productVisitors(products),
+    productVisitors(products, vercelToken),
   ]);
   const { charges } = stripe;
   const readings = await Promise.all(
     bets.map(async (bet): Promise<[string, BetRead]> => [
       bet.id,
-      await betReading(bet, products, stripe, now),
+      await betReading(bet, products, stripe, vercelToken, now),
     ]),
   );
   return {

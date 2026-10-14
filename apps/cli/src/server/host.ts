@@ -1,12 +1,7 @@
-// What main asks of the app that runs it, the desktop shell or the dev host: what only a native app
-// does (a message box, the clipboard, Finder and the browser, the menu-bar icon, a notification,
-// the login item, keeping the Mac awake, a relaunch), and the facts of this launch the shell
-// alone knows. Each is a request or a notification over the relay; tests set a fake.
-//
-// Every message either way is named in RELAY_METHODS and shaped by a schema here. The shell's end
-// (src-tauri/src/protocol.rs) compiles against none of it, so both ends are pinned to one sample of
-// each method (src-tauri/tests/fixtures/relay): `host.test.ts` parses each with its schema here,
-// and `cargo test` reads each into the shell's types.
+// Every message of the relay either way is named in RELAY_METHODS and shaped by a schema here. The
+// shell's end (src-tauri/src/protocol.rs) compiles against none of it, so both ends are pinned to
+// one sample of each method (src-tauri/tests/fixtures/relay): `host.test.ts` parses each with its
+// schema here, and `cargo test` reads each into the shell's types.
 
 import { z } from "zod";
 import type { Peer } from "./relay/rpc";

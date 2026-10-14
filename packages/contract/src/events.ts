@@ -1,7 +1,3 @@
-// What the server tells the page as it happens, on the contract's one stream (`events`), each
-// event under its name. The page holds no state the server has not answered: an event says which
-// slice moved, and the page asks again (apps/desktop/src/renderer/state/activity-reducer.ts).
-
 import { z } from "zod";
 import { ActivityEventSchema } from "@repo/domain/activity";
 import { AuthFlowEventSchema } from "@repo/domain/domain";
