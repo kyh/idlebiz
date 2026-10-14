@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { toolDocs } from "../tool-specs";
 import type { Confinement, LivePage } from "./browser";
-import { classifyCommand, holdFor } from "./index";
+import { callsOf, holdFor } from "./index";
+import { ruleHolding } from "./shell-rules";
 import type { RuleId } from "./shell-rules";
 
 const MUST_ASK = {
@@ -456,15 +457,18 @@ const quickest = (run: () => void): number =>
     }),
   );
 
-describe("classifyCommand", () => {
+/** The shell rule a command meets, undefined when it runs unasked. */
+const heldBy = (command: string): RuleId | undefined => ruleHolding(callsOf(command))?.id;
+
+describe("ruleHolding", () => {
   describe.each(Object.entries(MUST_ASK))("holds for %s", (ruleId, commands) => {
     it.each(commands)("%s", (command) => {
-      expect(classifyCommand(command)).toMatchObject({ decision: "ask", rule: { id: ruleId } });
+      expect(heldBy(command)).toBe(ruleId);
     });
   });
 
   it.each(MUST_ALLOW)("lets everyday work through: %s", (command) => {
-    expect(classifyCommand(command)).toEqual({ decision: "allow" });
+    expect(heldBy(command)).toBeUndefined();
   });
 
   it("reads a long command in linear time", () => {
@@ -475,7 +479,7 @@ describe("classifyCommand", () => {
       `${"} ".repeat(5000)}git push`,
       `${"watch ".repeat(200)}git push`,
     ]) {
-      expect(quickest(() => classifyCommand(command))).toBeLessThan(LINEAR_BUDGET_MS);
+      expect(quickest(() => heldBy(command))).toBeLessThan(LINEAR_BUDGET_MS);
     }
   });
 
@@ -487,8 +491,8 @@ describe("classifyCommand", () => {
     for (let level = 0; level < 6; level += 1) {
       command = `${apart} sh -c '${command.replaceAll("'", String.raw`'\''`)}'`;
     }
-    expect(classifyCommand(command)).toMatchObject({ decision: "ask", rule: { id: "git-push" } });
-    expect(quickest(() => classifyCommand(command))).toBeLessThan(LINEAR_BUDGET_MS);
+    expect(heldBy(command)).toBe("git-push");
+    expect(quickest(() => heldBy(command))).toBeLessThan(LINEAR_BUDGET_MS);
   });
 
   it("reads a line shells read apart in linear time, however many programs it names", () => {
@@ -498,7 +502,7 @@ describe("classifyCommand", () => {
       `echo $(case a in b) :;; esac) ${names.join(" ")}`,
       `echo $(case a in b) :;; esac) ${"'git' ".repeat(5000)}`,
     ]) {
-      expect(quickest(() => classifyCommand(command))).toBeLessThan(LINEAR_BUDGET_MS);
+      expect(quickest(() => heldBy(command))).toBeLessThan(LINEAR_BUDGET_MS);
     }
   });
 
@@ -507,15 +511,15 @@ describe("classifyCommand", () => {
     for (let level = 0; level < 14; level += 1) {
       command = `$(cat <<E${level}\n$(${command})\nE${level}\n)`;
     }
-    expect(classifyCommand(command)).toMatchObject({ decision: "ask", rule: { id: "git-push" } });
-    expect(quickest(() => classifyCommand(command))).toBeLessThan(LINEAR_BUDGET_MS);
+    expect(heldBy(command)).toBe("git-push");
+    expect(quickest(() => heldBy(command))).toBeLessThan(LINEAR_BUDGET_MS);
   });
 
   it.each([`${'echo "$('.repeat(2000)}git push`, `${"bash <<EOF\n".repeat(2000)}git push`])(
     "stays conservative past nesting it will not follow",
     (command) => {
-      expect(classifyCommand(command)).toMatchObject({ decision: "ask", rule: { id: "git-push" } });
-      expect(quickest(() => classifyCommand(command))).toBeLessThan(LINEAR_BUDGET_MS);
+      expect(heldBy(command)).toBe("git-push");
+      expect(quickest(() => heldBy(command))).toBeLessThan(LINEAR_BUDGET_MS);
     },
   );
 
@@ -525,16 +529,13 @@ describe("classifyCommand", () => {
     );
     expect(commands.length).toBeGreaterThan(10);
     for (const command of commands) {
-      expect({ command, verdict: classifyCommand(command) }).toEqual({
-        command,
-        verdict: { decision: "allow" },
-      });
+      expect({ command, rule: heldBy(command) }).toEqual({ command, rule: undefined });
     }
   });
 
   it("is not laundered by a company tool's call elsewhere in the line", () => {
     const laundered = "git push origin main && idlebiz read-team-chat";
-    expect(classifyCommand(laundered).decision).toBe("ask");
+    expect(heldBy(laundered)).toBeDefined();
   });
 });
 
@@ -552,7 +553,6 @@ const SAVE = "/Users/me/.idlebiz";
 const WORKSPACE = `${SAVE}/acme/workspace`;
 const MEMORY = `${SAVE}/acme/agents/mae/memory`;
 const ROOM: Confinement = {
-  cwd: WORKSPACE,
   real: (file) => Promise.resolve(file),
   writable: [WORKSPACE, MEMORY, `${SAVE}/cache`],
 };

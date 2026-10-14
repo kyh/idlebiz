@@ -379,10 +379,10 @@ tools/
   `paths.ts` (the on-disk save format, documented at the top), `scheduler.ts` (the idle loop,
   which alone keeps the Mac awake, through `keep-awake.ts`), `founder-actions.ts` (what the
   founder hands the team, filed and queued through the scheduler), `company-actions.ts` (a change
-  everyone hears about), `agents/` (runs: `runner-pool.ts` the runners, their rests and each
-  task's turn, `session.ts` an ACP session under its seal and every permission ask it raises,
-  `run-workspace.ts` the folders and env main readies a run, `ask-box.ts` its one ask of the
-  founder), `control-plane.ts` (HTTP on a unix socket per run, which the agents' `idlebiz`
+  everyone hears about), `agents/` (runs: `runner-pool.ts` the `RunnerPool`, its runners, their
+  rests and each task's turn, `session.ts` an ACP session under its seal and every permission ask
+  it raises, `run-workspace.ts` the folders and env main readies a run, `ask-box.ts` its one ask
+  of the founder), `control-plane.ts` (HTTP on a unix socket per run, which the agents' `idlebiz`
   command calls back into; `agent-launcher.ts` writes that command at boot),
   `tool-specs.ts` (every company tool, described once) and `tools/` (each bound to its
   implementation: `define.ts` the binding, the asks and the holds, then the team's, portfolio,
@@ -390,7 +390,8 @@ tools/
   `shell-lexer.ts` reads from a line as bash would, read loosely as well where another shell may
   split it apart, `shell-rules.ts` the rules over them, `browser.ts` the agent-browser gate and
   the live page it reads, `index.ts` `holdFor`), `refusal.ts`,
-  `agents/seal.ts` (the Seatbelt profile each run starts under, and its boot check),
+  `agents/seal.ts` (the Seatbelt profile each run starts under), `agents/machine-seal.ts` (what
+  it seals on this machine), `agents/seal-check.ts` (its boot check),
   `agents/bundled-skills.ts` (where IdleBiz's skills ship), `agents/claude-user-settings.ts`
   (what of the founder's claude settings a run still carries: its sign-in and model),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
@@ -546,9 +547,9 @@ answers is shaped once (`ToolAnswerSchema`) for both ends.
 - Every call ends in one of `TOOL_OUTCOMES`, the verb's exit code, which the instructions render:
   done (0) is what the implementation returns, refused (1) a `RefusalError` or the lead-only
   refusal, a fault (2) anything else thrown, reported to main's log, and held (4) a call waiting
-  on the founder (a sign-off, an integration: `holdFor` in `server/tools/define.ts`). An ask that
-  did not reach the founder is refused; `ask_boss` and `request_integration`, whose call is the
-  ask, are done once it does. The verb prints the answer on stdout whichever it is, so
+  on the founder (a sign-off, an integration: `holdOnFounder` in `server/tools/define.ts`). An ask
+  that did not reach the founder is refused; `ask_boss` and `request_integration`, whose call is
+  the ask, are done once it does. The verb prints the answer on stdout whichever it is, so
   `idlebiz deploy && …` stops at a deploy awaiting sign-off. A call that never reached main, or
   that main could not take (a body that does not parse), exits 1 with why on stderr. Outside a run
   there is nothing to call, and it says so.
@@ -697,8 +698,9 @@ product's own page and create_payment_link, so a bet counts each sale.
 
 Every run starts sealed. `acpAgentFor` starts each ACP session, a task's or the hiring
 one-shot's, under `/usr/bin/sandbox-exec -p` with a profile `server/agents/seal.ts` renders per
-run, every path a `-D` parameter. Each run resolves its own (`machineSeal`), so a path that became
-a symlink since boot is sealed where it leads from the next run on.
+run, every path a `-D` parameter. Each run resolves its own (`machineSeal`,
+`server/agents/machine-seal.ts`), so a path that became a symlink since boot is sealed where it
+leads from the next run on.
 
 - _Reads_ are open but for the founder's logins (`LOGINS`: ssh, gh, npm, netrc, git
   credentials, cloud and deploy CLIs, App Store Connect's notary keys, browser and chat-app
@@ -807,7 +809,7 @@ a symlink since boot is sealed where it leads from the next run on.
   whole `_` segments, so `SSH_AUTH_SOCK` too — and every URL with a login in it but a `*_PROXY`,
   except its runner's own login (`providerEnv` in `packages/agent-driver/src/registry.ts`;
   `runEnv` in `server/agents/run-env.ts`). AWS access keys sign for the whole account, so neither
-  runner keeps them, and the seal hides `~/.aws` (`LOGINS` in `seal.ts`), so no AWS profile loads
+  runner keeps them, and the seal hides `~/.aws` (`LOGINS` in `machine-seal.ts`), so no AWS profile loads
   either: a founder on Bedrock signs in with `AWS_BEARER_TOKEN_BEDROCK` only. On Vertex,
   `GOOGLE_APPLICATION_CREDENTIALS` must name a key file outside the sealed logins: gcloud's
   default credentials under `~/.config/gcloud` are hidden too.
@@ -1350,4 +1352,4 @@ founding reads the company, its team and their work again before the scene resta
 The tray and HUD label it `usage` (`usageLabel` in `@repo/domain/format`), never spend; the Budget
 panel, the digest, onboarding and the HUD's tooltip say it is at API prices. A turn cut off before
 its agent answers (the watchdog, Stop, a quit, a crash) still bills what its usage updates
-reported, as uncached input (`runAcpTurn`).
+reported, as uncached input (`usageMeter` in `@repo/agent-driver/acp-usage`).

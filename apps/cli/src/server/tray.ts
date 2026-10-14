@@ -1,5 +1,5 @@
 import { activityEvents } from "./activity";
-import { agentDriver } from "./agents/runner-pool";
+import { runnerPool } from "./agents/runner-pool";
 import { host } from "./host";
 import type { TrayItem } from "./host";
 import * as store from "./store/store";
@@ -27,7 +27,7 @@ const officeStatus = (): OfficeStatus => {
   return {
     active: working > 0 || company?.autopilot === true,
     company,
-    napUntil: earliestReset(agentDriver.restingRunners(), Date.now()),
+    napUntil: earliestReset(runnerPool.restingRunners(), Date.now()),
     waiting,
     working,
   };

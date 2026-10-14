@@ -18,16 +18,11 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
-import type { Seal, SealProbe } from "./seal";
-import {
-  browserNamespace,
-  checkSeal,
-  machineSeal,
-  sealFor,
-  sealRuns,
-  sealedCommand,
-  signInCommand,
-} from "./seal";
+import { browserNamespace, machineSeal, sealFor } from "./machine-seal";
+import { sealedCommand, signInCommand } from "./seal";
+import type { Seal } from "./seal";
+import { checkSeal, sealRuns } from "./seal-check";
+import type { SealProbe } from "./seal-check";
 import { startPageServer } from "../page-server";
 import { tempSave } from "../test-support/save";
 
@@ -109,7 +104,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     symlinkSync(at(target), at(name));
     return at(target);
   };
-  /** The folders a run on acme's workspace writes, as the driver hands them over. */
+  /** The folders a run on acme's workspace writes, as the runner pool hands them over. */
   const own = () => [
     at(".idlebiz/acme/workspace"),
     at(".idlebiz/acme/agents/ann/memory"),

@@ -50,10 +50,10 @@ describe("a reset while Stripe makes a signed payment link", () => {
         links += 1;
         return stripe.promise;
       },
-      driver: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
       employee,
       linkAccess: () => Promise.resolve({ kind: "granted" }),
       run: { betId: null, origin: "founder", productId: "acme", runId: "run", taskId: "task" },
+      runners: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
     };
     const link = { amountUsd: 9, name: "Pro plan" };
     store.grantApproval("task", 'payment link "Pro plan" at $9.00 on acme');

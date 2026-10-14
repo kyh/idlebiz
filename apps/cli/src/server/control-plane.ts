@@ -15,14 +15,8 @@ import type { JsonValue } from "@repo/domain/json";
 
 // Each run's own line back to the company: an HTTP server on a unix socket only that run's seal
 // lets it connect to (`apiSocket` in agents/seal.ts). What the tools are and do lives in
-// tool-specs.ts and tools/; this only carries the call.
-//
-// The socket, not the bearer, is what says which run is calling. Runs are processes of the
-// founder's own user, so one run can read another's env (`ps -E`, or sysctl's KERN_PROCARGS2,
-// which needs no setuid program), token and all: a token alone would let a teammate call as the
-// lead. The socket sits in a folder no run writes, and each run's seal allows it to connect to its
-// own socket alone, so a token read from another run's env is no use without that run's socket.
-// The token stays as a second check, and a server takes only the token of its own run.
+// tool-specs.ts and tools/; this only carries the call. Why the socket, not the bearer, names the
+// caller: AGENTS.md, "A run's seal".
 
 /** Answers one call of the tool `name`: how it ended, in prose the agent reads. */
 export type ToolCaller = (name: ToolName, raw: JsonValue) => Promise<ToolOutcome>;

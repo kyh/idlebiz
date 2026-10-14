@@ -16,7 +16,7 @@ import { parseDoc, serializeDoc } from "./frontmatter";
 import { taskToDoc } from "./task-codec";
 import * as store from "./store";
 import { createScheduler } from "../scheduler";
-import { agentDriver } from "../agents/runner-pool";
+import { runnerPool } from "../agents/runner-pool";
 import {
   companyDir,
   companyFile,
@@ -34,7 +34,7 @@ import { block, firstProduct, launch, recruit, stateOf, writeDead } from "../tes
 const root = freshSave();
 const asleep = { hold: () => {} };
 /** The app's own runner, whose seal no test has checked: its ticks start nothing. */
-const scheduler = createScheduler(agentDriver, asleep, unaskedIntegrations);
+const scheduler = createScheduler(runnerPool, asleep, unaskedIntegrations);
 
 /** Stamp the save as another build would have written it. */
 const restamp = (format: number): void => {

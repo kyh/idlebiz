@@ -22,9 +22,10 @@ import { TEAM_NOTES_MAX_BYTES } from "./team-notes";
 import { SEAL, SKILLS, found } from "../test-support/seal";
 import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
-import { acpAgentFor, codexSessionConfig, codexSessionEnv, decidePermission } from "./session";
-import { createAgentDriver } from "./runner-pool";
-import { browserNamespace, realPathOf, sealedCommand } from "./seal";
+import { acpAgentFor, codexSessionConfig, codexSessionEnv, permissionGate } from "./session";
+import { createRunnerPool } from "./runner-pool";
+import { browserNamespace, realPathOf } from "./machine-seal";
+import { sealedCommand } from "./seal";
 
 const root = freshSave();
 
@@ -32,18 +33,31 @@ const SETUP = { skills: SKILLS, teamNotes: null, userSettings: {} };
 
 const noPage: LivePage = () => Promise.resolve(null);
 
-describe("decidePermission", () => {
-  const push = { tool: { command: "git push", kind: "shell" } } as const;
+const live = () => new AbortController().signal;
+
+describe("permissionGate", () => {
+  const push = { command: "git push", kind: "shell" } as const;
   const workspace = path.join(root, "acme", "workspace");
-  const room = { cwd: workspace, real: realPathOf, writable: [workspace] };
+  const room = { real: realPathOf, writable: [workspace] };
+
+  /** The gate of an attempt at `taskId`, and every ask it raised. */
+  const gateOf = (taskId: string) => {
+    const asked: BlockedAsk[] = [];
+    const gate = permissionGate({
+      confinement: room,
+      hold: (ask) => asked.push(ask),
+      livePage: noPage,
+      taskId,
+    });
+    return { asked, gate };
+  };
 
   /** A company whose founder signed for one `git push` on task "deploy". */
   const signedFor = () => {
     found();
     store.grantApproval("deploy", "git push");
-    const asked: BlockedAsk[] = [];
-    const decide = (signal: AbortSignal) =>
-      decidePermission("deploy", push, new Set(), noPage, room, (ask) => asked.push(ask), signal);
+    const { asked, gate } = gateOf("deploy");
+    const decide = (signal: AbortSignal) => gate(push, signal);
     return { asked, decide };
   };
 
@@ -56,23 +70,18 @@ describe("decidePermission", () => {
 
   it.each([
     { key: "mcp: use gmail", leased: true, tool: { kind: "mcp", server: "gmail" } },
-    { key: "git push", leased: false, tool: push.tool },
-  ] as const)("leases a sign-off for the run only when its rule says so: $key", async (signed) => {
-    found();
-    store.grantApproval("deploy", signed.key);
-    const leases = new Set<string>();
-    const decision = await decidePermission(
-      "deploy",
-      { tool: signed.tool },
-      leases,
-      noPage,
-      room,
-      () => null,
-      new AbortController().signal,
-    );
-    expect(decision).toEqual({ allow: true });
-    expect(leases.has(signed.key)).toBe(signed.leased);
-  });
+    { key: "git push", leased: false, tool: push },
+  ] as const)(
+    "leases a sign-off for the attempt only when its rule says so: $key",
+    async (signed) => {
+      found();
+      store.grantApproval("deploy", signed.key);
+      const { gate } = gateOf("deploy");
+      expect(await gate(signed.tool, live())).toEqual({ allow: true });
+      expect(await gate(signed.tool, live())).toEqual({ allow: signed.leased });
+      expect(await gateOf("deploy").gate(signed.tool, live())).toEqual({ allow: false });
+    },
+  );
 
   it.each([
     { allow: true, tool: { kind: "edit" } },
@@ -81,17 +90,8 @@ describe("decidePermission", () => {
     "answers a $tool.kind ask with no card: the seal judges edits, and no widening is signed",
     async ({ allow, tool }) => {
       found();
-      const asked: BlockedAsk[] = [];
-      const decision = await decidePermission(
-        "deploy",
-        { tool },
-        new Set(),
-        noPage,
-        room,
-        (ask) => asked.push(ask),
-        new AbortController().signal,
-      );
-      expect(decision).toEqual({ allow });
+      const { asked, gate } = gateOf("deploy");
+      expect(await gate(tool, live())).toEqual({ allow });
       expect(asked).toEqual([]);
     },
   );
@@ -102,21 +102,11 @@ describe("decidePermission", () => {
     writeFileSync(path.join(workspace, "index.html"), "own");
     writeFileSync(path.join(root, "outside.html"), "outside");
     symlinkSync(path.join(root, "outside.html"), path.join(workspace, "linked.html"));
-    const asked: BlockedAsk[] = [];
+    const { asked, gate } = gateOf("qa");
     const open = (file: string) =>
-      decidePermission(
-        "qa",
-        {
-          tool: {
-            command: `agent-browser open file://${path.join(workspace, file)}`,
-            kind: "shell",
-          },
-        },
-        new Set(),
-        noPage,
-        room,
-        (ask) => asked.push(ask),
-        new AbortController().signal,
+      gate(
+        { command: `agent-browser open file://${path.join(workspace, file)}`, kind: "shell" },
+        live(),
       );
     expect(await open("index.html")).toEqual({ allow: true });
     expect(await open("linked.html")).toEqual({ allow: false });
@@ -331,8 +321,8 @@ describe("the environment an agent is spawned with", () => {
       idleTimeoutMs: 0,
       maxSessionMs: 0,
       onEvent: () => {},
-      prompt: "work",
-      systemPrompt: "",
+      onPermission: () => Promise.resolve({ allow: true }),
+      prompt: () => "work",
       teardownGraceMs: 100,
     });
     expect(end).toEqual({ kind: "completed" });
@@ -354,12 +344,12 @@ describe("the environment an agent is spawned with", () => {
 
     // the stand-in CLI writes what it saw where a run may write
     const scratch: Seal["scratch"][number] = { match: "subpath", path: realpathSync(cwd) };
-    const driver = createAgentDriver(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve({ ...SEAL, scratch: [scratch] }),
-    );
-    driver.init();
-    await driver.hasAnyRunner();
+    const pool = createRunnerPool({
+      checkSeal: () => Promise.resolve({ kind: "sealed" }),
+      resolveSeal: () => Promise.resolve({ ...SEAL, scratch: [scratch] }),
+    });
+    pool.init();
+    await pool.hasAnyRunner();
     const probedWith = names.parse(parseJson(readFileSync(seen, "utf-8")));
     expect(probedWith).not.toContain("VERCEL_TOKEN");
     expect(probedWith).toContain("ANTHROPIC_API_KEY");

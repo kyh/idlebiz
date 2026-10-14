@@ -28,25 +28,22 @@ import { readJsonFile, writeJsonFile } from "../lib/fs";
 import { report } from "../lib/report";
 import { runnerRestFile, runBinDir, toolCacheDir, employeeMemoryDir } from "../paths";
 import { livePageOf } from "../policy/browser";
+import { turnPrompt } from "../prompts/instructions";
 import { RefusalError } from "../refusal";
 import * as store from "../store/store";
 import type { AskBox } from "./ask-box";
 import { bundledSkillsDir } from "./bundled-skills";
 import { refuseDeniedTools } from "./claude-denies";
 import { runTmpdir, toolCacheEnv, ensureRepository, gitIdentity } from "./run-workspace";
-import {
-  machineSeal,
-  namespaceUnder,
-  realPathOf,
-  sealedCommand,
-  sealRuns,
-  signInCommand,
-} from "./seal";
-import type { Seal, SealState } from "./seal";
+import { machineSeal, namespaceUnder, realPathOf } from "./machine-seal";
+import { sealedCommand, signInCommand } from "./seal";
+import type { Seal } from "./seal";
+import { sealRuns } from "./seal-check";
+import type { SealState } from "./seal-check";
 import {
   acpAgentInstalled,
-  decidePermission,
   makeBrowserNamespace,
+  permissionGate,
   runnerEnv,
   sealedBrowser,
   sessionAgent,
@@ -133,7 +130,6 @@ export const memoryAfter = (
 export const resumeIn = (session: RunSession | null, workspace: string): string | undefined =>
   session?.workspace === workspace ? session.id : undefined;
 
-/** The first rest an overload or a refusal of access earns; each one after it in a row doubles it. */
 const BACKOFF_MS = 60_000;
 
 /** The longest an overload or a refusal of access rests a runner: a busy provider, or a credential blip, clears in minutes. */
@@ -161,7 +157,20 @@ const usageRestUntil = (reportedReset: number | null): number =>
     ? Date.now() + UNNAMED_RESET_REST_MS
     : Math.min(reportedReset, Date.now() + MAX_USAGE_REST_MS);
 
-class AgentDriver {
+/**
+ * What a pool checks and resolves the seal with, finds IdleBiz's skills in and keeps its runners'
+ * rests in: tests script them, the app checks and resolves this machine's, the bundled skills and
+ * the company's state.
+ */
+export interface RunnerPoolDeps {
+  checkSeal: () => Promise<SealState>;
+  resolveSeal: (writable: readonly string[], apiSocket: string | null) => Promise<Seal>;
+  skills: () => string;
+  /** null before a company is founded. */
+  restFile: () => string | null;
+}
+
+export class RunnerPool {
   // Boot probes in the background; callers needing a definitive answer await probing.
   private probes: RunnerProbe[] = [];
   private probing: Promise<RunnerProbe[]> = Promise.resolve([]);
@@ -178,20 +187,12 @@ class AgentDriver {
   // runners whose login a turn found refused; only a sign-in clears one, since its probe reads
   // the stored login, which a revoked token still is
   private readonly refusedLogins = new Set<RunnerId>();
-  private readonly checkSeal: () => Promise<SealState>;
-  private readonly resolveSeal: (
-    writable: readonly string[],
-    apiSocket: string | null,
-  ) => Promise<Seal>;
-  private readonly skills: () => string;
-  private readonly restFile: () => string | null;
+  private readonly checkSeal: RunnerPoolDeps["checkSeal"];
+  private readonly resolveSeal: RunnerPoolDeps["resolveSeal"];
+  private readonly skills: RunnerPoolDeps["skills"];
+  private readonly restFile: RunnerPoolDeps["restFile"];
 
-  constructor(
-    checkSeal: () => Promise<SealState>,
-    resolveSeal: (writable: readonly string[], apiSocket: string | null) => Promise<Seal>,
-    skills: () => string,
-    restFile: () => string | null,
-  ) {
+  constructor({ checkSeal, resolveSeal, restFile, skills }: RunnerPoolDeps) {
     this.checkSeal = checkSeal;
     this.resolveSeal = resolveSeal;
     this.skills = skills;
@@ -381,13 +382,10 @@ class AgentDriver {
 
   /**
    * What a turn's end says of its runner, whatever else the run says, and how the turn ended as
-   * the runner now stands. Every rest is decided here: a usage limit rests it until the reset the
-   * provider reported, or half an hour when it named none, never past 12 hours; an overload, or a
-   * refusal of access no sign-in repairs, for a backoff that doubles with each one in a row (1m,
-   * 2m, 4m… up to 15m) and starts over once a turn ends any other way, so a credential blip clears
-   * soon and a standing refusal is not hammered. A refused login reads as signed out until the
-   * founder signs it in again. A rest never shortens one already holding, which a turn still in
-   * flight may end under.
+   * the runner now stands: every rest is decided here. A backoff's streak starts over once a turn
+   * ends any other way, so a credential blip clears soon and a standing refusal is not hammered. A
+   * refused login reads as signed out until the founder signs it in again. A rest never shortens
+   * one already holding, which a turn still in flight may end under.
    */
   heed(runner: RunnerId, end: AcpTurnEnd): TurnOutcome {
     const backsOff =
@@ -437,8 +435,7 @@ class AgentDriver {
         /* empty */
       },
       onPermission: () => Promise.resolve({ allow: false }),
-      prompt,
-      systemPrompt: "",
+      prompt: () => prompt,
     });
     const outcome = this.heed(runner, res.end);
     if (outcome.kind !== "done") {
@@ -515,7 +512,6 @@ class AgentDriver {
     const memory = employeeMemoryDir(emp.id);
     const addDirs = [...shared, memory, toolCacheDir()];
     const confinement = {
-      cwd: run.workspace,
       real: realPathOf,
       writable: [run.workspace, ...addDirs],
     };
@@ -524,7 +520,6 @@ class AgentDriver {
     mkdirSync(runTmpdir(), { recursive: true });
     // the run's own socket, which its seal alone lets it connect to: the boundary between runs
     const handle = await controlPlane.registerRun(tools.call);
-    const leases = new Set<string>();
     let sawOutput = false;
     try {
       const seal = await this.seal(confinement.writable, handle.socket);
@@ -556,7 +551,6 @@ class AgentDriver {
           PATH: pathWithLauncher(runBinDir(), agent.env.PATH),
         },
         idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
-        instructionsChanged: run.instructionsChanged,
         maxSessionMs: DEFAULT_MAX_SESSION_MS,
         onEvent: (e) => {
           sawOutput = true;
@@ -567,20 +561,21 @@ class AgentDriver {
             report("run.onEvent", error);
           }
         },
-        onPermission: (request, turnEnded) =>
-          decidePermission(
-            run.taskId,
-            request,
-            leases,
-            livePage,
-            confinement,
-            tools.asks.raise,
-            turnEnded,
-          ),
-        prompt: run.prompt,
+        onPermission: permissionGate({
+          confinement,
+          hold: tools.asks.raise,
+          livePage,
+          taskId: run.taskId,
+        }),
+        prompt: (resumed) =>
+          turnPrompt({
+            changed: run.instructionsChanged,
+            instructions: run.instructions,
+            resumed,
+            task: run.prompt,
+          }),
         resumeSessionId,
         signal,
-        systemPrompt: run.instructions,
       });
       const usage = { ...res.usage, costUsd: priceRun(emp, res.usage) };
       // an ask raised before the limit hit or the login was refused must not hide it
@@ -600,19 +595,17 @@ class AgentDriver {
 const activeRestFile = (): string | null => (store.getCompany() === null ? null : runnerRestFile());
 
 /**
- * A driver whose runs start only once `checkSeal` finds the seal holding, each under the seal
- * `resolveSeal` gives its own folders then, loading the skills in the folder `skills` names, and
- * keeping its runners' rests in `restFile`: tests script them, the app checks and resolves this
- * machine's, the bundled skills and the company's state.
+ * A pool whose runs start only once `checkSeal` finds the seal holding, each under the seal
+ * `resolveSeal` gives its own folders then; what `deps` leaves out is this machine's and the
+ * company's.
  */
-export const createAgentDriver = (
-  checkSeal: () => Promise<SealState> = sealRuns,
-  resolveSeal: (
-    writable: readonly string[],
-    apiSocket: string | null,
-  ) => Promise<Seal> = machineSeal,
-  skills: () => string = bundledSkillsDir,
-  restFile: () => string | null = activeRestFile,
-): AgentDriver => new AgentDriver(checkSeal, resolveSeal, skills, restFile);
+export const createRunnerPool = (deps: Partial<RunnerPoolDeps> = {}): RunnerPool =>
+  new RunnerPool({
+    checkSeal: sealRuns,
+    resolveSeal: machineSeal,
+    restFile: activeRestFile,
+    skills: bundledSkillsDir,
+    ...deps,
+  });
 
-export const agentDriver = createAgentDriver();
+export const runnerPool = createRunnerPool();

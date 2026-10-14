@@ -82,7 +82,7 @@ const workLoad = (e: Employee): number =>
  */
 const delegateFor = (ctx: RunContext, role: string): Employee | undefined => {
   const ready = (e: Employee): boolean =>
-    ctx.driver.signedIn(e.runner) && ctx.driver.restingRunner(e.runner) === null;
+    ctx.runners.signedIn(e.runner) && ctx.runners.restingRunner(e.runner) === null;
   return store
     .listEmployees()
     .filter((e) => e.id !== ctx.employee.id && hasRole(role)(e))
@@ -166,7 +166,7 @@ export const TEAM_TOOLS = {
         name: hireName,
         persona: persona ?? `A focused, pragmatic ${title} who ships.`,
         role,
-        runner: ctx.driver.pickRunner(all.length),
+        runner: ctx.runners.pickRunner(all.length),
         spriteSeed: spriteSeedFor(role, hireName),
         title,
       });

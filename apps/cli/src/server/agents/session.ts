@@ -1,11 +1,8 @@
 import { runnerBin } from "@repo/agent-driver/detect";
 import { RUNNERS } from "@repo/agent-driver/registry";
 import type { RunnerAdapter, SessionSetup } from "@repo/agent-driver/registry";
-import type {
-  AcpAgent,
-  PermissionDecision,
-  PermissionRequest,
-} from "@repo/agent-driver/acp-session";
+import type { AcpAgent, PermissionDecision } from "@repo/agent-driver/acp-session";
+import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 import { execFile } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -25,7 +22,8 @@ import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 import { claudeUserSettings } from "./claude-user-settings";
 import { runEnv } from "./run-env";
 import { runTmpdir } from "./run-workspace";
-import { browserSocketDir, namespaceUnder, SANDBOX_EXEC, sealedCommand } from "./seal";
+import { browserSocketDir, namespaceUnder } from "./machine-seal";
+import { SANDBOX_EXEC, sealedCommand } from "./seal";
 import type { Seal } from "./seal";
 import { TEAM_NOTES_MAX_BYTES, readTeamNotes } from "./team-notes";
 
@@ -57,12 +55,9 @@ export const makeBrowserNamespace = (seal: Seal, runner: RunnerId): void => {
 };
 
 /**
- * Every session an employee runs, a task or a one-shot, starts sealed: sandbox-exec cannot apply
- * a profile inside another, so neither CLI may sandbox its own commands in there. claude's
- * sandbox stays off and codex runs in external-sandbox mode (both in the registry), or every
- * command they run fails. `setup` is where IdleBiz's skills are, and how the founder's claude
- * signs in and which model it picks. `more` joins the adapter's env over main's: for codex, the
- * session config `codexSessionEnv` makes; for claude, the env of their user settings.
+ * `runner`'s agent under `seal`, for a task's session or a one-shot's alike. `setup` is where
+ * IdleBiz's skills are, and how the founder's claude signs in and which model it picks. `more`
+ * joins the adapter's env over main's: codex's session config, or claude's user-settings env.
  */
 export const acpAgentFor = (
   runner: RunnerId,
@@ -77,9 +72,7 @@ export const acpAgentFor = (
     ...more,
     ...browserEnv(seal, runner),
   };
-  if (adapter.binEnvVar) {
-    env[adapter.binEnvVar] = runnerBin(runner);
-  }
+  env[adapter.binEnvVar] = runnerBin(runner);
   if (runner === "claude") {
     // claude kills a shell command after 2 minutes by default: `idlebiz deploy` would die before
     // Vercel answers, with the founder's sign-off already spent on it
@@ -121,12 +114,10 @@ const unlisted = (why: string): RefusalError =>
   );
 
 /**
- * The session config that turns off every server `listed` (what `codex mcp list --json` printed)
- * names; apps and plugins, which bring servers of their own, and skills the seal leaves a run to
- * read (plugins keep theirs in `plugins/cache`); and memories, which would put what the founder's
- * own sessions taught codex into the run's prompt. It reads a workspace's notes as a claude run is
- * handed them (`readTeamNotes`): `AGENTS.md` or its override, never another name their config
- * falls back to, and as much of it.
+ * The session config turning off every MCP server `listed` (what `codex mcp list --json` printed)
+ * names, and apps, plugins and memories whole, which would bring servers, skills or what the
+ * founder's own sessions taught codex into the run; it reads the team's notes as a claude run is
+ * handed them (`readTeamNotes`).
  */
 export const codexSessionConfig = (listed: string) => {
   let servers: z.infer<typeof CodexMcpServers>;
@@ -145,11 +136,9 @@ export const codexSessionConfig = (listed: string) => {
 };
 
 /**
- * The adapter env whose session config keeps every MCP server of the founder's out of a codex run
- * (`codexSessionConfig`): they act as the founder, signed in as them. codex has no switch that
- * loads none, and a session's config is merged over theirs, so each is turned off by the name
- * `codex mcp list` gives it, listed as the run would load them (`env` is the run's own, a
- * CODEX_HOME in it included).
+ * The adapter env carrying `codexSessionConfig`. A session's config is merged over the founder's
+ * with no switch that loads no server, so each is listed as the run would load them (`env` is the
+ * run's own, a CODEX_HOME in it included) and turned off by name.
  */
 export const codexSessionEnv = async (
   seal: Seal,
@@ -210,33 +199,42 @@ export const sealedBrowser =
     return stdout;
   };
 
-/** An approval permits one execution of the exact command, or — for a site or a server — the rest of the run. */
-export const decidePermission = async (
-  taskId: string,
-  request: PermissionRequest,
-  leases: Set<string>,
-  livePage: LivePage,
-  confinement: Confinement,
-  hold: (ask: BlockedAsk) => void,
-  signal: AbortSignal,
-): Promise<PermissionDecision> => {
-  if (request.tool.kind === "sandbox") {
-    return { allow: false };
-  }
-  const held = await holdFor(request.tool, leases, livePage, confinement);
-  // reading the browser can outlast the turn; its sign-off and its ask belong to a live one
-  if (signal.aborted) {
-    return { allow: false };
-  }
-  if (held === null) {
-    return { allow: true };
-  }
-  if (store.consumeApproval(taskId, held.key)) {
-    if (isLeased(held.rule)) {
-      leases.add(held.key);
+/**
+ * What answers each permission ask of one attempt at task `taskId`. An approval permits one
+ * execution of the exact command, or — for a site or a server — the rest of the attempt, which
+ * the gate's leases hold, so build one per attempt.
+ */
+export const permissionGate = ({
+  confinement,
+  hold,
+  livePage,
+  taskId,
+}: {
+  confinement: Confinement;
+  hold: (ask: BlockedAsk) => void;
+  livePage: LivePage;
+  taskId: string;
+}) => {
+  const leases = new Set<string>();
+  return async (tool: ToolAsk, turnEnded: AbortSignal): Promise<PermissionDecision> => {
+    if (tool.kind === "sandbox") {
+      return { allow: false };
     }
-    return { allow: true };
-  }
-  hold({ command: held.key, rule: held.rule, type: "approval" });
-  return { allow: false };
+    const held = await holdFor(tool, leases, livePage, confinement);
+    // reading the browser can outlast the turn; its sign-off and its ask belong to a live one
+    if (turnEnded.aborted) {
+      return { allow: false };
+    }
+    if (held === null) {
+      return { allow: true };
+    }
+    if (store.consumeApproval(taskId, held.key)) {
+      if (isLeased(held.rule)) {
+        leases.add(held.key);
+      }
+      return { allow: true };
+    }
+    hold({ command: held.key, rule: held.rule, type: "approval" });
+    return { allow: false };
+  };
 };

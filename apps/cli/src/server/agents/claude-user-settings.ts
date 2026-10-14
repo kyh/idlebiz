@@ -1,34 +1,16 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { RUNNERS } from "@repo/agent-driver/registry";
+import { ClaudeUserSettingsSchema, RUNNERS } from "@repo/agent-driver/registry";
 import type { ClaudeUserSettings } from "@repo/agent-driver/registry";
 import { z } from "zod";
 import { runEnv } from "./run-env";
 import { parseJson } from "@repo/domain/json";
 
-/** A model choice that does not read is left to claude's default, not the run's sign-in with it. */
-const ignoredIfBad = <T extends z.ZodType>(schema: T) =>
-  z
-    .unknown()
-    .transform((value) => schema.safeParse(value).data)
-    .optional();
-
-const UserSettings = z.object({
-  alwaysThinkingEnabled: ignoredIfBad(z.boolean()),
-  apiKeyHelper: z.string().optional(),
-  awsAuthRefresh: z.string().optional(),
-  awsCredentialExport: z.string().optional(),
-  effortLevel: ignoredIfBad(z.string()),
+const UserSettings = ClaudeUserSettingsSchema.extend({
   // claude reads a number or a boolean there as its text
   env: z
     .record(z.string(), z.union([z.string(), z.number(), z.boolean()]).transform(String))
     .default({}),
-  gcpAuthRefresh: z.string().optional(),
-  model: ignoredIfBad(z.string()),
-  modelOverrides: ignoredIfBad(z.record(z.string(), z.string())),
-  modelSettings: ignoredIfBad(
-    z.record(z.string(), z.object({ effortLevel: z.string().optional() })),
-  ),
 });
 
 /** What of the founder's claude user settings a run's session is started with. */

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { TaskOrigin } from "@repo/domain/domain";
 import type { RunContext } from "./define";
 import { freshSave, hire } from "../test-support/save";
-import { BET, HANDOFF, callTool, openBet, runAs } from "../test-support/tools";
+import { BET, HANDOFF, answerText, openBet, runAs } from "../test-support/tools";
 import * as store from "../store/store";
 
 freshSave();
@@ -12,7 +12,7 @@ describe("team tools", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     store.setMaxAgents(2);
-    expect(await callTool(ctx, "hire", { role: "engineer", title: "Engineer" })).toContain(
+    expect(await answerText(ctx, "hire", { role: "engineer", title: "Engineer" })).toContain(
       "Couldn't hire: the office is at its 2-seat cap",
     );
     expect(store.listEmployees()).toHaveLength(2);
@@ -26,7 +26,7 @@ describe("team tools", () => {
   ])("refuses a hire whose $field is too long for every brief", async ({ cap, field }) => {
     const { ctx } = runAs("mae");
     const newHire = { name: "Mara", persona: "ships", role: "designer", title: "Designer" };
-    const hireWith = (text: string) => callTool(ctx, "hire", { ...newHire, [field]: text });
+    const hireWith = (text: string) => answerText(ctx, "hire", { ...newHire, [field]: text });
     await expect(hireWith("x".repeat(cap + 1))).rejects.toThrow(`at ${field}`);
     expect(store.listEmployees()).toHaveLength(2);
     expect(await hireWith("x".repeat(cap))).toContain("Hired");
@@ -34,7 +34,7 @@ describe("team tools", () => {
 
   it("refuses a delegated title too long for the lead's brief", async () => {
     const { ctx } = runAs("mae");
-    const delegate = (title: string) => callTool(ctx, "delegate", { ...HANDOFF, title });
+    const delegate = (title: string) => answerText(ctx, "delegate", { ...HANDOFF, title });
     await expect(delegate("x".repeat(81))).rejects.toThrow("at title");
     expect(store.listOpenTasks()).toEqual([]);
     expect(await delegate("x".repeat(80))).toContain("Delegated");
@@ -42,11 +42,11 @@ describe("team tools", () => {
 
   it("hands the founder an action, and says when a second ask of the run went nowhere", async () => {
     const { ctx, asked } = runAs("priya");
-    const card = await callTool(ctx, "ask_boss", {
+    const card = await answerText(ctx, "ask_boss", {
       action: "Post the launch thread",
       instructions: "Post it on r/SideProject and send me its URL.",
     });
-    const second = await callTool(ctx, "ask_boss", { question: "Ship it?" });
+    const second = await answerText(ctx, "ask_boss", { question: "Ship it?" });
     expect(card).toContain("action card");
     expect(second).toContain("The founder was not asked");
     expect(asked).toEqual([
@@ -61,7 +61,7 @@ describe("team tools", () => {
 
   it.each([null, "", "  "])("takes a draft of %j as none", async (draft) => {
     const { ctx, asked } = runAs("priya");
-    await callTool(ctx, "ask_boss", {
+    await answerText(ctx, "ask_boss", {
       action: "Buy acme.dev",
       draft,
       instructions: "...",
@@ -71,10 +71,10 @@ describe("team tools", () => {
 
   it("delegates to a teammate by role, against the run's bet", async () => {
     const { ctx, assigned } = runAs("mae");
-    await callTool(ctx, "open_bet", BET);
+    await answerText(ctx, "open_bet", BET);
     const [bet] = store.listBets();
     const working = { ...ctx, run: { ...ctx.run, betId: bet?.id ?? null } };
-    const answer = await callTool(working, "delegate", {
+    const answer = await answerText(working, "delegate", {
       description: "write it",
       role: "engineer",
       title: "Draft the post",
@@ -93,7 +93,7 @@ describe("team tools", () => {
   it("fans same-role work out across the teammates who have the least of it", async () => {
     const { ctx } = runAs("mae", [hire("Sam"), hire("Ana")]);
     for (const title of ["Page A", "Page B", "Page C", "Page D"]) {
-      await callTool(ctx, "delegate", { ...HANDOFF, title });
+      await answerText(ctx, "delegate", { ...HANDOFF, title });
     }
     const holders = new Map(store.listOpenTasks().map((t) => [t.title, t.assigneeId]));
     expect(["Page A", "Page B", "Page C", "Page D"].map((t) => holders.get(t))).toEqual([
@@ -108,19 +108,19 @@ describe("team tools", () => {
     const { ctx } = runAs("mae", [hire("Ana", "Engineer", "codex")]);
     const resting: RunContext = {
       ...ctx,
-      driver: {
-        ...ctx.driver,
+      runners: {
+        ...ctx.runners,
         restingRunner: (r) => (r === "claude" ? Date.now() + 60_000 : null),
       },
     };
-    expect(await callTool(resting, "delegate", HANDOFF)).toContain("to Ana");
+    expect(await answerText(resting, "delegate", HANDOFF)).toContain("to Ana");
     const signedOut: RunContext = {
       ...ctx,
-      driver: { ...ctx.driver, signedIn: (r) => r !== "claude" },
+      runners: { ...ctx.runners, signedIn: (r) => r !== "claude" },
     };
-    expect(await callTool(signedOut, "delegate", HANDOFF)).toContain("to Ana");
-    const nobody: RunContext = { ...ctx, driver: { ...ctx.driver, signedIn: () => false } };
-    expect(await callTool(nobody, "delegate", HANDOFF)).toContain("to Priya");
+    expect(await answerText(signedOut, "delegate", HANDOFF)).toContain("to Ana");
+    const nobody: RunContext = { ...ctx, runners: { ...ctx.runners, signedIn: () => false } };
+    expect(await answerText(nobody, "delegate", HANDOFF)).toContain("to Priya");
   });
 
   it("refuses work a bet's runs in flight would already spend", async () => {
@@ -128,8 +128,8 @@ describe("team tools", () => {
     const bet = await openBet(ctx);
     store.recordBetSpend(bet.id, 2);
     const named = { ...HANDOFF, bet: bet.id };
-    expect(await callTool(ctx, "delegate", named)).toContain("Delegated");
-    expect(await callTool(ctx, "delegate", named)).toContain(
+    expect(await answerText(ctx, "delegate", named)).toContain("Delegated");
+    expect(await answerText(ctx, "delegate", named)).toContain(
       "no room for another run: $2.00 of $3.00 spent and 1 in flight",
     );
     expect(store.listOpenTasks()).toHaveLength(1);
@@ -140,9 +140,9 @@ describe("team tools", () => {
     const bet = await openBet(ctx);
     const settling = { ...ctx, run: { ...ctx.run, betId: bet.id, productId: bet.productId } };
     store.recordBetSpend(bet.id, 3);
-    expect(await callTool(settling, "delegate", HANDOFF)).toContain("is spent out");
+    expect(await answerText(settling, "delegate", HANDOFF)).toContain("is spent out");
     store.measureBet(bet.id, 0);
-    expect(await callTool(settling, "delegate", HANDOFF)).toContain("its clock is running");
+    expect(await answerText(settling, "delegate", HANDOFF)).toContain("its clock is running");
     expect(store.listOpenTasks()).toEqual([]);
   });
 
@@ -152,8 +152,8 @@ describe("team tools", () => {
     const side = store.createProduct({ description: "a side project", name: "Side" });
     const working = { ...ctx, run: { ...ctx.run, betId: bet.id } };
     const elsewhere = { ...HANDOFF, product: side.id };
-    expect(await callTool(working, "delegate", elsewhere)).toContain(`Name a bet on ${side.id}`);
-    expect(await callTool(ctx, "delegate", elsewhere)).toContain("Delegated");
+    expect(await answerText(working, "delegate", elsewhere)).toContain(`Name a bet on ${side.id}`);
+    expect(await answerText(ctx, "delegate", elsewhere)).toContain("Delegated");
     expect(store.listOpenTasks()).toMatchObject([{ betId: null, productId: side.id }]);
   });
 
@@ -161,12 +161,12 @@ describe("team tools", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
     const proposing: RunContext = { ...ctx, run: { ...ctx.run, origin: "propose" } };
-    expect(await callTool(proposing, "delegate", HANDOFF)).toContain("open_bet first");
+    expect(await answerText(proposing, "delegate", HANDOFF)).toContain("open_bet first");
     expect(logged).not.toHaveBeenCalled();
     expect(store.listOpenTasks()).toEqual([]);
     const bet = await openBet(proposing);
     const named = { ...HANDOFF, bet: bet.id };
-    expect(await callTool(proposing, "delegate", named)).toContain("Delegated");
+    expect(await answerText(proposing, "delegate", named)).toContain("Delegated");
     expect(store.listOpenTasks()).toMatchObject([{ betId: bet.id, origin: "delegated" }]);
   });
 
@@ -175,14 +175,14 @@ describe("team tools", () => {
     async (origin) => {
       const { ctx } = runAs("mae");
       const unfunded: RunContext = { ...ctx, run: { ...ctx.run, origin } };
-      expect(await callTool(unfunded, "delegate", HANDOFF)).toContain("Delegated");
+      expect(await answerText(unfunded, "delegate", HANDOFF)).toContain("Delegated");
       expect(store.listOpenTasks()).toMatchObject([{ betId: null, origin: "delegated" }]);
     },
   );
 
   it("tells the lead which of a released teammate's open work is now theirs, and what was dropped", async () => {
     const { ctx } = runAs("mae");
-    await callTool(ctx, "delegate", HANDOFF);
+    await answerText(ctx, "delegate", HANDOFF);
     const bet = await openBet(ctx);
     const ask = store.createTask({
       assigneeId: "priya",
@@ -197,7 +197,7 @@ describe("team tools", () => {
       kind: "blocked",
       summary: null,
     });
-    const answer = await callTool(ctx, "release", { slug: "priya" });
+    const answer = await answerText(ctx, "release", { slug: "priya" });
     expect(answer).toContain("Their open work is yours now: 1 task,");
     expect(answer).toContain("Dropped 1 task of theirs");
     expect(store.openTasksFor("mae")).toMatchObject([{ id: ask.id }]);
@@ -205,7 +205,7 @@ describe("team tools", () => {
 
   it("names no inherited work when the teammate left none", async () => {
     const { ctx } = runAs("mae");
-    const answer = await callTool(ctx, "release", { slug: "priya" });
+    const answer = await answerText(ctx, "release", { slug: "priya" });
     expect(answer).not.toContain("open work");
     expect(answer).toContain("Released Priya.");
   });

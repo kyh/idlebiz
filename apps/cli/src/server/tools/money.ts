@@ -12,7 +12,7 @@ import { CHECKOUT_SESSION_PARAM } from "../stripe-links";
 import type { StripeAccess } from "../stripe-links";
 import { TOOL_SPECS } from "../tool-specs";
 import type { ToolName } from "../tool-specs";
-import { define, holdFor, needIntegration, productFor, requireSignOff } from "./define";
+import { define, holdOnFounder, needIntegration, productFor, requireSignOff } from "./define";
 import type { RunContext, Tool } from "./define";
 import { VERCEL_WAITING, domainsLabel, needVercel, productHosts } from "./vercel";
 
@@ -319,7 +319,7 @@ export const MONEY_TOOLS = {
       const price = formatCents(cents);
       const key = getSecret(STRIPE_SECRET_KEY);
       if (!key) {
-        return holdFor(
+        return holdOnFounder(
           ctx,
           {
             integration: "stripe",

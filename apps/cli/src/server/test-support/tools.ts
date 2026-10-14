@@ -13,15 +13,15 @@ import { unaskedIntegrations } from "./integrations";
 import { foundAcme, hire } from "./save";
 import type { ToolName } from "../tool-specs";
 import type { RunContext } from "../tools/define";
-import { callTool as outcomeOf } from "../tools/index";
+import { callTool } from "../tools/index";
 
 /** What a call answers the agent, however it ended. */
-export const callTool = async (
+export const answerText = async (
   ctx: RunContext,
   name: ToolName,
   raw: JsonValue,
 ): Promise<string> => {
-  const { text } = await outcomeOf(ctx, name, raw);
+  const { text } = await callTool(ctx, name, raw);
   return text;
 };
 
@@ -43,9 +43,9 @@ export const runAs = (employeeId: string, more: readonly FoundingHire[] = []) =>
       store.claimTask(taskId, assigneeId);
     },
     company,
-    driver: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
     employee,
     run: { betId: null, origin: "founder", productId: null, runId: "run", taskId: "task" },
+    runners: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
   };
   return { asked, assigned, company, ctx };
 };

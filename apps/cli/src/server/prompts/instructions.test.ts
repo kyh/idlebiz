@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { standingInstructions } from "./instructions";
+import { standingInstructions, turnPrompt } from "./instructions";
 import { BUSINESS_TYPE_IDS } from "@repo/domain/domain";
 import type { BusinessTypeId, Company, Employee } from "@repo/domain/domain";
 
@@ -142,5 +142,31 @@ describe("standingInstructions", () => {
     const text = instructionsFor("software");
     expect(text).toContain("create_payment_link's `delivery`");
     expect(text).toContain("Never ask_boss the founder to deliver");
+  });
+});
+
+describe("turnPrompt", () => {
+  const instructions = "Mark every bet link with its path.";
+  const prompt = (resumed: boolean, changed: boolean) =>
+    turnPrompt({ changed, instructions, resumed, task: "work" });
+
+  it("hands a fresh session the standing instructions ahead of its task", () => {
+    expect(prompt(false, false)).toBe(`${instructions}\n\n---\n\nYOUR TASK:\n\nwork`);
+  });
+
+  it("does not send them again to a resumed session that already holds them", () => {
+    expect(prompt(true, false)).toBe("work");
+  });
+
+  it("sends them again, said to have changed, when they differ from what the session was given", () => {
+    expect(prompt(true, true)).toBe(
+      `Your standing instructions changed. They now read:\n\n${instructions}\n\n---\n\nYOUR TASK:\n\nwork`,
+    );
+  });
+
+  it("sends the bare task when there are no instructions", () => {
+    expect(turnPrompt({ changed: true, instructions: "", resumed: false, task: "work" })).toBe(
+      "work",
+    );
   });
 });

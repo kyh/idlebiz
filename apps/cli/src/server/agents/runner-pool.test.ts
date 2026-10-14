@@ -4,11 +4,13 @@ import path from "node:path";
 import { addUsage, zeroUsage } from "@repo/agent-driver/events";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthFlowEvent, RunOutcome } from "@repo/domain/domain";
-import type { Seal, SealState } from "./seal";
+import type { Seal } from "./seal";
+import type { SealState } from "./seal-check";
 import { SEAL, SKILLS, found } from "../test-support/seal";
 import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
-import { agentDriver, createAgentDriver, memoryAfter, outcomeOf, resumeIn } from "./runner-pool";
+import { createRunnerPool, memoryAfter, outcomeOf, resumeIn } from "./runner-pool";
+import type { RunnerPoolDeps } from "./runner-pool";
 import { askBox } from "./ask-box";
 import { signInCommand } from "./seal";
 import { controlPlane } from "../control-plane";
@@ -86,74 +88,72 @@ describe("outcomeOf", () => {
   });
 });
 
-/** A driver whose check holds, keeping its runners' rests in `rest`. */
-const driverOn = (rest: string | null) =>
-  createAgentDriver(
-    () => Promise.resolve({ kind: "sealed" }),
-    () => Promise.resolve(SEAL),
-    () => SKILLS,
-    () => rest,
-  );
+/** A pool whose check holds, sealing runs with SEAL and keeping no rests, but for what `deps` say. */
+const poolOf = (deps: Partial<RunnerPoolDeps> = {}) =>
+  createRunnerPool({
+    checkSeal: () => Promise.resolve({ kind: "sealed" }),
+    resolveSeal: () => Promise.resolve(SEAL),
+    restFile: () => null,
+    skills: () => SKILLS,
+    ...deps,
+  });
 
 describe("a limit a turn hit", () => {
   const hour = 3_600_000;
 
   it("parks a runner until the reset its provider reported, and only that runner", () => {
+    const pool = poolOf();
     const until = Date.now() + 60_000;
-    agentDriver.heed("claude", { ...limited, reportedReset: until });
-    expect(agentDriver.restingRunner("claude")).toBe(until);
-    expect(agentDriver.restingRunner("codex")).toBeNull();
-    expect(agentDriver.restingRunners()).toEqual({ claude: until });
+    pool.heed("claude", { ...limited, reportedReset: until });
+    expect(pool.restingRunner("claude")).toBe(until);
+    expect(pool.restingRunner("codex")).toBeNull();
+    expect(pool.restingRunners()).toEqual({ claude: until });
   });
 
   it("wakes a runner once its limit has lifted", () => {
-    agentDriver.heed("codex", { ...limited, reportedReset: Date.now() - 1 });
-    expect(agentDriver.restingRunner("codex")).toBeNull();
-    expect(agentDriver.restingRunners()).not.toHaveProperty("codex");
+    const pool = poolOf();
+    pool.heed("codex", { ...limited, reportedReset: Date.now() - 1 });
+    expect(pool.restingRunner("codex")).toBeNull();
+    expect(pool.restingRunners()).not.toHaveProperty("codex");
   });
 
   it("rests a runner half an hour when its provider named no reset", () => {
-    const driver = driverOn(null);
+    const pool = poolOf();
     const before = Date.now();
-    const outcome = driver.heed("claude", limited);
+    const outcome = pool.heed("claude", limited);
     expect(outcome).toMatchObject({ cause: "usage-limit", error: limited.error, kind: "resting" });
     expect(untilOf(outcome)).toBeGreaterThanOrEqual(before + hour / 2);
     expect(untilOf(outcome)).toBeLessThanOrEqual(Date.now() + hour / 2);
-    expect(driver.restingRunner("claude")).toBe(untilOf(outcome));
+    expect(pool.restingRunner("claude")).toBe(untilOf(outcome));
   });
 
   it("never rests a runner past 12 hours, whatever reset was named", () => {
-    const driver = driverOn(null);
+    const pool = poolOf();
     const before = Date.now();
-    const outcome = driver.heed("claude", { ...limited, reportedReset: before + 72 * hour });
+    const outcome = pool.heed("claude", { ...limited, reportedReset: before + 72 * hour });
     expect(untilOf(outcome)).toBeGreaterThanOrEqual(before + 12 * hour);
     expect(untilOf(outcome)).toBeLessThanOrEqual(Date.now() + 12 * hour);
   });
 
   it("fails the task, resting no runner, on any failure that is not the runner's", () => {
-    const driver = driverOn(null);
-    expect(driver.heed("codex", failed)).toEqual({ error: failed.error, kind: "failed" });
+    const pool = poolOf();
+    expect(pool.heed("codex", failed)).toEqual({ error: failed.error, kind: "failed" });
     const spent = { class: "context", error: "context window exceeded", kind: "failed" } as const;
-    expect(driver.heed("codex", spent)).toEqual({ error: spent.error, kind: "failed" });
-    expect(driver.restingRunners()).toEqual({});
-    expect(driver.heed("codex", { kind: "completed" })).toEqual({ kind: "done" });
+    expect(pool.heed("codex", spent)).toEqual({ error: spent.error, kind: "failed" });
+    expect(pool.restingRunners()).toEqual({});
+    expect(pool.heed("codex", { kind: "completed" })).toEqual({ kind: "done" });
   });
 });
 
 describe("an overloaded provider", () => {
   const minute = 60_000;
-  const driver = createAgentDriver(
-    () => Promise.resolve({ kind: "sealed" }),
-    () => Promise.resolve(SEAL),
-    () => SKILLS,
-    () => null,
-  );
+  const pool = poolOf();
 
   /** How long the next overload rests codex, by the outcome heed hands back. */
   const restAfterOverload = (): number => {
     const before = Date.now();
-    const until = untilOf(driver.heed("codex", overloaded));
-    expect(driver.restingRunner("codex")).toBe(until);
+    const until = untilOf(pool.heed("codex", overloaded));
+    expect(pool.restingRunner("codex")).toBe(until);
     return Math.round((until - before) / minute);
   };
 
@@ -162,12 +162,7 @@ describe("an overloaded provider", () => {
   });
 
   it("starts at a minute again once a turn ends another way", () => {
-    const fresh = createAgentDriver(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve(SEAL),
-      () => SKILLS,
-      () => null,
-    );
+    const fresh = poolOf();
     const rest = (): number => {
       const before = Date.now();
       return Math.round((untilOf(fresh.heed("claude", overloaded)) - before) / minute);
@@ -183,12 +178,7 @@ describe("an overloaded provider", () => {
   });
 
   it("never shortens a usage limit's rest, which a turn still in flight may end under", () => {
-    const fresh = createAgentDriver(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve(SEAL),
-      () => SKILLS,
-      () => null,
-    );
+    const fresh = poolOf();
     const lifts = Date.now() + 3 * 3_600_000;
     fresh.heed("claude", { ...limited, reportedReset: lifts });
     expect(fresh.heed("claude", overloaded)).toMatchObject({ until: lifts });
@@ -205,7 +195,7 @@ describe("a provider refusing access no sign-in repairs", () => {
     Math.round((untilOf(outcome) - before) / minute);
 
   it("rests the runner on an overload's backoff, never signing it out or spending the session", () => {
-    const driver = driverOn(null);
+    const pool = poolOf();
     const signedInClaude = {
       authed: true,
       bin: "claude",
@@ -213,12 +203,10 @@ describe("a provider refusing access no sign-in repairs", () => {
       installed: true,
       version: "1.0.0",
     } as const;
-    const rests = [1, 2, 3, 4, 5].map(() =>
-      restOf(driver.heed("claude", accessRefused), Date.now()),
-    );
+    const rests = [1, 2, 3, 4, 5].map(() => restOf(pool.heed("claude", accessRefused), Date.now()));
     expect(rests).toEqual([1, 2, 4, 8, 15]);
-    expect(driver.needsSignIn(signedInClaude)).toBe(false);
-    expect(outcomeOf(driver.heed("claude", accessRefused), null, false)).toMatchObject({
+    expect(pool.needsSignIn(signedInClaude)).toBe(false);
+    expect(outcomeOf(pool.heed("claude", accessRefused), null, false)).toMatchObject({
       cause: "access-denied",
       error: accessRefused.error,
       kind: "resting",
@@ -226,13 +214,13 @@ describe("a provider refusing access no sign-in repairs", () => {
   });
 
   it("shares one streak with an overload, which a turn ending another way starts over", () => {
-    const driver = driverOn(null);
-    expect(restOf(driver.heed("codex", overloaded), Date.now())).toBe(1);
-    expect(restOf(driver.heed("codex", accessRefused), Date.now())).toBe(2);
-    driver.heed("codex", failed);
-    const held = driver.restingRunner("codex");
+    const pool = poolOf();
+    expect(restOf(pool.heed("codex", overloaded), Date.now())).toBe(1);
+    expect(restOf(pool.heed("codex", accessRefused), Date.now())).toBe(2);
+    pool.heed("codex", failed);
+    const held = pool.restingRunner("codex");
     // a minute asked: the 2m rest still holding stands
-    expect(driver.heed("codex", accessRefused)).toMatchObject({ until: held });
+    expect(pool.heed("codex", accessRefused)).toMatchObject({ until: held });
   });
 });
 
@@ -243,10 +231,10 @@ describe("a rest the last launch left", () => {
 
   it("holds after a restart, so no parked task spawns once to be refused", async () => {
     const lifts = Date.now() + 3_600_000;
-    driverOn(file).heed("claude", { ...limited, reportedReset: lifts });
+    poolOf({ restFile: () => file }).heed("claude", { ...limited, reportedReset: lifts });
     expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({ claude: lifts });
 
-    const restarted = driverOn(file);
+    const restarted = poolOf({ restFile: () => file });
     restarted.init();
     await restarted.sealRefusal();
     expect(restarted.restingRunners()).toEqual({ claude: lifts });
@@ -254,21 +242,21 @@ describe("a rest the last launch left", () => {
 
   it("drops a rest that lifted while the app was closed, and reads a missing or broken file as none", async () => {
     writeFileSync(file, JSON.stringify({ claude: Date.now() - 1, codex: Date.now() + 60_000 }));
-    const restarted = driverOn(file);
+    const restarted = poolOf({ restFile: () => file });
     restarted.init();
     await restarted.sealRefusal();
     expect(Object.keys(restarted.restingRunners())).toEqual(["codex"]);
 
     writeFileSync(file, "{ not json");
-    const broken = driverOn(file);
+    const broken = poolOf({ restFile: () => file });
     broken.init();
     expect(broken.restingRunners()).toEqual({});
 
-    const missing = driverOn(path.join(box, "missing", "runner-rest.json"));
+    const missing = poolOf({ restFile: () => path.join(box, "missing", "runner-rest.json") });
     missing.init();
     expect(missing.restingRunners()).toEqual({});
 
-    const none = driverOn(null);
+    const none = poolOf();
     none.init();
     expect(none.restingRunners()).toEqual({});
     expect(none.heed("codex", { ...limited, reportedReset: Date.now() + 60_000 }).kind).toBe(
@@ -362,23 +350,25 @@ describe("a seal the boot check refuses", () => {
   it("starts no run and says why, then checks again when the CLIs are looked for again", async () => {
     const verdicts = [refused, holding];
     let checks = 0;
-    const driver = createAgentDriver(() => {
-      checks += 1;
-      return Promise.resolve(verdicts[checks - 1] ?? holding);
+    const pool = poolOf({
+      checkSeal: () => {
+        checks += 1;
+        return Promise.resolve(verdicts[checks - 1] ?? holding);
+      },
     });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      driver.init();
-      expect(driver.runsSealed()).toBe(false);
-      expect(await driver.sealRefusal()).toBe("sandbox-exec timed out, so none will start.");
-      expect(driver.runsSealed()).toBe(false);
+      pool.init();
+      expect(pool.runsSealed()).toBe(false);
+      expect(await pool.sealRefusal()).toBe("sandbox-exec timed out, so none will start.");
+      expect(pool.runsSealed()).toBe(false);
       expect(logged).toHaveBeenCalledWith("[seal]", "sandbox-exec timed out, so none will start.");
 
-      await driver.refresh();
+      await pool.refresh();
 
-      expect(await driver.sealRefusal()).toBeNull();
-      expect(driver.runsSealed()).toBe(true);
-      await driver.refresh();
+      expect(await pool.sealRefusal()).toBeNull();
+      expect(pool.runsSealed()).toBe(true);
+      await pool.refresh();
       expect(checks).toBe(2);
     } finally {
       logged.mockRestore();
@@ -388,11 +378,11 @@ describe("a seal the boot check refuses", () => {
 
 const onMac = process.platform === "darwin";
 
-/** Whether a driver whose check holds finds a CLI ready, each probe under the seal `resolveSeal` gives. */
+/** Whether a pool whose check holds finds a CLI ready, each probe under the seal `resolveSeal` gives. */
 const anyRunnerUnder = async (resolveSeal: () => Promise<Seal>): Promise<boolean> => {
-  const driver = createAgentDriver(() => Promise.resolve({ kind: "sealed" }), resolveSeal);
-  driver.init();
-  return await driver.hasAnyRunner();
+  const pool = poolOf({ resolveSeal });
+  pool.init();
+  return await pool.hasAnyRunner();
 };
 
 describe.skipIf(!onMac)("the seal a run starts under", () => {
@@ -422,18 +412,15 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
   });
 
   it("signs a CLI in under its runner's seal, free to open the browser, and not at all while the seal is refused", async () => {
-    const sealed = createAgentDriver(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve(sealing()),
-    );
+    const sealed = poolOf({ resolveSeal: () => Promise.resolve(sealing()) });
     sealed.init();
     expect(await sealed.sealedSignIn("codex", ["codex", "login"])).toEqual(
       signInCommand(sealing(), "codex", ["codex", "login"]),
     );
-    const refused = createAgentDriver(
-      () => Promise.resolve({ kind: "refused", reason: "no sandbox-exec here." }),
-      () => Promise.resolve(sealing()),
-    );
+    const refused = poolOf({
+      checkSeal: () => Promise.resolve({ kind: "refused", reason: "no sandbox-exec here." }),
+      resolveSeal: () => Promise.resolve(sealing()),
+    });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       refused.init();
@@ -449,99 +436,91 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
   it("checks the seal only once main's PATH has settled, and starts no run before", async () => {
     const shellAnswered = Promise.withResolvers<null>();
     let checked = 0;
-    const driver = createAgentDriver(
-      () => {
+    const pool = poolOf({
+      checkSeal: () => {
         checked += 1;
         return Promise.resolve({ kind: "sealed" });
       },
-      () => Promise.resolve(sealing()),
-    );
-    driver.init(
+      resolveSeal: () => Promise.resolve(sealing()),
+    });
+    pool.init(
       (async () => {
         await shellAnswered.promise;
       })(),
     );
     await Promise.resolve();
     expect(checked).toBe(0);
-    expect(driver.runsSealed()).toBe(false);
+    expect(pool.runsSealed()).toBe(false);
 
     shellAnswered.resolve(null);
 
-    expect(await driver.sealRefusal()).toBeNull();
+    expect(await pool.sealRefusal()).toBeNull();
     expect(checked).toBe(1);
-    expect(driver.runsSealed()).toBe(true);
+    expect(pool.runsSealed()).toBe(true);
   });
 
   it("is resolved again for every run, and none starts without one", async () => {
     let resolved = 0;
-    const driver = createAgentDriver(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => {
+    const pool = poolOf({
+      resolveSeal: () => {
         resolved += 1;
         return resolved === 1
           ? Promise.resolve(sealing())
           : Promise.reject(new Error(`no seal ${resolved}`));
       },
-    );
-    driver.init();
-    expect(await driver.hasAnyRunner()).toBe(true);
-    await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal 2");
-    await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal 3");
+    });
+    pool.init();
+    expect(await pool.hasAnyRunner()).toBe(true);
+    await expect(pool.completeOneShot("hire")).rejects.toThrow("no seal 2");
+    await expect(pool.completeOneShot("hire")).rejects.toThrow("no seal 3");
   });
 
   it("reads a runner whose login a turn found refused as signed out, however often its stored login is read again", async () => {
     storedLoginClaude(0);
-    const driver = createAgentDriver(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve(SEAL),
-    );
-    driver.init();
-    expect(await driver.hasAnyRunner()).toBe(true);
-    expect(await driver.signedOut()).toEqual(["codex"]);
+    const pool = poolOf();
+    pool.init();
+    expect(await pool.hasAnyRunner()).toBe(true);
+    expect(await pool.signedOut()).toEqual(["codex"]);
 
-    driver.heed("claude", refusedLogin);
+    pool.heed("claude", refusedLogin);
 
-    expect(driver.signedIn("claude")).toBe(false);
-    expect(await driver.hasAnyRunner()).toBe(false);
-    await driver.refresh();
-    expect(await driver.signedOut()).toEqual(["claude", "codex"]);
+    expect(pool.signedIn("claude")).toBe(false);
+    expect(await pool.hasAnyRunner()).toBe(false);
+    await pool.refresh();
+    expect(await pool.signedOut()).toEqual(["claude", "codex"]);
   });
 
   it("signs a refused login in again, though its stored login reads as signed in, and counts it only once that sign-in succeeds", async () => {
-    const driver = createAgentDriver(
-      () => Promise.resolve({ kind: "sealed" }),
-      () => Promise.resolve(SEAL),
-    );
+    const pool = poolOf();
     storedLoginClaude(1);
-    driver.init();
-    driver.heed("claude", refusedLogin);
+    pool.init();
+    pool.heed("claude", refusedLogin);
     const heard: AuthFlowEvent[] = [];
-    await startLogin(driver, (e) => heard.push(e));
+    await startLogin(pool, (e) => heard.push(e));
     expect(heard).toContainEqual(signingIn);
     expect(heard).not.toContainEqual({ type: "done" });
-    expect(driver.signedIn("claude")).toBe(false);
+    expect(pool.signedIn("claude")).toBe(false);
 
     storedLoginClaude(0);
     heard.length = 0;
-    await startLogin(driver, (e) => heard.push(e));
+    await startLogin(pool, (e) => heard.push(e));
     expect(heard).toContainEqual(signingIn);
     expect(heard).toContainEqual({ type: "done" });
-    expect(await driver.signedOut()).toEqual(["codex"]);
+    expect(await pool.signedOut()).toEqual(["codex"]);
   });
 
   it("lets a task's run write only its own folders in the save, and the hiring one-shot none", async () => {
     const asked: (readonly string[])[] = [];
-    const driver = createAgentDriver(
-      () => Promise.resolve({ kind: "sealed" }),
-      (writable) => {
+    const pool = poolOf({
+      resolveSeal: (writable) => {
         asked.push(writable);
         return asked.length === 1
           ? Promise.resolve(sealing())
           : Promise.reject(new Error("no seal"));
       },
-    );
-    driver.init();
-    await driver.hasAnyRunner();
+    });
+    pool.init();
+    await pool.hasAnyRunner();
     const company = found();
     const [emp] = store.listEmployees();
     const [product] = store.listProducts();
@@ -553,12 +532,12 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
       asks: askBox(() => {}),
       call: () => Promise.reject(new Error("called a tool without a test asking for it")),
     };
-    await expect(driver.completeOneShot("hire")).rejects.toThrow("no seal");
+    await expect(pool.completeOneShot("hire")).rejects.toThrow("no seal");
     // as at boot: a task's run opens its socket first, since its seal names it
     await controlPlane.start();
     try {
       await expect(
-        driver.runTask(emp, company, task, () => {}, tools, new AbortController().signal),
+        pool.runTask(emp, company, task, () => {}, tools, new AbortController().signal),
       ).rejects.toThrow("no seal");
     } finally {
       controlPlane.stop();

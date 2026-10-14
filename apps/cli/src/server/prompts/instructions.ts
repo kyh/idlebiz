@@ -17,8 +17,7 @@ const BUSINESS_MODELS = {
 const NO_MISSION =
   "The founder gave no pitch: what the company builds is the lead's pick, tried through bets that the numbers keep or kill. The team room and each product's AGENTS.md say what it is.";
 
-// Rendered into AGENTS.md by the store. The driver sends them to every new session, and again
-// to a resumed one whenever they changed.
+// Rendered into AGENTS.md by the store, and sent to a session by `turnPrompt`.
 export const standingInstructions = (input: {
   employee: Employee;
   company: Company;
@@ -156,4 +155,26 @@ ${toolDocs(lead)}
 - This rule is enforced, not just asked of you: an outward-facing tool call is refused at the boundary, and all you will see is that permission was denied. That is not a bug and not something to route around — no rewording, no alternate tool, no encoding. The founder gets a card with your exact command and the task resumes on their decision, so note where you were and carry on with whatever doesn't depend on it. Only a run's first ask reaches the founder, though: a command held after you already asked something waits until you run it again once they answer. Approval covers that one command once, so expect to be asked again for the next one.
 - After shipping something findable (a URL, a file), say exactly where it lives in your summary.
 `;
+};
+
+/**
+ * What a session is told this turn: its task, behind the standing instructions when the session
+ * lacks them, as a fresh one does, or a resumed one whose instructions `changed`.
+ */
+export const turnPrompt = ({
+  changed,
+  instructions,
+  resumed,
+  task,
+}: {
+  changed: boolean;
+  instructions: string;
+  resumed: boolean;
+  task: string;
+}): string => {
+  if (!instructions || (resumed && !changed)) {
+    return task;
+  }
+  const lead = resumed ? "Your standing instructions changed. They now read:\n\n" : "";
+  return `${lead}${instructions}\n\n---\n\nYOUR TASK:\n\n${task}`;
 };

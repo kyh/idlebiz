@@ -10,14 +10,14 @@ import {
   DEPLOYED,
   HANDOFF,
   VERCEL,
-  callTool,
+  answerText,
   connectVercel,
   deployingRun,
   runAs,
 } from "../test-support/tools";
 import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
-import { callTool as outcomeOf } from "./index";
+import { callTool } from "./index";
 import { ControlPlane } from "../control-plane";
 import { runCli } from "../../program";
 
@@ -26,7 +26,7 @@ const root = freshSave();
 describe("company tools", () => {
   it("turns the lead's tools away from anyone else, before looking at the body", async () => {
     const { ctx } = runAs("priya");
-    expect(await outcomeOf(ctx, "open_bet", {})).toEqual({
+    expect(await callTool(ctx, "open_bet", {})).toEqual({
       kind: "refused",
       text: "Only the team lead opens bets — pitch it in the team room.",
     });
@@ -35,7 +35,7 @@ describe("company tools", () => {
 
   it("answers what a tool did as done", async () => {
     const { ctx } = runAs("priya");
-    expect(await outcomeOf(ctx, "message_team", { text: "on it" })).toEqual({
+    expect(await callTool(ctx, "message_team", { text: "on it" })).toEqual({
       kind: "done",
       text: "Posted to the team room.",
     });
@@ -44,7 +44,7 @@ describe("company tools", () => {
   it("answers with the store's refusal, as refused, rather than failing the call", async () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const { ctx } = runAs("mae");
-    expect(await outcomeOf(ctx, "kill_bet", { reason: "dud", slug: "no-such-bet" })).toEqual({
+    expect(await callTool(ctx, "kill_bet", { reason: "dud", slug: "no-such-bet" })).toEqual({
       kind: "refused",
       text: 'no live bet "no-such-bet"',
     });
@@ -53,7 +53,7 @@ describe("company tools", () => {
 
   it("answers what a tool turns down by its own check as refused", async () => {
     const { ctx } = runAs("mae");
-    expect(await outcomeOf(ctx, "release", { slug: "mae" })).toEqual({
+    expect(await callTool(ctx, "release", { slug: "mae" })).toEqual({
       kind: "refused",
       text: "You can't release yourself.",
     });
@@ -69,7 +69,7 @@ describe("company tools", () => {
         throw fault;
       },
     };
-    expect(await outcomeOf(broken, "delegate", HANDOFF)).toEqual({
+    expect(await callTool(broken, "delegate", HANDOFF)).toEqual({
       kind: "fault",
       text: fault.message,
     });
@@ -78,19 +78,19 @@ describe("company tools", () => {
 
   it("calls a body that does not parse the caller's error", async () => {
     const { ctx } = runAs("mae");
-    await expect(callTool(ctx, "open_bet", { ...BET, target: -1 })).rejects.toThrow(
+    await expect(answerText(ctx, "open_bet", { ...BET, target: -1 })).rejects.toThrow(
       BadRequestError,
     );
-    await expect(callTool(ctx, "open_bet", { ...BET, target: 1 })).rejects.toThrow("at least 10");
+    await expect(answerText(ctx, "open_bet", { ...BET, target: 1 })).rejects.toThrow("at least 10");
     expect(store.listBets()).toEqual([]);
   });
 
   it("keeps the first thing a run asks the founder, refusing the next", async () => {
     const { ctx, asked } = runAs("priya");
-    expect(await outcomeOf(ctx, "ask_boss", { question: "Ship it?" })).toMatchObject({
+    expect(await callTool(ctx, "ask_boss", { question: "Ship it?" })).toMatchObject({
       kind: "done",
     });
-    const unsent = await outcomeOf(ctx, "request_integration", {
+    const unsent = await callTool(ctx, "request_integration", {
       kind: "vercel",
       reason: "to deploy",
     });
@@ -114,7 +114,7 @@ describe("an idlebiz verb, through the control plane to the tools", () => {
 
   /** `argv` typed in `ctx`'s run: the exit code it left, and what it wrote to stdout and stderr. */
   const typed = async (ctx: RunContext, argv: readonly string[]) => {
-    const handle = await plane.registerRun((name, raw) => outcomeOf(ctx, name, raw));
+    const handle = await plane.registerRun((name, raw) => callTool(ctx, name, raw));
     vi.stubEnv("IDLEBIZ_API_SOCKET", handle.env.IDLEBIZ_API_SOCKET);
     vi.stubEnv("IDLEBIZ_RUN_TOKEN", handle.env.IDLEBIZ_RUN_TOKEN);
     const out: string[] = [];

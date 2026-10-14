@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { RUNNER_IDS } from "@repo/domain/runners";
 import type { RunnerId } from "@repo/domain/runners";
 import { RUNNERS } from "./registry";
@@ -20,48 +21,28 @@ const PROBE_TIMEOUT_MS = 15_000;
 /** `argv` as the caller starts a runner's CLI: itself, or inside whatever confines it. */
 type CliLaunch = (id: RunnerId, argv: readonly string[]) => readonly string[];
 
-const run = (
+const execFileAsync = promisify(execFile);
+
+/** Whether `argv` exited 0 within the probe's time, and what it printed then. */
+const run = async (
   [bin = "", ...args]: readonly string[],
   env: Record<string, string>,
-): Promise<{ ok: boolean; output: string }> =>
-  // oxlint-disable-next-line promise/avoid-new -- wraps a callback API (child process events)
-  new Promise((resolve) => {
-    let output = "";
-    let settled = false;
-    const done = (ok: boolean): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve({ ok, output });
-    };
-    let child: ReturnType<typeof spawn>;
-    try {
-      child = spawn(bin, args, { env, stdio: ["ignore", "pipe", "pipe"] });
-    } catch {
-      done(false);
-      return;
-    }
-    const timer = setTimeout(() => {
-      try {
-        child.kill("SIGKILL");
-      } catch {
-        /* already gone */
-      }
-      done(false);
-    }, PROBE_TIMEOUT_MS);
-    timer.unref?.();
-    const collect = (d: Buffer): void => {
-      output += d.toString();
-    };
-    child.stdout?.on("data", collect);
-    child.stderr?.on("data", collect);
-    child.on("error", () => done(false));
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      done(code === 0);
+): Promise<{ ok: boolean; output: string }> => {
+  try {
+    const pending = execFileAsync(bin, args, {
+      env,
+      killSignal: "SIGKILL",
+      timeout: PROBE_TIMEOUT_MS,
     });
-  });
+    // execFile pipes stdin, and a CLI that reads a piped stdin as its prompt would wait out the
+    // timeout on it
+    pending.child.stdin?.end();
+    const { stderr, stdout } = await pending;
+    return { ok: true, output: stdout + stderr };
+  } catch {
+    return { ok: false, output: "" };
+  }
+};
 
 // Probe the player's CLI login as its runs start it, so signed in means a run can sign in.
 const probeRunner = async (

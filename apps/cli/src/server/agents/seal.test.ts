@@ -1,11 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { LoadReport } from "@repo/domain/domain";
+import { realPathOf } from "./machine-seal";
+import { sealedCommand, signInCommand } from "./seal";
 import type { Seal } from "./seal";
-import { checkSeal, notingSeal, realPathOf, sealedCommand, signInCommand } from "./seal";
 import { SEAL as SEAL_FIXTURE } from "../test-support/seal";
+import { readBack } from "../test-support/sealed-command";
 
 const SEAL: Seal = {
   ...SEAL_FIXTURE,
@@ -16,44 +17,6 @@ const SEAL: Seal = {
 };
 
 const WORKSPACE = "/Users/me/.idlebiz/acme/workspace";
-
-/** A sealed command read back: its profile, the paths it hands over, and what it runs. */
-const readBack = (argv: readonly string[]) => {
-  const [bin, flag, profile = "", ...rest] = argv;
-  const params = new Map<string, string>();
-  let at = 0;
-  for (; rest[at] === "-D"; at += 2) {
-    const define = rest[at + 1] ?? "";
-    params.set(define.slice(0, define.indexOf("=")), define.slice(define.indexOf("=") + 1));
-  }
-  const lines = profile.split("\n");
-  /** The paths the profile's `(<action> <operations> …)` rules name, in order. */
-  const named = (action: "allow" | "deny", operations: string): string[] =>
-    lines
-      .filter((line) => line.startsWith(`(${action} ${operations} (`))
-      .flatMap((rule) => [...rule.matchAll(/\(param "(?<name>P\d+)"\)/gu)])
-      .map(({ groups }) => params.get(groups?.name ?? "") ?? "");
-  /** The first line that is an `action` rule on `operations` naming `target`. */
-  const lineOf = (action: "allow" | "deny", operations: string, target: string): number =>
-    lines.findIndex(
-      (line) =>
-        line.startsWith(`(${action} ${operations} (`) &&
-        [...line.matchAll(/\(param "(?<name>P\d+)"\)/gu)].some(
-          ({ groups }) => params.get(groups?.name ?? "") === target,
-        ),
-    );
-  return {
-    allowed: (operations: string): string[] => named("allow", operations),
-    bin,
-    denied: (operations: string): string[] => named("deny", operations),
-    flag,
-    lineOf,
-    lines,
-    params: [...params.values()],
-    profile,
-    runs: rest.slice(at),
-  };
-};
 
 describe("sealedCommand", () => {
   it("runs argv under sandbox-exec with the profile inline", () => {
@@ -242,68 +205,6 @@ describe("sealedCommand", () => {
       "(deny lsopen)",
       "(deny file-write*)",
     ]);
-  });
-});
-
-describe("notingSeal", () => {
-  const report: LoadReport = {
-    skipped: [
-      { error: "bad yaml", kind: "task", newerBuild: false, path: "/save/tasks/x/TASK.md" },
-    ],
-  };
-
-  it("tells the founder beside the save's notes why no run starts", () => {
-    expect(notingSeal(report, "sandbox-exec timed out, so none will start.")).toEqual({
-      skipped: [
-        ...report.skipped,
-        {
-          error: "sandbox-exec timed out, so none will start.",
-          kind: "seal",
-          newerBuild: false,
-          path: "/usr/bin/sandbox-exec",
-        },
-      ],
-    });
-  });
-
-  it("adds nothing while runs start sealed", () => {
-    expect(notingSeal(report, null)).toBe(report);
-  });
-});
-
-describe("checkSeal", () => {
-  it("runs each runner's runtime under the profile against canaries where no rule lets it write, never the real keys", async () => {
-    const seen: { argv: readonly string[]; env: Record<string, string> }[] = [];
-    const refusal = await checkSeal(SEAL, (argv, env) => {
-      seen.push({ argv, env });
-      return Promise.resolve(0);
-    });
-    expect(refusal).toBeNull();
-    expect(seen).toHaveLength(2);
-    for (const { argv, env } of seen) {
-      const { allowed, denied, runs } = readBack(argv);
-      const [canary = "", written = ""] = runs.slice(-2);
-      expect(canary).not.toBe("/Users/me/.idlebiz/secrets.json");
-      expect(denied("file-read* file-write*")).toContain(canary);
-      expect(denied("file-read* file-write*")).toContain("/Users/me/.idlebiz/secrets.json");
-      expect(path.dirname(written)).toBe(path.dirname(canary));
-      expect(allowed("file-write*")).not.toContain("/private/tmp");
-      expect(runs[0]).toBe(process.execPath);
-      expect(env).toEqual({});
-      expect(existsSync(canary)).toBe(false);
-    }
-  });
-
-  it.each([
-    [null, "could not run macOS's sandbox-exec"],
-    [3, "let a run read a file it seals"],
-    [5, "let a run write outside its own folders"],
-    [71, "(exit 71)"],
-  ])("refuses every run when a probe ends %s", async (code, sentence) => {
-    const refusal = await checkSeal(SEAL, (argv) =>
-      Promise.resolve(argv.some((word) => word.endsWith("written-by-codex")) ? code : 0),
-    );
-    expect(refusal).toContain(sentence);
   });
 });
 

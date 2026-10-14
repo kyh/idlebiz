@@ -1,7 +1,8 @@
+import path from "node:path";
 import { z } from "zod";
 import type { HoldRuleId } from "@repo/domain/hold-rules";
 import { parseJson } from "@repo/domain/json";
-import type { Words } from "../shell-lexer";
+import type { Words } from "./shell-lexer";
 import { wordsOf } from "./reading";
 import type { Call } from "./reading";
 
@@ -309,22 +310,6 @@ const landing = (page: BrowserPage | null): string | null => {
   return page.frames.every(own) ? page.url : null;
 };
 
-/** A path as the OS reads it from `cwd`, POSIX since the app ships for macOS only. `~` stays as named: no root is under a home this cannot see. */
-const resolvePath = (cwd: string, file: string): string => {
-  if (file === "~" || file.startsWith("~/")) {
-    return file;
-  }
-  const parts: string[] = [];
-  for (const part of (file.startsWith("/") ? file : `${cwd}/${file}`).split("/")) {
-    if (part === "..") {
-      parts.pop();
-    } else if (part !== "" && part !== ".") {
-      parts.push(part);
-    }
-  }
-  return `/${parts.join("/")}`;
-};
-
 const within = (file: string, root: string): boolean =>
   file === root || file.startsWith(`${root}/`);
 
@@ -341,9 +326,7 @@ const decoded = (text: string): string | null => {
 
 /** The run's own folders, which a page opened from disk is judged against. Absolute paths. */
 export interface Confinement {
-  /** The run's working directory: a relative path is read from here. */
-  cwd: string;
-  /** Its cwd and every directory the run was granted. */
+  /** Its working directory and every directory the run was granted. */
   writable: readonly string[];
   /** Where an absolute path leads on disk, every symlink on its way followed. */
   real: (file: string) => Promise<string>;
@@ -362,7 +345,8 @@ const opensOutside = async (word: string, room: Confinement): Promise<boolean> =
   if (url === null || file === null || (url.host !== "" && url.host !== "localhost")) {
     return true;
   }
-  const opened = await room.real(resolvePath("/", file));
+  // a file: URL's path is always absolute, and POSIX since the app ships for macOS only
+  const opened = await room.real(path.posix.resolve(file));
   const roots = await Promise.all(room.writable.map(room.real));
   return !roots.some((root) => within(opened, root));
 };

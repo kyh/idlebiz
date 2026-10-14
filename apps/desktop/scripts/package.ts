@@ -49,8 +49,8 @@ interface Notary {
 }
 
 // one of the folders Apple's altool searches for an App Store Connect key, which the seal keeps
-// from every run (`LOGINS` in apps/cli/src/server/agents/seal.ts): no path is configurable,
-// since a key anywhere else, the checkout included, is one any run can read
+// from every run (`LOGINS` in apps/cli/src/server/agents/machine-seal.ts): no path is
+// configurable, since a key anywhere else, the checkout included, is one any run can read
 const NOTARY_KEYS = path.join(homedir(), ".appstoreconnect", "private_keys");
 const ENV_NAMES = new Set(["APPLE_API_ISSUER", "APPLE_API_KEY"]);
 

@@ -2,7 +2,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runAcpTurn } from "./acp-session";
-import type { AcpAgent, AcpTurnOptions, PermissionRequest } from "./acp-session";
+import type { AcpAgent, AcpTurnOptions } from "./acp-session";
+import type { ToolAsk } from "./tool-ask";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { jsonRecordSchema, parseJson } from "@repo/domain/json";
@@ -80,10 +81,9 @@ const turn = (
     idleTimeoutMs: 0,
     maxSessionMs: more.maxSessionMs ?? 0,
     onEvent: more.onEvent ?? (() => {}),
-    onPermission: more.onPermission,
-    prompt: "work",
+    onPermission: more.onPermission ?? (() => Promise.resolve({ allow: true })),
+    prompt: () => "work",
     resumeSessionId: more.resumeSessionId,
-    systemPrompt: "",
     teardownGraceMs: 100,
   });
 
@@ -153,18 +153,18 @@ describe("the options a session is given", () => {
 
 describe("answering a permission ask", () => {
   it("signs only the one-time option, though an always one is offered first", async () => {
-    const asks: PermissionRequest[] = [];
+    const asks: ToolAsk[] = [];
     const options = JSON.stringify([
       option("allow_always", "always"),
       option("allow_once", "once"),
     ]);
     const { summary } = await turn(scriptedAgent({ options }), {
-      onPermission: (request) => {
-        asks.push(request);
+      onPermission: (tool) => {
+        asks.push(tool);
         return Promise.resolve({ allow: true });
       },
     });
-    expect(asks.map((ask) => ask.tool)).toEqual([{ command: "git push", kind: "shell" }]);
+    expect(asks).toEqual([{ command: "git push", kind: "shell" }]);
     expect(parseJson(summary)).toEqual({ optionId: "once", outcome: "selected" });
   });
 
@@ -193,7 +193,7 @@ describe("answering a permission ask", () => {
     let toldOver = false;
     const { end } = await turn(scriptedAgent({ options }), {
       maxSessionMs: 300,
-      onPermission: (_request, signal) =>
+      onPermission: (_tool, signal) =>
         // oxlint-disable-next-line promise/avoid-new -- resolves on an abort event, not a promise API
         new Promise((resolve) => {
           signal.addEventListener("abort", () => {
@@ -211,7 +211,7 @@ describe("a tool call the agent announces", () => {
   it("reaches the listener and the permission policy with its whole title", async () => {
     const title = `cat > .env <<'EOF'\n${"API_TOKEN=hunter2\n".repeat(300)}EOF`;
     const titles: string[] = [];
-    const asks: PermissionRequest[] = [];
+    const asks: ToolAsk[] = [];
     const { end } = await turn(
       scriptedAgent({
         announced: title,
@@ -223,14 +223,14 @@ describe("a tool call the agent announces", () => {
             titles.push(event.title);
           }
         },
-        onPermission: (request) => {
-          asks.push(request);
+        onPermission: (tool) => {
+          asks.push(tool);
           return Promise.resolve({ allow: true });
         },
       },
     );
     expect(end.kind).toBe("completed");
     expect(titles).toEqual([title]);
-    expect(asks.map((ask) => ask.tool)).toEqual([{ kind: "unknown", title }]);
+    expect(asks).toEqual([{ kind: "unknown", title }]);
   });
 });

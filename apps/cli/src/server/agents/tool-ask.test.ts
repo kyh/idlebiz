@@ -18,7 +18,6 @@ const ask = (request: {
   });
 
 const ROOM: Confinement = {
-  cwd: "/w",
   real: (file) => Promise.resolve(file),
   writable: ["/w"],
 };

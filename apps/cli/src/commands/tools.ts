@@ -3,8 +3,8 @@
 // it sends the request in its shortest JSON (`encodeRequest`), the weight the spec's limits count,
 // and the server parses it against the tool's spec, so a refusal reads the same whoever asks. The
 // answer is the server's prose on stdout, however the call ended, and the exit code says how
-// (TOOL_OUTCOMES): 0 done, 1 refused, 2 a fault of main's, 4 held for the founder. A call that
-// never reached the server, or that it could not take, exits 1 with why on stderr.
+// (TOOL_OUTCOMES). A call that never reached the server, or that it could not take, exits 1 with
+// why on stderr.
 
 import { request } from "node:http";
 import type { IncomingMessage } from "node:http";
