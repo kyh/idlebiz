@@ -84,7 +84,7 @@ export const Teams = ({ onClose }: { onClose: () => void }) => {
         ))}
       </div>
       <div className="px-inset mt-3 p-3">
-        <div className="text-xs uppercase tracking-wide text-fg-dim">Team room</div>
+        <div className="px-label text-fg-dim">Team room</div>
         <div ref={scrollRef} className="mt-1 max-h-40 space-y-1 overflow-y-auto">
           {messages.length === 0 ? (
             <div className="text-xs text-fg-dim">{quiet}</div>

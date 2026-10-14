@@ -1,7 +1,4 @@
-//! The IdleBiz desktop shell: a Rust window over the office page main serves, main (the node process
-//! that owns the save, the keys and the runs) as the one child it supervises, and what only a native
-//! app can do for main: the menu-bar icon, message boxes, notifications, the clipboard, Finder, the
-//! login item and keeping the Mac awake. The page reaches no command of the shell's.
+//! The IdleBiz desktop shell: a window over the page main serves, and main as its one child.
 
 mod host;
 mod keep_awake;

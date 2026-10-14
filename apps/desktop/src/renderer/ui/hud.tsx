@@ -55,7 +55,7 @@ const Stat = ({
   >
     {face}
     <span className="block flex-1">
-      <span className="block text-xs uppercase tracking-wide text-[#c3c9de]">{label}</span>
+      <span className="px-label block text-[#c3c9de]">{label}</span>
       <span
         className="block text-base leading-tight tabular-nums"
         style={accent ? { color: accent } : undefined}
@@ -91,7 +91,7 @@ const Scoreboard = ({
       <Stat
         label={company.users === null ? "users" : "users ⚡"}
         value={company.users === null ? "—" : formatCompact(company.users)}
-        accent="#86c0ee"
+        accent="var(--accent-hi)"
         sub={company.users === null ? "connect" : "web analytics"}
         title="Real users from Vercel Web Analytics on your deployed product"
         onClick={() => onOpen({ kind: "ships" })}

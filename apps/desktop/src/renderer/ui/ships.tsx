@@ -11,7 +11,7 @@ import {
   useProductStatus,
   useProducts,
 } from "@/renderer/state/queries";
-import { createProduct, killProduct } from "@/renderer/state/store";
+import { createProduct } from "@/renderer/state/store";
 import { BetList } from "@/renderer/ui/bets";
 import { ConfirmLink } from "@/renderer/ui/confirm-link";
 import { Failure } from "@/renderer/ui/failure";
@@ -107,6 +107,10 @@ const ProductCard = ({
       onNote(errorMessage(error));
     }
   };
+  // main answers with `product.killed`, and that event refetches what moved
+  const retire = async () => {
+    await api.products.kill({ productId: product.id, reason: "the founder retired it" });
+  };
   return (
     <div className="px-inset flex min-w-0 flex-col gap-1.5 p-2.5">
       <button type="button" onClick={onSelect} className="text-left">
@@ -157,7 +161,7 @@ const ProductCard = ({
             confirmLabel="retire it"
             title="Archive it under retired/, switch off its payment links and free its budget"
             className="ml-auto"
-            onConfirm={() => killProduct(product.id, "the founder retired it")}
+            onConfirm={retire}
           />
         ) : null}
       </div>
@@ -289,13 +293,11 @@ export const Ships = ({
           ))}
           <NewProduct />
         </div>
-        <div className="text-xs uppercase tracking-wide text-fg-dim">Bets{selectedName}</div>
+        <div className="px-label text-fg-dim">Bets{selectedName}</div>
         <div className="space-y-2">
           <BetList bets={bets.filter((b) => selected === null || b.productId === selected)} />
         </div>
-        <div className="text-xs uppercase tracking-wide text-fg-dim">
-          Shipping log{selectedName}
-        </div>
+        <div className="px-label text-fg-dim">Shipping log{selectedName}</div>
         <div className="space-y-2">
           <ShippingLog log={log} selected={selected} employees={employees} />
         </div>

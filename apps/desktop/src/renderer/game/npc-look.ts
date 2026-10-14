@@ -2,8 +2,8 @@
 // body and the emote over their head, from where they are in their day and what the
 // scheduler says they are doing. Walking is animated by the movement code; npc.ts puts
 // the rest on the sprite.
-import type { Dir } from "@/renderer/game/character-sheet";
 import type { WorkPose } from "@/renderer/game/office-poses";
+import type { Dir } from "@repo/domain/character-frame";
 
 /**
  * What the scheduler says an employee is doing. Only a working employee has a pose:

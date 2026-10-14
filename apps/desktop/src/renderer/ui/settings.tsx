@@ -48,7 +48,7 @@ const LaunchAtLoginSetting = () => {
 
   return (
     <div className="px-inset p-3 text-sm text-fg">
-      <div className="text-xs uppercase tracking-wide text-fg-dim">Open at login</div>
+      <div className="px-label text-fg-dim">Open at login</div>
       {state === undefined && error !== null ? (
         <div role="alert" className="mt-1 text-xs text-danger">
           Could not read the login item: {errorMessage(error)}
@@ -99,7 +99,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
     <Modal title="Settings" onClose={onClose}>
       <div className="space-y-4">
         <div className="px-inset p-3 text-sm text-fg">
-          <div className="text-xs uppercase tracking-wide text-fg-dim">Company</div>
+          <div className="px-label text-fg-dim">Company</div>
           <div className="mt-1">{company.name}</div>
           {company.mission === null ? null : (
             <div className="text-xs text-fg-dim">{company.mission}</div>
@@ -109,7 +109,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
 
         {saveIssues.length > 0 ? (
           <div className="px-inset p-3 text-sm text-fg">
-            <div className="text-xs uppercase tracking-wide text-danger">Skipped at boot</div>
+            <div className="px-label text-danger">Skipped at boot</div>
             <div className="mt-1 text-xs text-fg-dim">
               Boot could not use these and went on without them. Fix them and relaunch.
             </div>
@@ -120,7 +120,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
         ) : null}
 
         <div className="px-inset p-3 text-sm text-fg">
-          <div className="text-xs uppercase tracking-wide text-fg-dim">Team size cap</div>
+          <div className="px-label text-fg-dim">Team size cap</div>
           <div className="mt-1 text-xs text-fg-dim">
             The team lead hires and releases on their own — this is the hard ceiling, up to{" "}
             {MAX_AGENTS}.
@@ -152,7 +152,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
         <LaunchAtLoginSetting />
 
         <div className="px-inset p-3 text-sm text-fg">
-          <div className="text-xs uppercase tracking-wide text-fg-dim">Controls</div>
+          <div className="px-label text-fg-dim">Controls</div>
           <div className="mt-1 text-xs text-fg-dim">
             WASD / arrows to move · walk up to someone and press E
           </div>
@@ -162,10 +162,8 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
           </div>
         </div>
 
-        <div className="px-inset p-3" style={{ borderColor: "var(--danger)" }}>
-          <div className="text-xs uppercase tracking-wide" style={{ color: "var(--danger)" }}>
-            Danger zone
-          </div>
+        <div className="px-inset px-inset-danger p-3">
+          <div className="px-label text-danger">Danger zone</div>
           <div className="mt-1 text-sm leading-snug text-fg">
             Reset demolishes the office: every employee, task, and workspace file your team created,
             plus stored secrets and connections. Its live payment links are switched off at Stripe
@@ -173,9 +171,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
             for you to handle by hand. The game restarts from scratch. There is no undo.
           </div>
           {demolishing ? (
-            <div className="px-live-dot mt-3 text-sm" style={{ color: "var(--danger)" }}>
-              Demolishing the office…
-            </div>
+            <div className="px-live-dot mt-3 text-sm text-danger">Demolishing the office…</div>
           ) : (
             <>
               <div className="mt-3 flex gap-2">

@@ -39,6 +39,7 @@ How each part works is told once, in the repo's [AGENTS.md](../../AGENTS.md):
 ## What is deliberately not here
 
 - **No updater.** A feed is Tauri's updater plugin and a signing key of its own.
-- **No WebDriver of the window.** The page and main are driven in Chromium (`tools/e2e`, the dev host);
-  the shell is held by `cargo test`, booted packaged by `pnpm smoke:desktop`, and looked at by hand.
+- **No WebDriver of the window.** The page and main are driven in Chromium (`tools/e2e`, the dev
+  host); the shell is held by `cargo test`, booted packaged by `pnpm smoke:desktop`, and looked at
+  by hand.
 - **No restart of main.** A main that dies says so in a box and the app quits: main owns the save.

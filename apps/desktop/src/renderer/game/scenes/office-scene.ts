@@ -8,30 +8,27 @@ import {
   read,
   watch,
 } from "@/renderer/state/queries";
-import {
-  characterAnims,
-  CHAR_ORIGIN_X,
-  CHAR_ORIGIN_Y,
-  idleFrame,
-} from "@/renderer/game/character-sheet";
-import type { CharacterAnims, Dir } from "@/renderer/game/character-sheet";
+import { characterAnims, idleFrame } from "@/renderer/game/character-sheet";
+import type { CharacterAnims } from "@/renderer/game/character-sheet";
 import { BootGate } from "@/renderer/game/boot-gate";
 import { loadCharacter } from "@/renderer/game/characters";
 import { ClickWalk } from "@/renderer/game/click-walk";
 import type { Walker } from "@/renderer/game/click-walk";
-import { WALK_SPEED, ZOOM, COLORS } from "@/renderer/game/config";
+import { WALK_SPEED, ZOOM } from "@/renderer/game/config";
 import { facingToward } from "@/renderer/game/movement";
 import type { Seat } from "@/renderer/game/npc";
 import type { Poi } from "@/renderer/game/npc-idle";
 import { NpcManager } from "@/renderer/game/npcs";
 import { OFFICE } from "@/renderer/game/office-layout";
-import type { PixelPoint } from "@/renderer/game/office-layout";
+import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 import { poseForToolKind } from "@/renderer/game/office-poses";
 import { BEHIND_CHAIR_RISE, behindChair, seatDepth } from "@/renderer/game/seat-depth";
 import { textureMasks } from "@/renderer/game/texture-masks";
 import type { OpaqueMask } from "@/renderer/game/opaque-mask";
 import { characterDepth } from "@/renderer/game/office-depth";
 import type { ActivityEvent } from "@repo/domain/activity";
+import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y } from "@repo/domain/character-frame";
+import type { Dir } from "@repo/domain/character-frame";
 import { hear, tell } from "@/renderer/game/office-port";
 import { DEFAULT_FOUNDER_SEED, taskIn } from "@repo/domain/domain";
 import type { Employee, Task } from "@repo/domain/domain";
@@ -52,6 +49,9 @@ interface Player {
   readonly anims: CharacterAnims;
 }
 
+/** What the camera shows past the office's edge. */
+const OUTSIDE = 0x14_16_1f;
+
 /** Idle-life spots from the layout: the POIs get faced, the rest seats get sat on. */
 const IDLE_POIS: readonly Poi[] = [
   ...OFFICE.pois.map((p) => ({ face: p.face, x: p.x, y: p.y })),
@@ -60,7 +60,6 @@ const IDLE_POIS: readonly Poi[] = [
   ),
 ];
 
-/** Tiled office assembled from Modern Office object sprites. */
 const roundQuad = (obj: Phaser.GameObjects.GameObject): void => {
   obj.vertexRoundMode = "fullAuto";
 };
@@ -93,12 +92,8 @@ export class OfficeScene extends Scene {
   }
 
   preload() {
-    const loaded = new Set<string>();
+    // the loader skips a key it already holds or has queued, so a sprite placed twice loads once
     for (const placement of OFFICE.placements) {
-      if (loaded.has(placement.key)) {
-        continue;
-      }
-      loaded.add(placement.key);
       this.load.image(placement.key, placement.path);
     }
     this.load.spritesheet("emotes", `${WORKSPACE_KIT_PATH}/emotes.png`, {
@@ -108,7 +103,7 @@ export class OfficeScene extends Scene {
   }
 
   create() {
-    this.cameras.main.setBackgroundColor(COLORS.bg);
+    this.cameras.main.setBackgroundColor(OUTSIDE);
     // roundPixels alone rounds nothing here: the default vertexRoundMode trusts
     // only an unzoomed camera, and this one is zoomed ZOOMx. An integer zoom keeps
     // every corner on the same fraction, so rounding whole quads is safe and is
@@ -248,8 +243,7 @@ export class OfficeScene extends Scene {
     if (generation !== this.generation) {
       return;
     }
-    // the founder and the roster are independent fetches; the colleagues wait on both,
-    // because Phaser's loader is single-batch and the founder's sheet must land first
+    // the founder's sheet and the roster are independent, so both are asked for at once
     const seed = company ? company.founderSpriteSeed : DEFAULT_FOUNDER_SEED;
     const [playerKey, employees, tasks] = await Promise.all([
       loadCharacter(this, seed),

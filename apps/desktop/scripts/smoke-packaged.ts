@@ -1,11 +1,5 @@
-// The packaged app, booted as the founder opens it but on a scratch save: the shell, the node beside
-// it and main, which the shell starts on that node from the server it carries as a resource. It
-// checks first what the pack carries that boot never reads (the skills, which main reads only once a
-// company hires and runs, and the licences), then that hello boots main and the window loads the
-// page main hands it a handoff into, that main answers that page on
-// loopback, that a second launch hands over to the first, and that a quit stops main and leaves
-// nothing it started running. It needs a macOS arm64 host with a display: CI's test-macos job runs
-// it on an ad-hoc pack (`IDLEBIZ_PACK_UNSIGNED=1 pnpm smoke:desktop`).
+// The packaged app booted on a scratch save, on a macOS arm64 host with a display: AGENTS.md's
+// "Packaging and release" says what it checks.
 //
 // `pnpm -F @repo/desktop smoke <path/to/IdleBiz.app>` smokes another .app, a release's from its dmg.
 

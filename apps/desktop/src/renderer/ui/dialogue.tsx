@@ -103,30 +103,25 @@ const TalkInput = ({
   onChange: (v: string) => void;
   onSubmit: () => void;
 }) => (
-  <div className="flex items-center gap-2">
+  <form
+    className="flex items-center gap-2"
+    onSubmit={(e) => {
+      e.preventDefault();
+      onSubmit();
+    }}
+  >
     <input
       value={value}
       readOnly={sending}
       onChange={(e) => onChange(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-          e.preventDefault();
-          onSubmit();
-        }
-      }}
       placeholder={`Tell ${name} what to do…`}
       className="px-field flex-1"
       autoFocus
     />
-    <button
-      type="button"
-      onClick={onSubmit}
-      disabled={!value.trim() || sending}
-      className="px-btn-accent px-btn"
-    >
+    <button type="submit" disabled={!value.trim() || sending} className="px-btn-accent px-btn">
       {sending ? "Sending…" : "Send"}
     </button>
-  </div>
+  </form>
 );
 
 const SendStatus = ({ submission, note }: { submission: Submission; note: string | null }) => {
@@ -324,7 +319,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
                   <ActionCard key={asked.id} t={asked} by={emp.name} ask={asked.state.ask} />
                 ) : null}
                 {asked.state.ask.type === "question" ? (
-                  <div className="px-inset p-2.5" style={{ borderColor: "var(--warn)" }}>
+                  <div className="px-inset px-inset-warn p-2.5">
                     <div className="text-xs text-danger">❗ {emp.name} needs your call:</div>
                     <div className="mt-1 text-sm leading-snug whitespace-pre-wrap text-fg">
                       <RichText text={asked.state.ask.question} />

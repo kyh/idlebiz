@@ -3,13 +3,13 @@
 // was for, and stepping away once the moment is over. It sees the office and its
 // people, never the NPC manager.
 import type Phaser from "phaser";
-import type { Dir, SitSide } from "@/renderer/game/character-sheet";
 import { randomFloor } from "@/renderer/game/movement";
 import { standFacing, walkTo } from "@/renderer/game/npc";
 import type { Npc } from "@/renderer/game/npc";
 import { BUBBLE_MS } from "@/renderer/game/npc-attachments";
-import type { PixelPoint } from "@/renderer/game/office-layout";
+import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 import type { WalkGrid } from "@/renderer/game/office-grid";
+import type { Dir, SitSide } from "@repo/domain/character-frame";
 
 /** A point of interest idle employees visit: stand at (x,y) facing `face`,
  *  or sit (break-room chair) playing the matching sit animation. */

@@ -1,8 +1,4 @@
-//! The shell's one state: main, the child that owns the save, and the moves around it. A launch
-//! starts main (`idlebiz serve`), says hello with what only the shell knows (whether the login item
-//! launched it, the dev server under `tauri dev`, the Keychain's sealing key), and opens the window
-//! on main's page, or keeps to the menu bar when the login item launched it. A quit asks main to
-//! stop its runs before anything ends.
+//! The shell's one state: main, the child that owns the save, and the moves around it.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,7 +10,7 @@ use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 use crate::main_log::{self, MAIN_LOG_MAX_BYTES, MainLog};
-use crate::main_process::{Host, MainProcess, MainSpec, RequestError};
+use crate::main_process::{Host, MainProcess, MainSpec, RequestError, describe};
 use crate::protocol::Hello;
 use crate::{host, keychain, runtime, window};
 
@@ -43,8 +39,7 @@ impl Shell {
 
 /// Main, once it has started and until a quit took it.
 pub fn main<R: Runtime>(app: &AppHandle<R>) -> Option<Arc<MainProcess>> {
-    app.try_state::<Shell>()
-        .and_then(|shell| shell.lock().clone())
+    app.state::<Shell>().lock().clone()
 }
 
 /// Tells main what happened in the window or the menu bar; before main is up there is no one to
@@ -113,7 +108,7 @@ fn spawn_main<R: Runtime>(app: &AppHandle<R>, log_path: &Path) -> Result<Arc<Mai
         answer: Box::new(move |method, params| host::answer(&answering, method, params)),
         hear: Box::new(move |method, params| host::hear(&hearing, method, params)),
         lost: Box::new(move |code| {
-            let how = code.map_or_else(|| "a signal".to_owned(), |code| format!("code {code}"));
+            let how = describe(code);
             fail(
                 &failing,
                 "IdleBiz stopped",
@@ -128,9 +123,8 @@ fn spawn_main<R: Runtime>(app: &AppHandle<R>, log_path: &Path) -> Result<Arc<Mai
 
 /// Starts main, boots it and shows the office. Runs off the main thread: a hello waits on main.
 pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
-    let Some(bundled) = app.try_state::<Shell>().map(|shell| shell.bundled) else {
-        return;
-    };
+    let shell = app.state::<Shell>();
+    let bundled = shell.bundled;
     let log_path = match logs_dir(app, bundled) {
         Ok(dir) => main_log::main_log_path(&dir),
         Err(reason) => return fail(app, "IdleBiz couldn't start", &reason),
@@ -139,9 +133,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
         Ok(started) => started,
         Err(reason) => return fail(app, "IdleBiz couldn't start", &reason),
     };
-    if let Some(shell) = app.try_state::<Shell>() {
-        *shell.lock() = Some(Arc::clone(&process));
-    }
+    *shell.lock() = Some(Arc::clone(&process));
     // under `tauri dev` main hands the page the dev server's files, so an edit reloads in place
     // while the window keeps main's origin
     let page_dev_url = app
@@ -162,17 +154,17 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
         Err(error) => return fail(app, "IdleBiz couldn't start", &error.to_string()),
     };
     if let Err(failure) = process.boot(&hello, HELLO_TIMEOUT) {
-        if let Some(shell) = app.try_state::<Shell>() {
-            let mut held = shell.lock();
-            // a quit took main as it booted, and ends the app itself
-            if held.is_none() {
-                return;
-            }
-            // a boot that ran out of time killed main: no quit is left to ask of it
-            if matches!(failure, RequestError::TimedOut(_)) {
-                held.take();
-            }
+        let mut held = shell.lock();
+        // a quit took main as it booted, and ends the app itself
+        if held.is_none() {
+            return;
         }
+        // a boot that ran out of time killed main: no quit is left to ask of it
+        if matches!(failure, RequestError::TimedOut(_)) {
+            held.take();
+        }
+        // the box below blocks until it is closed, and a quit meanwhile waits on this lock
+        drop(held);
         let what = match failure {
             RequestError::TimedOut(within) => format!(
                 "The office did not finish starting within {} seconds, so IdleBiz stopped it. Open IdleBiz again to try once more.",
@@ -206,9 +198,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
 /// Asks main to stop its runs and waits for it, then lets it go. Blocks: a quit has no later step
 /// to wait in.
 pub fn stop<R: Runtime>(app: &AppHandle<R>) {
-    let taken = app
-        .try_state::<Shell>()
-        .and_then(|shell| shell.lock().take());
+    let taken = app.state::<Shell>().lock().take();
     if let Some(main) = taken {
         main.stop();
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Dir } from "./character-sheet";
+import type { Dir } from "@repo/domain/character-frame";
 import { lookOf } from "./npc-look";
 import type { Activity, Emote, Phase, Situation, Stance } from "./npc-look";
 

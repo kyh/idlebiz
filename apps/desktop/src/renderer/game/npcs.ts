@@ -1,10 +1,5 @@
 import type Phaser from "phaser";
-import {
-  characterAnims,
-  CHAR_ORIGIN_X,
-  CHAR_ORIGIN_Y,
-  idleFrame,
-} from "@/renderer/game/character-sheet";
+import { characterAnims, idleFrame } from "@/renderer/game/character-sheet";
 import { loadCharacter } from "@/renderer/game/characters";
 import { randomFloor } from "@/renderer/game/movement";
 import {
@@ -21,11 +16,12 @@ import { NpcAttachments } from "@/renderer/game/npc-attachments";
 import { IdleLife } from "@/renderer/game/npc-idle";
 import type { Poi } from "@/renderer/game/npc-idle";
 import type { Activity } from "@/renderer/game/npc-look";
-import type { PixelPoint } from "@/renderer/game/office-layout";
+import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 import { planSeats } from "@/renderer/game/office-placement";
 import type { SeatPlan } from "@/renderer/game/office-placement";
 import { DEFAULT_WORK_POSE } from "@/renderer/game/office-poses";
 import type { WorkPose } from "@/renderer/game/office-poses";
+import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y } from "@repo/domain/character-frame";
 import type { Employee } from "@repo/domain/domain";
 import type { WalkGrid } from "@/renderer/game/office-grid";
 
@@ -55,7 +51,8 @@ export class NpcManager {
   private seatPlan: SeatPlan = new Map();
   private arrivals: string[] = [];
   private nextArrivalAt = 0;
-  // Phaser's loader is single-batch; serialize spawns so concurrent hires don't race it.
+  // One spawn at a time, so hires walk in and are seated in the order they were hired, not in
+  // the order their sheets load: a sheet already held would otherwise jump the queue.
   private chain: Promise<void> = Promise.resolve();
   /** Released while their spawn was still queued in the chain: never let them in. */
   private readonly released = new Set<string>();

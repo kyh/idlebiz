@@ -11,8 +11,6 @@ import {
 } from "@repo/domain/character-frame";
 import type { Dir, SitSide } from "@repo/domain/character-frame";
 
-export { CHAR_ORIGIN_X, CHAR_ORIGIN_Y, type Dir, type SitSide } from "@repo/domain/character-frame";
-
 /** Standing frame index for a direction (first frame of that direction's strip). */
 export const idleFrame = (dir: Dir): number => WALK_START[dir];
 

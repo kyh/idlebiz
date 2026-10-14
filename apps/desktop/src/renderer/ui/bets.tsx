@@ -1,4 +1,4 @@
-import { killBet } from "@/renderer/state/store";
+import { api } from "@/renderer/api";
 import { ConfirmLink } from "@/renderer/ui/confirm-link";
 import {
   betGoal,
@@ -36,6 +36,10 @@ const verdictOf = (bet: Bet): string => {
 
 const BetRow = ({ bet }: { bet: Bet }) => {
   const live = !isClosed(bet);
+  // main answers with `bet.changed`, and that event refetches what moved
+  const kill = async () => {
+    await api.bets.kill({ betId: bet.id, reason: "the founder called it" });
+  };
   return (
     <div className="px-inset p-2.5">
       <div className="flex items-baseline justify-between gap-2">
@@ -59,13 +63,7 @@ const BetRow = ({ bet }: { bet: Bet }) => {
         <span className="min-w-0 truncate" title={verdictOf(bet)}>
           {betGoal(bet)} ({betProgress(bet)}) · {betMoney(bet)} · {verdictOf(bet)}
         </span>
-        {live ? (
-          <ConfirmLink
-            label="kill"
-            confirmLabel="kill it"
-            onConfirm={() => killBet(bet.id, "the founder called it")}
-          />
-        ) : null}
+        {live ? <ConfirmLink label="kill" confirmLabel="kill it" onConfirm={kill} /> : null}
       </div>
     </div>
   );

@@ -205,9 +205,7 @@ export const Inbox = ({
         ) : null}
         {pendingAsks.map(askRow)}
         {stuckTasks.length > 0 ? (
-          <div className="pt-1 text-xs uppercase tracking-wide text-fg-dim">
-            Stuck — needs a retry
-          </div>
+          <div className="px-label pt-1 text-fg-dim">Stuck — needs a retry</div>
         ) : null}
         {stuckTasks.map((t) => (
           <StuckRow key={t.id} t={t} by={nameOf(t.assigneeId)} />
