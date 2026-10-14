@@ -8,7 +8,8 @@ import type { JsonValue } from "@repo/domain/json";
 import type { CheckoutSession } from "./stripe-checkouts";
 import * as store from "./store/store";
 import { ordersDir } from "./paths";
-import { CHECKOUTS_READ_MS, orderIdOf, pumpOrders } from "./order-pump";
+import { orderIdOf } from "./order";
+import { CHECKOUTS_READ_MS, pumpOrders } from "./order-pump";
 import { retireProduct, settleOrderCard } from "./company-actions";
 import { foundAcme, freshSave, hire } from "./test-support/save";
 
