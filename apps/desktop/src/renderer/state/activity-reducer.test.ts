@@ -128,7 +128,7 @@ describe("reduceActivity", () => {
       ...stamp,
       ...inRun,
       kind: "runner.resting",
-      payload: { runner: "claude", until: 5 },
+      payload: { cause: "usage-limit", error: "You've hit your limit", runner: "claude", until: 5 },
     };
     expect(reduceActivity(held, started).reload).toEqual(["employees"]);
     expect(reduceActivity(held, napping)).toMatchObject({

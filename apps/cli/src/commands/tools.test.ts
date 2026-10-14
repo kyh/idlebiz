@@ -1,19 +1,29 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { BadRequestError } from "@repo/domain/errors";
 import type { JsonValue } from "@repo/domain/json";
-import { controlPlane } from "../server/control-plane";
+import { ControlPlane } from "../server/control-plane";
 import { runCli } from "../program";
 import { callTool } from "./tools";
 
+// short, so a socket's path under it fits macOS's limit wherever TMPDIR is
+const box = mkdtempSync(path.join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ib-tools-"));
+const controlPlane = new ControlPlane(path.join(box, "save"), path.join(box, "home"));
+
 beforeAll(() => controlPlane.start());
-afterAll(() => controlPlane.stop());
+afterAll(() => {
+  controlPlane.stop();
+  rmSync(box, { force: true, recursive: true });
+});
 
 const noStdin = (): Promise<string> => Promise.reject(new Error("nothing on stdin"));
 
 /** A run the control plane answers with `answer`, and what it was called with. */
-const aRun = (answer: (route: string, raw: JsonValue) => Promise<string | null>) => {
+const aRun = async (answer: (route: string, raw: JsonValue) => Promise<string | null>) => {
   const calls: { route: string; raw: JsonValue }[] = [];
-  const handle = controlPlane.registerRun(async (route, raw) => {
+  const handle = await controlPlane.registerRun(async (route, raw) => {
     calls.push({ raw, route });
     return await answer(route, raw);
   });
@@ -22,7 +32,7 @@ const aRun = (answer: (route: string, raw: JsonValue) => Promise<string | null>)
 
 describe("a company tool's verb", () => {
   it("sends its request to the tool's route and answers the server's prose", async () => {
-    const run = aRun(() => Promise.resolve("Posted to the room."));
+    const run = await aRun(() => Promise.resolve("Posted to the room."));
     try {
       const said = await callTool("message_team", '{"text":"shipped it"}', {
         env: run.env,
@@ -36,7 +46,7 @@ describe("a company tool's verb", () => {
   });
 
   it("reads `-` from stdin, where an apostrophe needs no quoting", async () => {
-    const run = aRun(() => Promise.resolve("Asked."));
+    const run = await aRun(() => Promise.resolve("Asked."));
     try {
       await callTool("ask_boss", "-", {
         env: run.env,
@@ -51,7 +61,7 @@ describe("a company tool's verb", () => {
   });
 
   it("calls a tool that reads with no request, and refuses one", async () => {
-    const run = aRun(() => Promise.resolve("Nobody has posted yet."));
+    const run = await aRun(() => Promise.resolve("Nobody has posted yet."));
     const io = { env: run.env, stdin: noStdin };
     try {
       await expect(callTool("read_team_chat", undefined, io)).resolves.toBe(
@@ -71,7 +81,7 @@ describe("a company tool's verb", () => {
   });
 
   it("refuses a request that is not JSON, saying how to send one", async () => {
-    const run = aRun(() => Promise.resolve("never"));
+    const run = await aRun(() => Promise.resolve("never"));
     try {
       const refused = callTool("message_team", "{text: hi}", { env: run.env, stdin: noStdin });
       await expect(refused).rejects.toThrow("message-team's request is not JSON");
@@ -83,7 +93,9 @@ describe("a company tool's verb", () => {
   });
 
   it("answers the server's refusal as an error", async () => {
-    const run = aRun(() => Promise.reject(new BadRequestError('Send either {"question":"..."}')));
+    const run = await aRun(() =>
+      Promise.reject(new BadRequestError('Send either {"question":"..."}')),
+    );
     try {
       await expect(
         callTool("ask_boss", '{"action":"x"}', { env: run.env, stdin: noStdin }),
@@ -93,12 +105,12 @@ describe("a company tool's verb", () => {
     }
   });
 
-  it("says when the run's token has run out", async () => {
-    const run = aRun(() => Promise.resolve("never"));
+  it("says the company did not answer once the run has settled, which closes its socket", async () => {
+    const run = await aRun(() => Promise.resolve("never"));
     run.release();
     await expect(
       callTool("read_bets", undefined, { env: run.env, stdin: noStdin }),
-    ).rejects.toThrow("unknown or expired run token");
+    ).rejects.toThrow("the company did not answer");
   });
 
   it("answers only inside a run", async () => {
@@ -107,20 +119,36 @@ describe("a company tool's verb", () => {
     );
   });
 
-  it.each([
-    "https://127.0.0.1:4000",
-    "http://evil.example",
-    "http://127.0.0.1:80@evil.example",
-    "http://user:pw@127.0.0.1:4000",
-  ])("sends nothing anywhere but this Mac's loopback: %s", async (url) => {
-    const env = { IDLEBIZ_API_URL: url, IDLEBIZ_RUN_TOKEN: "token" };
-    await expect(callTool("read_bets", undefined, { env, stdin: noStdin })).rejects.toThrow(
-      "IDLEBIZ_API_URL must be the loopback address the run was handed",
-    );
+  it.each(["run.sock", "./run.sock", "$IDLEBIZ_API_SOCKET"])(
+    "calls on no socket but one the run was handed, whose path is absolute: %s",
+    async (socket) => {
+      const env = { IDLEBIZ_API_SOCKET: socket, IDLEBIZ_RUN_TOKEN: "token" };
+      await expect(callTool("read_bets", undefined, { env, stdin: noStdin })).rejects.toThrow(
+        "IDLEBIZ_API_SOCKET must be the socket the run was handed",
+      );
+    },
+  );
+
+  it("calls as no other run: a teammate's token on this run's socket is refused", async () => {
+    const lead = await aRun(() => Promise.resolve("never"));
+    const teammate = await aRun(() => Promise.resolve("never"));
+    try {
+      const env = {
+        IDLEBIZ_API_SOCKET: teammate.env.IDLEBIZ_API_SOCKET,
+        IDLEBIZ_RUN_TOKEN: lead.env.IDLEBIZ_RUN_TOKEN,
+      };
+      await expect(callTool("read_bets", undefined, { env, stdin: noStdin })).rejects.toThrow(
+        "unknown or expired run token",
+      );
+      expect([...lead.calls, ...teammate.calls]).toEqual([]);
+    } finally {
+      lead.release();
+      teammate.release();
+    }
   });
 
   it("says the company did not answer once the server is gone", async () => {
-    const run = aRun(() => Promise.resolve("never"));
+    const run = await aRun(() => Promise.resolve("never"));
     controlPlane.stop();
     try {
       await expect(

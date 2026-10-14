@@ -1,11 +1,12 @@
 // Each company tool as a verb an employee types in its shell: `idlebiz <tool> '<json>'`. A client of
-// the control plane its run was handed (IDLEBIZ_API_URL, IDLEBIZ_RUN_TOKEN) and of nothing else: it
-// sends the request as it is, and the server parses it against the tool's spec, so a refusal reads
-// the same whoever asks. The answer is the server's prose on stdout; a call that never reached it,
-// or that it could not take, exits 1 with why on stderr.
+// the control plane its run was handed (IDLEBIZ_API_SOCKET, IDLEBIZ_RUN_TOKEN) and of nothing else:
+// it sends the request as it is, and the server parses it against the tool's spec, so a refusal
+// reads the same whoever asks. The answer is the server's prose on stdout; a call that never
+// reached it, or that it could not take, exits 1 with why on stderr.
 
 import { request } from "node:http";
 import type { IncomingMessage } from "node:http";
+import path from "node:path";
 import { text } from "node:stream/consumers";
 import { parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
@@ -39,34 +40,27 @@ const Answer = z.discriminatedUnion("ok", [
   z.object({ error: z.string(), ok: z.literal(false) }),
 ]);
 
-// The control plane listens on loopback alone, so a call bound anywhere else was rerouted: a run
-// setting the address must not carry its request, or its token, off this Mac.
-const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
-
 interface ControlPlane {
-  url: string;
+  socket: string;
   token: string;
 }
 
-/** The control plane `env` names, refused unless it is this machine's. */
+/**
+ * The control plane `env` names: the run's own unix socket, which main hands it as an absolute
+ * path, so a relative one was set by the run, and resolving it against the run's folders would
+ * reach whatever listens there.
+ */
 const controlPlaneOf = (env: NodeJS.ProcessEnv): ControlPlane => {
-  const { IDLEBIZ_API_URL: url = "", IDLEBIZ_RUN_TOKEN: token = "" } = env;
-  if (url === "" || token === "") {
+  const { IDLEBIZ_API_SOCKET: socket = "", IDLEBIZ_RUN_TOKEN: token = "" } = env;
+  if (socket === "" || token === "") {
     throw new Error(
-      "company tools answer only inside an employee's run, whose env names IDLEBIZ_API_URL and IDLEBIZ_RUN_TOKEN",
+      "company tools answer only inside an employee's run, whose env names IDLEBIZ_API_SOCKET and IDLEBIZ_RUN_TOKEN",
     );
   }
-  const parsed = URL.parse(url);
-  if (
-    parsed === null ||
-    parsed.protocol !== "http:" ||
-    !LOOPBACK.has(parsed.hostname) ||
-    parsed.username !== "" ||
-    parsed.password !== ""
-  ) {
-    throw new Error("IDLEBIZ_API_URL must be the loopback address the run was handed");
+  if (!path.isAbsolute(socket)) {
+    throw new Error("IDLEBIZ_API_SOCKET must be the socket the run was handed");
   }
-  return { token, url: parsed.origin };
+  return { socket, token };
 };
 
 /** Where a call reads what it is handed: the run's env, and stdin for `-`. */
@@ -111,11 +105,13 @@ interface Reply {
 }
 
 /**
- * One call to the control plane, waited on however long the tool takes: a deploy answers once
- * Vercel is done. Its own agent, never the global one, which a proxy in the env could reroute.
+ * One call to the control plane over the run's socket, waited on however long the tool takes: a
+ * deploy answers once Vercel is done. Its own agent, never the global one, which a proxy in the
+ * env could reroute.
  */
 const send = async (
-  url: string,
+  socket: string,
+  route: string,
   method: "GET" | "POST",
   token: string,
   body: string,
@@ -123,11 +119,12 @@ const send = async (
   // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
   const res = await new Promise<IncomingMessage>((resolve, reject) => {
     const req = request(
-      url,
       {
         agent: false,
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         method,
+        path: route,
+        socketPath: socket,
       },
       resolve,
     );
@@ -159,21 +156,22 @@ export const callTool = async (
   argument: string | undefined,
   io: CallIo = PROCESS_IO,
 ): Promise<string> => {
-  const { method, path } = TOOL_SPECS[name];
+  const { method, path: route } = TOOL_SPECS[name];
   const verb = verbOf(name);
-  const { token, url } = controlPlaneOf(io.env);
+  const { socket, token } = controlPlaneOf(io.env);
   const { body, empty } = await requestOf(verb, argument, io);
   if (method === "GET" && !empty) {
     throw new Error(`${verb} takes no request`);
   }
   let reply: Reply;
   try {
-    reply = await send(`${url}${path}`, method, token, body);
+    reply = await send(socket, route, method, token, body);
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
-    throw new Error(`the company did not answer at ${url} (${why}): IdleBiz may have quit`, {
-      cause: error,
-    });
+    throw new Error(
+      `the company did not answer on ${socket} (${why}): IdleBiz may have quit, or this run has ended`,
+      { cause: error },
+    );
   }
   return answerOf(reply);
 };

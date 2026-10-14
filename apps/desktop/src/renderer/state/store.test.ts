@@ -63,7 +63,7 @@ const napping = (runner: "claude" | "codex", until: number): ActivityEvent => ({
   ...stamp,
   employeeId: "lead",
   kind: "runner.resting",
-  payload: { runner, until },
+  payload: { cause: "usage-limit", error: "You've hit your limit", runner, until },
 });
 const refused = (employeeId: string): ActivityEvent => ({
   ...stamp,

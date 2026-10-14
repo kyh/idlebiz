@@ -4,6 +4,7 @@ import { BetStateSchema } from "./bets";
 import {
   BlockedAskSchema,
   BudgetSchema,
+  REST_CAUSES,
   RunOutcomeSchema,
   SpeakerSchema,
   TASK_STATUSES,
@@ -86,8 +87,14 @@ const ActivityInputSchema = z.discriminatedUnion("kind", [
   }),
   event("task.dead", inRun, { payload: z.object({ attempts: z.number(), error: z.string() }) }),
 
+  /** `error` is the provider's word, which says what a refusal of access needs of the founder. */
   event("runner.resting", inRun, {
-    payload: z.object({ runner: z.enum(RUNNER_IDS), until: z.number() }),
+    payload: z.object({
+      cause: z.enum(REST_CAUSES),
+      error: z.string(),
+      runner: z.enum(RUNNER_IDS),
+      until: z.number(),
+    }),
   }),
   event("org.hired", byEmployee, {
     payload: z.object({ by: z.string(), name: z.string(), title: z.string() }),

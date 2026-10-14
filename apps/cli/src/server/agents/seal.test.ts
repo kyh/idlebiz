@@ -46,6 +46,7 @@ afterAll(() => {
 });
 
 const SEAL: Seal = {
+  apiSocket: [],
   claudeProjects: { own: null, projects: "/Users/me/.claude/projects" },
   closedPorts: [9222],
   namespaces: {
@@ -254,6 +255,23 @@ describe("sealedCommand", () => {
     expect(lineOf("allow", "network-outbound", WORKSPACE)).toBeGreaterThan(none);
     expect(denied("file-write*")).toContain(agent);
     expect(profile).toContain('(deny network-outbound (remote tcp "localhost:9222"))');
+  });
+
+  it("lets a run connect to its own line to the company, and names no other run's", () => {
+    const own = "/Users/me/.idlebiz/.run/0123456789ab";
+    const { allowed, denied } = readBack(
+      sealedCommand({ ...SEAL, apiSocket: [{ match: "subpath", path: own }] }, "codex", []),
+    );
+    expect(allowed("network-outbound")).toEqual([
+      "/Users/me/.agent-browser/namespaces/idlebiz-x",
+      own,
+    ]);
+    // the save, the socket's folder, stays closed to its writes
+    expect(denied("file-write*")).toContain("/Users/me/.idlebiz");
+    expect(allowed("file-write*")).not.toContain(own);
+    expect(readBack(sealedCommand(SEAL, "codex", [])).allowed("network-outbound")).toEqual([
+      "/Users/me/.agent-browser/namespaces/idlebiz-x",
+    ]);
   });
 
   it("leaves out a rule with nothing to reach, which would reach everything", () => {
@@ -1288,6 +1306,31 @@ for (const target of targets) {
         [claude ?? ""]: "EPERM",
         [codex ?? ""]: "reached",
       });
+    });
+
+    it("reaches its own line to the company and no other run's, though both sit in the save", async () => {
+      const save = path.join(short, ".idlebiz");
+      const [mine, theirs] = await Promise.all(
+        [".idlebiz/.run/aaaaaaaaaaaa", ".idlebiz/.run/bbbbbbbbbbbb"].map((name) =>
+          listen(path.join(short, name)),
+        ),
+      );
+      const workspace = path.join(save, "acme/workspace");
+      mkdirSync(workspace, { recursive: true });
+      for (const runner of ["claude", "codex"] as const) {
+        expect(
+          await connect(runner, [mine ?? "", theirs ?? ""], {
+            apiSocket: mine ?? "",
+            writable: [workspace],
+          }),
+        ).toEqual({ [mine ?? ""]: "reached", [theirs ?? ""]: "EPERM" });
+      }
+      // nor can it take the other's place
+      expect(
+        await connect("claude", [mine ?? ""], { apiSocket: mine ?? "", writable: [workspace] }, [
+          [theirs ?? "", path.join(save, ".run/moved")],
+        ]),
+      ).toEqual({ [mine ?? ""]: "reached", [theirs ?? ""]: "EPERM" });
     });
 
     it("keeps an ssh-agent started from a terminal, wherever its TMPDIR is, in the folder it named", async () => {
