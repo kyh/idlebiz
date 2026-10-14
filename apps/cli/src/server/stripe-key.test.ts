@@ -1,16 +1,14 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RefusalError } from "./refusal";
+import { getSecret, setSealer, setSecret } from "./secrets";
+import { noteStripeRead, removeStripeKey, saveStripeKey, stripeKeyStatus } from "./stripe-key";
+import { fetchRealMetrics, stripeCredential } from "./metrics";
+import type { StripeAnswer } from "./metrics";
+import { tempSave } from "./test-support/save";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-stripe-key-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const { STRIPE_CONNECT_TOKEN, getSecret, setSealer, setSecret } = await import("./secrets");
-const { removeStripeKey, saveStripeKey, stripeKeyStatus } = await import("./stripe-key");
-const { fetchRealMetrics, stripeCredential } = await import("./metrics");
-const { getStripeStatus, noteStripeRead } = await import("./stripe-connect");
+const root = tempSave();
 
 const secretsFile = path.join(root, "secrets.json");
 
@@ -25,16 +23,6 @@ beforeEach(() => {
 
 afterEach(() => {
   setSealer(null);
-  vi.unstubAllGlobals();
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
 });
 
 /** Stripe answering every call with `answer`; keeps what each call asked for, and with which key. */
@@ -49,6 +37,17 @@ const stripe = (answer: (url: string) => Promise<Response>) => {
     return answer(url);
   });
   return asked;
+};
+
+/** The metrics pulse's read of the saved key, noted as the pulse notes it. */
+const pulse = async (): Promise<StripeAnswer> => {
+  const key = stripeCredential();
+  const read = await fetchRealMetrics(key, [], []);
+  if (key === null || read.stripe === null) {
+    throw new Error("the saved key was not read");
+  }
+  noteStripeRead(key, read.stripe);
+  return read.stripe;
 };
 
 const listed = () => Promise.resolve(Response.json({ data: [], has_more: false, object: "list" }));
@@ -92,7 +91,11 @@ describe("saving the charging key", () => {
       status: 403,
       why: "a restricted key that can't make payment links",
     },
-    { said: "Stripe answered 500", status: 500, why: "a key Stripe couldn't check" },
+    {
+      said: "Stripe couldn't check this key (no)",
+      status: 500,
+      why: "a key Stripe couldn't check",
+    },
   ])("refuses $why, keeping the key saved before", async ({ said, status }) => {
     stripe(listed);
     await saveStripeKey("sk_live_saved0001");
@@ -109,7 +112,7 @@ describe("saving the charging key", () => {
     stripe(() => Promise.reject(new TypeError("fetch failed")));
 
     await expect(saveStripeKey("sk_live_founder1234")).rejects.toThrow(
-      "Stripe couldn't be reached (fetch failed) — nothing was saved; try again.",
+      "Stripe couldn't check this key (fetch failed) — nothing was saved; try again.",
     );
     expect(stripeKeyStatus()).toEqual({ state: "unset" });
   });
@@ -133,39 +136,59 @@ describe("saving the charging key", () => {
 });
 
 describe("a charging key that can't read", () => {
-  it("stays saved, and the pulse the save sets off says what it lacks", async () => {
+  it("stays saved, shown as refused until a read Stripe takes", async () => {
     stripe((url) =>
       url.startsWith("https://api.stripe.com/v1/payment_links") ? listed() : refused(403)(),
     );
 
     await saveStripeKey("rk_live_chargesonly1234");
-    const credential = stripeCredential(null);
-    const read = await fetchRealMetrics(credential, [], []);
-    noteStripeRead("fixture", read.stripe);
 
-    expect(credential).toEqual({ key: "rk_live_chargesonly1234", via: "own" });
-    expect(read.stripe).toEqual({ answer: "refused", via: "own" });
-    expect(getStripeStatus("fixture")).toEqual({
-      bound: false,
-      message:
-        "Stripe won't let your charging key read charges — grant it Read on Charges or replace it.",
-      state: "error",
-    });
+    expect(await pulse()).toBe("refused");
+    expect(stripeKeyStatus()).toEqual({ last4: "1234", livemode: true, state: "refused" });
+
+    noteStripeRead("rk_live_chargesonly1234", "unanswered");
+    expect(stripeKeyStatus().state).toBe("refused");
+    noteStripeRead("rk_live_chargesonly1234", "accepted");
     expect(stripeKeyStatus()).toEqual({ last4: "1234", livemode: true, state: "set" });
+  });
+
+  it("reads a refused key afresh once it is saved again, since its grants are edited in place", async () => {
+    let charges = refused(403);
+    const asked = stripe((url) =>
+      url.startsWith("https://api.stripe.com/v1/payment_links") ? listed() : charges(),
+    );
+    await saveStripeKey("rk_live_grantedlater4321");
+    expect(await pulse()).toBe("refused");
+
+    charges = listed;
+    await saveStripeKey("rk_live_grantedlater4321");
+    expect(stripeKeyStatus().state).toBe("set");
+
+    expect(await pulse()).toBe("accepted");
+    expect(stripeKeyStatus()).toEqual({ last4: "4321", livemode: true, state: "set" });
+    expect(asked.filter(({ url }) => url.includes("/v1/charges"))).toHaveLength(2);
+  });
+
+  it("shows a key saved over a refused one as set", async () => {
+    stripe(listed);
+    await saveStripeKey("rk_live_chargesonly1234");
+    noteStripeRead("rk_live_chargesonly1234", "refused");
+
+    await saveStripeKey("rk_live_readstoo5678");
+
+    expect(stripeKeyStatus()).toEqual({ last4: "5678", livemode: true, state: "set" });
   });
 });
 
 describe("removing the charging key", () => {
-  it("forgets it and leaves a Stripe connection's token", async () => {
+  it("forgets it", async () => {
     stripe(listed);
     await saveStripeKey("sk_live_founder1234");
-    setSecret(STRIPE_CONNECT_TOKEN, "connect-token");
 
     removeStripeKey();
 
     expect(stripeKeyStatus()).toEqual({ state: "unset" });
     expect(getSecret("STRIPE_SECRET_KEY")).toBeNull();
-    expect(getSecret(STRIPE_CONNECT_TOKEN)).toBe("connect-token");
   });
 
   it("counts a key left blank in the file as none", () => {

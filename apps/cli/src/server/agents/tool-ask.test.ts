@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { toolAskOf } from "@repo/agent-driver/tool-ask";
 import type { ToolAsk } from "@repo/agent-driver/tool-ask";
-import { holdFor } from "../command-policy";
-import type { Confinement } from "../command-policy";
+import { holdFor } from "../policy";
+import type { Confinement } from "../policy/browser";
 
-const ask = (request: { rawInput?: unknown; meta?: unknown; title?: string; kind?: string }) =>
+const ask = (request: {
+  rawInput?: unknown;
+  meta?: unknown;
+  title?: string | undefined;
+  kind?: string | undefined;
+}) =>
   toolAskOf({
     kind: request.kind,
     meta: request.meta,
@@ -13,7 +18,6 @@ const ask = (request: { rawInput?: unknown; meta?: unknown; title?: string; kind
   });
 
 const ROOM: Confinement = {
-  cwd: "/w",
   real: (file) => Promise.resolve(file),
   writable: ["/w"],
 };

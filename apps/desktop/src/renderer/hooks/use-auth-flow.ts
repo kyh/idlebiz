@@ -1,6 +1,9 @@
 import { useEffect, useEffectEvent, useState } from "react";
-import { api, listen } from "@/renderer/api";
-import { useStore } from "@/renderer/state/store";
+import { api } from "@/renderer/api";
+import { useSubmission } from "@/renderer/hooks/use-submission";
+import type { Submission } from "@/renderer/hooks/use-submission";
+import { listen } from "@/renderer/page-events";
+import { useAuth } from "@/renderer/state/queries";
 import type { AuthFlowEvent } from "@repo/domain/domain";
 
 export type Auth =
@@ -50,11 +53,20 @@ export const nextAttempt = (attempt: Attempt | null, e: AuthFlowEvent): Attempt 
   }
 };
 
-/** The store's CLI probe until a login starts here, then that login's progress. */
+/** A login main never started: the ask itself failed, so no event will ever say how it went. */
+export const withStart = (auth: Auth, start: Submission): Auth =>
+  start.kind === "failed" && auth.phase === "logging-in" && auth.lines.length === 0
+    ? { lines: [`Hmm — ${start.message}`], phase: "login-failed" }
+    : auth;
+
+/** Main's CLI probe until a login starts here, then that login's progress. */
 export const useAuthFlow = (onSignedIn?: () => void) => {
-  const authed = useStore((s) => s.authed);
+  const { authed } = useAuth();
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const signedIn = useEffectEvent(() => onSignedIn?.());
+  const starting = useSubmission(async () => {
+    await api.agents.startLogin();
+  });
 
   useEffect(
     () =>
@@ -69,7 +81,7 @@ export const useAuthFlow = (onSignedIn?: () => void) => {
 
   const login = () => {
     setAttempt({ lines: [], phase: "logging-in" });
-    void api().agents.startLogin();
+    starting.submit();
   };
-  return { auth: attempt ?? probed(authed), login };
+  return { auth: withStart(attempt ?? probed(authed), starting.submission), login };
 };

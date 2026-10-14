@@ -1,0 +1,8 @@
+{
+  "from": "main",
+  "params": {
+    "kind": "url",
+    "target": "https://idlebiz.com"
+  },
+  "result": null
+}

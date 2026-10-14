@@ -8,7 +8,6 @@
     "*.tsbuildinfo",
     ".next",
     ".output",
-    "out",
     ".claude"
   ],
   "experimentalSortPackageJson": {}

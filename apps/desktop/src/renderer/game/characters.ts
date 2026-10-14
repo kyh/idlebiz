@@ -1,16 +1,27 @@
-// Getting a character into (and out of) a scene: composed in main, loaded as a
-// walk sheet, its anims registered. The sheet's geometry is character-sheet.ts.
+// Getting a character into a scene: the sheet its seed wears (character-art.ts), loaded as a
+// spritesheet keyed by the sheet, so everyone wearing it shares one texture and one set of anims.
+// A sheet stays loaded for the game, since there are only SHEET_COUNT of them. The anims' names
+// are character-sheet.ts.
 import { Loader } from "phaser";
 import type Phaser from "phaser";
-import { getCharacterAssets } from "@/renderer/character-assets";
-import { characterAnims, DIR_START, SIT_START } from "@/renderer/game/character-sheet";
-import { DIRS, FRAME_H, FRAME_W, SIT_SIDES } from "@repo/domain/character-frame";
+import { sheetUrl } from "@/renderer/character-art";
+import { characterAnims } from "@/renderer/game/character-sheet";
+import {
+  DIRS,
+  FRAME_H,
+  FRAME_W,
+  SIT_SIDES,
+  SIT_START,
+  STRIP_FRAMES,
+  WALK_START,
+} from "@repo/domain/character-frame";
+import { sheetForSeed } from "@repo/domain/character-seed";
 
-/** Load a base64 PNG as a Phaser spritesheet under `key` (resolves when ready). */
-const loadSpritesheetDataUrl = (scene: Phaser.Scene, key: string, dataUrl: string): Promise<void> =>
+/** Load a sheet as a Phaser spritesheet under `key`; resolves once the loader is done with it. */
+const loadSpritesheet = (scene: Phaser.Scene, key: string, url: string): Promise<void> =>
   // oxlint-disable-next-line promise/avoid-new -- wraps Phaser's event-based loader
   new Promise((resolve) => {
-    scene.load.spritesheet(key, dataUrl, { frameHeight: FRAME_H, frameWidth: FRAME_W });
+    scene.load.spritesheet(key, url, { frameHeight: FRAME_H, frameWidth: FRAME_W });
     scene.load.once(Loader.Events.COMPLETE, () => resolve());
     scene.load.start();
   });
@@ -19,13 +30,13 @@ const loadSpritesheetDataUrl = (scene: Phaser.Scene, key: string, dataUrl: strin
 const ensureWalkAnims = (scene: Phaser.Scene, key: string): void => {
   const anims = characterAnims(key);
   for (const dir of DIRS) {
-    const start = DIR_START[dir];
+    const start = WALK_START[dir];
     if (scene.anims.exists(anims.walk[dir])) {
       continue;
     }
     scene.anims.create({
       frameRate: 9,
-      frames: scene.anims.generateFrameNumbers(key, { end: start + 5, start }),
+      frames: scene.anims.generateFrameNumbers(key, { end: start + STRIP_FRAMES - 1, start }),
       key: anims.walk[dir],
       repeat: -1,
     });
@@ -37,7 +48,7 @@ const ensureWalkAnims = (scene: Phaser.Scene, key: string): void => {
     }
     scene.anims.create({
       frameRate: 4,
-      frames: scene.anims.generateFrameNumbers(key, { end: start + 5, start }),
+      frames: scene.anims.generateFrameNumbers(key, { end: start + STRIP_FRAMES - 1, start }),
       key: anims.sit[side],
       repeat: -1,
     });
@@ -45,35 +56,17 @@ const ensureWalkAnims = (scene: Phaser.Scene, key: string): void => {
 };
 
 /**
- * Make `key` a ready character: composed in main from `seed`, loaded as a walk sheet,
- * anims registered. A texture the scene already holds is reused as-is — no compositor
- * round trip for a colleague it has drawn before.
+ * The texture key of the sheet `seed` wears, loaded with its anims registered. A sheet the game
+ * already holds is reused as-is; one that does not load throws, failing whoever waits on it.
  */
-export const loadCharacter = async (
-  scene: Phaser.Scene,
-  key: string,
-  seed: string,
-): Promise<void> => {
+export const loadCharacter = async (scene: Phaser.Scene, seed: string): Promise<string> => {
+  const key = `character-${sheetForSeed(seed)}`;
   if (!scene.textures.exists(key)) {
-    const assets = await getCharacterAssets(seed);
-    await loadSpritesheetDataUrl(scene, key, assets.walkSheetDataUrl);
+    await loadSpritesheet(scene, key, sheetUrl(seed));
+    if (!scene.textures.exists(key)) {
+      throw new Error(`could not load ${sheetUrl(seed)}`);
+    }
   }
   ensureWalkAnims(scene, key);
-};
-
-/**
- * Free a character the scene is done with: its anims, then its texture. Anything still
- * drawing the texture throws on its next render, so destroy its sprites first.
- */
-export const unloadCharacter = (scene: Phaser.Scene, key: string): void => {
-  const anims = characterAnims(key);
-  for (const dir of DIRS) {
-    scene.anims.remove(anims.walk[dir]);
-  }
-  for (const side of SIT_SIDES) {
-    scene.anims.remove(anims.sit[side]);
-  }
-  if (scene.textures.exists(key)) {
-    scene.textures.remove(key);
-  }
+  return key;
 };

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import type { Readable, Writable } from "node:stream";
+import { Readable, Writable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import { client, ndJsonStream, PROTOCOL_VERSION, RequestError } from "@agentclientprotocol/sdk";
 import type {
@@ -10,20 +10,15 @@ import type {
   PromptResponse,
 } from "@agentclientprotocol/sdk";
 import { z } from "zod";
-import { zeroUsage } from "./events";
-import {
-  OVERLOAD_BACKOFF_MS,
-  classOfRequestError,
-  classOfTypedFailure,
-  liftsAt,
-  rateLimitResetIn,
-} from "./rate-limit";
+import { errorMessage } from "@repo/domain/errors";
+import { usageMeter } from "./acp-usage";
+import { classOfRequestError, classOfTypedFailure, liftsAt } from "./rate-limit";
 import type { FailureClass } from "./rate-limit";
 import { toolAskOf } from "./tool-ask";
 import type { ToolAsk } from "./tool-ask";
 import type { AgentEvent, AgentUsage } from "./events";
 
-// One ACP turn. Owns subprocess teardown, watchdogs and usage accounting;
+// One ACP turn. Owns subprocess teardown and watchdogs, and bills what `usageMeter` counts;
 // adapters own the CLI wire formats.
 
 /** Keep only the tail of stderr — used solely for final error reporting. */
@@ -41,12 +36,6 @@ const EXIT_CLOSE_GRACE_MS = 250;
 
 /** How long a dropped connection waits for the agent's exit, which says why it died. */
 const DROPPED_CONNECTION_GRACE_MS = 1000;
-
-// Claude's cost extension reports this process's running total, including on resume.
-const RunCost = z.object({ cost: z.object({ amount: z.number() }) });
-
-/** The agent's own account of a tool call, as the policy layer needs it. */
-const ToolCallDescription = z.object({ description: z.string().optional() });
 
 /** How a client declares codex-acp's typed session failures (the JetBrains AIR extension). */
 const TYPED_FAILURES: ClientCapabilities = {
@@ -68,63 +57,22 @@ const SessionFailureMeta = z.object({
   }),
 });
 
-// Readable.toWeb's Node types conflict with the DOM stream types in the desktop build.
-const webReadable = (stream: Readable): ReadableStream<Uint8Array> =>
-  new ReadableStream<Uint8Array>({
-    start(controller) {
-      // Both events can fire; closing twice would mask the original failure.
-      let closed = false;
-      const close = (): void => {
-        if (closed) {
-          return;
-        }
-        closed = true;
-        controller.close();
-      };
-      stream.on("data", (chunk: Buffer) => {
-        if (!closed) {
-          controller.enqueue(new Uint8Array(chunk));
-        }
-      });
-      stream.on("end", close);
-      stream.on("error", close);
-    },
-  });
-
-const webWritable = (stream: Writable): WritableStream<Uint8Array> =>
-  new WritableStream<Uint8Array>({
-    close() {
-      stream.end();
-    },
-    write(chunk) {
-      stream.write(chunk);
-    },
-  });
-
+/** The agent a turn spawns. Its session fields are a `RunnerAdapter`'s, which says why each is. */
 export interface AcpAgent {
   /** Argv of the ACP agent to spawn (e.g. the claude or codex adapter). */
   command: readonly string[];
-  /** Session mode to set every turn — see `RunnerAdapter`. */
+  /** Session mode to set every turn. */
   sessionModeId: string;
-  /** Sent as `_meta` when the session is created or resumed — see `RunnerAdapter`. */
+  /** Sent as `_meta` when the session is created or resumed. */
   sessionMeta?: NewSessionRequest["_meta"];
-  /** Folders every session is handed besides the turn's `addDirs`, to read — see `RunnerAdapter`. */
-  readDirs?: readonly string[];
-  /** Count the turn from its per-request usage updates — see `RunnerAdapter`. */
-  usagePerRequest?: true;
-  /** Declare typed session failures on initialize — see `RunnerAdapter`. */
-  typedFailures?: true;
+  /** Folders every session is handed besides the turn's `addDirs`, to read. */
+  readDirs?: readonly string[] | undefined;
+  /** Count the turn from its per-request usage updates. */
+  usagePerRequest?: true | undefined;
+  /** Declare typed session failures on initialize. */
+  typedFailures?: true | undefined;
   /** The agent's whole environment: nothing of this process's own reaches it unless named here. */
   env: Record<string, string>;
-}
-
-/** A tool call an agent wants to make, as the policy layer sees it. */
-export interface PermissionRequest {
-  tool: ToolAsk;
-  /** The agent's own one-line account of what it is doing, when it gives one. */
-  description?: string;
-  /** ACP tool kind — "execute", "edit", "read", … */
-  kind?: string;
 }
 
 export interface PermissionDecision {
@@ -134,25 +82,21 @@ export interface PermissionDecision {
 export interface AcpTurnOptions {
   /** Which agent to spawn, and how to make it ask before acting. */
   agent: AcpAgent;
-  /** The task, or the wake prompt when resuming. */
-  prompt: string;
-  /** AGENTS.md instructions: sent to a fresh session, and to a resumed one only when `instructionsChanged`. */
-  systemPrompt: string;
-  /** The caller's systemPrompt differs from what this resumed session was given, so send it again. */
-  instructionsChanged?: boolean;
+  /** The turn's text, given whether the stored session was resumed. */
+  prompt: (resumed: boolean) => string;
   /** Working directory — the company workspace where real work lands. */
   cwd: string;
   /** Continue this session instead of starting fresh (the employee's memory). */
-  resumeSessionId?: string;
+  resumeSessionId?: string | undefined;
   /** Extra dirs the agent may read/write (e.g. its own memory folder). */
   addDirs?: string[];
   /** Run-scoped additions to the agent's env (the control-plane URL and token, tool caches). */
   env?: Record<string, string>;
   /**
-   * Decides tool permissions. Omission allows everything; the caller must provide confinement.
-   * `signal` aborts when the turn ends, so an answer that comes too late acts on nothing.
+   * Decides each tool call the agent asks to make. `signal` aborts when the turn ends, so an
+   * answer that comes too late acts on nothing.
    */
-  onPermission?: (request: PermissionRequest, signal: AbortSignal) => Promise<PermissionDecision>;
+  onPermission: (tool: ToolAsk, signal: AbortSignal) => Promise<PermissionDecision>;
   /** Kill + fail after this long with NO output (wedged process). 0 disables. */
   idleTimeoutMs: number;
   /** Absolute ceiling on one turn regardless of activity. 0 disables. */
@@ -166,93 +110,52 @@ export interface AcpTurnOptions {
 }
 
 /**
- * How a turn ended: the agent finished it, hit a usage limit, an overload or a refusal of access
- * no sign-in repairs, found its runner's login refused, or something stopped it.
+ * How a turn ended: the agent finished it, or it failed, with what the failure says of its runner
+ * (`class`) and the agent's words. The caller decides what a class costs the runner: a sign-in, a
+ * rest, a spent session or only the task's attempt.
  */
 export type AcpTurnEnd =
   | { readonly kind: "completed" }
   | {
-      readonly kind: "limited";
-      /**
-       * A usage limit lifts at `resetsAt`; an overload's or a refusal of access's is its first
-       * backoff, which the caller may lengthen.
-       */
-      readonly cause: "usage-limit" | "overloaded" | "access-denied";
-      readonly resetsAt: number;
+      readonly kind: "failed";
+      readonly class: "usage-limit";
       readonly error: string;
+      /** When the provider said the limit lifts, epoch ms; null when it named no time. */
+      readonly reportedReset: number | null;
     }
-  /** No turn on this runner can go on until the founder signs it in again. */
-  | { readonly kind: "signedOut"; readonly error: string }
   | {
       readonly kind: "failed";
+      readonly class: Exclude<FailureClass, "usage-limit">;
       readonly error: string;
-      /** The session is out of context or budget: only a new one can go on. */
-      readonly sessionSpent?: true;
     };
+
+type TurnFailure = Extract<AcpTurnEnd, { kind: "failed" }>;
 
 export interface AcpTurnResult {
   end: AcpTurnEnd;
   /** The agent's final message (the run summary). */
   summary: string;
   /** Session id — persist it to continue this employee's context later. */
-  sessionId?: string;
+  sessionId?: string | undefined;
   /** The stored session was resumed rather than started fresh. */
   resumed: boolean;
   usage: AgentUsage;
 }
 
-/** What the session is told this turn: the instructions ride along only when it lacks them. */
-const turnText = (opts: AcpTurnOptions, resumed: boolean): string => {
-  if (!opts.systemPrompt || (resumed && !opts.instructionsChanged)) {
-    return opts.prompt;
-  }
-  const lead = resumed ? "Your standing instructions changed. They now read:\n\n" : "";
-  return `${lead}${opts.systemPrompt}\n\n---\n\nYOUR TASK:\n\n${opts.prompt}`;
-};
-
 /**
- * How a turn ends on a failure of class `failure`: a refused login signs its runner out, a usage
- * limit rests it until the reset the provider `reported` or the `error` names, an overload or a
- * refusal of access no sign-in repairs rests it for a first short backoff, a session out of room
- * is spent, and anything else fails the task, which is bounded by attempts.
+ * How a turn ends on a failure of class `failure`: a usage limit with when the provider said it
+ * lifts, on the rate limit it `reported` or in its `error`'s words.
  */
-const endOf = (failure: FailureClass, error: string, reported: number | null): AcpTurnEnd => {
-  switch (failure) {
-    case "auth": {
-      return { error, kind: "signedOut" };
-    }
-    case "usage-limit": {
-      return {
-        cause: "usage-limit",
-        error,
-        kind: "limited",
-        resetsAt: liftsAt(error, new Date(), reported),
-      };
-    }
-    case "overloaded":
-    case "access-denied": {
-      return {
-        cause: failure,
-        error,
-        kind: "limited",
-        resetsAt: Date.now() + OVERLOAD_BACKOFF_MS,
-      };
-    }
-    case "context": {
-      return { error, kind: "failed", sessionSpent: true };
-    }
-    case "other": {
-      return { error, kind: "failed" };
-    }
-    // no default
-  }
-};
+const endOf = (failure: FailureClass, error: string, reported: number | null): TurnFailure =>
+  failure === "usage-limit"
+    ? { class: failure, error, kind: "failed", reportedReset: liftsAt(error, reported) }
+    : { class: failure, error, kind: "failed" };
 
 /**
  * How a turn ends on the typed failure its agent reported, or null when it reported none. A
  * warning is one the turn got past.
  */
-const failureEnd = (meta: PromptResponse["_meta"], reported: number | null): AcpTurnEnd | null => {
+const failureEnd = (meta: PromptResponse["_meta"], reported: number | null): TurnFailure | null => {
   const parsed = SessionFailureMeta.safeParse(meta);
   if (!parsed.success || parsed.data.jetbrains.air.sessionFailure.severity !== "error") {
     return null;
@@ -262,8 +165,21 @@ const failureEnd = (meta: PromptResponse["_meta"], reported: number | null): Acp
   return endOf(classOfTypedFailure({ actions, category, text: error }), error, reported);
 };
 
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
-const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+/** What an agent wrote to stderr, read only when its turn fails: kept as chunks, bounded, joined then. */
+const stderrTail = () => {
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  return {
+    keep: (chunk: Buffer): void => {
+      chunks.push(chunk);
+      bytes += chunk.length;
+      while (bytes > 2 * STDERR_TAIL_MAX && chunks.length > 1) {
+        bytes -= chunks.shift()?.length ?? 0;
+      }
+    },
+    text: (): string => Buffer.concat(chunks).toString().slice(-STDERR_TAIL_MAX).trim(),
+  };
+};
 
 /** Every agent spawned whose process group has not been killed yet, its leader alive or not. */
 const unkilled = new Set<ChildProcess>();
@@ -315,32 +231,14 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     let child: ChildProcess | undefined;
     let settled = false;
     const ended = new AbortController();
-    // stderr is read only when the run fails: kept as chunks, bounded, joined then
-    const stderrChunks: Buffer[] = [];
-    let stderrBytes = 0;
-    const keepStderr = (chunk: Buffer): void => {
-      stderrChunks.push(chunk);
-      stderrBytes += chunk.length;
-      while (stderrBytes > 2 * STDERR_TAIL_MAX && stderrChunks.length > 1) {
-        stderrBytes -= stderrChunks.shift()?.length ?? 0;
-      }
-    };
-    const stderrTail = (): string =>
-      Buffer.concat(stderrChunks).toString().slice(-STDERR_TAIL_MAX).trim();
+    const agentStderr = stderrTail();
+    const usage = usageMeter(opts.agent.usagePerRequest === true);
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionTimer: ReturnType<typeof setTimeout> | undefined;
     let sessionId: string | undefined;
     let resumed = false;
     let lastMessage = "";
     let pending = "";
-    let total = zeroUsage();
-    // a resume may replay what the session spent before, so only the prompt's updates count
-    let prompted = false;
-    // per request, their sum; for any other agent `used` is its context size, so the largest
-    let reportedTokens = 0;
-    let lastRequestTokens: number | undefined;
-    // when the provider said its rate limit lifts, while it refuses requests (claude's usage updates)
-    let reportedReset: number | null = null;
 
     // ACP has no message-end marker. Flush prose before a tool call or at turn end.
     const flushMessage = (): void => {
@@ -396,9 +294,11 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       resumed,
       sessionId,
       summary: lastMessage,
-      usage: total,
+      usage: usage.total(),
     });
-    const failed = (error: string): AcpTurnResult => result({ error, kind: "failed" });
+    /** A failure no agent reported (a watchdog, a crash, a refused spawn): only the task's. */
+    const failed = (error: string): AcpTurnResult =>
+      result({ class: "other", error, kind: "failed" });
 
     const pokeIdle = (): void => {
       if (opts.idleTimeoutMs <= 0 || settled) {
@@ -439,20 +339,16 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       settle(failed(`${bin}: stdio pipes unavailable`));
       return;
     }
-    // The agent keeps writing for a moment after we kill it; that EPIPE is
-    // expected teardown noise, not a run failure.
-    stdin.on("error", () => {
-      /* empty */
-    });
-    stdout.on("error", () => {
-      /* empty */
-    });
+    // Node's adapters hear each pipe's errors: one mid-turn fails the turn in its own words, and one
+    // once the turn has ended reaches nothing that still awaits
+    const output: WritableStream<Uint8Array> = Writable.toWeb(stdin);
+    const input: ReadableStream<Uint8Array> = Readable.toWeb(stdout);
     stderr.on("data", (d: Buffer) => {
       pokeIdle();
-      keepStderr(d);
+      agentStderr.keep(d);
     });
     const died = (code: number | null): void =>
-      settle(failed(stderrTail() || `${bin} exited with code ${code} mid-turn`));
+      settle(failed(agentStderr.text() || `${bin} exited with code ${code} mid-turn`));
     child.on("error", (err: Error) => settle(failed(`${bin}: ${err.message}`)));
     child.on("close", died);
     child.on("exit", (code) => setTimeout(() => died(code), EXIT_CLOSE_GRACE_MS).unref());
@@ -473,20 +369,13 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         }
         pokeIdle();
         const { toolCall } = ctx.params;
-        const described = ToolCallDescription.safeParse(toolCall.rawInput);
-        const request: PermissionRequest = {
-          description: described.success ? described.data.description : undefined,
-          kind: toolCall.kind ?? undefined,
-          tool: toolAskOf({
-            kind: toolCall.kind,
-            meta: ctx.params._meta,
-            rawInput: toolCall.rawInput,
-            title: toolCall.title ?? toolTitles.get(toolCall.toolCallId),
-          }),
-        };
-        const decision = opts.onPermission
-          ? await opts.onPermission(request, ended.signal)
-          : { allow: true };
+        const tool = toolAskOf({
+          kind: toolCall.kind,
+          meta: ctx.params._meta,
+          rawInput: toolCall.rawInput,
+          title: toolCall.title ?? toolTitles.get(toolCall.toolCallId),
+        });
+        const decision = await opts.onPermission(tool, ended.signal);
         // Match protocol kinds, not adapter-specific ids. Only one-command approval:
         // an allow_always would outlive the founder's signature.
         const pick = (kind: string): string | undefined =>
@@ -518,31 +407,10 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           });
           return;
         }
-        if (update.sessionUpdate === "usage_update") {
-          const reset = rateLimitResetIn(update._meta);
-          if (reset !== undefined) {
-            reportedReset = reset;
-          }
-        }
-        if (update.sessionUpdate === "usage_update" && prompted) {
-          if (!opts.agent.usagePerRequest) {
-            reportedTokens = Math.max(reportedTokens, update.used);
-          } else if (update.used !== lastRequestTokens) {
-            // codex re-sends a request's count unchanged; a repeat is not another request
-            reportedTokens += update.used;
-            lastRequestTokens = update.used;
-          }
-          // Until the agent's answer accounts for the turn, a turn cut off before it still bills
-          // what was reported: as uncached input, since an update carries no split.
-          total = { ...total, inputTokens: reportedTokens };
-        }
-        const cost = RunCost.safeParse(update);
-        if (cost.success && cost.data.cost.amount > total.costUsd) {
-          total = { ...total, costUsd: cost.data.cost.amount };
-        }
+        usage.onUpdate(update);
       });
 
-    const stream = ndJsonStream(webWritable(stdin), webReadable(stdout));
+    const stream = ndJsonStream(output, input);
     const turn = async (): Promise<void> => {
       const { failure, stopReason } = await app.connectWith(stream, async (agent) => {
         // Required before anything else. claude's adapter tolerates its
@@ -553,7 +421,13 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           protocolVersion: PROTOCOL_VERSION,
         });
 
-        const additionalDirectories = [...(opts.addDirs ?? []), ...(opts.agent.readDirs ?? [])];
+        const scope: Pick<NewSessionRequest, "_meta" | "additionalDirectories" | "cwd"> = {
+          additionalDirectories: [...(opts.addDirs ?? []), ...(opts.agent.readDirs ?? [])],
+          cwd: opts.cwd,
+        };
+        if (opts.agent.sessionMeta !== undefined) {
+          scope._meta = opts.agent.sessionMeta;
+        }
 
         // Resume without replaying history; a rejected session id falls back to fresh.
         const resume = async (): Promise<string | undefined> => {
@@ -564,12 +438,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
             return undefined;
           }
           try {
-            await agent.request("session/resume", {
-              _meta: opts.agent.sessionMeta,
-              additionalDirectories,
-              cwd: opts.cwd,
-              sessionId: opts.resumeSessionId,
-            });
+            await agent.request("session/resume", { ...scope, sessionId: opts.resumeSessionId });
             return opts.resumeSessionId;
           } catch {
             return undefined;
@@ -579,12 +448,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         resumed = resumedId !== undefined;
 
         const startFresh = async (): Promise<string> => {
-          const created = await agent.request("session/new", {
-            _meta: opts.agent.sessionMeta,
-            additionalDirectories,
-            cwd: opts.cwd,
-            mcpServers: [],
-          });
+          const created = await agent.request("session/new", { ...scope, mcpServers: [] });
           return created.sessionId;
         };
         sessionId = resumedId ?? (await startFresh());
@@ -596,45 +460,31 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           sessionId,
         });
 
-        prompted = true;
+        usage.startPrompt();
         const res = await agent.request("session/prompt", {
-          prompt: [{ text: turnText(opts, resumed), type: "text" }],
+          prompt: [{ text: opts.prompt(resumed), type: "text" }],
           sessionId,
         });
         flushMessage();
-        const u = res.usage;
-        if (u) {
-          // Updates carry only each request's total, so the whole turn takes the last
-          // request's split. For any other agent `used` is its context size, not a request.
-          const scale =
-            opts.agent.usagePerRequest && u.totalTokens > 0
-              ? Math.max(1, reportedTokens / u.totalTokens)
-              : 1;
-          const scaled = (tokens: number): number => Math.round(tokens * scale);
-          total = {
-            cachedTokens: scaled(u.cachedReadTokens ?? 0),
-            costUsd: total.costUsd,
-            inputTokens: scaled((u.inputTokens ?? 0) + (u.cachedWriteTokens ?? 0)),
-            outputTokens: scaled(u.outputTokens ?? 0),
-          };
-        }
-        return { failure: failureEnd(res._meta, reportedReset), stopReason: res.stopReason };
+        usage.onResponse(res.usage);
+        return {
+          failure: failureEnd(res._meta, usage.rateLimitReset()),
+          stopReason: res.stopReason,
+        };
       });
-      // a synthetic failure's title is generic; codex-acp logs the throw behind it on stderr
-      if (failure?.kind === "failed") {
-        const tail = stderrTail();
+      if (failure !== null) {
+        // a synthetic failure's title is generic; codex-acp logs the throw behind it on stderr. A
+        // failure of the runner's keeps only the provider's words, which the founder is shown.
+        const tail =
+          failure.class === "other" || failure.class === "context" ? agentStderr.text() : "";
         settle(result(tail ? { ...failure, error: `${failure.error}\n${tail}` } : failure));
-        return;
-      }
-      if (failure) {
-        settle(result(failure));
         return;
       }
       if (stopReason === "end_turn" || stopReason === "max_tokens") {
         settle(result({ kind: "completed" }));
         return;
       }
-      const tail = stderrTail();
+      const tail = agentStderr.text();
       settle(
         failed(tail ? `agent stopped: ${stopReason}\n${tail}` : `agent stopped: ${stopReason}`),
       );
@@ -645,7 +495,7 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       } catch (error) {
         if (error instanceof RequestError) {
           // only the agent's own rejection is read: a watchdog's or a crash's text never is
-          settle(result(endOf(classOfRequestError(error), error.message, reportedReset)));
+          settle(result(endOf(classOfRequestError(error), error.message, usage.rateLimitReset())));
           return;
         }
         // Anything else is the connection dropping, and a dying agent drops it before its exit

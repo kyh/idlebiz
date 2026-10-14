@@ -1,36 +1,38 @@
 import { Input, Scene, Scenes } from "phaser";
 import type Phaser from "phaser";
-import { api, listen } from "@/renderer/api";
-import { getCharacterAssets } from "@/renderer/character-assets";
+import { listen } from "@/renderer/page-events";
 import {
-  characterAnims,
-  CHAR_ORIGIN_X,
-  CHAR_ORIGIN_Y,
-  idleFrame,
-} from "@/renderer/game/character-sheet";
-import type { CharacterAnims, Dir } from "@/renderer/game/character-sheet";
+  companyQuery,
+  employeesQuery,
+  openTasksQuery,
+  read,
+  watch,
+} from "@/renderer/state/queries";
+import { characterAnims, idleFrame } from "@/renderer/game/character-sheet";
+import type { CharacterAnims } from "@/renderer/game/character-sheet";
 import { BootGate } from "@/renderer/game/boot-gate";
 import { loadCharacter } from "@/renderer/game/characters";
 import { ClickWalk } from "@/renderer/game/click-walk";
 import type { Walker } from "@/renderer/game/click-walk";
-import { WALK_SPEED, ZOOM, DEPTH, COLORS } from "@/renderer/game/config";
+import { WALK_SPEED, ZOOM } from "@/renderer/game/config";
 import { facingToward } from "@/renderer/game/movement";
 import type { Seat } from "@/renderer/game/npc";
 import type { Poi } from "@/renderer/game/npc-idle";
 import { NpcManager } from "@/renderer/game/npcs";
 import { OFFICE } from "@/renderer/game/office-layout";
-import type { PixelPoint } from "@/renderer/game/office-layout";
+import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 import { poseForToolKind } from "@/renderer/game/office-poses";
 import { BEHIND_CHAIR_RISE, behindChair, seatDepth } from "@/renderer/game/seat-depth";
 import { textureMasks } from "@/renderer/game/texture-masks";
 import type { OpaqueMask } from "@/renderer/game/opaque-mask";
 import { characterDepth } from "@/renderer/game/office-depth";
 import type { ActivityEvent } from "@repo/domain/activity";
+import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y } from "@repo/domain/character-frame";
+import type { Dir } from "@repo/domain/character-frame";
 import { hear, tell } from "@/renderer/game/office-port";
-import { Coalesced } from "@/renderer/state/ordering";
-import { DEFAULT_FOUNDER_SEED } from "@repo/domain/domain";
+import { DEFAULT_FOUNDER_SEED, taskIn } from "@repo/domain/domain";
 import type { Employee, Task } from "@repo/domain/domain";
-import { bodyBlockedAt, solidAt } from "@/renderer/game/office-grid";
+import { bodyBlockedAt } from "@/renderer/game/office-grid";
 
 const FACING_OFFSET = {
   down: { x: 0, y: 1 },
@@ -47,27 +49,8 @@ interface Player {
   readonly anims: CharacterAnims;
 }
 
-/** Probes into the live office for CDP-driven checks (`window.__officeDebug`). */
-export interface OfficeDebugApi {
-  bodyBlockedAt: (x: number, y: number) => boolean;
-  solidAtPx: (x: number, y: number) => boolean;
-  snapshot: () => {
-    camera: { x: number; y: number; zoom: number };
-    objects: number;
-    player: { x: number | null; y: number | null };
-    door: PixelPoint;
-    seats: number;
-    world: { h: number; w: number };
-  };
-  /** Where a body starting at `start` ends up after trying to move by `delta`. */
-  probeMove: (start: PixelPoint, delta: PixelPoint) => PixelPoint | null;
-}
-
-declare global {
-  interface Window {
-    __officeDebug?: OfficeDebugApi;
-  }
-}
+/** What the camera shows past the office's edge. */
+const OUTSIDE = 0x14_16_1f;
 
 /** Idle-life spots from the layout: the POIs get faced, the rest seats get sat on. */
 const IDLE_POIS: readonly Poi[] = [
@@ -77,46 +60,40 @@ const IDLE_POIS: readonly Poi[] = [
   ),
 ];
 
-/** Tiled office assembled from Modern Office object sprites. */
 const roundQuad = (obj: Phaser.GameObjects.GameObject): void => {
   obj.vertexRoundMode = "fullAuto";
 };
 
-const assigneesOf = (tasks: readonly Task[]): Set<string> =>
-  new Set(tasks.flatMap((t) => (t.assigneeId ? [t.assigneeId] : [])));
+/** Who waits on the founder: they keep the "!" whatever they do, and nobody else does. */
+const waitingOf = (tasks: readonly Task[]): Set<string> =>
+  new Set(tasks.flatMap((t) => (taskIn("blocked")(t) && t.assigneeId ? [t.assigneeId] : [])));
 
 export class OfficeScene extends Scene {
-  private player?: Player;
+  private player?: Player | undefined;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys?: Record<"W" | "A" | "S" | "D", Phaser.Input.Keyboard.Key>;
   private facing: Dir = "down";
-  private debugGfx?: Phaser.GameObjects.Graphics;
-  private npcs?: NpcManager;
+  private npcs?: NpcManager | undefined;
   /**
    * What the office hears while it boots waits for its snapshot, then replays in
    * order: statuses and asks are last-writer-wins and a spawn of someone already
    * there is a no-op, so replaying what the snapshot already saw is harmless.
    */
   private readonly npcEvents = new BootGate<NpcManager>();
-  // one at a time, so an answer read before the founder's reply never lands after the one read since
-  private readonly asks = new Coalesced(() => this.recheckAsks());
-  private clickWalk?: ClickWalk;
+  private clickWalk?: ClickWalk | undefined;
   private modalOpen = false;
   /** Bumped by boot() and by teardown: an await in boot() that outlives its scene must not touch it or the next one. */
   private generation = 0;
   private activityUnsub?: () => void;
+  private stopWatchingAsks?: (() => void) | undefined;
 
   constructor() {
     super("office");
   }
 
   preload() {
-    const loaded = new Set<string>();
+    // the loader skips a key it already holds or has queued, so a sprite placed twice loads once
     for (const placement of OFFICE.placements) {
-      if (loaded.has(placement.key)) {
-        continue;
-      }
-      loaded.add(placement.key);
       this.load.image(placement.key, placement.path);
     }
     this.load.spritesheet("emotes", `${WORKSPACE_KIT_PATH}/emotes.png`, {
@@ -126,7 +103,7 @@ export class OfficeScene extends Scene {
   }
 
   create() {
-    this.cameras.main.setBackgroundColor(COLORS.bg);
+    this.cameras.main.setBackgroundColor(OUTSIDE);
     // roundPixels alone rounds nothing here: the default vertexRoundMode trusts
     // only an unzoomed camera, and this one is zoomed ZOOMx. An integer zoom keeps
     // every corner on the same fraction, so rounding whole quads is safe and is
@@ -145,7 +122,6 @@ export class OfficeScene extends Scene {
     };
     kb.addKey(Input.Keyboard.KeyCodes.SPACE).on("down", () => this.tryAction());
     kb.addKey(Input.Keyboard.KeyCodes.E).on("down", () => this.tryAction());
-    kb.addKey(Input.Keyboard.KeyCodes.G).on("down", () => this.toggleCollisionOverlay());
 
     // Click to go there. The HUD sits over this canvas but is pointer-events-none except
     // on its own controls, so a click on a button never reaches us.
@@ -156,8 +132,6 @@ export class OfficeScene extends Scene {
     });
 
     void this.boot();
-    // the handle names are the CDP contract in AGENTS.md, dangling underscores and all
-    window.__officeDebug = this.debugApi();
 
     // live hires and releases come and go through the door
     const onSpawn = (emp: Employee) =>
@@ -197,19 +171,18 @@ export class OfficeScene extends Scene {
       this.npcEvents.shut();
       this.events.off(Scenes.Events.ADDED_TO_SCENE, roundQuad);
       this.activityUnsub?.();
+      this.stopWatchingAsks?.();
+      this.stopWatchingAsks = undefined;
       document.removeEventListener("focusin", onFocusChange);
       document.removeEventListener("focusout", onFocusChange);
       for (const stop of stopHearing) {
         stop();
       }
       this.npcs?.destroy();
-      this.debugGfx?.destroy();
-      this.debugGfx = undefined;
       this.clickWalk?.cancel();
       this.clickWalk = undefined;
       this.npcs = undefined;
       this.player = undefined;
-      delete window.__officeDebug;
     };
     this.events.once(Scenes.Events.SHUTDOWN, teardown);
     // game.destroy() emits only DESTROY, never SHUTDOWN
@@ -265,21 +238,26 @@ export class OfficeScene extends Scene {
     cam.setRoundPixels(true);
     this.centerCameraOn(OFFICE.spawn);
 
-    const company = await api().company.get();
+    // the window's answers, or its reads in flight: main is asked once for both
+    const company = await read(companyQuery);
     if (generation !== this.generation) {
       return;
     }
-    // the founder and the roster are independent fetches; the colleagues wait on both,
-    // because Phaser's loader is single-batch and the founder's sheet must land first
+    // the founder's sheet and the roster are independent, so both are asked for at once
     const seed = company ? company.founderSpriteSeed : DEFAULT_FOUNDER_SEED;
-    const playerKey = `player-${seed}`;
-    const [, employees, blocked] = await Promise.all([
-      loadCharacter(this, playerKey, seed),
-      company ? api().employees.list() : [],
-      company ? api().tasks.list({ status: ["blocked"] }) : [],
+    const [playerKey, employees, tasks] = await Promise.all([
+      loadCharacter(this, seed),
+      company ? read(employeesQuery) : [],
+      company ? read(openTasksQuery) : [],
     ]);
     if (generation !== this.generation) {
       return;
+    }
+    if (company) {
+      // the asks as main says them each time they are read again, held until the office opens
+      this.stopWatchingAsks = watch(openTasksQuery, waitingOf, (asking) =>
+        this.npcEvents.run((team) => team.setWaiting(asking)),
+      );
     }
     const player = this.placePlayer(playerKey);
     const npcs = new NpcManager(this, seats, OFFICE.grid, IDLE_POIS, OFFICE.door);
@@ -288,27 +266,18 @@ export class OfficeScene extends Scene {
       this.talkTo(id),
     );
 
-    // the office is already staffed when it opens: nobody parades in on boot.
-    // Spawns serialise on Phaser's loader, but composing the sheets need not:
-    // main caches by seed, so warming them all at once makes the chain read hits.
-    // Only a warm-up: a sheet that fails here fails again in its own spawn, which
-    // lets everyone else in.
-    await Promise.allSettled(employees.map((emp) => getCharacterAssets(emp.spriteSeed)));
-    if (generation !== this.generation) {
-      return;
-    }
+    // the office is already staffed when it opens: nobody parades in on boot
     for (const emp of employees) {
       await npcs.spawn(emp, "settled");
     }
     if (generation !== this.generation) {
       return;
     }
-    for (const task of blocked) {
-      if (task.assigneeId) {
-        npcs.setState(task.assigneeId, "blocked");
-      }
+    const waiting = waitingOf(tasks);
+    for (const id of waiting) {
+      npcs.setState(id, "blocked");
     }
-    npcs.setWaiting(assigneesOf(blocked));
+    npcs.setWaiting(waiting);
     this.npcEvents.open(npcs);
   }
 
@@ -329,66 +298,6 @@ export class OfficeScene extends Scene {
         x: seat.x,
         y: seat.y,
       }));
-  }
-
-  /** Toggle (G) a red overlay of the authored collision grid for debugging. */
-  private toggleCollisionOverlay(): void {
-    if (this.debugGfx) {
-      this.debugGfx.destroy();
-      this.debugGfx = undefined;
-      return;
-    }
-    const { grid } = OFFICE;
-    const gfx = this.add.graphics().setDepth(DEPTH.emote - 1);
-    gfx.fillStyle(0xff_33_66, 0.35);
-    for (let r = 0; r < grid.rows; r += 1) {
-      for (let c = 0; c < grid.cols; c += 1) {
-        if (grid.solid[r]?.[c]) {
-          gfx.fillRect(c * grid.cell, r * grid.cell, grid.cell, grid.cell);
-        }
-      }
-    }
-    this.debugGfx = gfx;
-  }
-
-  private debugApi(): OfficeDebugApi {
-    return {
-      bodyBlockedAt: (x, y) => bodyBlockedAt(OFFICE.grid, x, y),
-      probeMove: (start, delta) => this.probeMove(start, delta),
-      snapshot: () => ({
-        camera: {
-          x: this.cameras.main.scrollX,
-          y: this.cameras.main.scrollY,
-          zoom: this.cameras.main.zoom,
-        },
-        door: OFFICE.door,
-        objects: OFFICE.placements.length,
-        player: {
-          x: this.player?.sprite.x ?? null,
-          y: this.player?.sprite.y ?? null,
-        },
-        seats: OFFICE.seats.filter((seat) => seat.role === "work").length,
-        world: {
-          h: OFFICE.grid.height,
-          w: OFFICE.grid.width,
-        },
-      }),
-      solidAtPx: (x, y) => solidAt(OFFICE.grid, x, y),
-    };
-  }
-
-  private probeMove(start: PixelPoint, delta: PixelPoint): PixelPoint | null {
-    const { player } = this;
-    if (!player) {
-      return null;
-    }
-    const { sprite } = player;
-    const original = { x: sprite.x, y: sprite.y };
-    sprite.setPosition(start.x, start.y);
-    this.moveResolved(delta.x, delta.y);
-    const result = { x: sprite.x, y: sprite.y };
-    sprite.setPosition(original.x, original.y);
-    return result;
   }
 
   private subscribeActivity(): void {
@@ -423,7 +332,6 @@ export class OfficeScene extends Scene {
           const asks = settled === null ? outcome.kind === "blocked" : settled === "blocked";
           const state = asks ? "blocked" : "idle";
           this.npcEvents.run((npcs) => npcs.setState(e.employeeId, state));
-          void this.asks.call();
           return;
         }
         // an answer requeues the task, but its run may not start at once: drop the "!" now,
@@ -431,15 +339,7 @@ export class OfficeScene extends Scene {
         case "status": {
           if (e.message === "queued") {
             this.npcEvents.run((npcs) => npcs.unblock(e.employeeId));
-            void this.asks.call();
           }
-          break;
-        }
-        // a bet that stops taking work, or a retired product, drops the asks it had waiting
-        // with no event per task
-        case "bet.changed":
-        case "product.killed": {
-          void this.asks.call();
           break;
         }
         default: {
@@ -447,20 +347,6 @@ export class OfficeScene extends Scene {
         }
       }
     });
-  }
-
-  /** Asks main who still waits on the founder: they keep the "!" whatever they do, and nobody else does. */
-  private async recheckAsks(): Promise<void> {
-    const { generation } = this;
-    try {
-      const blocked = await api().tasks.list({ status: ["blocked"] });
-      if (generation !== this.generation) {
-        return;
-      }
-      this.npcEvents.run((npcs) => npcs.setWaiting(assigneesOf(blocked)));
-    } catch (error) {
-      console.error("Could not recheck the office's asks", error);
-    }
   }
 
   private talkTo(employeeId: string): void {

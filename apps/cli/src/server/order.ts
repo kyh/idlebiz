@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 // A paid checkout on one of the company's payment links, and, for a listing's, what became of it
@@ -5,6 +6,10 @@ import { z } from "zod";
 
 /** Printful's `external_id`: at most 32 of [A-Za-z0-9_-], unique per store, which makes creating an order idempotent. */
 const OrderIdSchema = z.string().regex(/^[\w-]{1,32}$/u);
+
+/** Printful's external id for a checkout: its hash, since a session id is longer than the 32 characters Printful keeps. */
+export const orderIdOf = (sessionId: string): string =>
+  createHash("sha256").update(sessionId).digest("base64url").slice(0, 32);
 
 /** Where Printful ships it, as the buyer entered it on Stripe's page. */
 const RecipientSchema = z.object({
@@ -89,7 +94,3 @@ export const OrderSchema = z.discriminatedUnion("kind", [
 ]);
 export type Order = z.infer<typeof OrderSchema>;
 export type Sale = Extract<Order, { kind: "sale" }>;
-
-/** The title of the founder's card about an order: its id, which names it in every card, and what went wrong. */
-export const orderCardTitle = (order: Order, trouble: string): string =>
-  `Order ${order.id.slice(0, 8)}: ${trouble}`;

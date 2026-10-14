@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { api } from "@/renderer/api";
-import { useAsync } from "@/renderer/hooks/use-async";
+import { useQuery } from "@tanstack/react-query";
+import { api, orpc } from "@/renderer/api";
 import { useSubmission } from "@/renderer/hooks/use-submission";
-import { useStore, connectVercel, disconnectVercel } from "@/renderer/state/store";
+import { usePendingAsks, useProducts } from "@/renderer/state/queries";
+import { connectVercel, disconnectVercel } from "@/renderer/state/store";
 import { ChoiceMenu } from "@/renderer/ui/choice-menu";
 import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
@@ -16,10 +17,17 @@ const PickProject = ({ product, onClose }: { product: Product; onClose: () => vo
   const productId = product.id;
   const [token, setToken] = useState("");
   const [cursor, setCursor] = useState(0);
-  // a fresh object per Continue, so asking again with the same token reads again
   const [asked, setAsked] = useState<{ token?: string }>({});
-  const listing = useAsync(() => api().vercel.projects(asked), [asked]);
+  // dropped once the picker moves past it, so a token asked for again is read again
+  const listing = useQuery(orpc.vercel.projects.queryOptions({ gcTime: 0, input: asked }));
   const lookup = lookupFor(listing, asked.token);
+  const ask = (given: string): void => {
+    if (given === asked.token) {
+      void listing.refetch();
+    } else {
+      setAsked({ token: given });
+    }
+  };
   const connecting = useSubmission(
     async ({ project, given }: { project: VercelProject; given: string | undefined }) => {
       await connectVercel({
@@ -33,7 +41,7 @@ const PickProject = ({ product, onClose }: { product: Product; onClose: () => vo
     },
   );
   const saving = useSubmission(async (given: string) => {
-    await api().vercel.saveToken({ productId, token: given });
+    await api.vercel.saveToken({ productId, token: given });
     onClose();
   });
   const busy =
@@ -63,7 +71,7 @@ const PickProject = ({ product, onClose }: { product: Product; onClose: () => vo
         />
         <button
           type="button"
-          onClick={() => setAsked({ token: token.trim() })}
+          onClick={() => ask(token.trim())}
           disabled={busy || token.trim().length === 0}
           className="px-btn-accent px-btn"
         >
@@ -75,9 +83,7 @@ const PickProject = ({ product, onClose }: { product: Product; onClose: () => vo
       ) : null}
       {lookup.state === "loaded" && lookup.projects.length > 0 ? (
         <div className="px-inset max-h-64 overflow-y-auto p-2">
-          <div className="mb-1 text-xs uppercase tracking-wide text-fg-dim">
-            Pick the product&apos;s project
-          </div>
+          <div className="px-label mb-1 text-fg-dim">Pick the product&apos;s project</div>
           <ChoiceMenu
             menu={{
               cursor,
@@ -177,12 +183,13 @@ export const ConnectVercel = ({
   productId: string | null;
   onClose: () => void;
 }) => {
-  const products = useStore((s) => s.products);
+  const products = useProducts();
+  const pendingAsks = usePendingAsks();
   const [chosen, setChosen] = useState<string | null>(null);
   const [replacing, setReplacing] = useState(false);
   const disconnecting = useSubmission(disconnectVercel);
   const target = productId ?? chosen;
-  const waited = useStore((s) => target !== null && awaitsVercelToken(target, s.pendingAsks));
+  const waited = target !== null && awaitsVercelToken(target, pendingAsks);
 
   if (target === null) {
     return (

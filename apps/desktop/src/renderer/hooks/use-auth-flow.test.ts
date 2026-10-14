@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { AuthFlowEvent } from "@repo/domain/domain";
-import { nextAttempt } from "./use-auth-flow";
+import { nextAttempt, withStart } from "./use-auth-flow";
 import type { Attempt } from "./use-auth-flow";
 
 const replay = (events: AuthFlowEvent[]): Attempt => {
@@ -34,4 +34,15 @@ it("keeps the last four lines of a long attempt", () => {
     ["a", "b", "c", "d", "e"].map((message): AuthFlowEvent => ({ message, type: "progress" })),
   );
   expect(auth).toEqual({ lines: ["b", "c", "d", "e"], phase: "logging-in" });
+});
+
+it("fails a login whose start main refused, before any event could say so", () => {
+  const started: Attempt = { lines: [], phase: "logging-in" };
+  expect(withStart(started, { kind: "failed", message: "main is gone" })).toEqual({
+    lines: ["Hmm — main is gone"],
+    phase: "login-failed",
+  });
+  expect(withStart(started, { kind: "sending" })).toBe(started);
+  const heard = nextAttempt(started, { message: "Signing in…", type: "progress" });
+  expect(withStart(heard, { kind: "failed", message: "late" })).toBe(heard);
 });

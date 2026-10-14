@@ -1,11 +1,6 @@
 import type Phaser from "phaser";
-import {
-  characterAnims,
-  CHAR_ORIGIN_X,
-  CHAR_ORIGIN_Y,
-  idleFrame,
-} from "@/renderer/game/character-sheet";
-import { loadCharacter, unloadCharacter } from "@/renderer/game/characters";
+import { characterAnims, idleFrame } from "@/renderer/game/character-sheet";
+import { loadCharacter } from "@/renderer/game/characters";
 import { randomFloor } from "@/renderer/game/movement";
 import {
   applyDepth,
@@ -21,11 +16,12 @@ import { NpcAttachments } from "@/renderer/game/npc-attachments";
 import { IdleLife } from "@/renderer/game/npc-idle";
 import type { Poi } from "@/renderer/game/npc-idle";
 import type { Activity } from "@/renderer/game/npc-look";
-import type { PixelPoint } from "@/renderer/game/office-layout";
+import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 import { planSeats } from "@/renderer/game/office-placement";
 import type { SeatPlan } from "@/renderer/game/office-placement";
 import { DEFAULT_WORK_POSE } from "@/renderer/game/office-poses";
 import type { WorkPose } from "@/renderer/game/office-poses";
+import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y } from "@repo/domain/character-frame";
 import type { Employee } from "@repo/domain/domain";
 import type { WalkGrid } from "@/renderer/game/office-grid";
 
@@ -55,7 +51,8 @@ export class NpcManager {
   private seatPlan: SeatPlan = new Map();
   private arrivals: string[] = [];
   private nextArrivalAt = 0;
-  // Phaser's loader is single-batch; serialize spawns so concurrent hires don't race it.
+  // One spawn at a time, so hires walk in and are seated in the order they were hired, not in
+  // the order their sheets load: a sheet already held would otherwise jump the queue.
   private chain: Promise<void> = Promise.resolve();
   /** Released while their spawn was still queued in the chain: never let them in. */
   private readonly released = new Set<string>();
@@ -109,14 +106,8 @@ export class NpcManager {
     if (this.disposed || this.npcs.has(emp.id)) {
       return;
     }
-    const key = `emp-${emp.id}`;
-    await loadCharacter(this.scene, key, emp.spriteSeed);
-    // textures are game-wide: the next scene's manager may already be drawing this key
-    if (this.disposed) {
-      return;
-    }
-    if (this.released.delete(emp.id)) {
-      unloadCharacter(this.scene, key);
+    const key = await loadCharacter(this.scene, emp.spriteSeed);
+    if (this.disposed || this.released.delete(emp.id)) {
       return;
     }
 
@@ -140,7 +131,6 @@ export class NpcManager {
       // the office says which CLI a colleague is.
       attachments: new NpcAttachments(this.scene, sprite, `${emp.name} · ${emp.runner}`),
       id: emp.id,
-      key,
       nextWanderAt: this.scene.time.now + 4000 + Math.random() * 8000,
       phase: passage === "settled" ? "settled" : "queued",
       plan: null,
@@ -420,7 +410,6 @@ export class NpcManager {
     this.scene.tweens.killTweensOf(npc.sprite);
     npc.attachments.destroy();
     npc.sprite.destroy();
-    unloadCharacter(this.scene, npc.key);
   }
 
   destroy(): void {

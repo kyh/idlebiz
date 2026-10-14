@@ -1,15 +1,9 @@
-// The window's page, and main's door for it, on loopback: what kyh/inteligir's server answers its
-// window (apps/cli/src/server/app.ts there). The shell opens its window on a one-time handoff link
-// main mints when asked over stdio (`handoff`), the link signs the page in (page-session.ts), and the
-// page then calls the contract's procedures (RPC_PREFIX, page-router.ts) and hears main's events
-// (EVENTS_PATH) on its own origin: the window, a browser under `pnpm dev:browser` and e2e's
-// Chromium alike. The page's files are the ones
-// main ships beside it, or under `tauri dev` and `pnpm dev:browser` Vite's, forwarded so the page
-// keeps this origin while it reloads in place.
+// Under a dev shell the page's files are Vite's, forwarded so the page keeps this origin while it
+// reloads in place.
 //
 // The founder's approve button is on this port. No employee run reaches it: the seal closes it to
-// every run (`pagePorts`, agents/seal.ts). Of everyone else it answers only a request that names its
-// own loopback host, and main's calls and events only for the page a handoff signed in, calling from
+// every run (`pagePorts`, agents/machine-seal.ts). Of everyone else it answers only a request that
+// names its own loopback host, and main's calls only for the page a handoff signed in, calling from
 // its own origin.
 
 import { once } from "node:events";
@@ -17,12 +11,12 @@ import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { EVENTS_PATH, HANDOFF_PARAM, RPC_PREFIX } from "@repo/contract/routes";
+import { HANDOFF_PARAM, RPC_PREFIX } from "@repo/contract/routes";
 import { listenLoopback } from "./lib/http";
 import { createPageSession, fromOwnOrigin, loopbackOrigin } from "./page-session";
 import { errorMessage } from "@repo/domain/errors";
 import type { JsonValue } from "@repo/domain/json";
-import { pagePolicy } from "./page-policy";
+import { pagePolicy } from "@repo/contract/page-policy";
 
 /** Where the page's files come from: the built page main ships beside it, or Vite's dev server. */
 export type PageSource = { kind: "built"; dir: string } | { kind: "dev"; origin: string };
@@ -50,9 +44,7 @@ export interface PageServer {
   port: number;
   /** A link that signs a page in, once, within five minutes, and lands it on the office. */
   handoff: () => Handoff;
-  /** Tells every page listening. */
-  broadcast: (channel: string, data: JsonValue) => void;
-  /** Ends every event stream and stops answering. */
+  /** Ends every call, event streams included, and stops answering. */
   stop: () => Promise<void>;
 }
 
@@ -205,7 +197,7 @@ const forward = async (
   target.search = url.search;
   const upstream = await fetch(target, {
     headers: { accept: onlyHeader(request, "accept") ?? "*/*" },
-    method: request.method,
+    method: request.method ?? "GET",
   });
   const headers: Record<string, string> = {};
   for (const [name, value] of upstream.headers) {
@@ -220,24 +212,10 @@ const forward = async (
 export const startPageServer = async (options: PageServerOptions): Promise<PageServer> => {
   const { page } = options;
   const session = createPageSession(options.now);
-  const streams = new Set<ServerResponse>();
   const dir = page.kind === "built" ? path.resolve(page.dir) : null;
   // read once: the built page does not change under a running main
   const document = dir === null ? null : await readFile(path.join(dir, "index.html"), "utf-8");
   let port = 0;
-
-  const listen = (response: ServerResponse): void => {
-    response.writeHead(200, {
-      ...BASE_HEADERS,
-      connection: "keep-alive",
-      "content-type": "text/event-stream",
-    });
-    response.write(": main's events\n\n");
-    streams.add(response);
-    response.once("close", () => {
-      streams.delete(response);
-    });
-  };
 
   const answerMain = async (
     request: IncomingMessage,
@@ -258,11 +236,7 @@ export const startPageServer = async (options: PageServerOptions): Promise<PageS
       refuse(response, 403, "IdleBiz answers only its own page.");
       return;
     }
-    if (url.pathname === EVENTS_PATH && request.method === "GET") {
-      listen(response);
-    } else if (
-      !(url.pathname.startsWith(`${RPC_PREFIX}/`) && (await options.handleRpc(request, response)))
-    ) {
+    if (!(await options.handleRpc(request, response))) {
       refuse(response, 404, `main answers no ${request.method ?? "request"} ${url.pathname}`);
     }
   };
@@ -330,8 +304,7 @@ export const startPageServer = async (options: PageServerOptions): Promise<PageS
       return;
     }
     const url = new URL(request.url ?? "/", origin);
-    const mainPath = url.pathname === EVENTS_PATH || url.pathname.startsWith(`${RPC_PREFIX}/`);
-    await (mainPath
+    await (url.pathname.startsWith(`${RPC_PREFIX}/`)
       ? answerMain(request, response, url, origin)
       : answerPage(request, response, url, origin));
   };
@@ -355,12 +328,6 @@ export const startPageServer = async (options: PageServerOptions): Promise<PageS
 
   let stopping: Promise<void> | null = null;
   return {
-    broadcast: (channel, data) => {
-      const frame = `event: ${channel}\ndata: ${JSON.stringify(data)}\n\n`;
-      for (const stream of streams) {
-        stream.write(frame);
-      }
-    },
     handoff: () => ({
       handoffUrl: `${ownOrigin}/?${HANDOFF_PARAM}=${session.mintHandoff()}`,
       origin: ownOrigin,
@@ -370,10 +337,6 @@ export const startPageServer = async (options: PageServerOptions): Promise<PageS
     stop: async () => {
       stopping ??= (async () => {
         live.delete(port);
-        for (const stream of streams) {
-          stream.end();
-        }
-        streams.clear();
         const closed = once(server, "close");
         // the event streams hold their connections open
         server.closeAllConnections();

@@ -4,10 +4,12 @@ import { z } from "zod";
 import { RUNNERS } from "@repo/agent-driver/registry";
 import { isReady } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
-import { agentDriver } from "./agent-driver";
+import { runnerPool } from "./runner-pool";
+import type { RunnerPool } from "./runner-pool";
 import { SANDBOX_EXEC } from "./seal";
 import { foundingTeamPrompt } from "../prompts/onboarding";
 import { errorMessage } from "@repo/domain/errors";
+import { RUNNER_NAMES } from "@repo/domain/runners";
 import { parseJson } from "@repo/domain/json";
 import type { AuthFlowEvent, BusinessTypeId } from "@repo/domain/domain";
 import { HireCandidateSchema } from "@repo/domain/hire";
@@ -55,26 +57,26 @@ const streamCommand = (
     child.on("close", (code) => resolve(code));
   });
 
-const label = (p: RunnerProbe): string => RUNNERS[p.id].displayName;
+const label = (p: RunnerProbe): string => RUNNER_NAMES[p.id];
 
 // A login codex keeps in the Keychain reads as none, to its runs and to the sign-in alike.
 const CODEX_FILE_LOGIN =
   'If Codex keeps its login in your Keychain, which IdleBiz\'s sandbox closes to codex runs, first set cli_auth_credentials_store = "file" in ~/.codex/config.toml.';
 
 type SignIn = Pick<
-  typeof agentDriver,
+  RunnerPool,
   "needsSignIn" | "refresh" | "sealRefusal" | "sealedSignIn" | "signedInAgain"
 >;
 
-const signInState = (driver: SignIn, p: Extract<RunnerProbe, { installed: true }>): string => {
+const signInState = (runners: SignIn, p: Extract<RunnerProbe, { installed: true }>): string => {
   if (!p.authed) {
     return " — not signed in";
   }
-  return driver.needsSignIn(p) ? " — its login was refused, signing in again" : " — signed in ✓";
+  return runners.needsSignIn(p) ? " — its login was refused, signing in again" : " — signed in ✓";
 };
 
 export const startLogin = async (
-  driver: SignIn,
+  runners: SignIn,
   emit: (e: AuthFlowEvent) => void,
 ): Promise<void> => {
   if (setupRunning) {
@@ -83,9 +85,9 @@ export const startLogin = async (
   }
   setupRunning = true;
   try {
-    let probes = await driver.refresh();
+    let probes = await runners.refresh();
     // no CLI is found without the seal, so installing one would not help
-    const refusal = await driver.sealRefusal();
+    const refusal = await runners.sealRefusal();
     if (refusal !== null) {
       emit({ message: refusal, type: "error" });
       return;
@@ -93,7 +95,7 @@ export const startLogin = async (
     for (const p of probes) {
       emit({
         message: p.installed
-          ? `Found ${label(p)} (${p.version ?? "unknown version"})${signInState(driver, p)}`
+          ? `Found ${label(p)} (${p.version ?? "unknown version"})${signInState(runners, p)}`
           : `${label(p)} not installed`,
         type: "progress",
       });
@@ -111,21 +113,21 @@ export const startLogin = async (
         return;
       }
       emit({ message: "Claude Code installed.", type: "progress" });
-      probes = await driver.refresh();
+      probes = await runners.refresh();
     }
 
     for (const p of probes) {
-      if (!driver.needsSignIn(p)) {
+      if (!runners.needsSignIn(p)) {
         continue;
       }
       emit({ message: `Signing in to ${label(p)} — your browser will open…`, type: "progress" });
-      const [cmd = SANDBOX_EXEC, ...args] = await driver.sealedSignIn(p.id, [
+      const [cmd = SANDBOX_EXEC, ...args] = await runners.sealedSignIn(p.id, [
         p.bin,
         ...RUNNERS[p.id].loginArgs,
       ]);
       const code = await streamCommand(cmd, args, emit);
       if (code === 0) {
-        driver.signedInAgain(p.id);
+        runners.signedInAgain(p.id);
       } else {
         emit({
           message: `Couldn't finish automatically. In a terminal, run: ${p.bin} ${RUNNERS[p.id].loginArgs.join(" ")} — then come back and retry.${p.id === "codex" ? ` ${CODEX_FILE_LOGIN}` : ""}`,
@@ -134,8 +136,8 @@ export const startLogin = async (
       }
     }
 
-    probes = await driver.refresh();
-    const ready = probes.filter((p) => isReady(p) && !driver.needsSignIn(p));
+    probes = await runners.refresh();
+    const ready = probes.filter((p) => isReady(p) && !runners.needsSignIn(p));
     if (ready.length > 0) {
       emit({ message: `Workforce ready: ${ready.map(label).join(" + ")}.`, type: "progress" });
       emit({ type: "done" });
@@ -160,7 +162,7 @@ export const generateCandidates = async (input: {
   businessType: BusinessTypeId;
 }): Promise<HireCandidate[]> => {
   const prompt = foundingTeamPrompt(input.companyName, input.mission, input.businessType);
-  const raw = await agentDriver.completeOneShot(prompt);
+  const raw = await runnerPool.completeOneShot(prompt);
   const jsonText = raw.slice(raw.indexOf("["), raw.lastIndexOf("]") + 1);
   return CandidatesSchema.parse(parseJson(jsonText));
 };

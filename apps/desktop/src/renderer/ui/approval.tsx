@@ -1,6 +1,6 @@
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import type { Submission } from "@/renderer/hooks/use-submission";
-import { resolveApproval } from "@/renderer/state/store";
+import { api } from "@/renderer/api";
 
 interface Approval {
   submission: Submission;
@@ -9,11 +9,12 @@ interface Approval {
   decide: (approved: boolean) => void;
 }
 
-/** The founder's answer to one held command, wherever its card is shown. */
+/** The founder's answer to one held command, wherever its card is shown: the task resumes
+ *  either way. */
 export const useApproval = (taskId: string): Approval => {
-  const { submission, submit } = useSubmission((approved: boolean) =>
-    resolveApproval(taskId, approved),
-  );
+  const { submission, submit } = useSubmission(async (approved: boolean) => {
+    await api.tasks.resolveApproval({ approved, taskId });
+  });
   return {
     decide: submit,
     decided: submission.kind === "sending" || submission.kind === "sent",

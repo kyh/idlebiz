@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { useSubmission } from "@/renderer/hooks/use-submission";
-import { useStore, retryTask } from "@/renderer/state/store";
+import {
+  useCompany,
+  useEmployees,
+  usePendingAsks,
+  useStripeKey,
+  useStuckTasks,
+} from "@/renderer/state/queries";
+import { retryTask } from "@/renderer/state/store";
 import { ActionCard } from "@/renderer/ui/action-card";
 import { AnswerForm } from "@/renderer/ui/answer-form";
 import { connectAskCopy } from "@/renderer/ui/connect-ask";
@@ -13,7 +20,7 @@ import { approvalScope, describeRule, shownKey } from "@repo/domain/hold-rules";
 import type { HoldRuleId } from "@repo/domain/hold-rules";
 import { INTEGRATION_LABELS } from "@repo/domain/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
-import type { IntegrationAsk, IntegrationNeed, Task, TaskIn } from "@repo/domain/domain";
+import type { IntegrationAsk, IntegrationKind, Task, TaskIn } from "@repo/domain/domain";
 import { cn } from "cn";
 
 // Connecting resumes integration asks automatically; no text answer is needed.
@@ -26,13 +33,12 @@ const ConnectRow = ({
 }: {
   t: Task;
   by: string;
-  integration: IntegrationNeed;
+  integration: IntegrationKind;
   reason: string;
-  onConnect: (need: IntegrationNeed) => void;
+  onConnect: (kind: IntegrationKind) => void;
 }) => {
-  const stripeKey = useStore((s) => s.stripeKey);
-  const stripeStatus = useStore((s) => s.stripeStatus);
-  const copy = connectAskCopy(integration, stripeKey, stripeStatus);
+  const stripeKey = useStripeKey();
+  const copy = connectAskCopy(integration, stripeKey);
   return (
     <div className="px-inset p-3">
       <div className="text-xs text-accent-lo">
@@ -131,10 +137,10 @@ export const Inbox = ({
   /** The connect flow for a typed integration ask lives in another window. */
   onOpen: (overlay: Overlay) => void;
 }) => {
-  const company = useStore((s) => s.company);
-  const employees = useStore((s) => s.employees);
-  const pendingAsks = useStore((s) => s.pendingAsks);
-  const stuckTasks = useStore((s) => s.stuckTasks);
+  const company = useCompany();
+  const employees = useEmployees();
+  const pendingAsks = usePendingAsks();
+  const stuckTasks = useStuckTasks();
 
   if (!company) {
     return null;
@@ -199,9 +205,7 @@ export const Inbox = ({
         ) : null}
         {pendingAsks.map(askRow)}
         {stuckTasks.length > 0 ? (
-          <div className="pt-1 text-xs uppercase tracking-wide text-fg-dim">
-            Stuck — needs a retry
-          </div>
+          <div className="px-label pt-1 text-fg-dim">Stuck — needs a retry</div>
         ) : null}
         {stuckTasks.map((t) => (
           <StuckRow key={t.id} t={t} by={nameOf(t.assigneeId)} />

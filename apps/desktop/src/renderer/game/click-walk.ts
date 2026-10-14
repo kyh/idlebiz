@@ -1,10 +1,11 @@
 import type Phaser from "phaser";
-import type { Dir } from "@/renderer/game/character-sheet";
-import { DEPTH, WALK_SPEED } from "@/renderer/game/config";
+import { WALK_SPEED } from "@/renderer/game/config";
 import { facingToward, stepToward } from "@/renderer/game/movement";
+import { DEPTH } from "@/renderer/game/office-depth";
 import { findPath } from "@/renderer/game/office-grid";
 import type { WalkGrid } from "@/renderer/game/office-grid";
 import type { PixelPoint } from "@/renderer/game/office-layout-schema";
+import type { Dir } from "@repo/domain/character-frame";
 
 /** The player, as click-to-walk drives them. The scene keeps the sprite and the collision. */
 export interface Walker {
@@ -50,7 +51,7 @@ interface Route {
  */
 export class ClickWalk {
   private route: Route | null = null;
-  private marker?: Phaser.GameObjects.Graphics;
+  private marker?: Phaser.GameObjects.Graphics | undefined;
   private readonly scene: Phaser.Scene;
   private readonly grid: WalkGrid;
   private readonly walker: Walker;

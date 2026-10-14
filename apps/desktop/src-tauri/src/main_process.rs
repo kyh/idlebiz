@@ -1,19 +1,12 @@
 //! Main is a child, and its one supervisor is this module.
 //!
-//! The shell starts main on node, and from then on main's stdio is the one channel between the
-//! window and the process that owns the save, the keys and the runs (`relay.rs`'s framing). The
-//! window's invokes go down as requests and main's answers come back. What main asks of a native
-//! app, and what it tells the window, goes to `host.rs`. Everything main prints to stderr is
-//! appended to its log.
-//!
-//! Main's stdin is also its lifeline. The shell closes it only once main has answered `quit`, so a
-//! shell that crashed or was killed ends main too, and main stops its runs on the way out. A thread
+//! Main's stdin is its lifeline: the shell closes it only once main has answered `quit`. A thread
 //! of its own writes it, so a main that stops reading holds that thread alone: never a quit's
-//! wait, which then ends main the hard way. There is no restart: main owns the save, and a second
-//! one under a first that has not let go would race it.
+//! wait, which then ends main the hard way.
 
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
+use std::fmt;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -24,9 +17,9 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::Value;
-use tokio::sync::oneshot;
 
 use crate::main_log::MainLog;
+use crate::protocol;
 use crate::relay::{self, Incoming};
 
 /// How long a quit waits for main to stop its runs and answer: agents get a grace of their own
@@ -70,7 +63,34 @@ struct Exit {
     changed: Condvar,
 }
 
-type Answer = oneshot::Sender<Result<Value, String>>;
+/// Where main's answer to one request goes: what it answered, or its refusal.
+type Answer = mpsc::SyncSender<Result<Value, String>>;
+
+/// Why a request to main came back with no answer.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RequestError {
+    /// Main refused it, in its own words.
+    Refused(String),
+    /// Main had exited, or the shell had closed its stdin, before it was asked.
+    NotRunning,
+    /// Main exited before it answered.
+    Gone,
+    /// Main did not answer within this long.
+    TimedOut(Duration),
+}
+
+impl fmt::Display for RequestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Refused(reason) => f.write_str(reason),
+            Self::NotRunning => f.write_str("main is not running"),
+            Self::Gone => f.write_str("main is gone"),
+            Self::TimedOut(within) => write!(f, "main did not answer within {within:?}"),
+        }
+    }
+}
+
+impl std::error::Error for RequestError {}
 
 pub struct MainProcess {
     pid: u32,
@@ -86,7 +106,7 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn describe(code: Option<i32>) -> String {
+pub fn describe(code: Option<i32>) -> String {
     code.map_or_else(|| "a signal".to_owned(), |code| format!("code {code}"))
 }
 
@@ -184,9 +204,8 @@ impl MainProcess {
                 !state.stopping
             };
             watched.exit.changed.notify_all();
-            for (_, answer) in lock(&watched.pending).drain() {
-                let _ = answer.send(Err("main is gone".to_owned()));
-            }
+            // each request still waiting hears its answer will never come
+            lock(&watched.pending).clear();
             if unexpected {
                 lost(code);
             }
@@ -213,22 +232,49 @@ impl MainProcess {
 
     fn settle(&self, id: u64, outcome: Result<Value, String>) {
         if let Some(answer) = lock(&self.pending).remove(&id) {
-            let _ = answer.send(outcome);
+            // the one answer its channel holds: never blocks the reader
+            let _ = answer.try_send(outcome);
         }
     }
 
-    /// Asks main, and waits for its answer: an error is main's refusal, or main being gone.
-    pub async fn request(&self, method: &str, params: &Value) -> Result<Value, String> {
+    /// Asks main, and waits up to `within` for its answer. Blocks: off the main thread, but for a
+    /// quit's.
+    pub fn request(
+        &self,
+        method: &str,
+        params: &Value,
+        within: Duration,
+    ) -> Result<Value, RequestError> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        let (answer, answered) = oneshot::channel();
+        let (answer, answered) = mpsc::sync_channel(1);
         lock(&self.pending).insert(id, answer);
         if !self.write(&relay::request_line(id, method, params)) {
             lock(&self.pending).remove(&id);
-            return Err("main is not running".to_owned());
+            return Err(RequestError::NotRunning);
         }
-        answered
-            .await
-            .unwrap_or_else(|_| Err("main is gone".to_owned()))
+        match answered.recv_timeout(within) {
+            Ok(outcome) => outcome.map_err(RequestError::Refused),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // an answer that comes later has no one to go to
+                lock(&self.pending).remove(&id);
+                Err(RequestError::TimedOut(within))
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(RequestError::Gone),
+        }
+    }
+
+    /// Says hello, which main boots on, and waits up to `within` for it to boot. A main that has
+    /// not booted by then is stuck somewhere in its boot, and a quit would wait the boot out too,
+    /// so it is killed with its group.
+    pub fn boot(&self, hello: &Value, within: Duration) -> Result<(), RequestError> {
+        let booted = self.request(protocol::HELLO, hello, within);
+        if let Err(RequestError::TimedOut(_)) = booted {
+            self.note(&format!(
+                "[shell] main did not boot within {within:?}; killing it"
+            ));
+            self.kill();
+        }
+        booted.map(|_| ())
     }
 
     /// Tells main, and waits for nothing.
@@ -250,18 +296,27 @@ impl MainProcess {
             }
             state.stopping = true;
         }
-        let answered = tauri::async_runtime::block_on(async {
-            tokio::time::timeout(quit_timeout, self.request("quit", &Value::Null)).await
-        });
-        if !matches!(answered, Ok(Ok(_))) {
+        if self
+            .request(protocol::QUIT, &Value::Null, quit_timeout)
+            .is_err()
+        {
             self.note("[shell] main did not answer quit in time; closing it anyway");
         }
         lock(&self.to_main).take();
         if !self.wait_exit(EXIT_GRACE) {
             self.note("[shell] main did not exit once its stdin closed; sending SIGKILL");
-            kill(self.pid);
+            kill_group(self.pid);
             self.wait_exit(EXIT_GRACE);
         }
+    }
+
+    /// Ends main at once, asking it nothing: its group is killed, and its exit waited for. Main
+    /// is not lost then: whoever kills it says why.
+    fn kill(&self) {
+        lock(&self.exit.state).stopping = true;
+        lock(&self.to_main).take();
+        kill_group(self.pid);
+        self.wait_exit(EXIT_GRACE);
     }
 
     fn wait_exit(&self, within: Duration) -> bool {
@@ -285,7 +340,7 @@ fn pump<R: Read + Send + 'static>(stream: R, log: Arc<Mutex<MainLog>>) {
 }
 
 #[cfg(unix)]
-fn kill(pid: u32) {
+fn kill_group(pid: u32) {
     use nix::sys::signal::{Signal, killpg};
     use nix::unistd::Pid;
     if let Ok(pid) = i32::try_from(pid) {
@@ -295,12 +350,13 @@ fn kill(pid: u32) {
 }
 
 #[cfg(not(unix))]
-fn kill(_pid: u32) {}
+fn kill_group(_pid: u32) {}
 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
     use std::sync::mpsc::Receiver;
+    use std::time::Instant;
 
     use serde_json::json;
 
@@ -308,10 +364,13 @@ mod tests {
 
     /// A main that speaks the relay and nothing else: it answers `echo` and `refuse`, asks the shell
     /// for `host.ping` when told to `ask` and says what it heard back as `pong`, stops reading its
-    /// stdin when told to `wedge`, and exits when told to `die` or when its stdin closes.
+    /// stdin when told to `wedge`, and exits when told to `die` or when its stdin closes. Its boot,
+    /// on `hello`, never ends, and a quit waits it out, as main's does: from then on it answers no
+    /// quit and outlives its stdin.
     const FAKE_MAIN: &str = r#"
 const readline = require("node:readline");
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
+let booting = false;
 console.error("main is up");
 process.stdout.write("not a message\n");
 readline
@@ -323,10 +382,11 @@ readline
     else if (message.method === "ask") send({ id: 900, method: "host.ping", params: message.params });
     else if (message.method === "die") process.exit(3);
     else if (message.method === "wedge") { process.stdin.pause(); setInterval(() => {}, 1000); }
-    else if (message.method === "quit") send({ id: message.id, result: null });
+    else if (message.method === "hello") { booting = true; setInterval(() => {}, 1000); }
+    else if (message.method === "quit") { if (!booting) send({ id: message.id, result: null }); }
     else if (message.id === 900) send({ method: "pong", params: message.result ?? message.error });
   })
-  .on("close", () => process.exit(0));
+  .on("close", () => { if (!booting) process.exit(0); });
 send({ method: "hi", params: { n: 1 } });
 "#;
 
@@ -387,8 +447,8 @@ send({ method: "hi", params: { n: 1 } });
 
     const WAIT: Duration = Duration::from_secs(10);
 
-    fn ask(main: &MainProcess, method: &str, params: &Value) -> Result<Value, String> {
-        tauri::async_runtime::block_on(main.request(method, params))
+    fn ask(main: &MainProcess, method: &str, params: &Value) -> Result<Value, RequestError> {
+        main.request(method, params, WAIT)
     }
 
     #[test]
@@ -407,7 +467,10 @@ send({ method: "hi", params: { n: 1 } });
             ask(main, "echo", &json!({ "a": [1, 2] })),
             Ok(json!({ "a": [1, 2] }))
         );
-        assert_eq!(ask(main, "refuse", &Value::Null), Err("no".to_owned()));
+        assert_eq!(
+            ask(main, "refuse", &Value::Null),
+            Err(RequestError::Refused("no".to_owned()))
+        );
         main.notify("ask", &json!("x"));
         assert_eq!(
             started.heard.recv_timeout(WAIT)?,
@@ -424,7 +487,7 @@ send({ method: "hi", params: { n: 1 } });
         );
         assert_eq!(
             ask(main, "echo", &Value::Null),
-            Err("main is not running".to_owned())
+            Err(RequestError::NotRunning)
         );
         let log = read(&started.log);
         assert!(log.contains(" main is up\n"), "{log}");
@@ -475,10 +538,61 @@ send({ method: "hi", params: { n: 1 } });
         assert_eq!(started.lost.recv_timeout(WAIT)?, Some(3));
         assert_eq!(
             answer.join().map_err(|_| "the request's thread panicked")?,
-            Err("main is gone".to_owned())
+            Err(RequestError::Gone)
         );
         // stopping a main that is gone asks it nothing
         started.main.stop();
+        Ok(())
+    }
+
+    #[test]
+    fn a_main_that_never_boots_is_killed_at_the_deadline() -> Result<(), Box<dyn std::error::Error>>
+    {
+        if !has_node() {
+            return Ok(());
+        }
+        let started = start(tempfile::tempdir()?)?;
+        started.heard.recv_timeout(WAIT)?;
+        let within = Duration::from_millis(300);
+        let asked = Instant::now();
+        assert_eq!(
+            started.main.boot(&Value::Null, within),
+            Err(RequestError::TimedOut(within))
+        );
+        assert!(asked.elapsed() < within + EXIT_GRACE);
+        assert!(lock(&started.main.exit.state).exited);
+        // the shell says why itself, so main is not lost
+        assert!(
+            started
+                .lost
+                .recv_timeout(Duration::from_millis(200))
+                .is_err()
+        );
+        let log = read(&started.log);
+        assert!(log.contains("main did not boot within 300ms"), "{log}");
+        Ok(())
+    }
+
+    #[test]
+    fn a_quit_during_a_boot_that_never_ends_ends_main_within_its_deadline()
+    -> Result<(), Box<dyn std::error::Error>> {
+        if !has_node() {
+            return Ok(());
+        }
+        let started = start(tempfile::tempdir()?)?;
+        started.heard.recv_timeout(WAIT)?;
+        let booting = Arc::clone(&started.main);
+        let asked = Instant::now();
+        let hello = thread::spawn(move || booting.request("hello", &Value::Null, WAIT * 6));
+        thread::sleep(Duration::from_millis(200));
+        let quit = Duration::from_millis(300);
+        started.main.stop_within(quit);
+        assert!(lock(&started.main.exit.state).exited);
+        assert_eq!(
+            hello.join().map_err(|_| "the hello's thread panicked")?,
+            Err(RequestError::Gone)
+        );
+        assert!(asked.elapsed() < Duration::from_millis(200) + quit + EXIT_GRACE * 2);
         Ok(())
     }
 }

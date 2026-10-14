@@ -1,16 +1,33 @@
-import { useEffect, useEffectEvent, useState } from "react";
-import { getCharacterAssets } from "@/renderer/character-assets";
-import { useAsync } from "@/renderer/hooks/use-async";
+import { useEffect, useEffectEvent, useReducer, useState } from "react";
+import { preload } from "react-dom";
 import { useAuthFlow } from "@/renderer/hooks/use-auth-flow";
 import type { Auth } from "@/renderer/hooks/use-auth-flow";
 import { useKeyedState } from "@/renderer/hooks/use-keyed-state";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useTypewriter } from "@/renderer/hooks/use-typewriter";
 import { api } from "@/renderer/api";
-import { officeReady, refresh } from "@/renderer/state/store";
+import { sheetUrl } from "@/renderer/character-art";
+import { companyFounded } from "@/renderer/state/store";
 import { AuthStep } from "@/renderer/ui/auth-step";
 import { EmployeeTag } from "@/renderer/ui/employee-tag";
 import { useModal } from "@/renderer/ui/modal";
+import { BACK_STEP, START, failureOf, nextFlow, sceneOf } from "@/renderer/ui/onboarding-flow";
+import type { Flow, Step } from "@/renderer/ui/onboarding-flow";
+import {
+  BIZ_ITEMS,
+  CAPS,
+  CAP_ITEMS,
+  CAST_ITEMS,
+  DEFAULT_CAP_INDEX,
+  FAILED_ITEMS,
+  FOUNDING_STEPS,
+  LOOK_ITEMS,
+  OPEN_FAILED_ITEMS,
+  STEP_LABELS,
+  completedSteps,
+  hintFor,
+  scriptFor,
+} from "@/renderer/ui/onboarding-script";
 import {
   BudgetMeter,
   Backdrop,
@@ -20,7 +37,7 @@ import {
   TeamParade,
 } from "@/renderer/ui/onboarding-stage";
 import { ChoiceMenu } from "@/renderer/ui/choice-menu";
-import type { Menu, MenuItem } from "@/renderer/ui/choice-menu";
+import type { Menu } from "@/renderer/ui/choice-menu";
 import { ConfirmLink } from "@/renderer/ui/confirm-link";
 import { TypeCursor } from "@/renderer/ui/type-cursor";
 import {
@@ -30,174 +47,9 @@ import {
   missionFromPitch,
 } from "@repo/domain/domain";
 import type { Budget, BusinessTypeId } from "@repo/domain/domain";
+import { founderChoices } from "@repo/domain/character-seed";
 import { errorMessage } from "@repo/domain/errors";
 import type { HireProposal } from "@repo/domain/hire";
-
-const STEP_ORDER = [
-  "title",
-  "intro",
-  "auth",
-  "founder",
-  "look",
-  "company",
-  "biztype",
-  "pitch",
-  "team",
-  "budget",
-  "finalize",
-] as const;
-type Step = (typeof STEP_ORDER)[number];
-
-/** Each answer fills one of the founding markers. */
-const FOUNDING_STEPS: readonly Step[] = [
-  "founder",
-  "look",
-  "company",
-  "biztype",
-  "pitch",
-  "team",
-  "budget",
-];
-const completedSteps = (step: Step): number =>
-  step === "finalize"
-    ? FOUNDING_STEPS.length
-    : FOUNDING_STEPS.filter((s) => STEP_ORDER.indexOf(s) < STEP_ORDER.indexOf(step)).length;
-
-const STEP_LABELS = {
-  auth: "Connect your workforce",
-  biztype: "Your business",
-  budget: "Your budget",
-  company: "Your company",
-  finalize: "Open for business",
-  founder: "The founder",
-  intro: "Meet your first investor",
-  look: "Your look",
-  pitch: "Your big idea",
-  team: "Your founding team",
-  title: "IdleBiz",
-} satisfies Record<Step, string>;
-
-/** Where "back" goes, or null where it doesn't go anywhere. Only the cheap,
- *  reversible steps rewind: casting the team spends a real CLI call, and past
- *  that the office is on disk. */
-const BACK_STEP = {
-  auth: null,
-  biztype: "company",
-  budget: null,
-  company: "look",
-  finalize: null,
-  founder: null,
-  intro: null,
-  look: "founder",
-  pitch: "biztype",
-  team: null,
-  title: null,
-} satisfies Record<Step, Step | null>;
-
-type Team =
-  | { kind: "uncast" }
-  | { kind: "casting" }
-  | { kind: "failed"; message: string }
-  | { kind: "cast"; hires: HireProposal[] };
-
-/** The caps on offer; null is the explicit "no ceiling" choice, not an absent one. */
-const CAPS: readonly (number | null)[] = [5, 20, 50, null];
-const CAP_ITEMS: readonly MenuItem[] = CAPS.map((cap) =>
-  cap === null
-    ? { hint: "No ceiling — the office uses whatever it needs", label: "No cap" }
-    : { label: `$${cap}` },
-);
-const DEFAULT_CAP_INDEX = 1;
-
-const BIZ_ITEMS: readonly MenuItem[] = BUSINESS_TYPES.map((b) => ({ label: b.label }));
-const LOOK_ITEMS: readonly MenuItem[] = [{ label: "That's me" }, { label: "Show me another" }];
-const CAST_ITEMS: readonly MenuItem[] = [{ label: "Sign them" }, { label: "Search again" }];
-const FAILED_ITEMS: readonly MenuItem[] = [
-  { label: "Search again" },
-  { label: "Rewrite the pitch" },
-];
-const OPEN_FAILED_ITEMS: readonly MenuItem[] = [{ label: "Try again" }];
-
-const teamScript = (team: Team, pitched: boolean): readonly string[] => {
-  switch (team.kind) {
-    case "cast": {
-      return [
-        pitched
-          ? "Boom. Founding team, cast for that exact pitch. I know people."
-          : "Boom. Founding team, cast to find the idea themselves. They'll tell you what they try first.",
-        "From here the team lead hires and fires on their own. You steer with the budget.",
-      ];
-    }
-    case "failed": {
-      return ["Huh. My recruiter isn't picking up. Want me to try again?"];
-    }
-    case "uncast":
-    case "casting": {
-      return ["Hang on, let me text my recruiter…", "…she's reviewing resumes…"];
-    }
-    // no default
-  }
-};
-
-/** What Chad says at each step, a page at a time. The step's prompt opens
- *  under the last page. */
-const scriptFor = (
-  step: Step,
-  founderName: string,
-  companyName: string,
-  team: Team,
-  pitched: boolean,
-): readonly string[] => {
-  const you = founderName || "founder";
-  const co = companyName || "your company";
-  switch (step) {
-    case "title": {
-      return [];
-    }
-    case "intro": {
-      return [
-        "Hey! Welcome to the world of IDLEBIZ!",
-        "Chad Runwayson. I write checks. That office down the street? I own the building — and tonight it's yours, every floor of it, if you've got the nerve.",
-        "This world runs on employees. They live in your coding CLI — Claude Code or Codex — and they write real code, in a real folder, on your computer. Real usage, too.",
-      ];
-    }
-    case "auth": {
-      return [
-        "Hm. I don't see a coding CLI signed in on this machine. No CLI, no employees. Let's fix that first.",
-      ];
-    }
-    case "founder": {
-      return ["So. Tell me about the founder. What's your name?"];
-    }
-    case "look": {
-      return [`${you}. Love it. And which of these is you?`];
-    }
-    case "company": {
-      return [`Okay ${you}. The company you're founding — what's it called?`];
-    }
-    case "biztype": {
-      return [`${co}. Strong name. What kind of company is ${co} going to be?`];
-    }
-    case "pitch": {
-      return [
-        `Now the pitch. What will ${co} build? Got nothing? Leave it blank — the team picks something and tells you.`,
-      ];
-    }
-    case "team": {
-      return teamScript(team, pitched);
-    }
-    case "budget": {
-      return [
-        "Last thing, and it's the one I care about. Employees think with real AI, and I meter every run at API prices. Your plan may bill you less, but that's the number I watch.",
-        "Set the usage ceiling. They down tools when they hit it, and you can move it any time.",
-      ];
-    }
-    case "finalize": {
-      return [`${co}! Your very own business legend starts tonight. Here are the keys — go.`];
-    }
-    // no default
-  }
-};
 
 /**
  * A script read a page at a time: Enter skips the typing, then turns the page,
@@ -226,14 +78,7 @@ const useScript = (key: string, pages: readonly string[]) => {
   return { advance, done: writer.done, last, promptOpen, shown: writer.shown, skip };
 };
 
-/** The looks on offer, warmed as soon as they are known so browsing them is instant. */
-const loadFounderChoices = async (): Promise<string[]> => {
-  const seeds = await api().characters.founders();
-  for (const seed of seeds) {
-    void getCharacterAssets(seed);
-  }
-  return seeds;
-};
+const LOOKS = founderChoices(6);
 
 const TitleScreen = ({ onStart }: { onStart: () => void }) => (
   <div className="ob-title-screen">
@@ -303,8 +148,8 @@ const PromptField = ({
             <ConfirmLink
               label="↺ start over"
               confirmLabel="delete saves"
-              title="Delete saved companies and restart"
-              onConfirm={() => api().save.reset()}
+              title="Delete the save and restart"
+              onConfirm={() => api.save.reset()}
             />
           }
         />
@@ -431,35 +276,6 @@ const promptFor = (
   }
 };
 
-const hintFor = (step: Step, look: number, looks: number, capUsd: number | null): string | null => {
-  switch (step) {
-    case "founder":
-    case "company": {
-      return "Enter ↵";
-    }
-    case "pitch": {
-      return "Enter ↵ · blank lets the team pick · Shift+Enter for a new line";
-    }
-    case "look": {
-      return looks > 1 ? `${look + 1} / ${looks} · ← → to browse` : null;
-    }
-    case "budget": {
-      return capUsd === null
-        ? "⚠ Uncapped. Usage keeps climbing while the office works."
-        : `New work stops at $${capUsd} of usage; whatever is already running still finishes.`;
-    }
-    case "title":
-    case "intro":
-    case "auth":
-    case "biztype":
-    case "team":
-    case "finalize": {
-      return null;
-    }
-    // no default
-  }
-};
-
 /**
  * Pointer-only: a focused button answers Enter itself, so an arrow that kept
  * focus after a click would turn Enter into "next look". ← → browse instead.
@@ -478,29 +294,28 @@ const LookArrow = ({ side, onClick }: { side: "l" | "r"; onClick: () => void }) 
 );
 
 const Encounter = ({
-  step,
+  flow,
   seed,
   looks,
-  team,
   capUsd,
   founderName,
   companyName,
   onPrevLook,
   onNextLook,
 }: {
-  step: Step;
+  flow: Flow;
   seed: string;
   looks: number;
-  team: Team;
   capUsd: number | null;
   founderName: string;
   companyName: string;
   onPrevLook: () => void;
   onNextLook: () => void;
 }) => {
+  const { step } = flow;
   const pickingLook = step === "look";
-  const showingTeam = step === "team" && team.kind === "cast";
-  const showingPanel = showingTeam || step === "budget";
+  const team = step === "team" ? flow.team : null;
+  const showingPanel = team?.kind === "cast" || step === "budget";
   return (
     <div className="ob-stage" data-look={pickingLook} data-panel={showingPanel}>
       <OfficeBackdrop />
@@ -516,13 +331,13 @@ const Encounter = ({
         </>
       ) : (
         <>
-          <Narrator thinking={step === "team" && team.kind === "casting"} />
+          <Narrator thinking={team?.kind === "casting"} />
           {showingPanel ? null : <FounderSprite seed={seed} facing="back" />}
         </>
       )}
       {showingPanel ? (
         <div className="ob-panel">
-          {showingTeam && team.kind === "cast" ? <TeamParade hires={team.hires} /> : null}
+          {team?.kind === "cast" ? <TeamParade hires={team.hires} /> : null}
           {step === "budget" ? <BudgetMeter capUsd={capUsd} /> : null}
         </div>
       ) : null}
@@ -543,99 +358,103 @@ const Encounter = ({
 };
 
 export const Onboarding = () => {
-  const [step, setStep] = useState<Step>("title");
+  const [flow, dispatch] = useReducer(nextFlow, START);
+  const { step } = flow;
   const [founderName, setFounderName] = useState("");
-  const founderChoices = useAsync(loadFounderChoices, []);
-  const choices = founderChoices.kind === "ready" ? founderChoices.value : [];
   const [look, setLook] = useState(0);
   const [companyName, setCompanyName] = useState("");
   const [biz, setBiz] = useState<BusinessTypeId | null>(null);
   const [pitch, setPitch] = useState("");
-  const [team, setTeam] = useState<Team>({ kind: "uncast" });
   const [capIndex, setCapIndex] = useState(DEFAULT_CAP_INDEX);
-  // Founding stays off useSubmission: the step machine drives it. A refusal
-  // sends the step back to the budget, and an action would hold the founding
-  // screen's setStep until main answered.
-  const [failure, setFailure] = useState<string | null>(null);
   // Once founded the company is on disk and main refuses a second founding, so
-  // only this refresh is retried; the office opens once the copy here has it.
-  const opening = useSubmission(refresh);
-  const [cursor, setCursor] = useKeyedState(step, 0);
+  // only reading it back is retried; the office opens once the page holds it.
+  const opening = useSubmission(companyFounded);
+  const scene = sceneOf(flow);
+  const [cursor, setCursor] = useKeyedState(scene, 0);
 
   const capUsd = CAPS[capIndex] ?? null;
 
   useModal();
 
-  // a beat on "Connected ✓" before the founder's own step
-  const { auth, login } = useAuthFlow(() => window.setTimeout(() => setStep("founder"), 700));
+  // each look fetched as soon as it is on offer, so browsing them is instant
+  for (const seed of LOOKS) {
+    preload(sheetUrl(seed), { as: "image" });
+  }
 
-  const mission = missionFromPitch(pitch);
-  const script = useScript(
-    `${step}:${team.kind}`,
-    scriptFor(step, founderName, companyName, team, mission !== null),
+  // a beat on "Connected ✓" before the founder's own step
+  const { auth, login } = useAuthFlow(() =>
+    window.setTimeout(() => dispatch({ kind: "signed-in" }), 700),
   );
 
-  /** Ask a real CLI to cast a founding team for this pitch. Costs money. */
-  const castTeam = () => {
-    setFailure(null);
-    // a retry keeps the step, so the new team's menu would open on "Search
-    // again", one Enter from another paid search
-    setCursor(0);
-    setTeam({ kind: "casting" });
-    setStep("team");
-    const cast = async () => {
-      try {
-        const h = await api().onboarding.hires({
-          businessType: biz ?? "custom",
-          companyName: companyName.trim(),
-          mission,
-        });
-        setTeam({ hires: h, kind: "cast" });
-      } catch (error) {
-        setTeam({ kind: "failed", message: errorMessage(error) });
-      }
-    };
-    void cast();
-  };
+  const mission = missionFromPitch(pitch);
+  const script = useScript(scene, scriptFor(flow, founderName, companyName, mission !== null));
 
-  const finalize = async () => {
-    if (team.kind !== "cast" || team.hires.length === 0 || step === "finalize") {
-      return;
-    }
-    const budget: Budget = capUsd === null ? { mode: "infinite" } : { capUsd, mode: "capped" };
-    setFailure(null);
-    setStep("finalize");
+  // Casting and founding stay off useSubmission: the flow holds how each went.
+  // A submission's failure stays until its next submit, so a failed cast would
+  // still show after "Rewrite the pitch", and an action would hold the founding
+  // screen until main answered. Each call follows the flow into the step that
+  // names it, so every way there (Enter, either menu) makes it once.
+
+  /** Ask a real CLI to cast a founding team for this pitch. Costs money. */
+  const cast = useEffectEvent(async () => {
     try {
-      await api().onboarding.found({
+      const hires = await api.onboarding.hires({
+        businessType: biz ?? "custom",
+        companyName: companyName.trim(),
+        mission,
+      });
+      dispatch({ hires, kind: "cast" });
+    } catch (error) {
+      dispatch({ kind: "cast-failed", message: errorMessage(error) });
+    }
+  });
+  const casting = step === "team" && flow.team.kind === "casting";
+  useEffect(() => {
+    if (casting) {
+      void cast();
+    }
+  }, [casting]);
+
+  const found = useEffectEvent(async (hires: HireProposal[]) => {
+    const budget: Budget = capUsd === null ? { mode: "infinite" } : { capUsd, mode: "capped" };
+    try {
+      await api.onboarding.found({
         budget,
         businessType: biz ?? "custom",
         founderName: founderName.trim(),
-        founderSpriteSeed: choices[look] ?? DEFAULT_FOUNDER_SEED,
-        hires: team.hires,
+        founderSpriteSeed: LOOKS[look] ?? DEFAULT_FOUNDER_SEED,
+        hires,
         mission,
         name: companyName.trim(),
       });
     } catch (error) {
-      setFailure(errorMessage(error));
-      setStep("budget");
+      dispatch({ kind: "found-failed", message: errorMessage(error) });
       return;
     }
-    officeReady();
     opening.submit();
-  };
+  });
+  const founding = step === "finalize" ? flow.hires : null;
+  useEffect(() => {
+    if (founding) {
+      void found(founding);
+    }
+  }, [founding]);
 
-  const looks = choices.length;
-  const nextLook = () => setLook((i) => (looks === 0 ? 0 : (i + 1) % looks));
-  const prevLook = () => setLook((i) => (looks === 0 ? 0 : (i + looks - 1) % looks));
+  const forward = () => dispatch({ auth: auth.phase, companyName, founderName, kind: "next" });
+  const back = () => dispatch({ kind: "back" });
+
+  const looks = LOOKS.length;
+  const nextLook = () => setLook((i) => (i + 1) % looks);
+  const prevLook = () => setLook((i) => (i + looks - 1) % looks);
 
   /** The choice window under the current step, if it has one. */
   const menuFor = (): Menu | null => {
-    switch (step) {
+    switch (flow.step) {
       case "look": {
         return {
           cursor,
           items: LOOK_ITEMS,
-          pick: (i) => (i === 0 ? setStep("company") : nextLook()),
+          pick: (i) => (i === 0 ? forward() : nextLook()),
           setCursor,
         };
       }
@@ -647,33 +466,26 @@ export const Onboarding = () => {
             const b = BUSINESS_TYPES[i];
             if (b) {
               setBiz(b.id);
-              setStep("pitch");
+              forward();
             }
           },
           setCursor,
         };
       }
       case "team": {
-        if (team.kind === "cast") {
+        if (flow.team.kind === "cast") {
           return {
             cursor,
             items: CAST_ITEMS,
-            pick: (i) => (i === 0 ? setStep("budget") : castTeam()),
+            pick: (i) => (i === 0 ? forward() : dispatch({ kind: "recast" })),
             setCursor,
           };
         }
-        if (team.kind === "failed") {
+        if (flow.team.kind === "failed") {
           return {
             cursor,
             items: FAILED_ITEMS,
-            pick: (i) => {
-              if (i === 0) {
-                castTeam();
-              } else {
-                setTeam({ kind: "uncast" });
-                setStep("pitch");
-              }
-            },
+            pick: (i) => dispatch({ kind: i === 0 ? "recast" : "rewrite" }),
             setCursor,
           };
         }
@@ -686,7 +498,7 @@ export const Onboarding = () => {
           items: CAP_ITEMS,
           pick: (i) => {
             setCapIndex(i);
-            void finalize();
+            forward();
           },
           setCursor: setCapIndex,
         };
@@ -712,62 +524,18 @@ export const Onboarding = () => {
 
   /** Enter, once the page is read: the step's own confirm. */
   const confirm = () => {
-    setFailure(null);
     if (menu) {
       menu.pick(menu.cursor);
       return;
     }
-    switch (step) {
-      case "intro": {
-        // the CLI probe has to land first — routing before it would send a
-        // signed-in founder to the login screen
-        if (auth.phase !== "checking") {
-          setStep(auth.phase === "signed-in" ? "founder" : "auth");
-        }
-        break;
+    if (step === "auth") {
+      // logging-in already has a browser open; signed-in moves on by itself
+      if (auth.phase === "signed-out" || auth.phase === "login-failed") {
+        login();
       }
-      case "auth": {
-        // logging-in already has a browser open; signed-in moves on by itself
-        if (auth.phase === "signed-out" || auth.phase === "login-failed") {
-          login();
-        }
-        break;
-      }
-      case "founder": {
-        if (founderName.trim()) {
-          setStep("look");
-        }
-        break;
-      }
-      case "company": {
-        if (companyName.trim()) {
-          setStep("biztype");
-        }
-        break;
-      }
-      case "pitch": {
-        castTeam();
-        break;
-      }
-      // a menu answered above, or there is nothing to confirm yet
-      case "title":
-      case "look":
-      case "biztype":
-      case "team":
-      case "budget":
-      case "finalize": {
-        break;
-      }
-      // no default
+      return;
     }
-  };
-
-  const back = () => {
-    const prev = BACK_STEP[step];
-    if (prev !== null) {
-      setFailure(null);
-      setStep(prev);
-    }
+    forward();
   };
 
   // Enter is the A button: it skips the typing, turns the page, then confirms.
@@ -782,7 +550,7 @@ export const Onboarding = () => {
     }
     if (step === "title") {
       if (e.key === "Enter") {
-        setStep("intro");
+        forward();
       }
       return;
     }
@@ -819,15 +587,13 @@ export const Onboarding = () => {
   }, []);
 
   const problem =
-    failure ??
-    (opening.submission.kind === "failed" ? opening.submission.message : null) ??
-    (team.kind === "failed" ? team.message : null);
+    failureOf(flow) ?? (opening.submission.kind === "failed" ? opening.submission.message : null);
   // Enter on the intro's last page waits for the probe; say so instead of doing nothing
   const hint =
     step === "intro" && auth.phase === "checking"
       ? "Checking your CLI…"
       : hintFor(step, look, looks, capUsd);
-  const seed = choices[look] ?? DEFAULT_FOUNDER_SEED;
+  const seed = LOOKS[look] ?? DEFAULT_FOUNDER_SEED;
   const prompt = promptFor(step, {
     biz,
     companyName,
@@ -845,7 +611,7 @@ export const Onboarding = () => {
         data-frame="title"
       >
         <Backdrop />
-        <TitleScreen onStart={() => setStep("intro")} />
+        <TitleScreen onStart={forward} />
         <div className="ob-title-footer">An idle business adventure</div>
       </div>
     );
@@ -858,10 +624,9 @@ export const Onboarding = () => {
     >
       <div className="ob-encounter">
         <Encounter
-          step={step}
+          flow={flow}
           seed={seed}
           looks={looks}
-          team={team}
           capUsd={capUsd}
           founderName={founderName}
           companyName={companyName}

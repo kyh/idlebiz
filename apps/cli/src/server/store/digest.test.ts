@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { emptyDigest, foldDigest } from "./digest";
-import { DigestSchema } from "@repo/domain/digest";
 import type { BlockedAsk } from "@repo/domain/domain";
 
 const inRun = { employeeId: "priya", runId: "r1", taskId: "t1" };
@@ -18,7 +17,7 @@ describe("folding the digest", () => {
     expect(d.ships).toEqual(["ship 7", "ship 8", "ship 9", "ship 10", "ship 11"]);
   });
 
-  it("sums runs and what they cost, a run without a recorded cost as nothing", () => {
+  it("sums runs and what they cost", () => {
     const done = { kind: "done" } as const;
     const once = foldDigest(emptyDigest(0), {
       ...inRun,
@@ -32,9 +31,9 @@ describe("folding the digest", () => {
         ...inRun,
         createdAt: 2,
         kind: "run.end",
-        payload: { outcome: done, settled: "done", summary: "" },
+        payload: { costUsd: 0.5, outcome: done, settled: "done", summary: "" },
       });
-    expect(twice).toMatchObject({ runs: 2, spentUsd: 0.25 });
+    expect(twice).toMatchObject({ runs: 2, spentUsd: 0.75 });
   });
 
   it("counts the actions handed to the founder, not their questions", () => {
@@ -47,11 +46,6 @@ describe("folding the digest", () => {
       }),
     ).toMatchObject({ actions: 1 });
     expect(asked({ question: "Monthly or yearly?", type: "question" })).toBeNull();
-  });
-
-  it("reads a digest from before it counted actions", () => {
-    const { actions: _, ...older } = emptyDigest(0);
-    expect(DigestSchema.parse(older)).toEqual(emptyDigest(0));
   });
 
   it("leaves alone what it does not count", () => {

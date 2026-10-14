@@ -8,7 +8,7 @@ import {
   writeSecrets,
 } from "./harness";
 
-const SEALED = /^sealed:v1:/u;
+const SEALED = /^sealed:v2:/u;
 
 test("a Vercel token Vercel takes binds the product's project and is kept sealed", async ({
   launch,
@@ -18,7 +18,7 @@ test("a Vercel token Vercel takes binds the product's project and is kept sealed
   await foundCompany(founding.page);
   await founding.close();
 
-  const { page } = await launch({ stubServices: true });
+  const { page } = await launch();
   const users = page.getByRole("button", { name: /users/iu });
   await users.click();
   await page.getByRole("button", { name: "▲ Vercel" }).click();
@@ -45,7 +45,7 @@ test("a Vercel token is kept with no project picked, for the first deploy to mak
   await foundCompany(founding.page);
   await founding.close();
 
-  const { page } = await launch({ stubServices: true });
+  const { page } = await launch();
   await page.getByRole("button", { name: /users/iu }).click();
   await page.getByRole("button", { name: "▲ Vercel" }).click();
   const connect = page.getByRole("dialog", { name: "Connect Vercel" });
@@ -58,7 +58,7 @@ test("a Vercel token is kept with no project picked, for the first deploy to mak
   const secrets = await readSecrets(root);
   expect(secrets.VERCEL_TOKEN).toMatch(SEALED);
   const api = await apiOf(page);
-  const [product] = await api.evaluate((a) => a.products.list());
+  const [product] = await api.products.list();
   expect(product?.vercel).toBeNull();
 });
 
@@ -70,7 +70,7 @@ test("a Vercel token Vercel refuses is shown as refused and never saved", async 
   await foundCompany(founding.page);
   await founding.close();
 
-  const { page } = await launch();
+  const { page } = await launch({ keys: "refused" });
   await page.getByRole("button", { name: /users/iu }).click();
   await page.getByRole("button", { name: "▲ Vercel" }).click();
   const connect = page.getByRole("dialog", { name: "Connect Vercel" });
@@ -90,7 +90,7 @@ test("a Stripe key Stripe refuses is shown as refused and never saved", async ({
   await foundCompany(founding.page);
   await founding.close();
 
-  const { page } = await launch();
+  const { page } = await launch({ keys: "refused" });
   await page.getByRole("button", { name: /revenue/iu }).click();
   const budget = page.getByRole("dialog", { name: "Budget" });
   const key = budget.getByLabel("Stripe secret key");
@@ -114,7 +114,7 @@ test("a Stripe key Stripe takes is kept sealed, shown as set, replaceable and re
   await foundCompany(founding.page);
   await founding.close();
 
-  const { page } = await launch({ stubServices: true });
+  const { page } = await launch();
   await page.getByRole("button", { name: /revenue/iu }).click();
   const budget = page.getByRole("dialog", { name: "Budget" });
   const key = "sk_test_e2eGood1234";
@@ -143,19 +143,16 @@ test("a token pasted into secrets.json is sealed at boot and still used", async 
   const founding = await launch();
   const { product } = await foundCompany(founding.page);
   const api = await apiOf(founding.page);
-  await api.evaluate(
-    (a, productId) => a.vercel.connect({ productId, projectId: "prj_e2e", projectName: "e2e" }),
-    product.id,
-  );
+  await api.vercel.connect({ productId: product.id, projectId: "prj_e2e", projectName: "e2e" });
   await founding.close();
   const token = "e2e-pasted-vercel-token";
   await writeSecrets(root, { ...(await readSecrets(root)), VERCEL_TOKEN: token });
 
-  const { page } = await launch();
+  const { page } = await launch({ keys: "refused" });
   expect(await secretsText(root)).not.toContain(token);
   const secrets = await readSecrets(root);
   expect(secrets.VERCEL_TOKEN).toMatch(SEALED);
-  // only a token main opened reaches Vercel, which refuses this one
+  // only a token main opened reaches Vercel, which here refuses every one
   await expect(page.getByRole("button", { name: /vercel refused/iu })).toBeVisible();
 });
 
@@ -167,7 +164,7 @@ test("a Printful token Printful takes is kept sealed, shown with its store, repl
   await foundCompany(founding.page);
   await founding.close();
 
-  const { page } = await launch({ stubServices: true });
+  const { page } = await launch();
   await page.getByRole("button", { name: /revenue/iu }).click();
   const budget = page.getByRole("dialog", { name: "Budget" });
   const token = "pf_e2e_private_token_9876";

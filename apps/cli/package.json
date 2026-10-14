@@ -15,7 +15,7 @@
   "type": "module",
   "exports": {
     "./dev-host": "./src/dev-host/host.ts",
-    "./server/page-policy": "./src/server/page-policy.ts"
+    "./task-file": "./src/server/test-support/task-file.ts"
   },
   "scripts": {
     "build": "vite build && node scripts/stage-page.ts",
@@ -24,18 +24,17 @@
     "clean": "rm -rf .cache dist"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "^0.85.1",
-    "@agentclientprotocol/codex-acp": "^1.12.0",
-    "sharp": "^0.35.5"
+    "@agentclientprotocol/claude-agent-acp": "catalog:",
+    "@agentclientprotocol/codex-acp": "catalog:"
   },
   "devDependencies": {
-    "@agentclientprotocol/sdk": "catalog:",
+    "@orpc/client": "catalog:",
     "@orpc/contract": "catalog:",
+    "@orpc/publisher": "catalog:",
     "@orpc/server": "catalog:",
     "@repo/agent-driver": "workspace:*",
     "@repo/contract": "workspace:*",
     "@repo/domain": "workspace:*",
-    "@repo/stripe-connect-protocol": "workspace:*",
     "@types/node": "catalog:",
     "citty": "^0.2.2",
     "ignore": "^7.0.12",

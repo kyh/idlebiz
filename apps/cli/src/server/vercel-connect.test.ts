@@ -1,34 +1,18 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { VercelConnection } from "./vercel-connect";
+import { expect, it, vi } from "vitest";
+import * as store from "./store/store";
+import { getSecret, setSecret } from "./secrets";
+import {
+  connectVercel,
+  disconnectVercel,
+  listVercelProjects,
+  saveVercelToken,
+} from "./vercel-connect";
+import { foundAcme, freshSave } from "./test-support/save";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-vercel-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-
-const store = await import("./store/store");
-const { getSecret, setSecret } = await import("./secrets");
-const { connectVercel, disconnectVercel, initVercelConnect, listVercelProjects, saveVercelToken } =
-  await import("./vercel-connect");
-
-beforeEach(() => {
-  rmSync(root, { force: true, recursive: true });
-  store.initStore();
-});
-afterEach(() => vi.unstubAllGlobals());
+freshSave();
 
 const foundProduct = () => {
-  store.foundCompany({
-    budget: { mode: "infinite" },
-    businessType: "software",
-    founderName: "Kai",
-    founderSpriteSeed: "seed",
-    hires: [],
-    mission: "ship",
-    name: "Acme",
-  });
+  foundAcme();
   const [product] = store.listProducts();
   if (!product) {
     throw new Error("missing founding product");
@@ -60,15 +44,6 @@ const vercelAccount = (override: Override = () => null): (string | null)[] => {
   return tokens;
 };
 
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
-});
-
 it("rejects an unknown product before replacing the founder's credential", () => {
   setSecret("VERCEL_TOKEN", "existing-token");
 
@@ -84,7 +59,7 @@ it("rejects an unknown product before replacing the founder's credential", () =>
   expect(getSecret("VERCEL_TOKEN")).toBe("existing-token");
 });
 
-it("unbinds the active product without removing the credential shared with older saves", () => {
+it("unbinds the active product without removing the token every product deploys with", () => {
   const product = foundProduct();
   connectVercel({
     productId: product.id,
@@ -112,26 +87,22 @@ it("binds a product with the saved token when none is given, leaving it as it wa
 
 it("saves a token with no project picked, leaving the product for its first deploy to bind", () => {
   const product = foundProduct();
-  const answered: VercelConnection[] = [];
-  initVercelConnect({ onConnected: (connection) => answered.push(connection) });
 
-  saveVercelToken({ productId: product.id, token: "fresh-token" });
+  const connection = saveVercelToken({ productId: product.id, token: "fresh-token" });
 
   expect(getSecret("VERCEL_TOKEN")).toBe("fresh-token");
   expect(store.requireProduct(product.id).vercel).toBeNull();
-  expect(answered).toEqual([{ kind: "token" }]);
+  expect(connection).toEqual({ kind: "token" });
 });
 
 it("answers every product with the first token, however it is saved, and only the one bound after", () => {
   const product = foundProduct();
-  const answered: VercelConnection[] = [];
-  initVercelConnect({ onConnected: (connection) => answered.push(connection) });
 
-  connectVercel({ productId: product.id, projectId: "prj_a", projectName: "a", token: "first" });
-  saveVercelToken({ productId: product.id, token: "second" });
-  connectVercel({ productId: product.id, projectId: "prj_b", projectName: "b" });
-
-  expect(answered).toEqual([
+  expect([
+    connectVercel({ productId: product.id, projectId: "prj_a", projectName: "a", token: "first" }),
+    saveVercelToken({ productId: product.id, token: "second" }),
+    connectVercel({ productId: product.id, projectId: "prj_b", projectName: "b" }),
+  ]).toEqual([
     { kind: "token" },
     { kind: "product", productId: product.id },
     { kind: "product", productId: product.id },
@@ -156,7 +127,7 @@ it("lists the saved token's projects when none is given", async () => {
 it("lists nothing, and asks Vercel nothing, with no token given or saved", async () => {
   const tokens = vercelAccount();
 
-  await expect(listVercelProjects()).resolves.toEqual({ kind: "rejected" });
+  await expect(listVercelProjects()).resolves.toEqual({ kind: "refused" });
   expect(tokens).toEqual([]);
 });
 
@@ -164,13 +135,13 @@ const status = (code: number) => Promise.resolve(new Response("{}", { status: co
 
 it("rejects a token Vercel refuses", async () => {
   vercelAccount(({ pathname }) => (pathname === "/v2/user" ? status(403) : null));
-  await expect(listVercelProjects("revoked")).resolves.toEqual({ kind: "rejected" });
+  await expect(listVercelProjects("revoked")).resolves.toEqual({ kind: "refused" });
 
   vercelAccount(({ pathname }) => (pathname === "/v2/user" ? status(401) : null));
-  await expect(listVercelProjects("mistyped")).resolves.toEqual({ kind: "rejected" });
+  await expect(listVercelProjects("mistyped")).resolves.toEqual({ kind: "refused" });
 });
 
-it("tells Vercel out of reach apart from a rejected token", async () => {
+it("tells Vercel out of reach apart from a refused token", async () => {
   vercelAccount(() => Promise.reject(new TypeError("fetch failed")));
   await expect(listVercelProjects("offline")).resolves.toEqual({
     kind: "unreachable",

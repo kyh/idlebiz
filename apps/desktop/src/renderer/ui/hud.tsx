@@ -1,16 +1,25 @@
 import type { ReactNode } from "react";
-import { RUNNERS } from "@repo/agent-driver/registry";
 import { linesOf, useAuthFlow } from "@/renderer/hooks/use-auth-flow";
 import { useNow } from "@/renderer/hooks/use-now";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import type { Submission } from "@/renderer/hooks/use-submission";
 import { Bust } from "@/renderer/ui/bust";
-import { useStore, setAutopilot } from "@/renderer/state/store";
+import {
+  useAuth,
+  useCompany,
+  useEmployees,
+  usePendingAsks,
+  useProductStatus,
+  useProducts,
+  useResting,
+  useStuckTasks,
+} from "@/renderer/state/queries";
+import { setAutopilot } from "@/renderer/state/store";
 import { isOutOfBudget } from "@repo/domain/domain";
 import type { Company, Employee, Product } from "@repo/domain/domain";
+import { RUNNER_NAMES } from "@repo/domain/runners";
 import { deploymentOf, productStateOf } from "@/renderer/ui/product-state";
 import type { Overlay } from "@/renderer/ui/overlay";
-import type { ProductStatus } from "@repo/domain/integrations";
 import { earliestReset, formatCompact, napLabel, usageLabel } from "@repo/domain/format";
 import { cn } from "cn";
 
@@ -32,7 +41,7 @@ const Stat = ({
   label: string;
   value: string;
   sub?: string;
-  accent?: string;
+  accent?: string | undefined;
   title?: string;
   /** A bust beside the figures, for a plate that is about a person. */
   face?: ReactNode;
@@ -46,7 +55,7 @@ const Stat = ({
   >
     {face}
     <span className="block flex-1">
-      <span className="block text-xs uppercase tracking-wide text-[#c3c9de]">{label}</span>
+      <span className="px-label block text-[#c3c9de]">{label}</span>
       <span
         className="block text-base leading-tight tabular-nums"
         style={accent ? { color: accent } : undefined}
@@ -82,7 +91,7 @@ const Scoreboard = ({
       <Stat
         label={company.users === null ? "users" : "users ⚡"}
         value={company.users === null ? "—" : formatCompact(company.users)}
-        accent="#86c0ee"
+        accent="var(--accent-hi)"
         sub={company.users === null ? "connect" : "web analytics"}
         title="Real users from Vercel Web Analytics on your deployed product"
         onClick={() => onOpen({ kind: "ships" })}
@@ -114,7 +123,6 @@ const CompanyPlates = ({
   company,
   employees,
   products,
-  productStatus,
   needsYou,
   nap,
   onOpen,
@@ -122,14 +130,13 @@ const CompanyPlates = ({
   company: Company;
   employees: Employee[];
   products: Product[];
-  productStatus: ReadonlyMap<string, ProductStatus>;
   needsYou: number;
   nap: string | null;
   onOpen: (overlay: Overlay) => void;
 }) => {
   // the plate shows the company's first product; the panel behind it shows them all
   const [lead] = products;
-  const status = lead ? productStatus.get(lead.id) : undefined;
+  const status = useProductStatus(lead?.id);
   const deploy = deploymentOf(status);
   const productState = productStateOf(status);
   const portfolio = products.length > 1 ? ` · ${products.length} products` : "";
@@ -218,13 +225,13 @@ const RunControls = ({
 
 /** A runner signed out while another is still signed in: the gate never shows, so this is where it is signed in again. */
 const SignedOutRunners = ({ company, employees }: { company: Company; employees: Employee[] }) => {
-  const signedOut = useStore((s) => s.signedOut);
+  const { signedOut } = useAuth();
   const { auth, login } = useAuthFlow();
   const waiting = employees.filter((e) => signedOut.includes(e.runner));
   if (waiting.length === 0) {
     return null;
   }
-  const runners = [...new Set(waiting.map((e) => RUNNERS[e.runner].displayName))].join(" and ");
+  const runners = [...new Set(waiting.map((e) => RUNNER_NAMES[e.runner]))].join(" and ");
   const leadWaits = waiting.some((e) => e.id === company.leaderId);
   const lines = linesOf(auth);
   return (
@@ -258,13 +265,12 @@ const SignedOutRunners = ({ company, employees }: { company: Company; employees:
 };
 
 export const Hud = ({ onOpen }: { onOpen: (overlay: Overlay) => void }) => {
-  const company = useStore((s) => s.company);
-  const employees = useStore((s) => s.employees);
-  const pendingAsks = useStore((s) => s.pendingAsks);
-  const stuckTasks = useStore((s) => s.stuckTasks);
-  const products = useStore((s) => s.products);
-  const productStatus = useStore((s) => s.productStatus);
-  const resting = useStore((s) => s.resting);
+  const company = useCompany();
+  const employees = useEmployees();
+  const pendingAsks = usePendingAsks();
+  const stuckTasks = useStuckTasks();
+  const products = useProducts();
+  const resting = useResting();
   const now = useNow();
   if (!company) {
     return null;
@@ -279,7 +285,6 @@ export const Hud = ({ onOpen }: { onOpen: (overlay: Overlay) => void }) => {
         company={company}
         employees={employees}
         products={products}
-        productStatus={productStatus}
         needsYou={pendingAsks.length + stuckTasks.length}
         nap={nap}
         onOpen={onOpen}

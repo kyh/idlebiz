@@ -1,9 +1,8 @@
 import { z } from "zod";
-import type { RunnerId } from "@repo/agent-driver/runner";
 import { HOLD_RULE_IDS } from "./hold-rules";
+import type { RunnerId } from "./runners";
 
 // Shared by main and renderer. Ids are agentcompanies/v1 slugs matching package folders.
-export type AgentRunner = RunnerId;
 
 /** Hard ceiling on team size — the LLM staffs freely underneath it. */
 export const DEFAULT_MAX_AGENTS = 12;
@@ -14,28 +13,22 @@ export const MAX_AGENTS = 64;
 /** A team size cap the founder may set; the settings form checks the same rule main does. */
 export const MaxAgentsSchema = z.number().int().min(1).max(MAX_AGENTS);
 
-/** The founder's look when none was chosen: pins a bundled sheet (see compositor). */
+/** The founder's look when none was chosen, a seed like any other (character-seed.ts). */
 export const DEFAULT_FOUNDER_SEED = "founder-player-001";
 
-/** A new employee's look: a seed the compositor maps to a bundled sheet, unique per hire. */
+/** A new employee's look: a seed character-seed.ts maps to a bundled sheet, unique per hire. */
 export const spriteSeedFor = (role: string, name: string, salt = ""): string =>
   `${role}-${name}-${Date.now().toString(36)}${salt}`;
 
+/** What an integration ask waits on; `stripe` is the founder's own key, which charges and reads revenue. */
 export const INTEGRATION_KINDS = ["vercel", "stripe", "printful"] as const;
-
-/**
- * What an integration ask waits on: a kind an agent may request, or a Stripe key to charge
- * with, which only a saved key gives — a Stripe connection only reads revenue.
- */
-export const INTEGRATION_NEEDS = [...INTEGRATION_KINDS, "stripe-key"] as const;
-export type IntegrationNeed = (typeof INTEGRATION_NEEDS)[number];
+export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 export const INTEGRATION_LABELS = {
   printful: "Printful",
   stripe: "Stripe",
-  "stripe-key": "Stripe key",
   vercel: "Vercel",
-} satisfies Record<IntegrationNeed, string>;
+} satisfies Record<IntegrationKind, string>;
 
 /** A step only a human can take: `action` names it, `draft` is text to paste, if any. */
 export const ActionAskSchema = z.object({
@@ -51,7 +44,7 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
   z.object({ question: z.string(), type: z.literal("question") }),
   ActionAskSchema,
   z.object({
-    integration: z.enum(INTEGRATION_NEEDS),
+    integration: z.enum(INTEGRATION_KINDS),
     /**
      * The product whose Vercel project answers a Vercel ask, which a run may name other than its
      * own; null for the company's own keys (Stripe, Printful) and a Vercel ask any product answers.
@@ -116,10 +109,16 @@ export const OPEN_TASK_STATUSES = ["todo", "queued", "running", "blocked", "dead
 export type OpenTaskStatus = (typeof OPEN_TASK_STATUSES)[number];
 /**
  * The open ones plus history, shelved in shipped/. superseded: an ask the founder answered.
- * dropped: work the steering loop took away — its bet stopped taking work, its product was
- * retired, or its assignee was released.
+ * settled: an order card the founder closed. dropped: work the steering loop took away — its
+ * bet stopped taking work, its product was retired, or its assignee was released.
  */
-export const TASK_STATUSES = [...OPEN_TASK_STATUSES, "done", "superseded", "dropped"] as const;
+export const TASK_STATUSES = [
+  ...OPEN_TASK_STATUSES,
+  "done",
+  "superseded",
+  "settled",
+  "dropped",
+] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
@@ -134,6 +133,23 @@ export const TASK_ORIGINS = [
   "order",
 ] as const;
 export type TaskOrigin = (typeof TASK_ORIGINS)[number];
+/** Why work a run carries exists: every origin but an order card's. */
+export type RunOrigin = Exclude<TaskOrigin, "order">;
+
+/**
+ * What an order card is about, which is what tells one card from another: a paid order and what
+ * stopped it, a retired product's link Stripe would not switch off, or what keeps the order pump
+ * from every order at once. Its title is copy rendered from this, which nothing reads back.
+ */
+export const OrderCardSubjectSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("order"), orderId: z.string().min(1), trouble: z.string().min(1) }),
+  z.object({ kind: z.literal("link-left-on"), linkId: z.string().min(1) }),
+  z.object({
+    kind: z.literal("pump"),
+    reason: z.enum(["no-printful-token", "no-live-key", "unreadable-checkouts", "missed"]),
+  }),
+]);
+export type OrderCardSubject = z.infer<typeof OrderCardSubjectSchema>;
 /** Whether a run is in flight for them. Held in memory by the scheduler, never on disk. */
 export type EmployeeStatus = "idle" | "working";
 
@@ -259,14 +275,13 @@ export interface Company {
   maxAgents: number;
   /** The employee who coordinates: hires, releases, delegates. Null until someone is hired. */
   leaderId: string | null;
-  /** units of work the team has shipped */
   ships: number;
   /** REAL revenue (Stripe); null until a source is connected */
   revenueUsd: number | null;
   /** REAL users (analytics); null until a source is connected */
   users: number | null;
   budget: Budget;
-  /** lifetime real token spend (USD) */
+  /** Lifetime usage at API prices (USD). */
   spentUsd: number;
   createdAt: number;
 }
@@ -294,19 +309,15 @@ export interface RunSession {
 
 export interface Employee {
   id: string;
-  companyId: string;
   name: string;
   role: string;
   title: string;
-  /** system-prompt flavor for the agent */
   persona: string;
-  runner: AgentRunner;
+  runner: RunnerId;
   session: RunSession | null;
   /** Digest of the instructions that session was last given; a run whose instructions differ sends them again. */
   instructionsDigest: string | null;
-  /** deterministic sprite + portrait */
   spriteSeed: string;
-  /** which desk slot in the office */
   deskIndex: number;
   /** The numbers as their last run ended, so the next brief can say what moved. Null before a first run. */
   lastRunMetrics: RunMetrics | null;
@@ -344,10 +355,9 @@ export interface VercelBinding {
   teamId: string | null;
 }
 
-/** The first product's code is the company's workspace/; later products have their own. */
+/** Each product's code is the workspace/ in its own package, which retires with it. */
 export interface Product {
   id: string;
-  companyId: string;
   name: string;
   description: string;
   workspaceDir: string;
@@ -387,7 +397,6 @@ export type Speaker = z.infer<typeof SpeakerSchema>;
 export interface TeamMessage {
   /** Stands for this launch only: main numbers the room anew each time it loads it. */
   id: number;
-  companyId: string;
   from: Speaker;
   text: string;
   createdAt: number;
@@ -405,13 +414,15 @@ export type TaskState =
   | { kind: "running"; runId: string }
   | { kind: "blocked"; ask: BlockedAsk; summary: string | null }
   | { kind: "done"; summary: string | null }
-  /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work; null for an order card, which no run carries on, or an older save's answer whose continuation is gone. */
-  | { kind: "superseded"; by: string | null }
+  /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work. */
+  | { kind: "superseded"; by: string }
+  /** The founder closed an order card: history, which no run carries on. */
+  | { kind: "settled" }
   /** History, not a failure: reviving it would only bill a bet or product that takes no more work. */
   | { kind: "dropped"; reason: string }
   | { kind: "dead"; lastError: string };
 
-// the state kinds and the status vocabulary (TASK.md, the IPC filter, status events) are one set
+// the state kinds and the status vocabulary (TASK.md, tasks.list's filter, status events) are one set
 type _AssertStatesAreStatuses = TaskState["kind"] extends TaskStatus ? true : never;
 type _AssertStatusesAreStates = TaskStatus extends TaskState["kind"] ? true : never;
 const statesAreStatuses: _AssertStatesAreStatuses = true;
@@ -419,22 +430,19 @@ const statusesAreStates: _AssertStatusesAreStates = true;
 void statesAreStatuses;
 void statusesAreStates;
 
-/** Entering a state, stamped: a run's start, or the moment it settled. Every change of state goes through here, so the timestamps cannot disagree with it. */
+/** Entering a state, stamped with the moment it settled, if it did. Every change of state goes through here, so the stamp cannot disagree with it. */
 export const entering = (
   state: TaskState,
   now: number,
-): Pick<Task, "state"> & Partial<Pick<Task, "startedAt" | "completedAt">> => {
-  if (state.kind === "running") {
-    return { startedAt: now, state };
-  }
-  return state.kind === "done" ||
-    state.kind === "superseded" ||
-    state.kind === "dropped" ||
-    state.kind === "blocked" ||
-    state.kind === "dead"
+): Pick<Task, "state"> & Partial<Pick<Task, "completedAt">> =>
+  state.kind === "done" ||
+  state.kind === "superseded" ||
+  state.kind === "settled" ||
+  state.kind === "dropped" ||
+  state.kind === "blocked" ||
+  state.kind === "dead"
     ? { completedAt: now, state }
     : { state };
-};
 
 /** A task known to be in one state, so its fields need no second check. */
 export type TaskIn<K extends TaskStatus> = Task & { state: Extract<TaskState, { kind: K }> };
@@ -445,28 +453,31 @@ export const taskIn =
   (t: Task): t is TaskIn<K> =>
     t.state.kind === kind;
 
-export interface Task {
+/** Why a task exists; a continuation inherits it. An order card also names what it is about. */
+export type TaskProvenance = { origin: RunOrigin } | { origin: "order"; subject: OrderCardSubject };
+
+export type Task = TaskFields & TaskProvenance;
+
+/** Main's card to the founder about paid orders, which the founder settles and no run carries on. */
+export type OrderCard = Extract<Task, { origin: "order" }>;
+
+interface TaskFields {
   id: string;
-  companyId: string;
-  /** The product this work is for; null for a propose run no product has room for, an order card (which outlives its product's retirement) and saves from before products. */
+  /** The product this work is for; null for a propose run no product has room for and an order card, which outlives its product's retirement. */
   productId: string | null;
   /** The bet this work spends against; null is work no bet pays for: a founder ping, a routine, a proposal, or what a ping or routine delegates. */
   betId: string | null;
-  /** Why this task exists; a continuation inherits it. */
-  origin: TaskOrigin;
   title: string;
   description: string | null;
   state: TaskState;
   priority: TaskPriority;
   assigneeId: string | null;
-  /** file paths the agent reported */
-  artifacts: string[];
   /** Failed runs so far — drives retry backoff and the dead letter, across states. */
   attempts: number;
+  /** The ask whose founder's answer this continuation carries; null for work no answer started. */
+  answers: string | null;
   createdAt: number;
-  /** When its latest run began. */
-  startedAt: number | null;
-  /** When it last reached done, superseded, dropped, blocked or dead. */
+  /** When it last reached done, superseded, settled, dropped, blocked or dead. */
   completedAt: number | null;
 }
 
@@ -483,7 +494,6 @@ export interface ShipLine {
 /** A recurring instruction that creates a task at each interval. */
 export interface Routine {
   id: string;
-  companyId: string;
   name: string;
   instruction: string;
   intervalHours: number;
@@ -501,14 +511,16 @@ export const isRoutineDue = (routine: Routine, foundedAt: number, now: number): 
   now - (routine.lastRunAt ?? foundedAt) >= routine.intervalHours * 3_600_000;
 
 /** Streamed steps of the workforce setup flow (CLI detect/install/login). */
-export type AuthFlowEvent =
-  | { type: "url"; url: string }
-  | { type: "progress"; message: string }
-  | { type: "done" }
-  | { type: "error"; message: string };
+export const AuthFlowEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("url"), url: z.string() }),
+  z.object({ message: z.string(), type: z.literal("progress") }),
+  z.object({ type: z.literal("done") }),
+  z.object({ message: z.string(), type: z.literal("error") }),
+]);
+export type AuthFlowEvent = z.infer<typeof AuthFlowEventSchema>;
 
 /** runner → epoch its usage limit lifts, for every runner currently parked. */
-export type RestingRunners = Partial<Record<AgentRunner, number>>;
+export type RestingRunners = Partial<Record<RunnerId, number>>;
 
 /** What boot could not use, and why: a file on disk it could not read, or the sandbox every run starts in. */
 export interface LoadSkip {
@@ -522,7 +534,6 @@ export interface LoadSkip {
     | "link"
     | "order"
     | "bet"
-    | "team"
     | "secrets"
     | "seal";
   path: string;
@@ -531,9 +542,8 @@ export interface LoadSkip {
   newerBuild: boolean;
 }
 
-/** What boot found under ~/.idlebiz: how many companies loaded, and what it had to leave out. */
+/** What boot had to leave out of the save under ~/.idlebiz. */
 export interface LoadReport {
-  companies: number;
   skipped: LoadSkip[];
 }
 
@@ -547,12 +557,4 @@ export type LaunchAtLogin = "on" | "off" | "requires-approval" | "not-found" | "
 export interface ChatOption {
   label: string;
   instruction: string;
-}
-
-/** A composited character: base64 PNG data URLs ready for Phaser/<img>. */
-export interface CharacterAssets {
-  /** 192x384 PNG, 32x64 frames: walk down/left/right/up, sit-left, sit-right */
-  walkSheetDataUrl: string;
-  /** 44x44 PNG: the drawn head-and-shoulders bust */
-  bustDataUrl: string;
 }

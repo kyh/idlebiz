@@ -1,8 +1,6 @@
-// One end of the channel between main and the host that runs it (the desktop shell, or the dev
-// host): JSON-RPC 2.0, one message per line. Requests go both ways. The host invokes main's IPC
-// methods, and main asks the host for what only a native app does. Every message is parsed by the
-// schema of the method it names where it lands. A line that is no message goes to `stray`, never a
-// reason to stop.
+// JSON-RPC 2.0, one message per line, requests both ways. Every message is parsed by the schema of
+// the method it names where it lands; a line that is no message goes to `stray`, never a reason
+// to stop.
 
 import { z } from "zod";
 import { errorMessage } from "@repo/domain/errors";
@@ -35,17 +33,19 @@ export interface PeerOptions {
   failed: (method: string, reason: string) => void;
 }
 
-export interface Peer {
+// `M` is the methods either end may name (`RELAY_METHODS` between the shell and main), so a
+// misspelt one does not compile
+export interface Peer<M extends string = string> {
   // answers the other end's requests for `method`, whose params `schema` parses
   handle: <P>(
-    method: string,
+    method: M,
     schema: z.ZodType<P>,
     handler: (params: P) => JsonValue | Promise<JsonValue>,
   ) => void;
   // hears the other end's notifications for `method`; params `schema` refuses are stray
-  on: <P>(method: string, schema: z.ZodType<P>, listener: (params: P) => void) => void;
-  request: <R>(method: string, params: JsonValue, schema: z.ZodType<R>) => Promise<R>;
-  notify: (method: string, params: JsonValue) => void;
+  on: <P>(method: M, schema: z.ZodType<P>, listener: (params: P) => void) => void;
+  request: <R>(method: M, params: JsonValue, schema: z.ZodType<R>) => Promise<R>;
+  notify: (method: M, params: JsonValue) => void;
   // one line the other end wrote
   receive: (line: string) => void;
   // the other end is gone: every request in flight fails with `reason`, and so does the next
@@ -66,7 +66,7 @@ const parsedLine = (line: string) => {
   }
 };
 
-export const createPeer = (options: PeerOptions): Peer => {
+export const createPeer = <M extends string = string>(options: PeerOptions): Peer<M> => {
   const handlers = new Map<string, (params: JsonValue | undefined) => Promise<JsonValue>>();
   const listeners = new Map<string, (params: JsonValue | undefined) => boolean>();
   const pending = new Map<number, Waiting>();

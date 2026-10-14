@@ -1,0 +1,8 @@
+{
+  "from": "shell",
+  "params": null,
+  "result": {
+    "handoffUrl": "http://127.0.0.1:52811/?handoff=4f1c2a9e",
+    "origin": "http://127.0.0.1:52811"
+  }
+}

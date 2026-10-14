@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
-import { useAsync } from "@/renderer/hooks/use-async";
-import { newestRoomLine } from "@/renderer/state/activity-reducer";
-import { useStore, setTalkingTo, teamMessages } from "@/renderer/state/store";
+import { useCompany, useEmployees, useRoom } from "@/renderer/state/queries";
+import { setTalkingTo } from "@/renderer/state/store";
 import { Bust } from "@/renderer/ui/bust";
 import { employeeName, jobTitle } from "@/renderer/ui/employee-name";
 import { EmployeeTag } from "@/renderer/ui/employee-tag";
@@ -50,12 +49,9 @@ const RoomLine = ({
 };
 
 export const Teams = ({ onClose }: { onClose: () => void }) => {
-  const company = useStore((s) => s.company);
-  const employees = useStore((s) => s.employees);
-  // the feed hears each line as it is said; the room is read again for it in full
-  const said = useStore((s) => newestRoomLine(s.feed));
-  const room = useAsync(() => teamMessages(30), [said]);
-  const messages = room.kind === "ready" ? room.value : [];
+  const company = useCompany();
+  const employees = useEmployees();
+  const { messages, failure } = useRoom();
   const newest = messages.at(-1)?.id;
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -70,7 +66,7 @@ export const Teams = ({ onClose }: { onClose: () => void }) => {
     return null;
   }
   const headcount = `${employees.length} ${employees.length === 1 ? "person" : "people"}`;
-  const quiet = room.kind === "failed" ? room.message : "Quiet so far.";
+  const quiet = failure ?? "Quiet so far.";
 
   return (
     <Modal title="Team" subtitle={headcount} width="2xl" onClose={onClose}>
@@ -88,7 +84,7 @@ export const Teams = ({ onClose }: { onClose: () => void }) => {
         ))}
       </div>
       <div className="px-inset mt-3 p-3">
-        <div className="text-xs uppercase tracking-wide text-fg-dim">Team room</div>
+        <div className="px-label text-fg-dim">Team room</div>
         <div ref={scrollRef} className="mt-1 max-h-40 space-y-1 overflow-y-auto">
           {messages.length === 0 ? (
             <div className="text-xs text-fg-dim">{quiet}</div>

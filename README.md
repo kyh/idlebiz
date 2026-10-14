@@ -12,8 +12,7 @@ the dashboard can read your actual Stripe revenue and analytics.
 - `apps/desktop` — the game: a Tauri app, a Rust shell around a React + Phaser page.
 - `apps/cli` — the `idlebiz` binary: `idlebiz serve` is main, the node process that runs the
   company, which the app runs as its child and which serves the page; every other verb is a
-  company tool the employees call. Character sprites generate from bundled employee sheets at
-  `apps/cli/resources/employee-sheets`.
+  company tool the employees call.
 - `apps/web` — the landing page (Next.js), styled with the game's pixel-UI kit.
   Download button resolves the latest `.dmg` from GitHub releases.
 - `packages/domain`, `packages/contract` — the vocabulary both sides share, and the page's
@@ -28,30 +27,19 @@ Source asset workspace lives outside the repo at `/Users/kyh/Desktop/vg/office`.
 
 ```sh
 pnpm install
-pnpm dev:desktop   # the app's window (needs the Rust toolchain; Linux also WebKitGTK)
+pnpm dev:desktop   # the app's window (needs the Rust toolchain; Linux: AGENTS.md's Quickstart)
 pnpm dev:browser   # the same office in a browser, at the URL it prints
 pnpm dev:web
-pnpm verify        # typecheck · lint · format · test · build
+pnpm verify        # typecheck · lint · knip · format · test · build
 ```
 
 Employees run on your own signed-in `claude` or `codex` CLI — the app needs one on
 PATH. `AGENTS.md` is the guide for coding agents working on this repo.
 
+Game state lives at `~/.idlebiz/company/` as human-readable
+agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, shipped/, products/, shared/).
+
 ## Release (desktop)
 
-```sh
-pnpm -F @repo/desktop package          # build + sign + notarize locally → .output/bin/*.dmg
-pnpm -F @repo/desktop release:publish  # same, then publish to GitHub releases
-```
-
-On a Mac with Xcode's command line tools and the Rust toolchain
-(`apps/desktop/rust-toolchain.toml`). Signs with the Developer ID in the keychain (ad-hoc
-without one); notarizes with the App Store Connect key `apps/desktop/.env` names (its id and
-issuer, gitignored; see `.env.example`), whose `AuthKey_<id>.p8` sits in
-`~/.appstoreconnect/private_keys/`, never in the checkout: employee runs read the rest of HOME,
-but not there. Bump `version` in
-`apps/desktop/package.json` and `apps/cli/package.json` together before publishing; the release
-is tagged `v<version>`.
-
-Game state lives at `~/.idlebiz/<company-slug>/` as human-readable
-agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, shipped/, products/, workspace/).
+Packing, signing, notarizing and publishing the app, and smoke-testing the pack, are AGENTS.md's
+[Packaging and release](AGENTS.md#packaging-and-release).

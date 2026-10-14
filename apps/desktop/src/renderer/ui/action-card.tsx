@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useSubmission } from "@/renderer/hooks/use-submission";
-import { copyText, resolveAction } from "@/renderer/state/store";
+import { api } from "@/renderer/api";
 import { Failure } from "@/renderer/ui/failure";
 import { RichText } from "@/renderer/ui/linkify";
 import type { ActionAsk, ActionReply, Task } from "@repo/domain/domain";
 import { cn } from "cn";
 
 const Draft = ({ text }: { text: string }) => {
-  const { submission, submit } = useSubmission(() => copyText(text));
+  const { submission, submit } = useSubmission(() => api.app.copyText({ text }));
   return (
     <div className="mt-2">
       <pre className="px-inset px-draft px-scroll max-h-40 overflow-y-auto p-2">{text}</pre>
@@ -29,7 +29,9 @@ const Draft = ({ text }: { text: string }) => {
  */
 export const ActionCard = ({ t, by, ask }: { t: Task; by: string; ask: ActionAsk }) => {
   const [text, setText] = useState("");
-  const { submission, submit } = useSubmission((reply: ActionReply) => resolveAction(t.id, reply));
+  const { submission, submit } = useSubmission(async (reply: ActionReply) => {
+    await api.tasks.resolveAction({ reply, taskId: t.id });
+  });
   const decided = submission.kind === "sending" || submission.kind === "sent";
   const said = text.trim();
   return (

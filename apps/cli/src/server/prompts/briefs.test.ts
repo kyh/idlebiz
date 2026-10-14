@@ -38,7 +38,6 @@ const company: Company = {
   workspaceDir: "/tmp/acme",
 };
 const employee: Employee = {
-  companyId: "acme",
   createdAt: 0,
   deskIndex: 0,
   id: "lead",
@@ -55,7 +54,6 @@ const employee: Employee = {
   title: "Founding Engineer",
 };
 const product: Product = {
-  companyId: "acme",
   createdAt: 0,
   description: "the app",
   id: "app",
@@ -89,7 +87,6 @@ const briefFor = (
   }).description;
 
 const line = (from: TeamMessage["from"], text: string): TeamMessage => ({
-  companyId: "acme",
   createdAt: 0,
   from,
   id: 0,
@@ -220,11 +217,10 @@ describe("the brief that asks for the next bet", () => {
 
 describe("the brief that carries the founder's answer", () => {
   const task: Task = {
-    artifacts: [],
+    answers: null,
     assigneeId: "lead",
     attempts: 0,
     betId: null,
-    companyId: "acme",
     completedAt: null,
     createdAt: 0,
     description: "Wire checkout to the pricing page.",
@@ -232,7 +228,6 @@ describe("the brief that carries the founder's answer", () => {
     origin: "work",
     priority: "medium",
     productId: "app",
-    startedAt: null,
     state: { kind: "todo" },
     title: "Add checkout",
   };
@@ -280,7 +275,7 @@ describe("the brief that carries the founder's answer", () => {
     ],
     [
       { integration: "stripe", productId: null, reason: "to take payments", type: "integration" },
-      "> a Stripe connection: to take payments",
+      "> a Stripe key: to take payments",
       "[connect:stripe]",
     ],
     [

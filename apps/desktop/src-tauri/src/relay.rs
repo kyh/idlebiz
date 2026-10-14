@@ -134,12 +134,17 @@ mod tests {
 
     #[test]
     fn writes_what_main_reads_back() {
-        let params = json!({ "method": "getCompany" });
+        let params = json!({
+            "openedAtLogin": false,
+            "packaged": true,
+            "pageDevUrl": null,
+            "sealingKey": null,
+        });
         assert_eq!(
-            parse_line(&request_line(7, "invoke", &params)),
+            parse_line(&request_line(7, "hello", &params)),
             Some(Incoming::Request {
                 id: 7,
-                method: "invoke".to_owned(),
+                method: "hello".to_owned(),
                 params,
             })
         );

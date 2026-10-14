@@ -1,7 +1,8 @@
-import { getCharacterAssets } from "@/renderer/character-assets";
-import { useAsync } from "@/renderer/hooks/use-async";
+import type { CSSProperties } from "react";
+import { sheetUrl } from "@/renderer/character-art";
 import { Bust } from "@/renderer/ui/bust";
 import { EmployeeTag } from "@/renderer/ui/employee-tag";
+import { SHEET_COLUMNS, WALK_START } from "@repo/domain/character-frame";
 import type { HireProposal } from "@repo/domain/hire";
 
 export const Backdrop = () => <div className="ob-backdrop" aria-hidden />;
@@ -16,23 +17,30 @@ export const OfficeBackdrop = () => (
   </div>
 );
 
-/** The same 32 × 64 character frame used in the office: down in row 0, up in row 3. */
-export const FounderSprite = ({ seed, facing }: { seed: string; facing: "front" | "back" }) => {
-  const assets = useAsync(() => getCharacterAssets(seed), [seed]);
-  return (
-    <div
-      key={seed}
-      className="ob-founder"
-      data-facing={facing}
-      style={
-        assets.kind === "ready"
-          ? { backgroundImage: `url(${assets.value.walkSheetDataUrl})` }
-          : undefined
-      }
-      aria-hidden
-    />
-  );
+type Facing = "front" | "back";
+
+/** The office's standing pose: walk down's first frame, or walk up's. */
+const STANDING = { back: WALK_START.up, front: WALK_START.down } satisfies Record<Facing, number>;
+
+/** One frame of a whole sheet, scaled by the sprite's `--s`, as a CSS background. */
+const frameBackground = (url: string, frame: number): CSSProperties => {
+  const column = frame % SHEET_COLUMNS;
+  const row = Math.floor(frame / SHEET_COLUMNS);
+  return {
+    backgroundImage: `url(${url})`,
+    backgroundPosition: `calc(var(--ob-frame-w) * ${-column} * var(--s)) calc(var(--ob-frame-h) * ${-row} * var(--s))`,
+    backgroundSize: `calc(var(--ob-frame-w) * ${SHEET_COLUMNS} * var(--s)) auto`,
+  };
 };
+
+export const FounderSprite = ({ seed, facing }: { seed: string; facing: Facing }) => (
+  <div
+    key={seed}
+    className="ob-founder"
+    style={frameBackground(sheetUrl(seed), STANDING[facing])}
+    aria-hidden
+  />
+);
 
 export const Narrator = ({ thinking = false }: { thinking?: boolean }) => (
   <div className="ob-mentor" aria-hidden>

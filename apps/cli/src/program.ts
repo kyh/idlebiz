@@ -2,7 +2,7 @@ import { stripVTControlCharacters } from "node:util";
 import { defineCommand, renderUsage, runCommand } from "citty";
 import type { CommandDef } from "citty";
 import { serveCommand } from "./commands/serve";
-import { TOOL_VERBS, toolCommands, toolHelp } from "./commands/tools";
+import { TOOL_VERBS, runTool, toolCommands, toolHelp } from "./commands/tools";
 import { readCliVersion } from "./paths";
 
 const program: CommandDef = defineCommand({
@@ -39,10 +39,10 @@ const verbFor = (word: string): string => {
 };
 
 /**
- * Runs the command `argv` names, answering the exit code. Not citty's runMain, which answers every
- * failure with `process.exit(1)`: `serve` keeps the process after its run resolves, and stays up
- * until the shell lets it go. Failures go to stderr alone, since stdout is `serve`'s protocol and a
- * tool's answer.
+ * Runs the command `argv` names, answering the exit code: a tool's says how its call ended. Not
+ * citty's runMain, which answers every failure with `process.exit(1)`: `serve` keeps the process
+ * after its run resolves, and stays up until the shell lets it go. Failures go to stderr alone,
+ * since stdout is `serve`'s protocol and a tool's answer.
  */
 export const runCli = async (argv: readonly string[]): Promise<number> => {
   const [first, ...rest] = argv;
@@ -61,6 +61,9 @@ export const runCli = async (argv: readonly string[]): Promise<number> => {
     return 0;
   }
   try {
+    if (tool !== undefined) {
+      return await runTool(tool, rest);
+    }
     await runCommand(program, { rawArgs: [verb, ...rest] });
     return 0;
   } catch (error) {

@@ -1,19 +1,27 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import { appendJsonl, atomicWrite, moveDir, readJsonFile, readJsonlTail } from "../lib/fs";
+import { isDeepStrictEqual } from "node:util";
+import {
+  appendJsonl,
+  atomicWrite,
+  moveDir,
+  readJsonFile,
+  readJsonlTail,
+  writeJsonFile,
+} from "../lib/fs";
 import { report } from "../lib/report";
 import {
-  ROOT_DIR,
-  RUN_BIN_DIR,
-  TOOL_CACHE_DIR,
+  rootDir,
   ensureAppDirs,
   companyDir,
+  toolCacheDir,
+  runBinDir,
   companyFile,
-  companySharedDir,
-  companyWorkspace,
+  sharedDir,
   activityFile,
   recentShipsFile,
   sinceLastLookFile,
+  lastProposalFile,
   agentsDir,
   approvalsFile,
   alumniDir,
@@ -35,7 +43,6 @@ import {
   ordersDir,
   orderFile,
   ordersCursorFile,
-  unrecordedLinksFile,
   retiredDir,
   betsDir,
   betFile,
@@ -43,21 +50,36 @@ import {
   routinesDir,
   routineFile,
   chatFile,
-  legacyTeamsDir,
 } from "../paths";
-import { parseDoc, serializeDoc, slugify, optStr } from "./frontmatter";
+import { parseDoc, serializeDoc, slugify } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
+import {
+  byAge,
+  holdsPackage,
+  loadPackages,
+  loadRecords,
+  loadReport,
+  resetLoadReport,
+  safeReaddir,
+  skip,
+} from "./load";
+import { archiveTo, heldIn, uniqueSlug } from "./slugs";
 import { z } from "zod";
-import { continuationBrief, continuationTitle, isRoutineBrief } from "../prompts/briefs";
-import { RETIRED_ROUTINES, REWORDED_ROUTINES, defaultRoutines } from "../prompts/routines";
+import { continuationBrief } from "../prompts/briefs";
+import { defaultRoutines } from "../prompts/routines";
 import type { RoutineDefinition } from "../prompts/routines";
 import { betToDoc, docToBet } from "./bet-codec";
 import { docToProduct, productToDoc } from "./product-codec";
 import { docToTask, taskToDoc } from "./task-codec";
-import { NewerSaveError, SAVE_FORMAT, companyToDoc, docToCompany, formatOf } from "./company-codec";
+import {
+  SAVE_FORMAT,
+  SaveFormatError,
+  companyToDoc,
+  docToCompany,
+  formatOf,
+} from "./company-codec";
 import { docToEmployee, employeeBody, employeeToDoc } from "./employee-codec";
 import { docToRoutine, routineToDoc } from "./routine-codec";
-import { readMetricsConfig, writeMetricsConfig } from "./metrics-config";
 import {
   DEFAULT_POLICY,
   MAX_LIVE_BETS_PER_PRODUCT,
@@ -74,14 +96,12 @@ import {
   productHasRoom,
   windowEnd,
 } from "@repo/domain/bets";
-import type { Bet, BetClaim, BetState, PolicyParams } from "@repo/domain/bets";
-import { errorMessage } from "@repo/domain/errors";
-import { parseJson } from "@repo/domain/json";
+import type { Bet, PolicyParams } from "@repo/domain/bets";
 import { ListingSchema } from "../listing";
 import type { Listing } from "../listing";
 import { OrderSchema } from "../order";
-import { ChargeLinkSchema } from "../payment-link";
-import type { ChargeLink, CompanyLink, LinkState } from "../payment-link";
+import { ChargeLinkSchema } from "../link-record";
+import type { ChargeLink, CompanyLink, LinkState } from "../link-record";
 import type { Order, Sale } from "../order";
 import { RefusalError } from "../refusal";
 import { emptyDigest, foldDigest } from "./digest";
@@ -89,29 +109,31 @@ import { DigestSchema } from "@repo/domain/digest";
 import type { Digest } from "@repo/domain/digest";
 import type {
   ActionAsk,
-  AgentRunner,
   Budget,
   BusinessTypeId,
   Company,
   Employee,
   FailureVerdict,
   LoadReport,
-  LoadSkip,
   OpenTaskStatus,
+  OrderCard,
+  OrderCardSubject,
   Product,
   ProductDraft,
   Routine,
+  RunOrigin,
   ShipLine,
   Speaker,
   Task,
   TaskIn,
-  TaskOrigin,
   TaskPriority,
+  TaskProvenance,
   TaskState,
   TaskStatus,
   TeamMessage,
   VercelBinding,
 } from "@repo/domain/domain";
+import type { RunnerId } from "@repo/domain/runners";
 import {
   DEFAULT_MAX_AGENTS,
   LastShipSchema,
@@ -131,6 +153,13 @@ import type { ActivityEvent, PersistedActivity } from "@repo/domain/activity";
 
 const GrantSchema = z.object({ grantedAt: z.number(), key: z.string(), taskId: z.string() });
 type Grant = z.infer<typeof GrantSchema>;
+
+const ProposalEndSchema = z.object({
+  briefedAt: z.number(),
+  employeeId: z.string(),
+  endedAt: z.number(),
+});
+type ProposalEnd = z.infer<typeof ProposalEndSchema>;
 
 interface ActiveCompany {
   company: Company;
@@ -156,6 +185,8 @@ interface ActiveCompany {
   chat: TeamMessage[];
   /** The latest ship summaries, oldest first: what the next brief calls "recently shipped". */
   recentShips: string[];
+  /** The latest proposal to end done, kept apart so allocating never reads the shipping log. */
+  lastProposal: ProposalEnd | null;
   /** What has happened since the founder last looked. Null until they first do, so founding a company is not news. */
   sinceLastLook: Digest | null;
 }
@@ -181,7 +212,6 @@ const nextId = (counter: "nextActivityId" | "nextTeamMessageId"): number => {
   return id;
 };
 
-/** The company this launch runs, or null before one is founded. */
 const maybeCurrent = (): ActiveCompany | null => c().active;
 
 /** The company this launch runs. There is only ever one, so nothing takes its id; asking with none loaded is a bug in the caller. */
@@ -199,6 +229,7 @@ const emptyCompany = (company: Company): ActiveCompany => ({
   company,
   employees: [],
   grants: [],
+  lastProposal: null,
   links: [],
   listings: [],
   orders: [],
@@ -214,7 +245,6 @@ const emptyCompany = (company: Company): ActiveCompany => ({
 
 interface Owned {
   id: string;
-  companyId: string;
 }
 
 const patchedRow = <T extends Owned>(list: T[], id: string, patch: Partial<T>) => {
@@ -224,7 +254,7 @@ const patchedRow = <T extends Owned>(list: T[], id: string, patch: Partial<T>) =
   if (!cur) {
     throw new Error(`nothing to patch at "${id}"`);
   }
-  return { idx, next: { ...cur, ...patch, companyId: cur.companyId, id: cur.id } };
+  return { idx, next: { ...cur, ...patch, id: cur.id } };
 };
 
 /** A change that holds only once saved, like a lock: a save that throws leaves the row as the disk has it. */
@@ -263,14 +293,11 @@ const recordIn = <T extends Owned>(
 // ---- run state --------------------------------------------------------------
 /** What a run leaves for the next one; kept out of AGENTS.md so the instructions only change when they do. */
 const RunStateSchema = z.object({
-  // defaulted like lastShip; a file without it reads as never told, so the next run sends them once
-  instructionsDigest: z.string().nullable().default(null),
+  instructionsDigest: z.string().nullable(),
   lastRunMetrics: RunMetricsSchema.nullable(),
-  // defaulted: a file without it must still parse, or its session would be dropped with it
-  lastShip: LastShipSchema.nullable().default(null),
+  lastShip: LastShipSchema.nullable(),
   sessionId: z.string().nullable(),
-  // a file without it names no folder its session began in, so that session is never resumed
-  sessionWorkspace: z.string().nullable().default(null),
+  sessionWorkspace: z.string().nullable(),
 });
 
 const saveRunState = (e: Employee): void => {
@@ -281,11 +308,11 @@ const saveRunState = (e: Employee): void => {
     sessionId: e.session?.id ?? null,
     sessionWorkspace: e.session?.workspace ?? null,
   };
-  atomicWrite(employeeRunStateFile(e.companyId, e.id), JSON.stringify(state, null, 2));
+  writeJsonFile(employeeRunStateFile(e.id), state);
 };
 
 const withRunState = (e: Employee): Employee => {
-  const state = readJsonFile(employeeRunStateFile(e.companyId, e.id), RunStateSchema);
+  const state = readJsonFile(employeeRunStateFile(e.id), RunStateSchema);
   if (state === null) {
     return e;
   }
@@ -307,12 +334,12 @@ const readTextIfPresent = (file: string): string | null => {
 };
 
 const saveCompany = (co: Company): void => {
-  atomicWrite(companyFile(co.id), serializeDoc(companyToDoc(co)));
+  atomicWrite(companyFile(), serializeDoc(companyToDoc(co)));
 };
 
 const saveEmployee = (e: Employee, opts: { onlyIfChanged?: boolean } = {}): void => {
   const { company, products } = current();
-  const file = employeeFile(e.companyId, e.id);
+  const file = employeeFile(e.id);
   const text = serializeDoc(employeeToDoc(e, company, products));
   if (opts.onlyIfChanged && readTextIfPresent(file) === text) {
     return;
@@ -321,27 +348,27 @@ const saveEmployee = (e: Employee, opts: { onlyIfChanged?: boolean } = {}): void
 };
 
 const saveTask = (t: Task): void => {
-  atomicWrite(taskFile(t.companyId, t.id), serializeDoc(taskToDoc(t)));
+  atomicWrite(taskFile(t.id), serializeDoc(taskToDoc(t)));
 };
 
 const saveProduct = (p: Product): void => {
-  atomicWrite(productFile(p.companyId, p.id), serializeDoc(productToDoc(p)));
+  atomicWrite(productFile(p.id), serializeDoc(productToDoc(p)));
 };
 
 const saveBet = (b: Bet): void => {
-  atomicWrite(betFile(b.companyId, b.id), serializeDoc(betToDoc(b)));
+  atomicWrite(betFile(b.id), serializeDoc(betToDoc(b)));
 };
 
 const saveRoutine = (r: Routine): void => {
-  atomicWrite(routineFile(r.companyId, r.id), serializeDoc(routineToDoc(r)));
+  atomicWrite(routineFile(r.id), serializeDoc(routineToDoc(r)));
 };
 
 const shelve = (t: Task): void => {
-  moveDir(path.join(tasksDir(t.companyId), t.id), path.join(shippedDir(t.companyId), t.id));
+  moveDir(path.join(tasksDir(), t.id), path.join(shippedDir(), t.id));
 };
 
-/** Shipped work, answered asks and dropped work: shelved in shipped/, never acted on again. */
-const HISTORY: ReadonlySet<TaskStatus> = new Set(["done", "superseded", "dropped"]);
+/** Shipped work, answered asks, settled order cards and dropped work: shelved in shipped/, never acted on again. */
+const HISTORY: ReadonlySet<TaskStatus> = new Set(["done", "superseded", "settled", "dropped"]);
 const isHistory = (t: Task): boolean => HISTORY.has(t.state.kind);
 
 /** Move a task just saved as history out of the open queue; one the move fails stays for boot to shelve. */
@@ -361,196 +388,26 @@ const shelveClosed = (t: Task): boolean => {
   return true;
 };
 
-// ---- slug allocation ---------------------------------------------------------
-const firstFree = (root: string, taken: (slug: string) => boolean): string => {
-  let slug = root;
-  for (let n = 2; taken(slug); n += 1) {
-    slug = `${root}-${n}`;
-  }
-  return slug;
-};
-
-/** onDisk also protects packages skipped during loading. */
-const uniqueSlug = (
-  base: string,
-  existing: Iterable<string>,
-  onDisk: (slug: string) => boolean = () => false,
-): string => {
-  const ids = new Set(existing);
-  return firstFree(slugify(base), (slug) => ids.has(slug) || onDisk(slug));
-};
-
-/** A slug stays taken while any package, live or archived, holds its directory. */
-const heldIn =
-  (...dirs: string[]) =>
-  (slug: string): boolean =>
-    dirs.some((dir) => existsSync(path.join(dir, slug)));
-
-/**
- * A namesake retired earlier keeps its folder; the newcomer takes the next free name. Never
- * re-slugified: an id past the slug length would lose its suffix and leave itself free.
- */
-const archiveTo = (dir: string, id: string): string => path.join(dir, firstFree(id, heldIn(dir)));
-
 // ---- loading ----------------------------------------------------------------
-/** Oldest first; ties (same millisecond) by id, so boot order is stable. */
-const byAge = <T extends { createdAt: number; id: string }>(a: T, b: T): number =>
-  a.createdAt - b.createdAt || a.id.localeCompare(b.id);
-
-// Failed company loads must surface in the UI instead of presenting onboarding over a save.
-let lastLoad: LoadReport = { companies: 0, skipped: [] };
-
-export const loadReport = (): LoadReport => lastLoad;
-
-const skip = (kind: LoadSkip["kind"], file: string, cause: unknown): void => {
-  lastLoad.skipped.push({
-    error: errorMessage(cause),
-    kind,
-    newerBuild: cause instanceof NewerSaveError,
-    path: file,
-  });
-};
-
+export { loadReport } from "./load";
 /** Report a file boot needed but could not read, alongside the packages the store skipped. */
-export const noteUnreadable = skip;
-
-const safeReaddir = (dir: string): string[] => {
-  try {
-    return readdirSync(dir);
-  } catch {
-    return [];
-  }
-};
-
-/** Whether `dir` holds any package, read or skipped: one boot skipped is the load report's to name, never replaced. */
-const holdsPackage = (dir: string, fileFor: (slug: string) => string): boolean =>
-  safeReaddir(dir).some((slug) => existsSync(fileFor(slug)));
-
-/** Report corrupt packages individually so one hand-edited file cannot prevent loading. */
-const loadPackages = <T extends { id: string }>(
-  kind: LoadSkip["kind"],
-  dir: string,
-  fileFor: (slug: string) => string,
-  decode: (doc: FrontmatterDoc) => T,
-): T[] => {
-  const rows: T[] = [];
-  for (const slug of safeReaddir(dir)) {
-    const file = fileFor(slug);
-    if (!existsSync(file)) {
-      continue;
-    }
-    try {
-      const row = decode(parseDoc(readFileSync(file, "utf-8")));
-      if (row.id !== slug) {
-        throw new Error("package slug does not match its directory");
-      }
-      rows.push(row);
-    } catch (error) {
-      skip(kind, file, error);
-    }
-  }
-  return rows;
-};
-
-/** Each `<id>.json` of `dir` that `schema` reads; one naming another id is skipped. */
-const loadRecords = <T extends { createdAt: number; id: string }>(
-  kind: LoadSkip["kind"],
-  dir: string,
-  schema: z.ZodType<T>,
-): T[] =>
-  safeReaddir(dir)
-    .filter((name) => name.endsWith(".json"))
-    .flatMap((name) => {
-      const file = path.join(dir, name);
-      try {
-        const record = schema.parse(parseJson(readFileSync(file, "utf-8")));
-        if (`${record.id}.json` !== name) {
-          throw new Error(`${kind} does not match its file's name`);
-        }
-        return [record];
-      } catch (error) {
-        skip(kind, file, error);
-        return [];
-      }
-    })
-    .toSorted(byAge);
+export { skip as noteUnreadable } from "./load";
 
 const TEAM_CHAT_RING = 200;
 
-// One chat.jsonl line, as postTeamMessage persists it (id and companyId re-assigned on load).
+// One chat.jsonl line, as postTeamMessage persists it (its id assigned anew on load).
 const PersistedTeamMessageSchema = z.object({
   createdAt: z.number(),
   from: SpeakerSchema,
   text: z.string(),
 });
-type PersistedTeamMessage = z.infer<typeof PersistedTeamMessageSchema>;
-
-/**
- * A chat.jsonl line of either shape, for adopting an older save only. Format 4
- * and older named the speaker by employee id, null for the founder and the
- * office alike; null reads as the founder, as the room always showed it.
- */
-const AdoptedTeamMessageSchema = z.union([
-  PersistedTeamMessageSchema,
-  z
-    .object({ createdAt: z.number(), fromEmployeeId: z.string().nullable(), text: z.string() })
-    .transform(({ fromEmployeeId, ...row }): PersistedTeamMessage => ({
-      ...row,
-      from:
-        fromEmployeeId === null ? { kind: "founder" } : { id: fromEmployeeId, kind: "employee" },
-    })),
-]);
 
 const loadRecentChat = (active: ActiveCompany): void => {
-  const companyId = active.company.id;
-  const rows = readJsonlTail(chatFile(companyId), PersistedTeamMessageSchema, TEAM_CHAT_RING);
-  active.chat = rows.map((row) => ({ ...row, companyId, id: nextId("nextTeamMessageId") }));
+  const rows = readJsonlTail(chatFile(), PersistedTeamMessageSchema, TEAM_CHAT_RING);
+  active.chat = rows.map((row) => ({ ...row, id: nextId("nextTeamMessageId") }));
 };
 
-/** Adopt legacy team leadership and chat without deleting the original files. */
-const adoptLegacyTeam = (co: Company): void => {
-  const dir = legacyTeamsDir(co.id);
-  const slugs = safeReaddir(dir);
-  if (slugs.length === 0) {
-    return;
-  }
-  if (!existsSync(chatFile(co.id))) {
-    const rows: PersistedTeamMessage[] = [];
-    for (const slug of slugs) {
-      rows.push(
-        ...readJsonlTail(path.join(dir, slug, "chat.jsonl"), AdoptedTeamMessageSchema, 10_000),
-      );
-    }
-    if (rows.length > 0) {
-      atomicWrite(
-        chatFile(co.id),
-        `${rows
-          .toSorted((a, b) => a.createdAt - b.createdAt)
-          .map((row) => JSON.stringify(row))
-          .join("\n")}\n`,
-      );
-    }
-  }
-  if (co.leaderId === null) {
-    for (const slug of slugs) {
-      const file = path.join(dir, slug, "TEAM.md");
-      if (!existsSync(file)) {
-        continue;
-      }
-      try {
-        const lead = optStr(parseDoc(readFileSync(file, "utf-8")).metadata, "leaderId");
-        if (lead !== null) {
-          co.leaderId = lead;
-          return;
-        }
-      } catch {
-        /* an unreadable TEAM.md has nothing to adopt */
-      }
-    }
-  }
-};
-
-// ---- companies -------------------------------------------------------------
+// ---- the company -----------------------------------------------------------
 /** The company this launch runs; null before one is founded. */
 export const getCompany = (): Company | null => maybeCurrent()?.company ?? null;
 
@@ -590,7 +447,7 @@ export const setAutopilot = (on: boolean): Company => patchCompany({ autopilot: 
 // command) would wait for anyone who later ran that exact string.
 const writeGrants = (grants: Grant[]): void => {
   const active = current();
-  atomicWrite(approvalsFile(active.company.id), JSON.stringify(grants, null, 2));
+  writeJsonFile(approvalsFile(), grants);
   active.grants = grants;
 };
 
@@ -685,8 +542,7 @@ export const setRealMetrics = (snapshot: MetricsSnapshot): Company => {
 };
 
 // ---- routines --------------------------------------------------------------
-const routineRecord = (input: RoutineDefinition & { companyId: string }, id: string): Routine => ({
-  companyId: input.companyId,
+const routineRecord = (input: RoutineDefinition, id: string): Routine => ({
   id,
   instruction: input.instruction,
   intervalHours: input.intervalHours,
@@ -695,7 +551,7 @@ const routineRecord = (input: RoutineDefinition & { companyId: string }, id: str
   role: input.role,
 });
 
-const createRoutine = (input: RoutineDefinition & { companyId: string }): Routine => {
+const createRoutine = (input: RoutineDefinition): Routine => {
   const list = current().routines;
   const id = uniqueSlug(
     input.name,
@@ -707,9 +563,9 @@ const createRoutine = (input: RoutineDefinition & { companyId: string }): Routin
   return routine;
 };
 
-const seedDefaultRoutines = (companyId: string, businessType: BusinessTypeId): void => {
+const seedDefaultRoutines = (businessType: BusinessTypeId): void => {
   for (const routine of defaultRoutines(businessType)) {
-    createRoutine({ companyId, ...routine });
+    createRoutine(routine);
   }
 };
 
@@ -725,14 +581,13 @@ export interface FoundingHire {
   role: string;
   title: string;
   persona: string;
-  runner: AgentRunner;
+  runner: RunnerId;
   spriteSeed: string;
 }
 
-type EmployeeInput = FoundingHire & { companyId: string; deskIndex: number };
+type EmployeeInput = FoundingHire & { deskIndex: number };
 
 const employeeRecord = (input: EmployeeInput, id: string): Employee => ({
-  companyId: input.companyId,
   createdAt: Date.now(),
   deskIndex: input.deskIndex,
   id,
@@ -749,19 +604,18 @@ const employeeRecord = (input: EmployeeInput, id: string): Employee => ({
   title: input.title,
 });
 
-export const createEmployee = (hire: FoundingHire & { deskIndex: number }): Employee => {
+export const createEmployee = (hire: EmployeeInput): Employee => {
   const { company, employees: list } = current();
-  const input: EmployeeInput = { ...hire, companyId: company.id };
   if (list.length >= company.maxAgents) {
     throw new RefusalError(`the office is at its ${company.maxAgents}-seat cap`);
   }
   const id = uniqueSlug(
-    input.name,
+    hire.name,
     list.map((e) => e.id),
-    heldIn(agentsDir(input.companyId), alumniDir(input.companyId)),
+    heldIn(agentsDir(), alumniDir()),
   );
-  const employee = employeeRecord(input, id);
-  mkdirSync(employeeMemoryDir(input.companyId, id), { recursive: true });
+  const employee = employeeRecord(hire, id);
+  mkdirSync(employeeMemoryDir(id), { recursive: true });
   saveEmployee(employee);
   list.push(employee);
   return employee;
@@ -779,7 +633,7 @@ export const employeeInstructions = (employeeId: string): string => {
   return employeeBody(e, company, products);
 };
 
-export const listEmployees = (): Employee[] => [...(current().employees ?? [])];
+export const listEmployees = (): Employee[] => [...current().employees];
 
 /** A run started or settled. Memory only: a fresh boot has no live runs, so disk would only lie. */
 export const setEmployeeStatus = (id: string, status: Employee["status"]): void => {
@@ -808,48 +662,24 @@ export const noteRunEnd = (
 
 const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
 
-/** Everything the company shelved as history. Read from disk the first time it is asked for. */
+/** Everything the company shelved as history, read from disk the first time it is asked for. */
 const shippedOf = (active: ActiveCompany): Task[] => {
-  const companyId = active.company.id;
-  active.shipped ??= loadPackages(
-    "task",
-    shippedDir(companyId),
-    (slug) => shippedTaskFile(companyId, slug),
-    (doc) => docToTask(doc, companyId),
-  );
+  active.shipped ??= loadPackages("task", shippedDir(), shippedTaskFile, docToTask);
   return active.shipped;
 };
 
-/** Everything shelved as history, newest first. */
 export const listShippedTasks = (): Task[] => shippedOf(current()).toSorted(newestFirst);
-
-/** The continuations carrying the founder's answers to the bet's asks, among `history`. */
-const answeredIn = (history: readonly Task[], betId: string): ReadonlySet<string> =>
-  new Set(
-    history.flatMap((t) =>
-      t.betId === betId && t.state.kind === "superseded" && t.state.by !== null ? [t.state.by] : [],
-    ),
-  );
-
-/** The continuations carrying the founder's answers to the bet's asks: work that no longer waits on them, but carries their step. */
-const answeredOn = (betId: string): ReadonlySet<string> => answeredIn(shippedOf(current()), betId);
 
 const RELEASED = " was released";
 
 /**
- * Where a released employee's open task goes. An ask a bet funds, the founder's answer to
- * one (`answered`, with any sign-off it holds), or a dead letter, goes to the lead, so an
- * answer or a retry still reaches someone. Other unstarted work is dropped, so it holds no
+ * Where a released employee's open task goes. An ask a bet funds, the continuation carrying
+ * the founder's answer to one (with any sign-off it holds), or a dead letter, goes to the lead,
+ * so an answer or a retry still reaches someone. Other unstarted work is dropped, so it holds no
  * bet's slot and never runs on the lead unasked. A run in flight settles on its own; null
  * leaves it be.
  */
-const rehomed = (
-  t: Task,
-  leaverName: string,
-  lead: string | null,
-  answered: boolean,
-  now: number,
-): Task | null => {
+const rehomed = (t: Task, leaverName: string, lead: string | null, now: number): Task | null => {
   const dropped = (): Task => ({
     ...t,
     ...entering({ kind: "dropped", reason: `${leaverName}${RELEASED}` }, now),
@@ -857,7 +687,7 @@ const rehomed = (
   switch (t.state.kind) {
     case "todo":
     case "queued": {
-      return answered ? { ...t, assigneeId: lead } : dropped();
+      return t.betId !== null && t.answers !== null ? { ...t, assigneeId: lead } : dropped();
     }
     case "blocked": {
       // a departing lead's blocked proposal would read as the next lead's, and hold every new bet
@@ -869,6 +699,7 @@ const rehomed = (
     case "running":
     case "done":
     case "superseded":
+    case "settled":
     case "dropped": {
       return null;
     }
@@ -888,8 +719,7 @@ const handOver = (active: ActiveCompany, leaverId: string, leaverName: string): 
   const now = Date.now();
   const moved: HandedOver = { dropped: 0, rehomed: 0 };
   for (const t of active.tasks.filter((task) => task.assigneeId === leaverId)) {
-    const answered = t.betId !== null && answeredOn(t.betId).has(t.id);
-    const next = rehomed(t, leaverName, lead, answered, now);
+    const next = rehomed(t, leaverName, lead, now);
     if (!next) {
       continue;
     }
@@ -917,10 +747,7 @@ export const archiveEmployee = (
   if (!emp) {
     return null;
   }
-  moveDir(
-    employeeAgentDir(emp.companyId, employeeId),
-    archiveTo(alumniDir(emp.companyId), employeeId),
-  );
+  moveDir(employeeAgentDir(employeeId), archiveTo(alumniDir(), employeeId));
   const active = current();
   const idx = active.employees.findIndex((e) => e.id === employeeId);
   if (idx !== -1) {
@@ -934,20 +761,27 @@ export const archiveEmployee = (
 };
 
 // ---- products --------------------------------------------------------------
-/** The first product's code is the company's workspace/; it inherits the legacy metrics. */
-const firstProduct = (co: Company, vercel: VercelBinding | null): Product => ({
-  companyId: co.id,
-  createdAt: co.createdAt,
-  description: co.mission ?? UNNAMED_PRODUCT_DESCRIPTION,
-  id: uniqueSlug(co.name, [], heldIn(productsDir(co.id), retiredDir(co.id))),
+/** A product as it starts, the first as much as any: nothing shipped, no numbers yet. */
+const newProduct = (
+  id: string,
+  named: Pick<Product, "createdAt" | "description" | "name">,
+): Product => ({
+  ...named,
+  id,
   lastShipAt: null,
-  name: co.name,
   revenueUsd: null,
-  ships: co.ships,
-  users: co.users,
-  vercel,
-  workspaceDir: companyWorkspace(co.id),
+  ships: 0,
+  users: null,
+  vercel: null,
+  workspaceDir: productWorkspace(id),
 });
+
+const firstProduct = (co: Company): Product =>
+  newProduct(uniqueSlug(co.name, [], heldIn(productsDir(), retiredDir())), {
+    createdAt: co.createdAt,
+    description: co.mission ?? UNNAMED_PRODUCT_DESCRIPTION,
+    name: co.name,
+  });
 
 export const getProduct = (id: string): Product | null =>
   maybeCurrent()?.products.find((product) => product.id === id) ?? null;
@@ -960,31 +794,23 @@ export const requireProduct = (id: string): Product => {
   return p;
 };
 
-export const listProducts = (): Product[] => [...(current().products ?? [])];
+export const listProducts = (): Product[] => [...current().products];
 
 /**
  * Whether `id` is a product of this company, live, retired or one boot could not read: a
  * retired product's paid orders still ship, and an unread one's are kept for when it reads again.
  */
-export const madeProduct = (id: string): boolean => {
-  const companyId = current().company.id;
-  return (
-    getProduct(id) !== null ||
-    [productsDir(companyId), retiredDir(companyId)].some((dir) => safeReaddir(dir).includes(id))
-  );
-};
+export const madeProduct = (id: string): boolean =>
+  current().products.some((product) => product.id === id) ||
+  [productsDir(), retiredDir()].some((dir) => safeReaddir(dir).includes(id));
 
 /**
  * Whether `id` was retired: its package sits under retired/ and none under products/. A product
  * boot could not read is missing from the loaded ones but still in products/, so it never reads
  * as retired, and its payment links are never switched off for it.
  */
-const retiredIn =
-  (companyId: string) =>
-  (id: string): boolean =>
-    heldIn(retiredDir(companyId))(id) && !heldIn(productsDir(companyId))(id);
-
-export const isRetiredProduct = (id: string): boolean => retiredIn(current().company.id)(id);
+export const isRetiredProduct = (id: string): boolean =>
+  heldIn(retiredDir())(id) && !heldIn(productsDir())(id);
 
 /** A product's payment links outlive it: Stripe may make one while its product retires. */
 const requireMadeProduct = (id: string): void => {
@@ -998,31 +824,22 @@ const patchProduct = (id: string, patch: Partial<Product>): Product =>
 
 /** Past the cap a new product has to replace a killed one, whoever starts it: the founder's panel too. */
 export const createProduct = (named: ProductDraft): Product => {
-  const { company, products: list } = current();
+  const { products: list } = current();
   if (!portfolioHasRoom(list.length)) {
     throw new RefusalError(
       `The company already runs ${MAX_LIVE_PRODUCTS} products; kill_product one before starting another.`,
     );
   }
-  const input = { ...named, companyId: company.id };
   const id = uniqueSlug(
-    input.name,
+    named.name,
     list.map((p) => p.id),
-    heldIn(productsDir(input.companyId), retiredDir(input.companyId)),
+    heldIn(productsDir(), retiredDir()),
   );
-  const product: Product = {
-    companyId: input.companyId,
+  const product = newProduct(id, {
     createdAt: Date.now(),
-    description: input.description.trim(),
-    id,
-    lastShipAt: null,
-    name: input.name.trim(),
-    revenueUsd: null,
-    ships: 0,
-    users: null,
-    vercel: null,
-    workspaceDir: productWorkspace(input.companyId, id),
-  };
+    description: named.description.trim(),
+    name: named.name.trim(),
+  });
   mkdirSync(product.workspaceDir, { recursive: true });
   saveProduct(product);
   list.push(product);
@@ -1032,6 +849,7 @@ export const createProduct = (named: ProductDraft): Product => {
   return product;
 };
 
+/** What a tool is told when it names a product the company does not have. */
 export const noSuchProduct = (productId: string): string =>
   `No product "${productId}" here — the products are ${listProducts()
     .map((p) => p.id)
@@ -1098,9 +916,9 @@ export const getListing = (id: string): Listing | null =>
  * and those still being made. Held until `releaseListingId`, once the listing is kept or never made.
  */
 export const newListingId = (name: string): string => {
-  const { company, listings, pendingListings } = current();
+  const { listings, pendingListings } = current();
   const id = uniqueSlug(name, [...listings.map((l) => l.id), ...pendingListings], (slug) =>
-    existsSync(listingFile(company.id, slug)),
+    existsSync(listingFile(slug)),
   );
   pendingListings.add(id);
   return id;
@@ -1111,10 +929,7 @@ export const releaseListingId = (id: string): void => {
 };
 
 const saveListing = (listing: Listing): void => {
-  atomicWrite(
-    listingFile(current().company.id, listing.id),
-    `${JSON.stringify(listing, null, 2)}\n`,
-  );
+  writeJsonFile(listingFile(listing.id), listing);
 };
 
 /**
@@ -1139,7 +954,7 @@ export const getChargeLink = (id: string): ChargeLink | null =>
   current().links.find((l) => l.id === id) ?? null;
 
 const saveChargeLink = (link: ChargeLink): void => {
-  atomicWrite(linkFile(current().company.id, link.id), `${JSON.stringify(link, null, 2)}\n`);
+  writeJsonFile(linkFile(link.id), link);
 };
 
 /**
@@ -1161,63 +976,45 @@ export const recordChargeLink = (link: ChargeLink): void => {
 export const paymentLinks = (): CompanyLink[] => {
   const { links, listings } = current();
   return [
-    ...listings.map(({ livemode, name, paymentLink, productId }) => ({
-      id: paymentLink.id,
-      livemode,
-      name,
-      print: true,
-      productId,
-      state: paymentLink.state,
-      url: paymentLink.url,
+    ...listings.map((listing): CompanyLink => ({
+      kind: "print",
+      link: {
+        ...listing.paymentLink,
+        livemode: listing.livemode,
+        name: listing.name,
+        productId: listing.productId,
+      },
+      listing,
     })),
-    ...links.map(({ id, livemode, name, productId, state, url }) => ({
-      id,
-      livemode,
-      name,
-      print: false,
-      productId,
-      state,
-      url,
-    })),
+    ...links.map((link): CompanyLink => ({ kind: "charge", link })),
   ];
 };
 
 /** What retiring a link's product did to it at Stripe. It happened, so the cache keeps it even when the save throws. */
-export const setLinkState = (id: string, state: LinkState): void => {
+export const setLinkState = (held: CompanyLink, state: LinkState): void => {
   const { links, listings } = current();
-  const listed = listings.findIndex((l) => l.paymentLink.id === id);
-  const listing = listings[listed];
-  if (listing !== undefined) {
-    const next = { ...listing, paymentLink: { ...listing.paymentLink, state } };
-    listings[listed] = next;
-    saveListing(next);
-    return;
+  switch (held.kind) {
+    case "charge": {
+      recordIn(links, held.link.id, { state }, saveChargeLink);
+      break;
+    }
+    case "print": {
+      const cached = listings.find((l) => l.id === held.listing.id);
+      if (cached === undefined) {
+        throw new Error(`no listing ${held.listing.id} is kept`);
+      }
+      recordIn(listings, cached.id, { paymentLink: { ...cached.paymentLink, state } }, saveListing);
+      break;
+    }
+    // no default
   }
-  const at = links.findIndex((l) => l.id === id);
-  const link = links[at];
-  if (link === undefined) {
-    throw new Error(`no payment link ${id} is kept`);
-  }
-  const next = { ...link, state };
-  links[at] = next;
-  saveChargeLink(next);
-};
-
-const UnrecordedLinksSchema = z.array(z.string());
-
-/** Products an older save made whose create_payment_link links IdleBiz never recorded, and has not looked for since. */
-export const unrecordedLinkProducts = (): string[] =>
-  readJsonFile(unrecordedLinksFile(current().company.id), UnrecordedLinksSchema) ?? [];
-
-export const setUnrecordedLinkProducts = (productIds: readonly string[]): void => {
-  atomicWrite(unrecordedLinksFile(current().company.id), JSON.stringify(productIds));
 };
 
 // ---- orders -----------------------------------------------------------------
 export const listOrders = (): Order[] => [...current().orders];
 
 const saveOrder = (order: Order): void => {
-  atomicWrite(orderFile(current().company.id, order.id), `${JSON.stringify(order, null, 2)}\n`);
+  writeJsonFile(orderFile(order.id), order);
 };
 
 /**
@@ -1259,44 +1056,39 @@ export const updateSale = (
 
 /**
  * Where reads of Stripe's checkouts go on from, in seconds (Stripe's `created[gt]`): one per key
- * that has read, since a key of another mode or account lists none of this one's sessions, and
- * `floor`, where a key that never read starts.
+ * that has read, since a key of another mode or account lists none of this one's sessions.
  */
 const OrdersCursorSchema = z.object({
   byKey: z.record(z.string(), z.number().int()),
-  floor: z.number().int(),
 });
 export type OrdersCursor = z.infer<typeof OrdersCursorSchema>;
 
 /** Null before the first read. */
 export const ordersCursor = (): OrdersCursor | null =>
-  readJsonFile(ordersCursorFile(current().company.id), OrdersCursorSchema);
+  readJsonFile(ordersCursorFile(), OrdersCursorSchema);
 
 export const setOrdersCursor = (cursor: OrdersCursor): void => {
-  atomicWrite(
-    ordersCursorFile(current().company.id),
-    JSON.stringify(OrdersCursorSchema.parse(cursor)),
-  );
+  current();
+  writeJsonFile(ordersCursorFile(), OrdersCursorSchema.parse(cursor));
 };
 
 /** Where work no bet pays for lands: the product that has waited longest for a ship. */
 export const attentionProduct = (): Product | null => {
-  const products = current().products ?? [];
+  const { products } = current();
   return products.toSorted((a, b) => (a.lastShipAt ?? 0) - (b.lastShipAt ?? 0))[0] ?? null;
 };
 
 // ---- bets ------------------------------------------------------------------
-export const listBets = (): Bet[] => [...(current().bets ?? [])];
+export const listBets = (): Bet[] => [...current().bets];
 
 export const getBet = (id: string): Bet | null =>
   maybeCurrent()?.bets.find((bet) => bet.id === id) ?? null;
 
-export const allocationPolicy = (): PolicyParams => current().policy ?? DEFAULT_POLICY;
+export const allocationPolicy = (): PolicyParams => current().policy;
 
 const patchBet = (id: string, patch: Partial<Bet>): Bet =>
   patchIn(current().bets, id, patch, saveBet);
 
-/** What a tool is told when it names a product the company does not have. */
 /**
  * Open a bet, on a product with room for another. A users bet lands on its own
  * path unless it names one; a named path over the whole site or /b, or one
@@ -1304,7 +1096,7 @@ const patchBet = (id: string, patch: Partial<Bet>): Bet =>
  * bring.
  */
 export const openBet = (
-  wager: {
+  input: {
     productId: string;
     title: string;
     hypothesis: string;
@@ -1314,7 +1106,6 @@ export const openBet = (
   } & ({ metric: "users"; landingPath: string | null } | { metric: "revenue" }),
 ): Bet => {
   const active = current();
-  const input = { ...wager, companyId: active.company.id };
   const product = active.products.find((p) => p.id === input.productId);
   if (!product) {
     throw new RefusalError(noSuchProduct(input.productId));
@@ -1334,7 +1125,7 @@ export const openBet = (
   const id = uniqueSlug(
     input.title,
     active.bets.map((b) => b.id),
-    heldIn(betsDir(input.companyId)),
+    heldIn(betsDir()),
   );
   const bet: Bet = {
     budgetUsd: input.budgetUsd,
@@ -1342,7 +1133,6 @@ export const openBet = (
       input.metric === "users"
         ? { landingPath: input.landingPath ?? defaultLandingPath(id), metric: "users" }
         : { metric: "revenue" },
-    companyId: input.companyId,
     createdAt: Date.now(),
     hypothesis: input.hypothesis.trim(),
     id,
@@ -1435,38 +1225,32 @@ const dropWork = (match: (t: Task) => boolean, reason: string, now: number): voi
   }
 };
 
-const BET_MEASURING = "bet is measuring";
-const BET_CLOSED = "bet closed";
 const BET_KILLED = "bet killed";
-const PRODUCT_RETIRED = "product retired";
-const ROUTINE_RETIRED = "routine retired";
 
-/** Why the bet takes no more runs, as the work it drops says; null while it is open, or for work on none. */
-const stoppedBetReason = (bet: Bet | null): string | null => {
-  if (!bet || bet.state.kind === "open") {
-    return null;
-  }
-  return bet.state.kind === "measuring" ? BET_MEASURING : BET_CLOSED;
-};
+type Stop = "measuring" | "closed" | "retired";
+
+const STOP_REASON = {
+  closed: "bet closed",
+  measuring: "bet is measuring",
+  retired: "product retired",
+} satisfies Record<Stop, string>;
 
 /**
  * Why the task takes no more runs: its bet stopped taking work, or its product retired, and a
  * run would land in the company's folder, billing what takes no more work. Null while it runs on.
  */
-const stoppedReason = (
-  t: Task,
-  bet: Bet | null,
-  retired: (productId: string) => boolean,
-): string | null =>
-  stoppedBetReason(bet) ?? (t.productId !== null && retired(t.productId) ? PRODUCT_RETIRED : null);
-
-const stoppedWorkReason = (t: Task): string | null =>
-  stoppedReason(t, t.betId === null ? null : getBet(t.betId), isRetiredProduct);
+const stopOf = (t: Task): Stop | null => {
+  const bet = t.betId === null ? null : getBet(t.betId);
+  if (bet && bet.state.kind !== "open") {
+    return bet.state.kind === "measuring" ? "measuring" : "closed";
+  }
+  return t.productId !== null && isRetiredProduct(t.productId) ? "retired" : null;
+};
 
 const retune = (active: ActiveCompany): void => {
   const next = dream(active.policy, active.bets);
   if (next !== active.policy) {
-    atomicWrite(policyFile(active.company.id), JSON.stringify(next, null, 2));
+    writeJsonFile(policyFile(), next);
     active.policy = next;
   }
 };
@@ -1475,8 +1259,8 @@ const retune = (active: ActiveCompany): void => {
  * What a measuring bet keeps: work waiting on the founder, or carrying their answer while it
  * can still run, since that step may be the one that moves the number.
  */
-const keptWhileMeasuring = (t: Task, answered: ReadonlySet<string>): boolean =>
-  t.state.kind === "blocked" || (answered.has(t.id) && t.state.kind !== "dead");
+const keptWhileMeasuring = (t: Task): boolean =>
+  t.state.kind === "blocked" || (t.answers !== null && t.state.kind !== "dead");
 
 /** The work is shipped: stop spending and let the number answer. */
 export const measureBet = (betId: string, now: number): Bet => {
@@ -1485,13 +1269,12 @@ export const measureBet = (betId: string, now: number): Bet => {
     throw new RefusalError(`no open bet "${betId}"`);
   }
   const measuring = patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
-  const answered = answeredOn(betId);
-  dropWork((t) => t.betId === betId && !keptWhileMeasuring(t, answered), BET_MEASURING, now);
+  dropWork((t) => t.betId === betId && !keptWhileMeasuring(t), STOP_REASON.measuring, now);
   return measuring;
 };
 
 const closeAsKilled = (bet: Bet, reason: string, now: number): Bet =>
-  patchBet(bet.id, { state: { closedAt: now, kind: "killed", moved: bet.reading, reason } }) ?? bet;
+  patchBet(bet.id, { state: { closedAt: now, kind: "killed", moved: bet.reading, reason } });
 
 /** Someone gives up on a bet before its window does. */
 export const killBet = (betId: string, reason: string, now: number): Bet => {
@@ -1503,6 +1286,25 @@ export const killBet = (betId: string, reason: string, now: number): Bet => {
   dropWork((t) => t.betId === betId, BET_KILLED, now);
   retune(current());
   return killed;
+};
+
+const UNSETTLED = "spent out, and the lead's settle run neither measured nor killed it";
+
+/**
+ * A settle run ended done with its bet still open: the lead skipped the call, and briefing them
+ * again would bill the bet another run on every tick. No window ran, so it closes unmeasured and
+ * nothing learns from it. Null when the bet already left open.
+ */
+export const closeUnsettledBet = (betId: string, now: number): Bet | null => {
+  const bet = getBet(betId);
+  if (bet?.state.kind !== "open") {
+    return null;
+  }
+  const closed = patchBet(betId, {
+    state: { closedAt: now, kind: "killed", moved: null, reason: UNSETTLED },
+  });
+  dropWork((t) => t.betId === betId, STOP_REASON.closed, now);
+  return closed;
 };
 
 /**
@@ -1526,7 +1328,7 @@ export const judgeBets = (now: number, pulsingSince: number | null): Bet[] => {
   }
   const closed = new Set(changed.filter(isClosed).map((b) => b.id));
   if (closed.size > 0) {
-    dropWork((t) => t.betId !== null && closed.has(t.betId), BET_CLOSED, now);
+    dropWork((t) => t.betId !== null && closed.has(t.betId), STOP_REASON.closed, now);
     try {
       retune(active);
     } catch (error) {
@@ -1536,11 +1338,10 @@ export const judgeBets = (now: number, pulsingSince: number | null): Bet[] => {
   return changed;
 };
 
-/** How many ship summaries a brief lists. */
 const RECENT_SHIPS = 6;
 const RecentShipsSchema = z.array(z.string());
 
-export const recentShips = (): readonly string[] => current().recentShips ?? [];
+export const recentShips = (): readonly string[] => current().recentShips;
 
 export const recordShip = (productId: string | null, summary: string): void => {
   const active = current();
@@ -1557,7 +1358,7 @@ export const recordShip = (productId: string | null, summary: string): void => {
   // the counters are the record; the brief's list follows them
   const ships = [...active.recentShips, summary].slice(-RECENT_SHIPS);
   try {
-    atomicWrite(recentShipsFile(active.company.id), JSON.stringify(ships, null, 2));
+    writeJsonFile(recentShipsFile(), ships);
   } finally {
     active.recentShips = ships;
   }
@@ -1567,7 +1368,6 @@ export const recordShip = (productId: string | null, summary: string): void => {
 export const postTeamMessage = (from: Speaker, text: string): TeamMessage => {
   const active = current();
   const msg: Omit<TeamMessage, "id"> = {
-    companyId: active.company.id,
     createdAt: Date.now(),
     from,
     text,
@@ -1578,12 +1378,12 @@ export const postTeamMessage = (from: Speaker, text: string): TeamMessage => {
   if (ring.length > TEAM_CHAT_RING) {
     ring.splice(0, ring.length - TEAM_CHAT_RING);
   }
-  appendJsonl(chatFile(active.company.id), msg);
+  appendJsonl(chatFile(), msg);
   return stored;
 };
 
 export const recentTeamMessages = (limit = 20, since = 0): TeamMessage[] => {
-  const ring = current().chat ?? [];
+  const ring = current().chat;
   const filtered = since > 0 ? ring.filter((m) => m.createdAt > since) : ring;
   return filtered.slice(-limit);
 };
@@ -1592,37 +1392,39 @@ export const recentTeamMessages = (limit = 20, since = 0): TeamMessage[] => {
 interface NewTask {
   productId?: string | null;
   betId?: string | null;
-  origin: TaskOrigin;
   title: string;
   description?: string | null;
   priority?: TaskPriority;
   assigneeId?: string | null;
 }
 
-const addTask = (brief: NewTask, state: TaskIn<"todo" | "blocked">["state"]): Task => {
-  const { company, tasks: list } = current();
-  const t = { ...brief, companyId: company.id };
+/** `answers` is the ask a continuation carries the founder's answer to, which only an answer sets. */
+const addTask = (
+  t: NewTask,
+  provenance: TaskProvenance,
+  state: TaskIn<"todo" | "blocked">["state"],
+  answers: string | null = null,
+): Task => {
+  const { tasks: list } = current();
   const now = Date.now();
   const id = uniqueSlug(
     t.title,
     list.map((x) => x.id),
-    heldIn(tasksDir(t.companyId), shippedDir(t.companyId)),
+    heldIn(tasksDir(), shippedDir()),
   );
   const task: Task = {
-    artifacts: [],
+    answers,
     assigneeId: t.assigneeId ?? null,
     attempts: 0,
     betId: t.betId ?? null,
-    companyId: t.companyId,
     completedAt: null,
     createdAt: now,
     description: t.description ?? null,
     id,
-    origin: t.origin,
     priority: t.priority ?? "medium",
     productId: t.productId ?? null,
-    startedAt: null,
     title: t.title,
+    ...provenance,
     ...entering(state, now),
   };
   saveTask(task);
@@ -1630,19 +1432,20 @@ const addTask = (brief: NewTask, state: TaskIn<"todo" | "blocked">["state"]): Ta
   return task;
 };
 
-export const createTask = (brief: NewTask): Task => addTask(brief, { kind: "todo" });
+export const createTask = ({ origin, ...brief }: NewTask & { origin: RunOrigin }): Task =>
+  addTask(brief, { origin }, { kind: "todo" });
 
 /** An open task by id. Shipped work is history, not something to act on. */
 export const getTask = (id: string): Task | null =>
   maybeCurrent()?.tasks.find((task) => task.id === id) ?? null;
 
 /** The company's open queue: everything not yet history, newest first. */
-export const listOpenTasks = (): Task[] => (current().tasks ?? []).toSorted(newestFirst);
+export const listOpenTasks = (): Task[] => current().tasks.toSorted(newestFirst);
 
 /** Open tasks by assignee and status, newest first. History is the shipping log's. */
 export const queryTasks = (query: {
-  assigneeId?: string;
-  status?: readonly OpenTaskStatus[];
+  assigneeId?: string | undefined;
+  status?: readonly OpenTaskStatus[] | undefined;
 }): Task[] => {
   const { assigneeId, status } = query;
   return listOpenTasks()
@@ -1676,6 +1479,21 @@ export const shippingLog = (): ShipLine[] =>
 export const openTasksFor = (employeeId: string): Task[] =>
   maybeCurrent()?.tasks.filter((task) => task.assigneeId === employeeId) ?? [];
 
+/**
+ * The employee's latest proposal to end done, unless one they were asked for since is still
+ * open: what came of the last time they were asked for the next bet.
+ */
+export const lastProposalDone = (employeeId: string): ProposalEnd | null => {
+  const { lastProposal: last, tasks } = current();
+  if (last?.employeeId !== employeeId) {
+    return null;
+  }
+  const askedSince = tasks.some(
+    (t) => t.assigneeId === employeeId && t.origin === "propose" && t.createdAt > last.briefedAt,
+  );
+  return askedSince ? null : last;
+};
+
 const TASK_PRIORITY_ORDER = { high: 0, low: 2, medium: 1 } satisfies Record<TaskPriority, number>;
 
 /** Queued tasks eligible to start now (a backoff retry waits for nextAttemptAt). */
@@ -1700,7 +1518,7 @@ const recordTask = (id: string, patch: Partial<Task>): Task =>
   recordIn(current().tasks, id, patch, saveTask);
 
 /** How a run can leave its task: shipped, or waiting on the founder. Only an answer supersedes one. */
-type Settled = Extract<TaskState, { kind: "done" | "blocked" }>;
+type SettledByRun = Extract<TaskState, { kind: "done" | "blocked" }>;
 
 /** How much of a ship's summary a dialogue quotes back to its author. */
 const LAST_SHIP_CHARS = 500;
@@ -1719,12 +1537,30 @@ const noteShip = (t: Task): void => {
   recordIn(current().employees, t.assigneeId, { lastShip }, saveRunState);
 };
 
+/** Losing it costs one more proposal, never a settle, so a failed write is only reported. */
+const noteProposalDone = (t: Task, endedAt: number): void => {
+  if (t.origin !== "propose" || t.assigneeId === null) {
+    return;
+  }
+  const last: ProposalEnd = { briefedAt: t.createdAt, employeeId: t.assigneeId, endedAt };
+  current().lastProposal = last;
+  try {
+    writeJsonFile(lastProposalFile(), last);
+  } catch (error) {
+    report("note the last proposal", error);
+  }
+};
+
 // Persist before shelving so boot can recover a crash between the two writes.
 const close = (
   taskId: string,
-  state: Settled | Extract<TaskState, { kind: "superseded" }>,
+  state: SettledByRun | Extract<TaskState, { kind: "superseded" }>,
 ): void => {
-  const t = recordTask(taskId, entering(state, Date.now()));
+  const now = Date.now();
+  const t = recordTask(taskId, entering(state, now));
+  if (state.kind === "done") {
+    noteProposalDone(t, now);
+  }
   if (isHistory(t) && shelveClosed(t)) {
     noteShip(t);
   }
@@ -1749,10 +1585,10 @@ export const claimTask = (taskId: string, employeeId: string): Task | null => {
   if (!claimable || (t.assigneeId !== null && t.assigneeId !== employeeId)) {
     return null;
   }
-  const stopped = stoppedWorkReason(t);
-  if (stopped !== null && (stopped !== BET_MEASURING || kind === "dead")) {
+  const stop = stopOf(t);
+  if (stop !== null && (stop !== "measuring" || kind === "dead")) {
     throw new RefusalError(
-      `"${t.title}" won't run again: its ${stopped}, so a run would only bill what takes no more work. The lead can delegate it again under a live bet.`,
+      `"${t.title}" won't run again: its ${STOP_REASON[stop]}, so a run would only bill what takes no more work. The lead can delegate it again under a live bet.`,
     );
   }
   const patch: Partial<Task> = {
@@ -1782,9 +1618,9 @@ export const lockTaskForRun = (taskId: string, runId: string): Task | null => {
     return null;
   }
   // measuring keeps a claimed ask and an answer's continuation, so only a closed bet or a retired product drops here
-  const stopped = stoppedWorkReason(t);
-  if (stopped !== null && stopped !== BET_MEASURING) {
-    dropTask(taskId, stopped, Date.now());
+  const stop = stopOf(t);
+  if (stop !== null && stop !== "measuring") {
+    dropTask(taskId, STOP_REASON[stop], Date.now());
     return null;
   }
   return patchTask(taskId, entering({ kind: "running", runId }, Date.now()));
@@ -1796,12 +1632,15 @@ interface Dropped {
 
 /** A run whose bet or product stopped taking work while it ran drops its task rather than leave it waiting; null while both take it. */
 const droppedWhenStopped = (t: Task, attempts: number): Dropped | null => {
-  const reason = stoppedWorkReason(t);
-  if (reason === null) {
+  const stop = stopOf(t);
+  if (stop === null) {
     return null;
   }
   shelveClosed(
-    recordTask(t.id, { attempts, ...entering({ kind: "dropped", reason }, Date.now()) }),
+    recordTask(t.id, {
+      attempts,
+      ...entering({ kind: "dropped", reason: STOP_REASON[stop] }, Date.now()),
+    }),
   );
   return { kind: "dropped" };
 };
@@ -1815,15 +1654,14 @@ const droppedWhenStopped = (t: Task, attempts: number): Dropped | null => {
 export const settleTask = (
   taskId: string,
   runId: string,
-  state: Settled,
-): Settled | Dropped | null => {
+  state: SettledByRun,
+): SettledByRun | Dropped | null => {
   const t = heldBy(getTask(taskId), runId);
   if (!t) {
     return null;
   }
-  const stopped = state.kind === "blocked" ? stoppedWorkReason(t) : null;
-  const dropped =
-    stopped !== null && stopped !== BET_MEASURING ? droppedWhenStopped(t, t.attempts) : null;
+  const stop = state.kind === "blocked" ? stopOf(t) : null;
+  const dropped = stop !== null && stop !== "measuring" ? droppedWhenStopped(t, t.attempts) : null;
   if (dropped) {
     return dropped;
   }
@@ -1880,8 +1718,7 @@ export const parkTask = (
   if (!t) {
     return null;
   }
-  const carriesAnswer =
-    t.betId !== null && stoppedWorkReason(t) === BET_MEASURING && answeredOn(t.betId).has(t.id);
+  const carriesAnswer = t.answers !== null && stopOf(t) === "measuring";
   const dropped = carriesAnswer ? null : droppedWhenStopped(t, t.attempts);
   if (dropped) {
     return dropped;
@@ -1897,45 +1734,56 @@ export const parkTask = (
  */
 export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task | null => {
   const t = getTask(taskId);
-  if (!t || t.state.kind !== "blocked" || !t.assigneeId) {
+  if (!t || t.origin === "order" || t.state.kind !== "blocked" || !t.assigneeId) {
     return null;
   }
-  const next = createTask({
-    betId: t.betId,
-    origin: t.origin,
-    productId: t.productId,
-    ...continuationBrief(t, t.state.ask, answer),
-    assigneeId: t.assigneeId,
-    priority: "high",
-  });
+  const next = addTask(
+    {
+      betId: t.betId,
+      productId: t.productId,
+      ...continuationBrief(t, t.state.ask, answer),
+      assigneeId: t.assigneeId,
+      priority: "high",
+    },
+    { origin: t.origin },
+    { kind: "todo" },
+    taskId,
+  );
   close(taskId, { by: next.id, kind: "superseded" });
   return next;
 };
 
 /**
  * Main's card to the founder about an order, in the Inbox beside the team's asks. Null when one
- * with the same title still waits, so a pump that finds the same trouble again raises no second.
+ * about the same subject still waits, however it is titled, so a pump that finds the same
+ * trouble again raises no second.
  */
-export const raiseOrderCard = (title: string, ask: ActionAsk): Task | null => {
+export const raiseOrderCard = (
+  subject: OrderCardSubject,
+  title: string,
+  ask: ActionAsk,
+): Task | null => {
   const waiting = current().tasks.some(
-    (t) => t.origin === "order" && t.title === title && t.state.kind === "blocked",
+    (t) =>
+      t.origin === "order" && t.state.kind === "blocked" && isDeepStrictEqual(t.subject, subject),
   );
   return waiting
     ? null
     : addTask(
-        { description: null, origin: "order", priority: "high", title },
+        { description: null, priority: "high", title },
+        { origin: "order", subject },
         { ask, kind: "blocked", summary: null },
       );
 };
 
 /** The founder settled an order card: history, which no run carries on. Null for any other task. */
-export const closeOrderCard = (taskId: string): Task | null => {
+export const closeOrderCard = (taskId: string): OrderCard | null => {
   const t = getTask(taskId);
   if (t?.origin !== "order" || t.state.kind !== "blocked") {
     return null;
   }
-  const closed = recordTask(taskId, entering({ by: null, kind: "superseded" }, Date.now()));
-  shelveClosed(closed);
+  const closed: OrderCard = { ...t, ...entering({ kind: "settled" }, Date.now()) };
+  shelveClosed(recordTask(taskId, closed));
   return closed;
 };
 
@@ -1952,8 +1800,7 @@ export const productOfEmployee = (employeeId: string): Product | null => {
 
 /**
  * Retire a product: its live bets die with it, its waiting work is dropped,
- * and its package moves to retired/ whole, with its code beside PRODUCT.md even
- * when that lived outside the package, as the first product's does. The last
+ * and its package moves to retired/ whole, its code with it. The last
  * product cannot go — a company with none would be handed a fresh first product
  * at the next boot. Nor can one a teammate's run is working in: the move would
  * pull the tree out from under it, and a retry would land as company-level
@@ -1978,18 +1825,7 @@ export const killProduct = (productId: string, reason: string, by: string | null
       `${runner?.name ?? "A teammate"} is mid-run on ${product.name} — kill its bets so no new work lands there, then retire it once they're idle.`,
     );
   }
-  const pkg = path.join(productsDir(product.companyId), productId);
-  const archive = archiveTo(retiredDir(product.companyId), productId);
-  moveDir(pkg, archive);
-  const outside = product.workspaceDir !== productWorkspace(product.companyId, productId);
-  if (outside && existsSync(product.workspaceDir)) {
-    try {
-      moveDir(product.workspaceDir, path.join(archive, "workspace"));
-    } catch (error) {
-      moveDir(archive, pkg);
-      throw error;
-    }
-  }
+  moveDir(path.join(productsDir(), productId), archiveTo(retiredDir(), productId));
   const now = Date.now();
   const killed = active.bets
     .filter((b) => b.productId === productId && !isClosed(b))
@@ -1997,7 +1833,7 @@ export const killProduct = (productId: string, reason: string, by: string | null
   if (killed.length > 0) {
     retune(active);
   }
-  dropWork((t) => t.productId === productId, PRODUCT_RETIRED, now);
+  dropWork((t) => t.productId === productId, STOP_REASON.retired, now);
   active.products.splice(active.products.indexOf(product), 1);
   for (const e of active.employees) {
     saveEmployee(e, { onlyIfChanged: true });
@@ -2006,14 +1842,31 @@ export const killProduct = (productId: string, reason: string, by: string | null
 };
 
 // ---- founding and boot -------------------------------------------------------
-/** The folders beside the companies that main keeps for the runs: the cache they write and the command they call. */
-const KEPT_FOR_RUNS = new Set([RUN_BIN_DIR, TOOL_CACHE_DIR]);
-
-/** The root's entries a company may be in: dot folders are main's own, and those it keeps for the runs are theirs. */
-const saveEntries = (): string[] =>
-  safeReaddir(ROOT_DIR).filter(
-    (entry) => !entry.startsWith(".") && !KEPT_FOR_RUNS.has(companyDir(entry)),
-  );
+/**
+ * A COMPANY.md in a folder of the root beside company/, stamped before this build's format or
+ * not at all: a pre-release save from before the save had a folder of its own, refused as it
+ * would be in company/ so that no company is founded beside it. One at this build's format was
+ * moved aside to start over. Dot folders are main's own, and cache/ and bin/ the runs'.
+ */
+const strayPreReleaseSave = (): { file: string; format: number | null } | null => {
+  const notSaves = new Set([companyDir(), toolCacheDir(), runBinDir()]);
+  for (const entry of safeReaddir(rootDir())) {
+    const dir = path.join(rootDir(), entry);
+    if (entry.startsWith(".") || notSaves.has(dir)) {
+      continue;
+    }
+    const file = path.join(dir, "COMPANY.md");
+    const text = readTextIfPresent(file);
+    if (text === null) {
+      continue;
+    }
+    const format = formatOf(parseDoc(text));
+    if (format === null || format < SAVE_FORMAT) {
+      return { file, format };
+    }
+  }
+  return null;
+};
 
 /** Publish a complete company with one directory rename; boot ignores staging directories. */
 export const foundCompany = (input: {
@@ -2028,14 +1881,9 @@ export const foundCompany = (input: {
   if (c().active) {
     throw new RefusalError("a company is already active");
   }
-  if (saveEntries().some((entry) => existsSync(companyFile(entry)))) {
+  if (existsSync(companyDir()) || strayPreReleaseSave() !== null) {
     throw new RefusalError("an existing company save must be loaded or repaired before founding");
   }
-  const id = uniqueSlug(
-    input.name,
-    [],
-    (s) => KEPT_FOR_RUNS.has(companyDir(s)) || existsSync(companyDir(s)),
-  );
   const co: Company = {
     autopilot: true,
     budget: input.budget,
@@ -2043,7 +1891,7 @@ export const foundCompany = (input: {
     createdAt: Date.now(),
     founderName: input.founderName,
     founderSpriteSeed: input.founderSpriteSeed,
-    id,
+    id: slugify(input.name),
     leaderId: null,
     maxAgents: DEFAULT_MAX_AGENTS,
     mission: input.mission,
@@ -2052,20 +1900,20 @@ export const foundCompany = (input: {
     ships: 0,
     spentUsd: 0,
     users: null,
-    workspaceDir: companySharedDir(id),
+    workspaceDir: sharedDir(),
   };
   const active = emptyCompany(co);
   active.shipped = [];
   if (input.hires.length > co.maxAgents) {
     throw new RefusalError(`the office is at its ${co.maxAgents}-seat cap`);
   }
-  active.products.push(firstProduct(co, null));
+  active.products.push(firstProduct(co));
   for (const [deskIndex, hire] of input.hires.entries()) {
     const employeeId = uniqueSlug(
       hire.name,
       active.employees.map((employee) => employee.id),
     );
-    active.employees.push(employeeRecord({ companyId: id, deskIndex, ...hire }, employeeId));
+    active.employees.push(employeeRecord({ deskIndex, ...hire }, employeeId));
   }
   co.leaderId = leadOf(active.employees);
   for (const routine of defaultRoutines(input.businessType)) {
@@ -2073,33 +1921,32 @@ export const foundCompany = (input: {
       routine.name,
       active.routines.map((existing) => existing.id),
     );
-    active.routines.push(routineRecord({ companyId: id, ...routine }, routineId));
+    active.routines.push(routineRecord(routine, routineId));
   }
 
-  const destination = companyDir(id);
-  const staging = mkdtempSync(path.join(ROOT_DIR, ".founding-"));
+  const staging = mkdtempSync(path.join(rootDir(), ".founding-"));
   // Only disk destinations change; persisted workspace paths refer to the final company.
-  const staged = (file: string): string => path.join(staging, path.relative(destination, file));
+  const staged = (file: string): string => path.join(staging, path.relative(companyDir(), file));
   try {
-    mkdirSync(staged(companyWorkspace(id)), { recursive: true });
-    mkdirSync(staged(companySharedDir(id)), { recursive: true });
-    mkdirSync(staged(tasksDir(id)), { recursive: true });
-    mkdirSync(staged(agentsDir(id)), { recursive: true });
+    mkdirSync(staged(sharedDir()), { recursive: true });
+    mkdirSync(staged(tasksDir()), { recursive: true });
+    mkdirSync(staged(agentsDir()), { recursive: true });
     for (const product of active.products) {
-      atomicWrite(staged(productFile(id, product.id)), serializeDoc(productToDoc(product)));
+      mkdirSync(staged(product.workspaceDir), { recursive: true });
+      atomicWrite(staged(productFile(product.id)), serializeDoc(productToDoc(product)));
     }
     for (const employee of active.employees) {
-      mkdirSync(staged(employeeMemoryDir(id, employee.id)), { recursive: true });
+      mkdirSync(staged(employeeMemoryDir(employee.id)), { recursive: true });
       atomicWrite(
-        staged(employeeFile(id, employee.id)),
+        staged(employeeFile(employee.id)),
         serializeDoc(employeeToDoc(employee, co, active.products)),
       );
     }
     for (const routine of active.routines) {
-      atomicWrite(staged(routineFile(id, routine.id)), serializeDoc(routineToDoc(routine)));
+      atomicWrite(staged(routineFile(routine.id)), serializeDoc(routineToDoc(routine)));
     }
-    atomicWrite(staged(companyFile(id)), serializeDoc(companyToDoc(co)));
-    moveDir(staging, destination);
+    atomicWrite(staged(companyFile()), serializeDoc(companyToDoc(co)));
+    moveDir(staging, companyDir());
   } catch (error) {
     rmSync(staging, { force: true, recursive: true });
     throw error;
@@ -2108,48 +1955,34 @@ export const foundCompany = (input: {
   return co;
 };
 
-interface FoundSave {
-  company: Company;
-  /** The format it was last written in; lower than SAVE_FORMAT means boot still has adopting to do. */
-  format: number;
-}
-
-const readCompanies = (): FoundSave[] => {
-  const companies: FoundSave[] = [];
-  for (const entry of saveEntries()) {
-    const file = companyFile(entry);
-    if (!existsSync(file)) {
-      continue;
+/** The root's one company, or null when it holds none or one that does not read, which the load report names. */
+const readCompany = (): Company | null => {
+  if (!existsSync(companyDir())) {
+    const stray = strayPreReleaseSave();
+    if (stray) {
+      skip("company", stray.file, new SaveFormatError(stray.format));
     }
-    try {
-      const doc = parseDoc(readFileSync(file, "utf-8"));
-      const company = docToCompany(doc);
-      if (company.id !== entry) {
-        throw new Error("company slug does not match its directory");
-      }
-      companies.push({ company, format: formatOf(doc) });
-    } catch (error) {
-      skip("company", file, error);
-    }
+    return null;
   }
-  return companies;
+  try {
+    return docToCompany(parseDoc(readFileSync(companyFile(), "utf-8")));
+  } catch (error) {
+    skip("company", companyFile(), error);
+    return null;
+  }
 };
 
 /**
  * A run the last launch never saw settle: dropped with a bet or product that stopped taking
  * work, but for one carrying the founder's answer on a measuring bet, else counted as failed.
  */
-const recoverInterrupted = (task: Task, active: ActiveCompany, now: number): Task => {
-  const bet = active.bets.find((b) => b.id === task.betId) ?? null;
-  const stopped = stoppedReason(task, bet, retiredIn(active.company.id));
-  const carriesAnswer =
-    bet !== null && stopped === BET_MEASURING && answeredIn(shippedOf(active), bet.id).has(task.id);
-  if (stopped !== null && !carriesAnswer) {
-    return { ...task, ...entering({ kind: "dropped", reason: stopped }, now) };
+const recoverInterrupted = (task: Task, now: number): Task => {
+  const stop = stopOf(task);
+  const carriesAnswer = task.answers !== null && stop === "measuring";
+  if (stop !== null && !carriesAnswer) {
+    return { ...task, ...entering({ kind: "dropped", reason: STOP_REASON[stop] }, now) };
   }
-  return task.assigneeId
-    ? failed(task, "Interrupted by app restart").task
-    : { ...task, state: { kind: "todo" } };
+  return failed(task, "Interrupted by app restart").task;
 };
 
 /** Shelve the history among `tasks`, returning the open work. */
@@ -2159,21 +1992,36 @@ const shelveLoadedHistory = (active: ActiveCompany, tasks: Task[]): Task[] => {
       shelve(task);
       active.shipped?.push(task);
     } catch (error) {
-      skip("task", taskFile(active.company.id, task.id), error);
+      skip("task", taskFile(task.id), error);
     }
   }
   return tasks.filter((task) => !isHistory(task));
 };
 
-/**
- * Recover the runs the last launch never saw settle. Runs once an older save's answers are named
- * (`adoptOlderAnswers`): recovery keeps a measuring bet's answered step only once it is.
- */
+/** A running TASK.md that names no run, which only a hand edit leaves, put back on the queue: no run holds it. */
+const relockLost = (doc: FrontmatterDoc): FrontmatterDoc =>
+  doc.metadata.status === "running" && doc.metadata.runId === undefined
+    ? { ...doc, metadata: { ...doc.metadata, lastError: "run lock lost", status: "queued" } }
+    : doc;
+
+/** Queued and running belong to someone; a file giving them nobody (a hand edit, a release with no lead to take it) is work to pick up. */
+const isUnowned = (task: Task): boolean =>
+  task.assigneeId === null && (task.state.kind === "queued" || task.state.kind === "running");
+
+/** What boot makes of a task the last launch left, or null when it stands as it is. */
+const recoveredAtBoot = (task: Task, now: number): Task | null => {
+  if (isUnowned(task)) {
+    return { ...task, state: { kind: "todo" } };
+  }
+  return task.state.kind === "running" ? recoverInterrupted(task, now) : null;
+};
+
+/** Recover the runs the last launch never saw settle, and the work it left nobody holding. */
 const recoverInterruptedRuns = (active: ActiveCompany): void => {
   const now = Date.now();
   for (const [i, task] of active.tasks.entries()) {
-    if (task.state.kind === "running") {
-      const recovered = recoverInterrupted(task, active, now);
+    const recovered = recoveredAtBoot(task, now);
+    if (recovered) {
       active.tasks[i] = recovered;
       saveTask(recovered);
     }
@@ -2183,62 +2031,46 @@ const recoverInterruptedRuns = (active: ActiveCompany): void => {
 
 const loadActiveCompany = (company: Company): ActiveCompany => {
   const active = emptyCompany(company);
-  active.employees = loadPackages(
-    "employee",
-    agentsDir(company.id),
-    (slug) => employeeFile(company.id, slug),
-    (doc) => docToEmployee(doc, company.id),
-  )
+  active.employees = loadPackages("employee", agentsDir(), employeeFile, docToEmployee)
     .map(withRunState)
     .toSorted(byAge);
-  active.bets = loadPackages(
-    "bet",
-    betsDir(company.id),
-    (slug) => betFile(company.id, slug),
-    (doc) => docToBet(doc, company.id),
-  ).toSorted(byAge);
-  const tasks = loadPackages(
-    "task",
-    tasksDir(company.id),
-    (slug) => taskFile(company.id, slug),
-    (doc) => docToTask(doc, company.id),
+  active.bets = loadPackages("bet", betsDir(), betFile, docToBet).toSorted(byAge);
+  const tasks = loadPackages("task", tasksDir(), taskFile, (doc) =>
+    docToTask(relockLost(doc)),
   ).toSorted(byAge);
   active.tasks = shelveLoadedHistory(active, tasks);
-  active.products = loadPackages(
-    "product",
-    productsDir(company.id),
-    (slug) => productFile(company.id, slug),
-    (doc) => docToProduct(doc, company.id),
-  ).toSorted(byAge);
-  active.listings = loadRecords("listing", listingsDir(company.id), ListingSchema);
-  active.links = loadRecords("link", linksDir(company.id), ChargeLinkSchema);
-  active.orders = loadRecords("order", ordersDir(company.id), OrderSchema);
-  active.policy = readJsonFile(policyFile(company.id), PolicyParamsSchema) ?? DEFAULT_POLICY;
-  active.grants = readJsonFile(approvalsFile(company.id), z.array(GrantSchema)) ?? [];
-  active.routines = loadPackages(
-    "routine",
-    routinesDir(company.id),
-    (slug) => routineFile(company.id, slug),
-    (doc) => docToRoutine(doc, company.id),
+  active.products = loadPackages("product", productsDir(), productFile, docToProduct).toSorted(
+    byAge,
   );
+  active.listings = loadRecords("listing", listingsDir(), ListingSchema);
+  active.links = loadRecords("link", linksDir(), ChargeLinkSchema);
+  active.orders = loadRecords("order", ordersDir(), OrderSchema);
+  active.policy = readJsonFile(policyFile(), PolicyParamsSchema) ?? DEFAULT_POLICY;
+  active.grants = readJsonFile(approvalsFile(), z.array(GrantSchema)) ?? [];
+  active.routines = loadPackages("routine", routinesDir(), routineFile, docToRoutine);
   loadRecentChat(active);
-  active.sinceLastLook = readJsonFile(sinceLastLookFile(company.id), DigestSchema);
-  active.recentShips = readJsonFile(recentShipsFile(company.id), RecentShipsSchema) ?? [];
+  active.sinceLastLook = readJsonFile(sinceLastLookFile(), DigestSchema);
+  active.recentShips = readJsonFile(recentShipsFile(), RecentShipsSchema) ?? [];
+  active.lastProposal = readJsonFile(lastProposalFile(), ProposalEndSchema);
   return active;
 };
 
 /** Whether the company lost its last product; one boot could not read is still its own. */
-const lacksProduct = (active: ActiveCompany): boolean => {
-  const { id } = active.company;
-  return (
-    active.products.length === 0 && !holdsPackage(productsDir(id), (slug) => productFile(id, slug))
-  );
-};
+const lacksProduct = (active: ActiveCompany): boolean =>
+  active.products.length === 0 && !holdsPackage(productsDir(), productFile);
 
-/** Whether the save named no lead on the roster and one was elected; unsaved. */
+/**
+ * Whether the save named no lead on the roster and one was elected; unsaved. A lead whose
+ * package boot merely could not read stays lead, so fixing the file brings them back as one.
+ */
 const electMissingLead = (active: ActiveCompany): boolean => {
   const { company, employees } = active;
-  if (employees.length === 0 || employees.some((e) => e.id === company.leaderId)) {
+  const { leaderId } = company;
+  if (
+    employees.length === 0 ||
+    employees.some((e) => e.id === leaderId) ||
+    (leaderId !== null && heldIn(agentsDir())(leaderId))
+  ) {
     return false;
   }
   active.company = { ...company, leaderId: leadOf(employees) };
@@ -2246,9 +2078,9 @@ const electMissingLead = (active: ActiveCompany): boolean => {
 };
 
 /** A company always has a product to work on; one that lost its last is given its mission back as one. */
-const ensureFirstProduct = (active: ActiveCompany, vercel: VercelBinding | null): void => {
+const ensureFirstProduct = (active: ActiveCompany): void => {
   if (lacksProduct(active)) {
-    const first = firstProduct(active.company, vercel);
+    const first = firstProduct(active.company);
     mkdirSync(first.workspaceDir, { recursive: true });
     active.products.push(first);
     saveProduct(first);
@@ -2256,368 +2088,14 @@ const ensureFirstProduct = (active: ActiveCompany, vercel: VercelBinding | null)
 };
 
 /**
- * A save from before products ran every task in workspace/, now its first product's code, and
- * the company's own folder is shared/: its open work, left on no product, would run there.
- */
-const adoptProductlessWork = (active: ActiveCompany): void => {
-  const [first] = active.products;
-  if (first === undefined) {
-    return;
-  }
-  active.tasks = active.tasks.map((t) => {
-    if (t.productId !== null) {
-      return t;
-    }
-    const adopted: Task = { ...t, productId: first.id };
-    saveTask(adopted);
-    return adopted;
-  });
-};
-
-/** The Vercel binding a save from before products kept on the company, for the first product to hold. */
-const legacyVercel = (companyId: string): VercelBinding | null => {
-  const legacy = readMetricsConfig(companyId)?.vercel;
-  if (!legacy) {
-    return null;
-  }
-  return {
-    projectId: legacy.projectId,
-    projectName: legacy.projectName ?? legacy.projectId,
-    teamId: legacy.teamId ?? null,
-  };
-};
-
-const UNMARKED_REVENUE =
-  "adopted from a build whose payment links carried no mark of this bet, so nothing could measure it";
-const UNMARKED_USERS =
-  "adopted from a build that counted every visitor to the product as this bet's, so nothing could measure it";
-
-/**
- * Format 0 judged a bet on its product's whole number: a revenue bet on all its money, whose links
- * tagged only the product, and a users bet on every visitor, with no path of its own ("/" as the
- * codec reads it; namedPathRefusal refuses it to every bet since). Why such a bet cannot be
- * measured, or null for a bet that carries its own mark.
- */
-const unmarkedReason = (claim: BetClaim): string | null => {
-  if (claim.metric === "revenue") {
-    return UNMARKED_REVENUE;
-  }
-  return claim.landingPath === "/" ? UNMARKED_USERS : null;
-};
-
-/**
- * A format 0 bet still live would read none of its own money, or visitors it did not bring: it
- * closes unmeasured, a verdict neither the replay nor the allocator counts. Its waiting work goes
- * with it in adoptStoppedBetWork.
- */
-const adoptUnmarkedBets = (active: ActiveCompany): void => {
-  const now = Date.now();
-  for (const bet of active.bets.filter((b) => !isClosed(b))) {
-    const reason = unmarkedReason(bet.claim);
-    if (reason !== null) {
-      const state: BetState = { closedAt: now, kind: "killed", moved: null, reason };
-      recordIn(active.bets, bet.id, { state }, saveBet);
-    }
-  }
-};
-
-/**
- * The continuation an older build made for an answered ask without naming it: the first made once
- * the ask closed (those builds closed it first) on its bet and product under its title, that no
- * other answer names.
- */
-const continuationOf = (
-  ask: Task,
-  work: readonly Task[],
-  named: ReadonlySet<string>,
-): Task | null =>
-  work
-    .filter(
-      (t) =>
-        t.betId === ask.betId &&
-        t.productId === ask.productId &&
-        t.title === continuationTitle(ask.title) &&
-        t.createdAt >= (ask.completedAt ?? ask.createdAt) &&
-        !named.has(t.id),
-    )
-    .toSorted(byAge)[0] ?? null;
-
-/**
- * Format 7 and older shelved an answer adopted from format 1 naming no continuation, so measuring
- * its bet dropped the one carrying the founder's answer: name it, where it is still found.
- */
-const adoptAnswerLinks = (active: ActiveCompany): void => {
-  const companyId = active.company.id;
-  const shipped = listShippedTasks();
-  const work = [...active.tasks, ...shipped];
-  const named = new Set(
-    shipped.flatMap((t) =>
-      t.state.kind === "superseded" && t.state.by !== null ? [t.state.by] : [],
-    ),
-  );
-  const linked = new Map<string, Task>();
-  for (const ask of shipped.toSorted(byAge)) {
-    const next =
-      ask.state.kind === "superseded" && ask.state.by === null
-        ? continuationOf(ask, work, named)
-        : null;
-    if (next !== null) {
-      named.add(next.id);
-      const answered: Task = { ...ask, state: { by: next.id, kind: "superseded" } };
-      atomicWrite(shippedTaskFile(companyId, ask.id), serializeDoc(taskToDoc(answered)));
-      linked.set(ask.id, answered);
-    }
-  }
-  active.shipped = shipped.map((t) => linked.get(t.id) ?? t);
-};
-
-/** Format 1 shelved an answered ask as done, its summary the answer: relabel it as the history it is. */
-const adoptAnsweredAsks = (active: ActiveCompany): void => {
-  const companyId = active.company.id;
-  active.shipped = listShippedTasks().map((t) => {
-    if (t.state.kind !== "done" || !t.state.summary?.startsWith("Founder answered: ")) {
-      return t;
-    }
-    const answered: Task = { ...t, state: { by: null, kind: "superseded" } };
-    atomicWrite(shippedTaskFile(companyId, t.id), serializeDoc(taskToDoc(answered)));
-    return answered;
-  });
-};
-
-/**
- * Format 2 kept each product's absolute workspace path, which a copied save
- * still pointed back through. The codec reads a product without the new key
- * as the first, coding in the company's workspace/; the old path's tail says which had their own.
- */
-const adoptProductWorkspaces = (active: ActiveCompany): void => {
-  const { id } = active.company;
-  active.products = active.products.map((p) => {
-    const legacy = optStr(
-      parseDoc(readTextIfPresent(productFile(id, p.id)) ?? "").metadata,
-      "workspaceDir",
-    );
-    const adopted: Product =
-      legacy !== null && legacy.endsWith(path.join("products", p.id, "workspace"))
-        ? { ...p, workspaceDir: productWorkspace(id, p.id) }
-        : p;
-    saveProduct(adopted);
-    return adopted;
-  });
-};
-
-/**
- * Format 2 and older retired the first product without its code, which stayed in workspace/
- * as the company's working directory. The retired package's kept path says whose it was: the
- * one outside a package of its own. Runs after adoptProductWorkspaces: until then every live
- * product reads as the one coding in workspace/.
- */
-const adoptRetiredFirstWorkspace = (active: ActiveCompany): void => {
-  const { id } = active.company;
-  const code = companyWorkspace(id);
-  if (!existsSync(code) || active.products.some((p) => p.workspaceDir === code)) {
-    return;
-  }
-  const owner = safeReaddir(retiredDir(id)).find((slug) => {
-    const legacy = optStr(
-      parseDoc(readTextIfPresent(path.join(retiredDir(id), slug, "PRODUCT.md")) ?? "").metadata,
-      "workspaceDir",
-    );
-    return legacy !== null && !legacy.endsWith(path.join("products", slug, "workspace"));
-  });
-  const archive = owner === undefined ? null : path.join(retiredDir(id), owner, "workspace");
-  if (archive !== null && !existsSync(archive)) {
-    moveDir(code, archive);
-  }
-};
-
-/** The reasons format 5 and older dead-lettered the work the steering loop dropped with. */
-const DROP_REASONS: ReadonlySet<string> = new Set([
-  BET_MEASURING,
-  BET_CLOSED,
-  BET_KILLED,
-  PRODUCT_RETIRED,
-]);
-
-/**
- * Format 5 and older dead-lettered the work a bet, a retired product or a release dropped,
- * beside real failures, so the Inbox offered it back. The reason each kept tells them apart.
- */
-const adoptDroppedWork = (active: ActiveCompany): void => {
-  for (const t of active.tasks.filter(taskIn("dead"))) {
-    const reason = t.state.lastError;
-    if (DROP_REASONS.has(reason) || reason.endsWith(RELEASED)) {
-      shelveClosed(recordIn(active.tasks, t.id, { state: { kind: "dropped", reason } }, saveTask));
-    }
-  }
-};
-
-/**
- * Format 5 and older could leave a measured or closed bet's waiting work queued, to run and
- * bill it: drop it as the bet's change does. A measuring bet keeps what waits on the founder,
- * or carries their answer.
- */
-const adoptStoppedBetWork = (active: ActiveCompany): void => {
-  const now = Date.now();
-  for (const bet of active.bets) {
-    const reason = stoppedBetReason(bet);
-    if (reason !== null) {
-      const answered = answeredOn(bet.id);
-      dropWork(
-        (t) => t.betId === bet.id && (reason === BET_CLOSED || !keptWhileMeasuring(t, answered)),
-        reason,
-        now,
-      );
-    }
-  }
-};
-
-/**
- * Format 9 and older kept a dead letter when its bet stopped or its product retired, and the
- * Inbox offered it back for good, though `claimTask` refuses every retry of it.
- */
-const adoptStrandedDeadLetters = (active: ActiveCompany): void => {
-  const now = Date.now();
-  for (const t of active.tasks.filter(taskIn("dead"))) {
-    const stopped = stoppedWorkReason(t);
-    if (stopped !== null) {
-      dropTask(t.id, stopped, now);
-    }
-  }
-};
-
-/** What the retired push tool asked the founder to sign: `push <branch> (<sha>) of <product> to <url>`. */
-const PUSH_SIGN_OFF = /^push \S+ \(/u;
-
-/** A continuation's brief quoting a push sign-off the founder approved, which it would go on to run. */
-const APPROVED_PUSH =
-  /^> permission to run `(?<command>push \S+ \(.+)`\n\nThe founder answered:\n> Approved\./mu;
-
-/** The push sign-off `t` waits on or would go on to run, if any. */
-const pushSignOffOf = (t: Task): string | null => {
-  const { state } = t;
-  if (state.kind === "blocked") {
-    return state.ask.type === "approval" && PUSH_SIGN_OFF.test(state.ask.command)
-      ? state.ask.command
-      : null;
-  }
-  if (state.kind === "todo" || state.kind === "queued" || state.kind === "running") {
-    return APPROVED_PUSH.exec(t.description ?? "")?.groups?.command ?? null;
-  }
-  return null;
-};
-
-/**
- * Format 6 and older could hold a task on a sign-off for the push tool, which is gone, or queue
- * the continuation of one the founder approved: either would send the agent to a route that no
- * longer answers. Each becomes a question the founder can answer once they have pushed by hand,
- * a granted one is taken back, and the repositories the tool staged pushes in are removed. The
- * question says to push from a fresh clone: git run inside the workspace obeys the config and
- * hooks the team writes there, as the founder.
- */
-const adoptRetiredPush = (active: ActiveCompany): void => {
-  for (const t of active.tasks) {
-    const command = pushSignOffOf(t);
-    if (command !== null) {
-      const workspace =
-        active.products.find((p) => p.id === t.productId)?.workspaceDir ?? "the workspace";
-      const question = `The team no longer pushes code, so this waits on you instead: ${command}. To push it, clone it fresh with \`git clone --no-local ${workspace} <new folder>\` and push from that clone, never with git inside the workspace: it holds what the team wrote, and git there could run it as you. Then answer to let the task go on.`;
-      const summary = t.state.kind === "blocked" ? t.state.summary : null;
-      recordIn(
-        active.tasks,
-        t.id,
-        { state: { ask: { question, type: "question" }, kind: "blocked", summary } },
-        saveTask,
-      );
-    }
-  }
-  const kept = active.grants.filter((g) => !PUSH_SIGN_OFF.test(g.key));
-  if (kept.length < active.grants.length) {
-    writeGrants(kept);
-  }
-  rmSync(path.join(ROOT_DIR, ".push"), { force: true, recursive: true });
-};
-
-/**
- * Format 0 seeded routines whose work belongs to bets now. Their waiting runs go too, a run the
- * quit cut off included, which boot has queued again by now: each would bill the company outside
- * every bet, as the founder's work, since the save kept no origin.
- */
-const dropRetiredRoutines = (active: ActiveCompany): void => {
-  const retired = active.routines.filter((r) => RETIRED_ROUTINES.includes(r.id));
-  for (const routine of retired) {
-    active.routines.splice(active.routines.indexOf(routine), 1);
-    rmSync(path.dirname(routineFile(routine.companyId, routine.id)), {
-      force: true,
-      recursive: true,
-    });
-  }
-  const names = new Set(retired.map((r) => r.name));
-  dropWork(
-    (t) => t.betId === null && names.has(t.title) && isRoutineBrief(t.description),
-    ROUTINE_RETIRED,
-    Date.now(),
-  );
-};
-
-/**
- * Format 6 and older seeded routines whose words sent a store audit to draft a promotion, a
- * bet's job, and a VC to write investment memos, which it never sells. One the founder left as
- * seeded takes its preset's words now.
- */
-const adoptRewordedRoutines = (active: ActiveCompany): void => {
-  for (const r of active.routines) {
-    const instruction = REWORDED_ROUTINES.get(r.instruction);
-    if (instruction !== undefined) {
-      recordIn(active.routines, r.id, { instruction }, saveRoutine);
-    }
-  }
-};
-
-/**
- * Format 6 and older read no checkouts, and a first read starts at founding: it would take every
- * sale an older company ever made on a link as new, each posted to the room. Its reads start now.
- */
-const adoptOrdersCursor = (): void => {
-  setOrdersCursor({ byKey: {}, floor: Math.floor(Date.now() / 1000) });
-};
-
-/**
- * Format 6 and older kept no record of the links create_payment_link made, so retiring a product
- * could not switch them off: each product it made is looked for at Stripe once it retires, those
- * it already retired on the first pulse.
- */
-const adoptUnrecordedLinks = (active: ActiveCompany): void => {
-  const made = [...active.products.map((p) => p.id), ...safeReaddir(retiredDir(active.company.id))];
-  if (made.length > 0) {
-    setUnrecordedLinkProducts(made);
-  }
-};
-
-/** An older save's lead proposal, by its fixed title behind any "Continue: " an answer added. */
-const PROPOSAL_TITLE = /^(?:Continue: )*Open the next bet for /u;
-
-/**
- * Format 3 and older kept no origin, so the codec reads the lead's bet-less proposal as the
- * founder's: it would hold no new bets while it waits, and its answer could delegate work no
- * bet funds. Its title tells it apart.
- */
-const adoptProposalOrigins = (active: ActiveCompany): void => {
-  for (const t of active.tasks) {
-    if (t.betId === null && t.origin !== "propose" && PROPOSAL_TITLE.test(t.title)) {
-      recordIn(active.tasks, t.id, { origin: "propose" }, saveTask);
-    }
-  }
-};
-
-/**
- * A release cut short (a quit, a refused save) or an older build's left the leaver's asks and
- * dead letters on their id, which no claim reaches: an answer queued a continuation nobody
- * runs. Whoever an open task names off the roster, with no package under agents/ that boot
- * merely could not read, is released now, known only by that id, to the lead elected before.
+ * A release cut short (a quit, a refused save) left the leaver's asks and dead letters on
+ * their id, which no claim reaches: an answer queued a continuation nobody runs. Whoever an open
+ * task names off the roster, with no package under agents/ that boot merely could not read, is
+ * released now, known only by that id, to the lead elected before.
  */
 const releaseOrphanedTasks = (active: ActiveCompany): void => {
   const roster = new Set(active.employees.map((e) => e.id));
-  const unread = heldIn(agentsDir(active.company.id));
+  const unread = heldIn(agentsDir());
   const leavers = new Set(
     active.tasks.flatMap((t) =>
       t.assigneeId === null || roster.has(t.assigneeId) || unread(t.assigneeId)
@@ -2630,246 +2108,45 @@ const releaseOrphanedTasks = (active: ActiveCompany): void => {
   }
 };
 
-/** The reasons create_payment_link, sell_print and the checkout grant check gave a Stripe key ask. */
-const KEY_ASK_REASON = /^(?:to sell .+ through a payment link$|Stripe won't let IdleBiz's key )/u;
-
-/**
- * Format 10 and older filed an ask for a Stripe key to charge with as one for Stripe Connect,
- * which only reads revenue: completing Connect resumed it into a run that found no key.
- */
-const adoptStripeKeyAsks = (active: ActiveCompany): void => {
-  for (const t of active.tasks) {
-    const { state } = t;
-    if (
-      state.kind === "blocked" &&
-      state.ask.type === "integration" &&
-      state.ask.integration === "stripe" &&
-      KEY_ASK_REASON.test(state.ask.reason)
-    ) {
-      const keyAsk: TaskState = { ...state, ask: { ...state.ask, integration: "stripe-key" } };
-      recordIn(active.tasks, t.id, { state: keyAsk }, saveTask);
-    }
-  }
-};
-
-/** The product each Vercel ask a tool raised names, as its reason words it. */
-const VERCEL_ASK_PRODUCT = [
-  /^to deploy (?<name>.+)$/u,
-  /^to bind (?<name>.+) to its Vercel project: one named ".*" already exists$/u,
-  /^to set \S+ on (?<name>.+)$/u,
-  /^to check where (?<name>.+) (?:serves its print files|sends buyers who paid)$/u,
-  /^Vercel turned IdleBiz's token away while checking (?<name>.+)'s domains$/u,
-];
-
-/**
- * Format 10 and older could keep a Vercel ask without its product, which the codec reads as
- * the task's own, but a run could ask about another product it named: its card opened the
- * wrong product's panel, and binding the product it named never resumed it. The one its
- * reason names, where exactly one product has that name, is the one it is about.
- */
-const adoptVercelAskProducts = (active: ActiveCompany): void => {
-  for (const t of active.tasks) {
-    const { state } = t;
-    if (
-      state.kind !== "blocked" ||
-      state.ask.type !== "integration" ||
-      state.ask.integration !== "vercel" ||
-      optStr(
-        parseDoc(readTextIfPresent(taskFile(t.companyId, t.id)) ?? "").metadata,
-        "askProduct",
-      ) !== null
-    ) {
-      continue;
-    }
-    const { reason } = state.ask;
-    const name = VERCEL_ASK_PRODUCT.map((pattern) => pattern.exec(reason)?.groups?.name).find(
-      (named) => named !== undefined,
-    );
-    const [named, ...namesakes] = active.products.filter((p) => p.name === name);
-    if (named !== undefined && namesakes.length === 0 && named.id !== state.ask.productId) {
-      const ask = { ...state.ask, productId: named.id };
-      recordIn(active.tasks, t.id, { state: { ...state, ask } }, saveTask);
-    }
-  }
-};
-
-/**
- * Format 10 and older let two products bind one Vercel project: each counted the other's visitors
- * as its users, and each deploy replaced the other's site. The oldest keeps it. Only the founder
- * can give the others a project of their own, so the room says which lost theirs; it is read
- * afresh once the office opens, so the line needs no event.
- */
-const adoptSharedVercelProjects = (active: ActiveCompany): void => {
-  const holders = new Map<string, Product>();
-  for (const p of active.products.toSorted(
-    (a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id),
-  )) {
-    const holder = p.vercel && holders.get(p.vercel.projectId);
-    if (p.vercel && holder) {
-      recordIn(active.products, p.id, { users: null, vercel: null }, saveProduct);
-      postTeamMessage(
-        { kind: "office" },
-        `${p.name} was bound to the Vercel project ${p.vercel.projectName}, which ${holder.name} holds too, so each counted the other's visitors and each deploy replaced the other's site. ${p.name} is unbound now: bind it to a project of its own with its ▲ Vercel button in Products, or its next deploy asks you to sign for a new project named after it.`,
-      );
-    } else if (p.vercel) {
-      holders.set(p.vercel.projectId, p);
-    }
-  }
-};
-
-/**
- * Format 4 and older wrote each room line's speaker as an employee id or null:
- * rewrite the whole room in the shape that tells founder, office and employee
- * apart. A line neither shape reads was already skipped by every reader.
- */
-const adoptSpeakers = (companyId: string): void => {
-  const file = chatFile(companyId);
-  const text = readTextIfPresent(file);
-  if (text === null) {
-    return;
-  }
-  const rows = text.split("\n").flatMap((line) => {
-    try {
-      const row = AdoptedTeamMessageSchema.safeParse(parseJson(line));
-      return row.success ? [row.data] : [];
-    } catch {
-      return [];
-    }
-  });
-  atomicWrite(file, rows.map((row) => `${JSON.stringify(row)}\n`).join(""));
-};
-
-/**
- * The first part of `adoptOlderSave`: name the answers an older save shelved, before boot
- * recovers the runs the last launch cut off, since recovery reads them.
- */
-const adoptOlderAnswers = (active: ActiveCompany, from: number): void => {
-  if (from < 2) {
-    adoptAnsweredAsks(active);
-  }
-  // before any step that reads answeredOn: a release or a measuring bet keeps an answer only once it is named
-  if (from < 8) {
-    adoptAnswerLinks(active);
-  }
-};
-
-/**
- * Bring a save written in format `from` up to this one, once: saveCompany
- * then stamps it, and none of this runs for it again. A step written for
- * format N runs only for saves stamped below it. Everything that reads an
- * old shape of the company's files belongs here or in `adoptOlderAnswers`,
- * so it has a date it can be deleted on; tolerant field reads inside the
- * codecs are not migrations. Runs once interrupted runs are recovered.
- */
-const adoptOlderSave = (active: ActiveCompany, from: number): void => {
-  const { id } = active.company;
-  if (from < 1) {
-    adoptLegacyTeam(active.company);
-    if (lacksProduct(active)) {
-      const vercel = legacyVercel(id);
-      ensureFirstProduct(active, vercel);
-      adoptProductlessWork(active);
-      if (vercel !== null) {
-        writeMetricsConfig(id, { vercel: undefined });
-      }
-    }
-    dropRetiredRoutines(active);
-    adoptUnmarkedBets(active);
-  }
-  if (from < 3) {
-    adoptProductWorkspaces(active);
-    adoptRetiredFirstWorkspace(active);
-  }
-  if (from < 4) {
-    adoptProposalOrigins(active);
-  }
-  if (from < 5) {
-    adoptSpeakers(active.company.id);
-    loadRecentChat(active);
-  }
-  if (from < 6) {
-    adoptDroppedWork(active);
-    adoptStoppedBetWork(active);
-  }
-  if (from < 7) {
-    adoptRetiredPush(active);
-    adoptRewordedRoutines(active);
-    adoptOrdersCursor();
-    adoptUnrecordedLinks(active);
-  }
-  if (from < 9) {
-    // Format 8 and older took Stripe's customer count for users while no Vercel read answered;
-    // the next pulse reads visitors again wherever a product is bound.
-    active.company = { ...active.company, users: null };
-  }
-  if (from < 10) {
-    adoptStrandedDeadLetters(active);
-  }
-  if (from < 11) {
-    adoptStripeKeyAsks(active);
-    adoptSharedVercelProjects(active);
-    adoptVercelAskProducts(active);
-  }
-  saveCompany(active.company);
-};
-
 export const initStore = (): LoadReport => {
   ensureAppDirs();
-  lastLoad = { companies: 0, skipped: [] };
+  resetLoadReport();
   cache = { active: null, nextActivityId: 1, nextTeamMessageId: 1 };
-  const companies = readCompanies();
-  // Company errors block the office UI; no hidden company may run behind it.
-  if (lastLoad.skipped.some((issue) => issue.kind === "company")) {
-    return lastLoad;
+  const company = readCompany();
+  if (!company) {
+    return loadReport();
   }
-  // Newest save wins; equal timestamps use the first slug alphabetically.
-  const [newest] = companies.toSorted(
-    (a, b) => b.company.createdAt - a.company.createdAt || a.company.id.localeCompare(b.company.id),
-  );
-  if (!newest) {
-    return lastLoad;
-  }
-  const { company, format } = newest;
   try {
     const active = loadActiveCompany(company);
     cache.active = active;
-    // three different jobs, in this order: adopt an older format (its answers before the runs a
-    // quit cut off are recovered), repair what must always hold, then serve
-    if (format < SAVE_FORMAT) {
-      adoptOlderAnswers(active, format);
-    }
     recoverInterruptedRuns(active);
-    if (format < SAVE_FORMAT) {
-      adoptOlderSave(active, format);
-    }
-    ensureFirstProduct(active, null);
+    ensureFirstProduct(active);
     dropEndedGrants(active);
     mkdirSync(company.workspaceDir, { recursive: true });
     if (electMissingLead(active)) {
       saveCompany(active.company);
     }
     releaseOrphanedTasks(active);
-    if (!holdsPackage(routinesDir(company.id), (slug) => routineFile(company.id, slug))) {
-      seedDefaultRoutines(company.id, company.businessType);
+    if (!holdsPackage(routinesDir(), routineFile)) {
+      seedDefaultRoutines(company.businessType);
     }
     for (const employee of active.employees) {
       try {
         saveEmployee(employee, { onlyIfChanged: true });
       } catch (error) {
-        skip("employee", employeeFile(company.id, employee.id), error);
+        skip("employee", employeeFile(employee.id), error);
       }
     }
-    lastLoad.companies = 1;
   } catch (error) {
     cache.active = null;
-    skip("company", companyFile(company.id), error);
+    skip("company", companyFile(), error);
   }
-  return lastLoad;
+  return loadReport();
 };
 
 // ---- activity log ----------------------------------------------------------
 const saveSinceLastLook = (active: ActiveCompany, next: Digest): void => {
-  atomicWrite(sinceLastLookFile(active.company.id), JSON.stringify(next, null, 2));
+  writeJsonFile(sinceLastLookFile(), next);
   active.sinceLastLook = next;
 };
 
@@ -2884,7 +2161,7 @@ export const logActivity = (row: PersistedActivity, persist: boolean): ActivityE
   if (!persist || !active) {
     return entry;
   }
-  appendJsonl(activityFile(active.company.id), row);
+  appendJsonl(activityFile(), row);
   const folded = active.sinceLastLook && foldDigest(active.sinceLastLook, row);
   if (folded) {
     saveSinceLastLook(active, folded);

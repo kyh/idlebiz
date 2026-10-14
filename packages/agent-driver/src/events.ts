@@ -19,7 +19,7 @@ export type AgentEvent =
        */
       title: string;
       /** ACP's own discriminant for what the call does. The stable key to react on. */
-      kind?: ToolKind;
+      kind?: ToolKind | undefined;
     };
 
 export const zeroUsage = (): AgentUsage => ({

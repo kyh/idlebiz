@@ -140,7 +140,7 @@ describe("the Privacy Policy", () => {
       "We do not sell your personal information or share it with advertisers.",
       "It has no telemetry and no crash reporting to us.",
       "never handed to your employees",
-      "keeps no copy",
+      "sends us nothing about you or your company",
     ]) {
       expect(markdown).toContain(promise);
     }

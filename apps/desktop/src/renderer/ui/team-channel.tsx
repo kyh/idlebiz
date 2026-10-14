@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSubmission } from "@/renderer/hooks/use-submission";
-import { useStore, sendFounderChat } from "@/renderer/state/store";
+import { useCompany, useEmployees, usePendingAsks } from "@/renderer/state/queries";
+import { useFeed, useStore, sendFounderChat } from "@/renderer/state/store";
 import { ApprovalButtons, useApproval } from "@/renderer/ui/approval";
 import { employeeName } from "@/renderer/ui/employee-name";
 import { Failure } from "@/renderer/ui/failure";
@@ -50,7 +51,7 @@ const askLine = (ask: BlockedAsk): string => {
       return `needs you to: ${ask.action}`;
     }
     case "integration": {
-      return ask.integration === "stripe-key"
+      return ask.integration === "stripe"
         ? "needs a Stripe key"
         : `needs ${INTEGRATION_LABELS[ask.integration]} connected`;
     }
@@ -74,9 +75,9 @@ const RoomRow = ({
   return (
     <div>
       {from.kind === "founder" ? (
-        <span style={{ color: "var(--warn)" }}>you</span>
+        <span className="text-warn">you</span>
       ) : (
-        <span style={{ color: "var(--accent-lo)" }}>{nameOf(from.id)}</span>
+        <span className="text-accent-lo">{nameOf(from.id)}</span>
       )}{" "}
       <span className="text-[#4c5064]">{text}</span>
     </div>
@@ -93,7 +94,7 @@ const NewsRow = ({
   switch (e.kind) {
     case "ship": {
       return (
-        <div style={{ color: "var(--accent-lo)" }}>
+        <div className="text-accent-lo">
           📦 <span className="text-fg">{nameOf(e.employeeId)}</span> shipped: {e.message}
         </div>
       );
@@ -128,10 +129,10 @@ const NewsRow = ({
 };
 
 export const TeamChannel = () => {
-  const employees = useStore((s) => s.employees);
-  const feed = useStore((s) => s.feed);
-  const pendingAsks = useStore((s) => s.pendingAsks);
-  const company = useStore((s) => s.company);
+  const employees = useEmployees();
+  const feed = useFeed();
+  const pendingAsks = usePendingAsks();
+  const company = useCompany();
   const modalOpen = useStore((s) => s.modalOpen);
   const [draft, setDraft] = useState("");
   const { submission, submit } = useSubmission(async (text: string) => {
@@ -215,34 +216,31 @@ export const TeamChannel = () => {
           ))}
         </div>
       ) : null}
-      <div className="flex gap-1 p-1.5">
+      <form
+        className="flex gap-1 p-1.5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
+      >
         <input
           value={draft}
           readOnly={submission.kind === "sending"}
           onChange={(e) => setDraft(e.target.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              send();
-            }
-          }}
           placeholder={focused ? "@name wakes them up" : "Message the team…"}
           className="px-field min-w-0 flex-1"
         />
         <button
-          type="button"
-          onClick={() => {
-            send();
-          }}
+          type="submit"
           disabled={!draft.trim() || submission.kind === "sending"}
           aria-label={submission.kind === "sending" ? "Sending message" : "Send message"}
           className="px-btn"
         >
           <span className="px-icon px-icon-solo">➤</span>
         </button>
-      </div>
+      </form>
       {submission.kind === "failed" ? (
         <div role="alert" className="px-2 pb-2 text-xs text-danger">
           Could not send: {submission.message}

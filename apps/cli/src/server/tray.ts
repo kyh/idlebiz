@@ -1,5 +1,5 @@
 import { activityEvents } from "./activity";
-import { agentDriver } from "./agents/agent-driver";
+import { runnerPool } from "./agents/runner-pool";
 import { host } from "./host";
 import type { TrayItem } from "./host";
 import * as store from "./store/store";
@@ -27,7 +27,7 @@ const officeStatus = (): OfficeStatus => {
   return {
     active: working > 0 || company?.autopilot === true,
     company,
-    napUntil: earliestReset(agentDriver.restingRunners(), Date.now()),
+    napUntil: earliestReset(runnerPool.restingRunners(), Date.now()),
     waiting,
     working,
   };
@@ -69,10 +69,6 @@ const badge = (s: OfficeStatus, windowless: boolean): string => {
   return s.active ? " ●" : "";
 };
 
-interface TrayHost {
-  setAutopilot: (on: boolean) => void;
-}
-
 const autopilotItem = (company: NonNullable<OfficeStatus["company"]>): TrayItem => {
   if (company.autopilot) {
     return { enabled: true, kind: "autopilot", label: "Pause the office", on: false };
@@ -88,15 +84,12 @@ const autopilotItem = (company: NonNullable<OfficeStatus["company"]>): TrayItem 
 };
 
 class AppTray {
-  private host: TrayHost | null = null;
+  private started = false;
   private rebuildTimer: ReturnType<typeof setTimeout> | null = null;
   private windowless = false;
 
-  init(trayHost: TrayHost): void {
-    if (this.host) {
-      return;
-    }
-    this.host = trayHost;
+  start(): void {
+    this.started = true;
     this.rebuild();
     // status decays on its own (resting countdowns, run ends while closed)
     setInterval(() => this.rebuild(), 60_000).unref?.();
@@ -107,11 +100,6 @@ class AppTray {
         this.announceCard(event.message);
       }
     });
-  }
-
-  /** The menu's autopilot item, clicked: it sets what its label said, whatever has moved since. */
-  setAutopilot(on: boolean): void {
-    this.host?.setAutopilot(on);
   }
 
   /** Notify once when the office continues working after its last window closes. */
@@ -159,7 +147,7 @@ class AppTray {
   }
 
   private rebuild(): void {
-    if (!this.host) {
+    if (!this.started) {
       return;
     }
     const s = officeStatus();

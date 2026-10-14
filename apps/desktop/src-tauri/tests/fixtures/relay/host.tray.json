@@ -1,0 +1,33 @@
+{
+  "from": "main",
+  "params": {
+    "items": [
+      {
+        "kind": "open",
+        "label": "Open Acme"
+      },
+      {
+        "kind": "separator"
+      },
+      {
+        "kind": "status",
+        "label": "2 working · $1.20 usage"
+      },
+      {
+        "enabled": true,
+        "kind": "autopilot",
+        "label": "Pause the office",
+        "on": false
+      },
+      {
+        "kind": "separator"
+      },
+      {
+        "kind": "quit",
+        "label": "Quit IdleBiz"
+      }
+    ],
+    "title": " ● 2",
+    "tooltip": "IdleBiz — 2 working · $1.20 usage"
+  }
+}

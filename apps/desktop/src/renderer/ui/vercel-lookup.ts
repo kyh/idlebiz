@@ -1,5 +1,6 @@
-import type { Loaded } from "@/renderer/hooks/use-async";
+import type { UseQueryResult } from "@tanstack/react-query";
 import type { BlockedAsk } from "@repo/domain/domain";
+import { errorMessage } from "@repo/domain/errors";
 import type { VercelListing, VercelProject } from "@repo/domain/integrations";
 
 type Lookup =
@@ -11,7 +12,7 @@ type Lookup =
       account: string | undefined;
       projects: VercelProject[];
       /** The token that listed them; absent when it is the saved one. */
-      token?: string;
+      token?: string | undefined;
     };
 
 const lookupOf = (listing: VercelListing, token?: string): Lookup => {
@@ -19,7 +20,7 @@ const lookupOf = (listing: VercelListing, token?: string): Lookup => {
     case "loaded": {
       return { account: listing.account, projects: listing.projects, state: "loaded", token };
     }
-    case "rejected": {
+    case "refused": {
       // A saved token that is refused, or missing, only means one has to be pasted.
       return token === undefined
         ? { state: "idle" }
@@ -38,23 +39,21 @@ const lookupOf = (listing: VercelListing, token?: string): Lookup => {
   }
 };
 
+/** What the picker reads of its listing query. */
+export type Listing = Pick<UseQueryResult<VercelListing>, "data" | "error" | "isFetching">;
+
 /**
  * How the picker shows the listing read for `token`, the one pasted — absent when
- * the saved one was tried. A listing for an older token is no answer yet.
+ * the saved one was tried. A listing being read again is no answer yet.
  */
-export const lookupFor = (listing: Loaded<VercelListing>, token?: string): Lookup => {
-  switch (listing.kind) {
-    case "loading": {
-      return { state: "loading" };
-    }
-    case "failed": {
-      return { message: listing.message, state: "error" };
-    }
-    case "ready": {
-      return listing.current ? lookupOf(listing.value, token) : { state: "loading" };
-    }
-    // no default
+export const lookupFor = (listing: Listing, token?: string): Lookup => {
+  if (listing.isFetching) {
+    return { state: "loading" };
   }
+  if (listing.error) {
+    return { message: errorMessage(listing.error), state: "error" };
+  }
+  return listing.data ? lookupOf(listing.data, token) : { state: "loading" };
 };
 
 export const problemOf = (lookup: Lookup): string | null =>

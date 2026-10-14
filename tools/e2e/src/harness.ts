@@ -1,38 +1,36 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test as base } from "@playwright/test";
-import type { Browser, BrowserContext, JSHandle, Page } from "@playwright/test";
+import type { Browser, BrowserContext, Page } from "@playwright/test";
 import { startDevHost } from "idlebiz/dev-host";
-import type { DevHost } from "idlebiz/dev-host";
 import type { Company, Employee, Product } from "@repo/domain/domain";
 import type { HireProposal } from "@repo/domain/hire";
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
 import type { ContractRouterClient } from "@orpc/contract";
 import type { Contract } from "@repo/contract/contract";
+import { RPC_PREFIX } from "@repo/contract/routes";
 import { jsonRecordSchema, parseJson } from "@repo/domain/json";
 import type { JsonRecord, JsonValue } from "@repo/domain/json";
 
 /** The page's API, as the page calls it. */
 type Api = ContractRouterClient<Contract>;
 
-declare global {
-  // What the page's install-api.ts sets on the window; its api.ts declares it for the app.
-  var appApi: { api: Api } | undefined;
-}
-
 interface Launched {
   page: Page;
-  /** What main asked the system to open, oldest first: the dev host opens nothing. */
-  opened: DevHost["opened"];
   /** Closes the page and quits main as the app's Quit does; the next launch starts fresh. */
   close: () => Promise<void>;
 }
 
+/** How the Stripe and Vercel main calls answer a key: they take any, or turn every one away. */
+type Keys = "taken" | "refused";
+
 interface LaunchOptions {
-  /** Answer main's calls to Stripe, Vercel and Printful from `CANNED_APIS`, from its first. */
-  stubServices?: boolean;
+  /** Taken unless a test says otherwise; main reaches no real service either way. */
+  keys?: Keys;
 }
 
 interface Fixtures {
@@ -45,36 +43,34 @@ interface Fixtures {
   launch: (options?: LaunchOptions) => Promise<Launched>;
 }
 
-/** Every `run.start` any company on `root` logged: each one would have been a paid CLI session. */
+/** Every `run.start` the company on `root` logged: each one would have been a paid CLI session. */
 const runsStarted = async (root: string): Promise<number> => {
-  let started = 0;
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    const log = path.join(root, entry.name, "activity.jsonl");
-    if (!entry.isDirectory() || !existsSync(log)) {
-      continue;
-    }
-    const lines = await readFile(log, "utf-8");
-    for (const line of lines.split("\n")) {
-      if (line.trim() !== "" && jsonRecordSchema.parse(parseJson(line)).kind === "run.start") {
-        started += 1;
-      }
-    }
+  const log = path.join(root, "company", "activity.jsonl");
+  if (!existsSync(log)) {
+    return 0;
   }
-  return started;
+  const lines = await readFile(log, "utf-8");
+  return lines
+    .split("\n")
+    .filter(
+      (line) => line.trim() !== "" && jsonRecordSchema.parse(parseJson(line)).kind === "run.start",
+    ).length;
 };
 
 /** What main gets for one call in place of the API's answer (stub-services.ts). */
 interface Canned {
   host: string;
   route: string;
+  status: number;
   /** The answer's JSON text. */
   body: string;
 }
 
-const canned = (host: string, route: string, body: JsonValue): Canned => ({
+const canned = (host: string, route: string, body: JsonValue, status = 200): Canned => ({
   body: JSON.stringify(body),
   host,
   route,
+  status,
 });
 
 const STRIPE = "api.stripe.com";
@@ -86,7 +82,7 @@ const NOTHING = { data: [], has_more: false, object: "list" };
  * The Stripe, Vercel and Printful of an account that takes any key: one project, no money, no
  * visitors, one store that may place orders.
  */
-const CANNED_APIS: Canned[] = [
+const TAKING: readonly Canned[] = [
   canned(STRIPE, "/v1/charges", NOTHING),
   canned(STRIPE, "/v1/payment_links", NOTHING),
   canned(PRINTFUL, "/v2/oauth-scopes", {
@@ -100,7 +96,26 @@ const CANNED_APIS: Canned[] = [
   canned(VERCEL, "/v9/projects", { projects: [{ id: "prj_e2e", name: "e2e-tip-jar" }] }),
 ];
 
-// loaded into main before its own code: it answers from CANNED_APIS
+/** What Stripe and Vercel answer a key they never issued, with a 401. */
+const STRIPE_REFUSAL = {
+  error: { message: "Invalid API Key provided", type: "invalid_request_error" },
+};
+const VERCEL_REFUSAL = { error: { code: "forbidden", message: "Not authorized" } };
+
+/** TAKING, but each Stripe and Vercel call turned away. */
+const REFUSING: readonly Canned[] = TAKING.map((answer) => {
+  if (answer.host === STRIPE) {
+    return canned(STRIPE, answer.route, STRIPE_REFUSAL, 401);
+  }
+  if (answer.host === VERCEL) {
+    return canned(VERCEL, answer.route, VERCEL_REFUSAL, 401);
+  }
+  return answer;
+});
+
+const ANSWERS: Record<Keys, readonly Canned[]> = { refused: REFUSING, taken: TAKING };
+
+// loaded into main before its own code, by every launch: it answers from ANSWERS
 const STUB_SERVICES = fileURLToPath(new URL("stub-services.ts", import.meta.url));
 
 const start = async (
@@ -110,9 +125,9 @@ const start = async (
   log: (line: string) => void,
 ): Promise<Launched> => {
   const host = await startDevHost({
-    env: options.stubServices ? { IDLEBIZ_E2E_CANNED: JSON.stringify(CANNED_APIS) } : {},
+    env: { IDLEBIZ_E2E_CANNED: JSON.stringify(ANSWERS[options.keys ?? "taken"]) },
     log,
-    nodeArgs: options.stubServices ? ["--import", STUB_SERVICES] : [],
+    nodeArgs: ["--import", STUB_SERVICES],
     root,
   });
   let context: BrowserContext | null = null;
@@ -132,7 +147,7 @@ const start = async (
     context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(await host.handoff());
-    return { close, opened: host.opened, page };
+    return { close, page };
   } catch (error) {
     // a launch that failed part way leaks nothing it made: the context, main
     await close();
@@ -170,15 +185,16 @@ export const test = base.extend<Fixtures>({
 
 export { expect } from "@playwright/test";
 
-/** The page's API to the server, called as the page calls it. */
-export const apiOf = (page: Page): Promise<JSHandle<Api>> =>
-  page.evaluateHandle(() => {
-    const app = globalThis.appApi;
-    if (!app) {
-      throw new Error("the page installed no API");
-    }
-    return app.api;
-  });
+/**
+ * The page's API to the server, called from the test with what main asks of every call: the
+ * cookie the page's handoff set, from the page's own origin.
+ */
+export const apiOf = async (page: Page): Promise<Api> => {
+  const { origin } = new URL(page.url());
+  const cookies = await page.context().cookies(origin);
+  const cookie = cookies.map(({ name, value }) => `${name}=${value}`).join("; ");
+  return createORPCClient(new RPCLink({ headers: { cookie, origin }, origin, url: RPC_PREFIX }));
+};
 
 const HIRES: HireProposal[] = [
   {
@@ -213,25 +229,23 @@ export interface Founded {
  */
 export const foundCompany = async (page: Page): Promise<Founded> => {
   const api = await apiOf(page);
-  const auth = await api.evaluate((a) => a.agents.hasAuth());
+  const auth = await api.agents.hasAuth();
   test.skip(!auth.ok, "no signed-in claude or codex CLI: founding and the office need one");
-  return await api.evaluate(async (a, hires) => {
-    const company = await a.onboarding.found({
-      budget: { capUsd: 0, mode: "capped" },
-      businessType: "custom",
-      founderName: "E2E Founder",
-      founderSpriteSeed: "e2e-founder",
-      hires,
-      mission: "Prove the office boots without spending a cent.",
-      name: "E2E Test Co",
-    });
-    await a.company.setAutopilot({ running: false });
-    const [product] = await a.products.list();
-    if (!product) {
-      throw new Error("a founded company has no product");
-    }
-    return { company, employees: await a.employees.list(), product };
-  }, HIRES);
+  const company = await api.onboarding.found({
+    budget: { capUsd: 0, mode: "capped" },
+    businessType: "custom",
+    founderName: "E2E Founder",
+    founderSpriteSeed: "e2e-founder",
+    hires: HIRES,
+    mission: "Prove the office boots without spending a cent.",
+    name: "E2E Test Co",
+  });
+  await api.company.setAutopilot({ running: false });
+  const [product] = await api.products.list();
+  if (!product) {
+    throw new Error("a founded company has no product");
+  }
+  return { company, employees: await api.employees.list(), product };
 };
 
 const secretsFile = (root: string): string => path.join(root, "secrets.json");

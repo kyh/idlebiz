@@ -1,15 +1,9 @@
-/** Stripe Connect link state, streamed to the renderer. */
-export type StripeStatus =
-  | { state: "disconnected" }
-  | { state: "connecting" }
-  | { state: "connected"; accountId: string; livemode: boolean }
-  /** `bound` while main still holds a Connect grant, which a disconnect drops. */
-  | { state: "error"; message: string; bound: boolean };
-
 /** The founder's own Stripe key as the renderer sees it: enough to tell which key it is, never the key. */
 export type StripeKeyStatus =
   | { state: "unset" }
-  | { state: "set"; last4: string; livemode: boolean };
+  | { state: "set"; last4: string; livemode: boolean }
+  /** Saved, but the metrics pulse found Stripe turning it away (401/403) when it read charges. */
+  | { state: "refused"; last4: string; livemode: boolean };
 
 /** The founder's Printful token as the renderer sees it: its last four and the store it sells through. */
 export type PrintfulTokenStatus =
@@ -22,7 +16,7 @@ export interface VercelProject {
   name: string;
   teamId?: string;
   /** Its team's name, which tells it from a same-named project elsewhere. */
-  teamName?: string;
+  teamName?: string | undefined;
 }
 
 /**
@@ -32,7 +26,7 @@ export interface VercelProject {
  */
 export type VercelListing =
   | { kind: "loaded"; account: string | undefined; projects: VercelProject[] }
-  | { kind: "rejected" }
+  | { kind: "refused" }
   | { kind: "unreachable"; reason: string };
 
 /** The latest production deployment of the bound Vercel project. */

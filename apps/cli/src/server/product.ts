@@ -1,11 +1,13 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { host } from "./host";
+import { VERCEL_TOKEN, getSecret } from "./secrets";
 import * as store from "./store/store";
 import { latestDeployment } from "./vercel";
 import { judgeAgentPath, judgeOpening } from "./workspace-open";
 import type { Opening } from "./workspace-open";
-import type { ProductStatus } from "@repo/domain/integrations";
+import type { VercelBinding } from "@repo/domain/domain";
+import type { DeployRead, ProductStatus } from "@repo/domain/integrations";
 import { RefusalError } from "./refusal";
 
 // Where a product is, as the team points at it: PRODUCT.md at the product's
@@ -48,13 +50,15 @@ export const openWorkspacePath = async (rel: string): Promise<void> => {
   await openTarget(opening);
 };
 
+const deployOf = async (binding: VercelBinding): Promise<DeployRead> => {
+  const token = getSecret(VERCEL_TOKEN);
+  return token ? await latestDeployment(binding, token) : { kind: "none" };
+};
+
 /** Where a product really is: its entry, and the latest deploy when it is bound to one. */
 export const productStatus = async (productId: string): Promise<ProductStatus> => {
   const { vercel } = store.requireProduct(productId);
-  const deploy = vercel
-    ? await latestDeployment(vercel.projectId, vercel.teamId ?? undefined)
-    : null;
-  return { deploy, entry: productEntry(productId) };
+  return { deploy: vercel ? await deployOf(vercel) : null, entry: productEntry(productId) };
 };
 
 /** Open the product where it lives: a URL in the browser, a path in its workspace with its app. */

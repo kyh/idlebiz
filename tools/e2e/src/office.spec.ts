@@ -2,6 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { apiOf, expect, foundCompany, test } from "./harness";
 import type { Locator, Page } from "@playwright/test";
+import type { BlockedAsk, Task } from "@repo/domain/domain";
+import { serializeTask } from "idlebiz/task-file";
 import { z } from "zod";
 import type { Founded } from "./harness";
 
@@ -25,36 +27,31 @@ test("a founded company boots into the office", async ({ launch }) => {
 
 const INBOX_BUTTON = "Questions, steps only you can take and stuck tasks waiting on you";
 
-/** A task of the lead's, left blocked on `ask` as TASK.md stores it, for the next launch to load. */
+/** A task of the lead's, left blocked on `ask` as the store writes it, for the next launch to load. */
 const blockLead = async (
   root: string,
   { company, product }: Founded,
   slug: string,
-  ask: string,
+  ask: BlockedAsk,
 ): Promise<void> => {
-  const taskDir = path.join(root, company.id, "tasks", slug);
+  const task: Task = {
+    answers: null,
+    assigneeId: company.leaderId,
+    attempts: 0,
+    betId: null,
+    completedAt: null,
+    createdAt: Date.now(),
+    description: "Ship the tip jar.",
+    id: slug,
+    origin: "founder",
+    priority: "high",
+    productId: product.id,
+    state: { ask, kind: "blocked", summary: null },
+    title: "Ship the tip jar",
+  };
+  const taskDir = path.join(root, "company", "tasks", slug);
   await mkdir(taskDir, { recursive: true });
-  await writeFile(
-    path.join(taskDir, "TASK.md"),
-    [
-      "---",
-      'kind: "task"',
-      'name: "Ship the tip jar"',
-      'schema: "agentcompanies/v1"',
-      `slug: ${JSON.stringify(slug)}`,
-      "metadata:",
-      `  createdAt: ${Date.now()}`,
-      '  origin: "founder"',
-      '  priority: "high"',
-      '  status: "blocked"',
-      `  assigneeId: ${JSON.stringify(company.leaderId)}`,
-      `  productId: ${JSON.stringify(product.id)}`,
-      `  blockedQuestion: ${JSON.stringify(ask)}`,
-      "---",
-      "Ship the tip jar.",
-      "",
-    ].join("\n"),
-  );
+  await writeFile(path.join(taskDir, "TASK.md"), serializeTask(task));
 };
 
 test("a held command waits in #team and the inbox until the founder denies it", async ({
@@ -64,7 +61,11 @@ test("a held command waits in #team and the inbox until the founder denies it", 
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
-  await blockLead(root, founded, "e2e-deploy", `[approve:deploy] ${HELD_COMMAND}`);
+  await blockLead(root, founded, "e2e-deploy", {
+    command: HELD_COMMAND,
+    rule: "deploy",
+    type: "approval",
+  });
 
   const { page } = await launch();
   await page.getByTitle(INBOX_BUTTON).click();
@@ -92,7 +93,7 @@ test("an action card hands the founder its draft and carries their answer back",
     draft: "We built a tip jar.\nTry it!",
     instructions: "Post it from your account, then send me its URL.",
   };
-  await blockLead(root, founded, "e2e-post", `[action] ${JSON.stringify(action)}`);
+  await blockLead(root, founded, "e2e-post", { ...action, type: "action" });
 
   const { page } = await launch();
   await page.getByTitle(INBOX_BUTTON).click();
@@ -109,7 +110,7 @@ test("an action card hands the founder its draft and carries their answer back",
   await expect(inbox.getByText(action.action)).toHaveCount(0);
 
   const api = await apiOf(page);
-  const open = await api.evaluate((a) => a.tasks.list({}));
+  const open = await api.tasks.list({});
   expect(open.map((t) => t.description ?? "").join("\n")).toContain(`Done. They sent back: ${url}`);
 });
 
@@ -187,11 +188,9 @@ test("#team stays on its newest line after a window closes over it", async ({ la
 
   const { page } = await launch();
   const api = await apiOf(page);
-  await api.evaluate(async (a) => {
-    for (let i = 1; i <= 30; i += 1) {
-      await a.team.post({ text: `line ${i}` });
-    }
-  });
+  for (let i = 1; i <= 30; i += 1) {
+    await api.team.post({ text: `line ${i}` });
+  }
   const feed = page
     .locator(".px-window")
     .filter({ hasText: "# team" })
@@ -215,7 +214,7 @@ test("#team shows the room again once its page loads again", async ({ launch }) 
   const { page } = await launch();
   await expect(page.getByText("# team")).toBeVisible();
   const api = await apiOf(page);
-  await api.evaluate((a) => a.team.post({ text: "said before the page loaded again" }));
+  await api.team.post({ text: "said before the page loaded again" });
   await page.reload();
   await expect(page.getByText("said before the page loaded again")).toBeVisible();
 });
@@ -232,7 +231,7 @@ test("a long question keeps its lines and the dialogue stays on screen", async (
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
-  await blockLead(root, founded, "e2e-long-ask", LONG_QUESTION);
+  await blockLead(root, founded, "e2e-long-ask", { question: LONG_QUESTION, type: "question" });
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
   if (!lead) {
     throw new Error("the founded company has no lead");
@@ -261,7 +260,7 @@ test("hovering the dialogue's menu leaves the typed answer where the founder is 
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
-  await blockLead(root, founded, "e2e-color", "Which color?");
+  await blockLead(root, founded, "e2e-color", { question: "Which color?", type: "question" });
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
   if (!lead) {
     throw new Error("the founded company has no lead");
@@ -283,7 +282,7 @@ test("an answer being typed survives a status event of the asker's", async ({ la
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
-  await blockLead(root, founded, "e2e-color", "Which color?");
+  await blockLead(root, founded, "e2e-color", { question: "Which color?", type: "question" });
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
   if (!lead) {
     throw new Error("the founded company has no lead");
@@ -298,10 +297,7 @@ test("an answer being typed survives a status event of the asker's", async ({ la
   await page.keyboard.type("Blu");
 
   const api = await apiOf(page);
-  await api.evaluate(
-    (a, employeeId) => a.employees.direct({ employeeId, instruction: "Tidy the README." }),
-    lead.id,
-  );
+  await api.employees.direct({ employeeId: lead.id, instruction: "Tidy the README." });
   await expect(
     dialogue.locator(".dlg-menu").getByRole("button", { name: /Check in:/u }),
   ).toBeVisible();
@@ -317,7 +313,7 @@ test("Talk… keeps the keys while an ask waits and a status event of the asker'
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
-  await blockLead(root, founded, "e2e-color", "Which color?");
+  await blockLead(root, founded, "e2e-color", { question: "Which color?", type: "question" });
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
   if (!lead) {
     throw new Error("the founded company has no lead");
@@ -336,10 +332,7 @@ test("Talk… keeps the keys while an ask waits and a status event of the asker'
   await page.keyboard.type("Ship the ");
 
   const api = await apiOf(page);
-  await api.evaluate(
-    (a, employeeId) => a.employees.direct({ employeeId, instruction: "Tidy the README." }),
-    lead.id,
-  );
+  await api.employees.direct({ employeeId: lead.id, instruction: "Tidy the README." });
   await page.waitForTimeout(500);
   await page.keyboard.type("pricing page");
   await expect(talk).toBeFocused();
@@ -396,7 +389,7 @@ test("an answer main refuses in the inbox keeps the keys", async ({ launch, root
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
-  await blockLead(root, founded, "e2e-color", "Which color?");
+  await blockLead(root, founded, "e2e-color", { question: "Which color?", type: "question" });
 
   const { page } = await launch();
   await page.getByTitle(INBOX_BUTTON).click();
@@ -452,10 +445,7 @@ test("the dialogue's cursor stays on Talk… when a row is added ahead of it mea
 
   // queued work puts a Check in row ahead of Talk… while the menu is away
   const api = await apiOf(page);
-  await api.evaluate(
-    (a, employeeId) => a.employees.direct({ employeeId, instruction: "Tidy the README." }),
-    engineer.id,
-  );
+  await api.employees.direct({ employeeId: engineer.id, instruction: "Tidy the README." });
   await expect(dialogue.getByText(/queued/u)).toBeVisible();
   await page.waitForTimeout(500);
   await page.keyboard.press("Escape");

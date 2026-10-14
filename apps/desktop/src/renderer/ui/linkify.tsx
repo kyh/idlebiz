@@ -12,7 +12,7 @@ const openAsset = async (token: string): Promise<void> => {
     return;
   }
   try {
-    await api().company.openPath({ rel: token });
+    await api.company.openPath({ rel: token });
   } catch {
     // a path main refuses is dropped on purpose; the text stays as it was
   }
@@ -37,8 +37,8 @@ export const RichText = ({ text }: { text: string }) => {
           e.stopPropagation();
           void openAsset(token);
         }}
-        className="cursor-pointer underline decoration-dotted underline-offset-2"
-        style={{ color: "var(--accent-lo)", font: "inherit", letterSpacing: "inherit" }}
+        className="cursor-pointer text-accent-lo underline decoration-dotted underline-offset-2"
+        style={{ font: "inherit", letterSpacing: "inherit" }}
         title={/^https?:/u.test(token) ? "Open in browser" : "Open from the workspace"}
       >
         {token}

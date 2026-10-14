@@ -1,0 +1,10 @@
+{
+  "from": "shell",
+  "params": {
+    "openedAtLogin": false,
+    "packaged": true,
+    "pageDevUrl": null,
+    "sealingKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+  },
+  "result": null
+}

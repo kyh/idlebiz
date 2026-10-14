@@ -1,7 +1,4 @@
-//! The IdleBiz desktop shell: a Rust window over the office page main serves, main (the node process
-//! that owns the save, the keys and the runs) as the one child it supervises, and what only a native
-//! app can do for main: the menu-bar icon, message boxes, notifications, the clipboard, Finder, the
-//! login item and keeping the Mac awake. The page reaches no command of the shell's.
+//! The IdleBiz desktop shell: a window over the page main serves, and main as its one child.
 
 mod host;
 mod keep_awake;
@@ -10,6 +7,7 @@ mod login_item;
 mod main_log;
 mod main_process;
 mod navigation;
+mod protocol;
 mod relay;
 mod runtime;
 mod shell;
@@ -44,9 +42,10 @@ pub fn run() {
     let bundled = std::env::current_exe().is_ok_and(|exe| runtime::is_bundled(&exe));
 
     let mut builder = tauri::Builder::default();
-    // first, as the plugin asks: a second launch hands over to this one, since two mains would race
-    // for one save. The packaged app alone: the plugin keys on the bundle id, machine-wide, so a
-    // development shell would otherwise hand over to an installed IdleBiz and quit
+    // first, as the plugin asks: a second launch hands over to this one, which shows its window,
+    // where the second's main would be refused the save. The packaged app alone: the plugin keys on
+    // the bundle id, machine-wide, so a development shell would otherwise hand over to an installed
+    // IdleBiz and quit; on that one's save, its main is refused instead (`save-claim.ts`)
     if bundled {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             window::show(app);

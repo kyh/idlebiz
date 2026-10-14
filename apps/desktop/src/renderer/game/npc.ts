@@ -2,18 +2,20 @@
 // what npc-look decides, sit down, sort among the furniture. The roster, the seating and
 // the door they share with everyone else are npcs.ts's.
 import type Phaser from "phaser";
-import { CHAR_ORIGIN_X, idleFrame, risenOriginY, SEAT_CROP } from "@/renderer/game/character-sheet";
-import type { CharacterAnims, Dir } from "@/renderer/game/character-sheet";
+import { idleFrame, risenOriginY, SEAT_CROP } from "@/renderer/game/character-sheet";
+import type { CharacterAnims } from "@/renderer/game/character-sheet";
 import { stepToward } from "@/renderer/game/movement";
 import type { NpcAttachments } from "@/renderer/game/npc-attachments";
 import { lookOf } from "@/renderer/game/npc-look";
 import type { Activity, Phase } from "@/renderer/game/npc-look";
-import type { PixelPoint } from "@/renderer/game/office-layout";
+import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 import { characterDepth } from "@/renderer/game/office-depth";
 import { findPath, nearestFloor } from "@/renderer/game/office-grid";
 import type { WalkGrid } from "@/renderer/game/office-grid";
+import { CHAR_ORIGIN_X } from "@repo/domain/character-frame";
+import type { Dir } from "@repo/domain/character-frame";
 
-/** A desk seat (px) an employee occupies. Owned by the office scene, sized to the active tier. */
+/** A desk seat (px) an employee occupies. Owned by the office scene. */
 export interface Seat {
   readonly x: number;
   readonly y: number;
@@ -28,12 +30,11 @@ export interface Seat {
 
 interface WalkPlan {
   path: PixelPoint[];
-  onArrive?: () => void;
+  onArrive?: (() => void) | undefined;
 }
 
 export interface Npc {
   id: string;
-  key: string;
   anims: CharacterAnims;
   sprite: Phaser.GameObjects.Sprite;
   attachments: NpcAttachments;
@@ -47,7 +48,7 @@ export interface Npc {
   waiting: boolean;
   plan: WalkPlan | null;
   nextWanderAt: number;
-  pendingTimer?: Phaser.Time.TimerEvent;
+  pendingTimer?: Phaser.Time.TimerEvent | undefined;
 }
 
 /** px/s */

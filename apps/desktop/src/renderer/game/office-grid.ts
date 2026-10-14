@@ -76,7 +76,7 @@ const withSolid = (grid: WalkGrid, cells: Iterable<GridCell>): WalkGrid => {
 };
 
 /** Is the collision cell under this pixel solid? Off-grid is solid. */
-export const solidAt = (grid: WalkGrid, x: number, y: number): boolean => {
+const solidAt = (grid: WalkGrid, x: number, y: number): boolean => {
   const c = Math.floor(x / grid.cell);
   const r = Math.floor(y / grid.cell);
   if (r < 0 || c < 0 || r >= grid.rows || c >= grid.cols) {

@@ -67,6 +67,16 @@ export const appendJsonl = (file: string, row: object): void => {
   }
 };
 
+/** Pretty-printed with a trailing newline, the shape of every JSON file main keeps. */
+export const writeJsonFile = (
+  file: string,
+  // oxlint-disable-next-line anti-slop/no-object-parameters -- a sink, not an input: any value JSON.stringify can write
+  value: object,
+  options: { mode?: number } = {},
+): void => {
+  atomicWrite(file, `${JSON.stringify(value, null, 2)}\n`, options);
+};
+
 /** A JSON file as `schema` sees it; null when missing, unparseable, or not that. */
 export const readJsonFile = <T>(file: string, schema: z.ZodType<T>): T | null => {
   try {

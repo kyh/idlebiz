@@ -1,8 +1,7 @@
 import { z } from "zod";
 import type { HttpError } from "./lib/http";
-
-// What every call to Stripe from main shares: the API's address, the version it is read in,
-// how a key is sent, and how Stripe's refusal reads.
+import { answering } from "./lib/vendor-call";
+import type { VendorAnswer } from "./lib/vendor-call";
 
 export const STRIPE_API = "https://api.stripe.com";
 
@@ -18,13 +17,16 @@ export const stripeHeaders = (key: string) => ({
 
 const Refusal = z.object({ error: z.object({ message: z.string() }) });
 
-/** Why Stripe refused, in its words when it gave any. */
-export const stripeSays = (error: HttpError): string => {
+const stripeSays = (error: HttpError): string => {
   const said = Refusal.safeParse(error.answer);
   return said.success ? said.data.error.message : error.message;
 };
 
-/** Whether `key` is a Stripe key in test mode, whose charges nobody paid. */
+export const answeringStripe = <T>(
+  what: string,
+  call: () => Promise<T> | T,
+): Promise<VendorAnswer<T>> => answering("Stripe", what, call, stripeSays);
+
 export const isTestKey = (key: string): boolean => /^[rs]k_test_/u.test(key);
 
 /**

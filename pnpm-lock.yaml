@@ -107,8 +107,14 @@ settings:
 
 catalogs:
   default:
+    '@agentclientprotocol/claude-agent-acp':
+      specifier: 0.85.1
+      version: 0.85.1
+    '@agentclientprotocol/codex-acp':
+      specifier: 1.12.0
+      version: 1.12.0
     '@agentclientprotocol/sdk':
-      specifier: ^1.7.0
+      specifier: 1.7.0
       version: 1.7.0
     '@orpc/client':
       specifier: 2.0.0-beta.42
@@ -116,7 +122,13 @@ catalogs:
     '@orpc/contract':
       specifier: 2.0.0-beta.42
       version: 2.0.0-beta.42
+    '@orpc/publisher':
+      specifier: 2.0.0-beta.42
+      version: 2.0.0-beta.42
     '@orpc/server':
+      specifier: 2.0.0-beta.42
+      version: 2.0.0-beta.42
+    '@orpc/tanstack-query':
       specifier: 2.0.0-beta.42
       version: 2.0.0-beta.42
     '@types/node':
@@ -182,19 +194,19 @@ importers:
   apps/cli:
     dependencies:
       '@agentclientprotocol/claude-agent-acp':
-        specifier: ^0.85.1
+        specifier: 'catalog:'
         version: 0.85.1(@anthropic-ai/sdk@0.127.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.32.1(supports-color@7.2.0)(zod@4.6.5))
       '@agentclientprotocol/codex-acp':
-        specifier: ^1.12.0
-        version: 1.12.0(patch_hash=c0ac03af3c611de6eb5c55796b830c60eaf046fa628f88c3316e4a381249607a)
-      sharp:
-        specifier: ^0.35.5
-        version: 0.35.5(@types/node@24.19.2)
-    devDependencies:
-      '@agentclientprotocol/sdk':
         specifier: 'catalog:'
-        version: 1.7.0(zod@4.6.5)
+        version: 1.12.0(patch_hash=c0ac03af3c611de6eb5c55796b830c60eaf046fa628f88c3316e4a381249607a)
+    devDependencies:
+      '@orpc/client':
+        specifier: 'catalog:'
+        version: 2.0.0-beta.42
       '@orpc/contract':
+        specifier: 'catalog:'
+        version: 2.0.0-beta.42
+      '@orpc/publisher':
         specifier: 'catalog:'
         version: 2.0.0-beta.42
       '@orpc/server':
@@ -209,9 +221,6 @@ importers:
       '@repo/domain':
         specifier: workspace:*
         version: link:../../packages/domain
-      '@repo/stripe-connect-protocol':
-        specifier: workspace:*
-        version: link:../../packages/stripe-connect-protocol
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
@@ -245,9 +254,12 @@ importers:
       '@orpc/contract':
         specifier: 'catalog:'
         version: 2.0.0-beta.42
-      '@repo/agent-driver':
-        specifier: workspace:*
-        version: link:../../packages/agent-driver
+      '@orpc/server':
+        specifier: 'catalog:'
+        version: 2.0.0-beta.42
+      '@orpc/tanstack-query':
+        specifier: 'catalog:'
+        version: 2.0.0-beta.42(@tanstack/query-core@5.104.2)
       '@repo/contract':
         specifier: workspace:*
         version: link:../../packages/contract
@@ -260,6 +272,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.4(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1))
+      '@tanstack/react-query':
+        specifier: ^5.104.1
+        version: 5.104.2(react@19.3.0)
       '@tauri-apps/cli':
         specifier: ^2.12.2
         version: 2.12.2
@@ -311,9 +326,6 @@ importers:
       '@repo/px-kit':
         specifier: workspace:*
         version: link:../../packages/px-kit
-      '@repo/stripe-connect-protocol':
-        specifier: workspace:*
-        version: link:../../packages/stripe-connect-protocol
       cn:
         specifier: 'catalog:'
         version: 0.4.0
@@ -357,6 +369,9 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: 'catalog:'
         version: 1.7.0(zod@4.6.5)
+      '@repo/domain':
+        specifier: workspace:*
+        version: link:../domain
       zod:
         specifier: 'catalog:'
         version: 4.6.5
@@ -367,6 +382,9 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.3(@types/node@24.19.2)
 
   packages/contract:
     dependencies:
@@ -386,9 +404,6 @@ importers:
 
   packages/domain:
     dependencies:
-      '@repo/agent-driver':
-        specifier: workspace:*
-        version: link:../agent-driver
       zod:
         specifier: 'catalog:'
         version: 4.6.5
@@ -402,24 +417,11 @@ importers:
 
   packages/px-kit: {}
 
-  packages/stripe-connect-protocol:
-    dependencies:
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.5
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 24.19.2
-      typescript:
-        specifier: 'catalog:'
-        version: 7.0.2
-      vitest:
-        specifier: 'catalog:'
-        version: 5.0.3(@types/node@24.19.2)(vite@8.3.4(@types/node@24.19.2))
-
   tools/e2e:
     devDependencies:
+      '@orpc/client':
+        specifier: 'catalog:'
+        version: 2.0.0-beta.42
       '@orpc/contract':
         specifier: 'catalog:'
         version: 2.0.0-beta.42
@@ -973,11 +975,45 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@openapi-spec/downgrader@0.3.0':
+    resolution: {integrity: sha512-y4+CkV8chSbRKmR64+uGr0IjDjNUOQIdNMpCbSiD2JCc0a0HouUTXvgt+FO8/ktfaMaNz3ypqq4PmVfB3twx3w==}
+
+  '@openapi-spec/types@0.3.0':
+    resolution: {integrity: sha512-r9Gufbaw9Cpb/rCiEsFdmdWdj41MzL4/y6dCJjwMQBUvQqj5X76WlbErDSwIHR3UsxCNQI2W20GsQ4eh3YXaMQ==}
+
   '@orpc/client@2.0.0-beta.42':
     resolution: {integrity: sha512-5UVRiHw9UsOVsfK1EweJoOqDhnseIz1TG4U/pcGe/P6I/yBDafh+ijZ/ZaBrql2hC7PSgEwfCFljEG8IfxVGqA==}
 
   '@orpc/contract@2.0.0-beta.42':
     resolution: {integrity: sha512-cLtAdjHGwGy2kNASBsdGKwlhFmRwqmlCOb9Avi6asFoV2fJH3Phht7QHa2/g61Yz1qF8IM6NgJ2+OA7iXRmU/g==}
+
+  '@orpc/json-schema@2.0.0-beta.42':
+    resolution: {integrity: sha512-iw/NsGLkTS3Blqb7TUzCSITaD6DMTuKIxMyoNT3TJBId3hC5JaEm4eiKktg4xA0zWn8NdUbOcsg+1E+l7b95fg==}
+
+  '@orpc/openapi@2.0.0-beta.42':
+    resolution: {integrity: sha512-u4DdwDVXvSQBDsA//IP6i+kHDUlu+6eNsI45+8YnXeGxm+4+/ePq24zZoOrZbafTM2pevXQO+aGD2wtFNdjK0w==}
+    peerDependencies:
+      '@scalar/api-reference': '>=1.57.2'
+      '@types/swagger-ui': '>=5.32.0'
+      swagger-ui: '>=5.32.6'
+    peerDependenciesMeta:
+      '@scalar/api-reference':
+        optional: true
+      '@types/swagger-ui':
+        optional: true
+      swagger-ui:
+        optional: true
+
+  '@orpc/publisher@2.0.0-beta.42':
+    resolution: {integrity: sha512-jQxWjtZL7Jsjqk4MgKwYIqts5YtJsIXC72cvrevA6GN3DU85TqERCmECz+mYxIg+DPnSYbaTpPS4EzPGNgRGRQ==}
+    peerDependencies:
+      '@upstash/redis': '>=1.35.6'
+      redis: '>=6.0.0'
+    peerDependenciesMeta:
+      '@upstash/redis':
+        optional: true
+      redis:
+        optional: true
 
   '@orpc/server@2.0.0-beta.42':
     resolution: {integrity: sha512-gZXjfrKnYBNTgv70C3OB1ct04rbbMXOzX+sVx393YvcoEOjUr1cO8BwMBpIAQwaS42NKcoIjjo4zXF0dXOyb3Q==}
@@ -992,6 +1028,11 @@ packages:
 
   '@orpc/shared@2.0.0-beta.42':
     resolution: {integrity: sha512-jPmLnx9ZD39bXOlbCTYdopz/xN9iqGVHZnlo3QDVruRLHN0dUDzcVyfJE38DaBCJs5A6tFYRJTG3BJlO5rM/kw==}
+
+  '@orpc/tanstack-query@2.0.0-beta.42':
+    resolution: {integrity: sha512-yLhmDw5Y5JR4mRrdq3J+vWnzF64g4eL63PqHDewvIPu240QQCxMeZLlKY1QPTdHZhE1ytwYnUu43Z+R2G8oCwQ==}
+    peerDependencies:
+      '@tanstack/query-core': '>=5.80.2'
 
   '@oxc-parser/binding-android-arm-eabi@0.153.0':
     resolution: {integrity: sha512-BcWu25dMwMjHpaDCEidmpAi7rGg1qZoihJeUUH9bD55pVZ0z4Wa5CQgqSTo0R41H81oozisQKW3WqvAN2m77IQ==}
@@ -1745,6 +1786,14 @@ packages:
     resolution: {integrity: sha512-yYU8cogLeSh/ms2jh8Fj7jaba/EWa7Ja6GoUqYZaraEuCI5YS6ms6ObZgjjedm+jm6XZjdNRWBpPP6Z86oOxcw==}
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
+
+  '@tanstack/query-core@5.104.2':
+    resolution: {integrity: sha512-/qbsxJK5c3Ve1aFIULWYNcT2jeRUAiD4HME6Eu2ZdpofHoVgAjpkQhLg5xHuOoBkTPQUJLfP7zOxy0qsBcqROA==}
+
+  '@tanstack/react-query@5.104.2':
+    resolution: {integrity: sha512-xKmzWGhadbE5wGS/ZmXShRITnI9oItox5GO14KvFZco3+vhTAyXS1erYzJWdiY280zapAGJXFUL9nHgwP6SV/g==}
+    peerDependencies:
+      react: ^18 || ^19
 
   '@tauri-apps/cli-darwin-arm64@2.12.2':
     resolution: {integrity: sha512-Lk3zaBTfzNvA7670Al5PNgo2M/95uaDPe1yp+ILJeDOmol87XiYuK5E5+FUbK5e6U6OORx9qpZdOo2U+5tETtQ==}
@@ -2988,6 +3037,10 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
+  rou3@1.0.0:
+    resolution: {integrity: sha512-ySeaQkSrua+ut9g+65I7FHqOFBaY8tV0FmccXItoq0q21se32Q3u4YiW7/RqXSosWgYJaaKwRHXy3BST9PeCNQ==}
+    engines: {node: '>=20.19.0'}
+
   router@2.2.0:
     resolution: {integrity: sha512-nLTrUKm2UyiL7rlhapu/Zl45FwNgkZGaCpZbIHajDYgwlJCOzLSk+cIPAnsEqV955GjILJnKbdQC1nVPz+gAYQ==}
     engines: {node: '>= 18'}
@@ -3642,7 +3695,8 @@ snapshots:
     dependencies:
       hono: 4.13.8
 
-  '@img/colour@1.1.0': {}
+  '@img/colour@1.1.0':
+    optional: true
 
   '@img/sharp-darwin-arm64@0.35.5':
     optionalDependencies:
@@ -3861,6 +3915,12 @@ snapshots:
   '@openai/codex@0.154.0-win32-x64':
     optional: true
 
+  '@openapi-spec/downgrader@0.3.0':
+    dependencies:
+      '@openapi-spec/types': 0.3.0
+
+  '@openapi-spec/types@0.3.0': {}
+
   '@orpc/client@2.0.0-beta.42':
     dependencies:
       '@orpc/shared': 2.0.0-beta.42
@@ -3873,6 +3933,40 @@ snapshots:
       '@orpc/client': 2.0.0-beta.42
       '@orpc/shared': 2.0.0-beta.42
       '@standard-schema/spec': 1.1.0
+
+  '@orpc/json-schema@2.0.0-beta.42':
+    dependencies:
+      '@openapi-spec/types': 0.3.0
+      '@orpc/client': 2.0.0-beta.42
+      '@orpc/contract': 2.0.0-beta.42
+      '@orpc/server': 2.0.0-beta.42
+      '@orpc/shared': 2.0.0-beta.42
+      '@standard-schema/spec': 1.1.0
+    transitivePeerDependencies:
+      - crossws
+      - fastify
+
+  '@orpc/openapi@2.0.0-beta.42':
+    dependencies:
+      '@openapi-spec/downgrader': 0.3.0
+      '@openapi-spec/types': 0.3.0
+      '@orpc/client': 2.0.0-beta.42
+      '@orpc/contract': 2.0.0-beta.42
+      '@orpc/json-schema': 2.0.0-beta.42
+      '@orpc/server': 2.0.0-beta.42
+      '@orpc/shared': 2.0.0-beta.42
+      '@standard-server/core': 0.10.1
+      '@standard-server/fetch': 0.10.1
+      rou3: 1.0.0
+    transitivePeerDependencies:
+      - crossws
+      - fastify
+
+  '@orpc/publisher@2.0.0-beta.42':
+    dependencies:
+      '@orpc/client': 2.0.0-beta.42
+      '@orpc/shared': 2.0.0-beta.42
+      '@standard-server/core': 0.10.1
 
   '@orpc/server@2.0.0-beta.42':
     dependencies:
@@ -3892,6 +3986,20 @@ snapshots:
       '@standard-server/shared': 0.10.1
       radash: 12.1.1
       type-fest: 5.10.0
+
+  '@orpc/tanstack-query@2.0.0-beta.42(@tanstack/query-core@5.104.2)':
+    dependencies:
+      '@orpc/client': 2.0.0-beta.42
+      '@orpc/contract': 2.0.0-beta.42
+      '@orpc/openapi': 2.0.0-beta.42
+      '@orpc/shared': 2.0.0-beta.42
+      '@tanstack/query-core': 5.104.2
+    transitivePeerDependencies:
+      - '@scalar/api-reference'
+      - '@types/swagger-ui'
+      - crossws
+      - fastify
+      - swagger-ui
 
   '@oxc-parser/binding-android-arm-eabi@0.153.0':
     optional: true
@@ -4325,6 +4433,13 @@ snapshots:
       tailwindcss: 4.3.3
       vite: 8.3.4(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1)
 
+  '@tanstack/query-core@5.104.2': {}
+
+  '@tanstack/react-query@5.104.2(react@19.3.0)':
+    dependencies:
+      '@tanstack/query-core': 5.104.2
+      react: 19.3.0
+
   '@tauri-apps/cli-darwin-arm64@2.12.2':
     optional: true
 
@@ -4485,6 +4600,13 @@ snapshots:
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.3.4(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1)
+
+  '@vitest/mocker@5.0.3':
+    dependencies:
+      '@jridgewell/trace-mapping': 0.3.31
+      '@vitest/spy': 5.0.3
+      estree-walker: 3.0.3
+      magic-string: 1.4.1
 
   '@vitest/mocker@5.0.3(vite@8.3.4(@types/node@24.19.1)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
@@ -5461,6 +5583,8 @@ snapshots:
       '@rolldown/binding-win32-arm64-msvc': 1.2.12
       '@rolldown/binding-win32-x64-msvc': 1.2.12
 
+  rou3@1.0.0: {}
+
   router@2.2.0(supports-color@7.2.0):
     dependencies:
       debug: 4.4.3(supports-color@7.2.0)
@@ -5545,6 +5669,7 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.5
       '@img/sharp-win32-x64': 0.35.5
       '@types/node': 24.19.2
+    optional: true
 
   shebang-command@2.0.0:
     dependencies:
@@ -5799,6 +5924,26 @@ snapshots:
       why-is-node-running: 3.2.1
     optionalDependencies:
       '@types/node': 24.19.1
+    transitivePeerDependencies:
+      - msw
+
+  vitest@5.0.3(@types/node@24.19.2):
+    dependencies:
+      '@types/chai': 5.2.3
+      '@vitest/mocker': 5.0.3
+      chai: 6.2.2
+      es-module-lexer: 2.3.2
+      expect-type: 1.4.0
+      magic-string: 1.4.1
+      obug: 2.2.1
+      picomatch: 4.0.7
+      std-env: 4.2.0
+      tinybench: 6.1.4
+      tinyexec: 1.3.1
+      tinyglobby: 0.2.17
+      why-is-node-running: 3.2.1
+    optionalDependencies:
+      '@types/node': 24.19.2
     transitivePeerDependencies:
       - msw
 

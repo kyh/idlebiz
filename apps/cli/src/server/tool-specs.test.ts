@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { lexLine } from "./shell-lexer";
-import { TOOL_NAMES, TOOL_SPECS, commandOf, toolDocs, verbOf } from "./tool-specs";
+import { lexLine } from "./policy/shell-lexer";
+import {
+  MAX_ENV_VALUE_BYTES,
+  MAX_REQUEST_BYTES,
+  TOOL_NAMES,
+  TOOL_SPECS,
+  commandOf,
+  encodeRequest,
+  toolAt,
+  toolDocs,
+  toolPath,
+  verbOf,
+} from "./tool-specs";
 
 describe("tool specs", () => {
   it.each(TOOL_NAMES)("%s teaches a request its own body accepts", (name) => {
@@ -84,13 +95,32 @@ describe("tool specs", () => {
     expect(body.safeParse({ ...example, name }).success).toBe(ok);
   });
 
+  // a quote, a backslash or a line break escapes in two bytes, a control character in six
+  it.each(["x", '"', "\\", "x\ny", "\u0001", "é", "😀"])(
+    "takes the longest set_env value of %j whose request still fits what a call may send, and no longer",
+    (unit) => {
+      const { body } = TOOL_SPECS.set_env;
+      const unitBytes = Buffer.byteLength(encodeRequest(unit)) - 2;
+      const longest = unit.repeat(Math.floor((MAX_ENV_VALUE_BYTES - 2) / unitBytes));
+      const request = { name: "A".repeat(256), product: "product-slug", value: longest };
+      expect(body.safeParse(request).success).toBe(true);
+      expect(Buffer.byteLength(encodeRequest(request))).toBeLessThanOrEqual(MAX_REQUEST_BYTES);
+      const over = body.safeParse({ ...request, value: longest + unit });
+      expect(over.error?.issues[0]?.message).toBe(
+        "value is at most 60 KiB written as JSON: UTF-8, where a quote, a backslash or a line break takes two bytes",
+      );
+    },
+  );
+
   it("tells the lead each metric's floor", () => {
     expect(toolDocs(true)).toContain("at least 10 users, a whole number, or $5.00");
   });
 
-  it("serves every tool on a route of its own", () => {
-    const routes = TOOL_NAMES.map((n) => `${TOOL_SPECS[n].method} ${TOOL_SPECS[n].path}`);
-    expect(new Set(routes).size).toBe(routes.length);
+  it("serves each tool at its own name and nothing at any other path", () => {
+    expect(TOOL_NAMES.map((name) => toolAt(toolPath(name)))).toEqual(TOOL_NAMES);
+    expect(toolAt("/v1/read-team-chat")).toBeNull();
+    expect(toolAt("/v1/nothing")).toBeNull();
+    expect(toolAt("/read_team_chat")).toBeNull();
   });
 
   it("shows the lead's tools to the lead alone", () => {

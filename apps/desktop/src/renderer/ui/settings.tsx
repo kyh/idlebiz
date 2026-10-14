@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { api } from "@/renderer/api";
-import { useAsync } from "@/renderer/hooks/use-async";
+import { useQuery } from "@tanstack/react-query";
+import { api, orpc } from "@/renderer/api";
 import { useSubmission } from "@/renderer/hooks/use-submission";
-import { useStore, setMaxAgents } from "@/renderer/state/store";
+import { setAnswer, useCompany, useSaveIssues } from "@/renderer/state/queries";
+import { setMaxAgents } from "@/renderer/state/store";
 import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
 import { Picker } from "@/renderer/ui/picker";
@@ -10,6 +11,7 @@ import type { PickerOption } from "@/renderer/ui/picker";
 import { SaveIssues } from "@/renderer/ui/save-issues";
 import { MAX_AGENTS, MaxAgentsSchema } from "@repo/domain/domain";
 import type { LaunchAtLogin } from "@repo/domain/domain";
+import { errorMessage } from "@repo/domain/errors";
 
 const LOGIN_CHOICES: readonly PickerOption<"off" | "on">[] = [
   { label: "Off", value: "off" },
@@ -35,23 +37,24 @@ const LOGIN_LINES: Record<LaunchAtLogin, string> = {
   unavailable: "Only the installed app can open at login.",
 };
 
+// read again each time Settings opens: System Settings can switch the login item meanwhile
+const launchAtLogin = orpc.app.launchAtLogin.queryOptions({ staleTime: 0 });
+
 const LaunchAtLoginSetting = () => {
-  const read = useAsync(() => api().app.launchAtLogin(), []);
-  const [answered, setAnswered] = useState<LaunchAtLogin | null>(null);
+  const { data: state, error } = useQuery(launchAtLogin);
   const setting = useSubmission(async (on: boolean) => {
-    setAnswered(await api().app.setLaunchAtLogin({ on }));
+    await setAnswer(launchAtLogin.queryKey, await api.app.setLaunchAtLogin({ on }));
   });
-  const state = answered ?? (read.kind === "ready" ? read.value : null);
 
   return (
     <div className="px-inset p-3 text-sm text-fg">
-      <div className="text-xs uppercase tracking-wide text-fg-dim">Open at login</div>
-      {read.kind === "failed" ? (
+      <div className="px-label text-fg-dim">Open at login</div>
+      {state === undefined && error !== null ? (
         <div role="alert" className="mt-1 text-xs text-danger">
-          Could not read the login item: {read.message}
+          Could not read the login item: {errorMessage(error)}
         </div>
       ) : null}
-      {state === null ? null : (
+      {state === undefined ? null : (
         <>
           <div className="mt-1 text-xs text-fg-dim">{LOGIN_LINES[state]}</div>
           {state === "unavailable" ? null : (
@@ -72,15 +75,15 @@ const LaunchAtLoginSetting = () => {
 };
 
 export const Settings = ({ onClose }: { onClose: () => void }) => {
-  const company = useStore((s) => s.company);
-  const saveIssues = useStore((s) => s.saveIssues);
+  const company = useCompany();
+  const saveIssues = useSaveIssues();
   const [confirm, setConfirm] = useState("");
   const [cap, setCap] = useState<string | null>(null);
   const savingCap = useSubmission(async (n: number) => {
     await setMaxAgents(n);
     setCap(null);
   });
-  const resetting = useSubmission(() => api().save.reset());
+  const resetting = useSubmission(() => api.save.reset());
 
   if (!company) {
     return null;
@@ -96,7 +99,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
     <Modal title="Settings" onClose={onClose}>
       <div className="space-y-4">
         <div className="px-inset p-3 text-sm text-fg">
-          <div className="text-xs uppercase tracking-wide text-fg-dim">Company</div>
+          <div className="px-label text-fg-dim">Company</div>
           <div className="mt-1">{company.name}</div>
           {company.mission === null ? null : (
             <div className="text-xs text-fg-dim">{company.mission}</div>
@@ -106,7 +109,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
 
         {saveIssues.length > 0 ? (
           <div className="px-inset p-3 text-sm text-fg">
-            <div className="text-xs uppercase tracking-wide text-danger">Skipped at boot</div>
+            <div className="px-label text-danger">Skipped at boot</div>
             <div className="mt-1 text-xs text-fg-dim">
               Boot could not use these and went on without them. Fix them and relaunch.
             </div>
@@ -117,7 +120,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
         ) : null}
 
         <div className="px-inset p-3 text-sm text-fg">
-          <div className="text-xs uppercase tracking-wide text-fg-dim">Team size cap</div>
+          <div className="px-label text-fg-dim">Team size cap</div>
           <div className="mt-1 text-xs text-fg-dim">
             The team lead hires and releases on their own — this is the hard ceiling, up to{" "}
             {MAX_AGENTS}.
@@ -149,7 +152,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
         <LaunchAtLoginSetting />
 
         <div className="px-inset p-3 text-sm text-fg">
-          <div className="text-xs uppercase tracking-wide text-fg-dim">Controls</div>
+          <div className="px-label text-fg-dim">Controls</div>
           <div className="mt-1 text-xs text-fg-dim">
             WASD / arrows to move · walk up to someone and press E
           </div>
@@ -159,10 +162,8 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
           </div>
         </div>
 
-        <div className="px-inset p-3" style={{ borderColor: "var(--danger)" }}>
-          <div className="text-xs uppercase tracking-wide" style={{ color: "var(--danger)" }}>
-            Danger zone
-          </div>
+        <div className="px-inset px-inset-danger p-3">
+          <div className="px-label text-danger">Danger zone</div>
           <div className="mt-1 text-sm leading-snug text-fg">
             Reset demolishes the office: every employee, task, and workspace file your team created,
             plus stored secrets and connections. Its live payment links are switched off at Stripe
@@ -170,9 +171,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
             for you to handle by hand. The game restarts from scratch. There is no undo.
           </div>
           {demolishing ? (
-            <div className="px-live-dot mt-3 text-sm" style={{ color: "var(--danger)" }}>
-              Demolishing the office…
-            </div>
+            <div className="px-live-dot mt-3 text-sm text-danger">Demolishing the office…</div>
           ) : (
             <>
               <div className="mt-3 flex gap-2">

@@ -1,36 +1,15 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { RefusalError } from "./refusal";
+import * as store from "./store/store";
+import { openProduct, openWorkspacePath } from "./product";
+import { foundAcme, freshSave } from "./test-support/save";
 
-const root = mkdtempSync(path.join(tmpdir(), "idlebiz-product-"));
-const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
-process.env.IDLEBIZ_ROOT_DIR = root;
-const store = await import("./store/store");
-const { openProduct, openWorkspacePath } = await import("./product");
+freshSave();
 
 beforeEach(() => {
-  rmSync(root, { force: true, recursive: true });
-  store.initStore();
-  store.foundCompany({
-    budget: { mode: "infinite" },
-    businessType: "software",
-    founderName: "Kai",
-    founderSpriteSeed: "seed",
-    hires: [],
-    mission: "ship",
-    name: "Acme",
-  });
-});
-
-afterAll(() => {
-  rmSync(root, { force: true, recursive: true });
-  if (previousRoot === undefined) {
-    delete process.env.IDLEBIZ_ROOT_DIR;
-  } else {
-    process.env.IDLEBIZ_ROOT_DIR = previousRoot;
-  }
+  foundAcme();
 });
 
 describe("opening from the workspace", () => {

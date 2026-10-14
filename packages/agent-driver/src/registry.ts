@@ -1,7 +1,7 @@
 import type { NewSessionRequest } from "@agentclientprotocol/sdk";
 import { z } from "zod";
+import type { RunnerId } from "@repo/domain/runners";
 import type { Rates } from "./pricing";
-import type { RunnerId } from "./runner";
 
 export interface RunnerAdapter {
   /** Module specifier of the ACP subprocess. */
@@ -19,7 +19,7 @@ export interface RunnerAdapter {
    */
   session: (setup: SessionSetup) => SessionStart;
   /** Adapter env var pointing at the player's CLI; bundled optional binaries may be absent. */
-  binEnvVar?: string;
+  binEnvVar: string;
   /**
    * Prefixes of the env vars this CLI signs in and is configured with: a run's env drops
    * every other credential-shaped name, and without these the CLI could not reach its model.
@@ -28,7 +28,6 @@ export interface RunnerAdapter {
   providerEnv: readonly string[];
   /** The player's CLI on PATH, and the env var that overrides where it lives. */
   cli: { command: string; override: string };
-  displayName: string;
   loginArgs: string[];
   authProbe: { args: string[]; loggedIn: (output: string) => boolean };
   /** What the CLI's default model costs, for pricing a run that reports $0. */
@@ -47,23 +46,34 @@ export interface RunnerAdapter {
   typedFailures?: true;
 }
 
+/** A model choice that does not read is left to claude's default, not the run's sign-in with it. */
+const ignoredIfBad = <T extends z.ZodType>(schema: T) =>
+  z
+    .unknown()
+    .transform((value) => schema.safeParse(value).data)
+    .optional();
+
 /**
  * What of the player's claude user settings a session still carries, by their names there, since
  * it loads none of them: what signs their CLI in, and the model and effort they picked, which
  * claude would otherwise leave for its default and bill them for. Only these, so nothing of the
  * player's can loosen what the session sets beside them.
  */
-export interface ClaudeUserSettings {
-  alwaysThinkingEnabled?: boolean;
-  apiKeyHelper?: string;
-  awsAuthRefresh?: string;
-  awsCredentialExport?: string;
-  effortLevel?: string;
-  gcpAuthRefresh?: string;
-  model?: string;
-  modelOverrides?: Readonly<Record<string, string>>;
-  modelSettings?: Readonly<Record<string, { effortLevel?: string }>>;
-}
+export const ClaudeUserSettingsSchema = z.object({
+  alwaysThinkingEnabled: ignoredIfBad(z.boolean()),
+  apiKeyHelper: z.string().optional(),
+  awsAuthRefresh: z.string().optional(),
+  awsCredentialExport: z.string().optional(),
+  effortLevel: ignoredIfBad(z.string()),
+  gcpAuthRefresh: z.string().optional(),
+  model: ignoredIfBad(z.string()),
+  modelOverrides: ignoredIfBad(z.record(z.string(), z.string())),
+  modelSettings: ignoredIfBad(
+    z.record(z.string(), z.object({ effortLevel: z.string().optional() })),
+  ),
+});
+
+export type ClaudeUserSettings = z.output<typeof ClaudeUserSettingsSchema>;
 
 /**
  * What of a session's start is the run's to say. `skills` is the folder of IdleBiz's skills, each
@@ -107,13 +117,9 @@ const claudeLoggedIn = (output: string): boolean => {
 };
 
 /**
- * With bypass off, no settings tier can start a session in it. No setting source is loaded: not
- * the player's user settings (their CLAUDE.md, skills, plugins, hooks), nor a project's or a
- * local one, which a run could write for the next to load. What remains is managed policy and
- * `settings`, the flag tier, whose ask rules beat allow rules from any tier. Its skills are
- * IdleBiz's, as a plugin, and none of claude's own. None of the player's MCP servers or claude.ai
- * connectors load either: those act as the player, signed in as them, and a run reaches the
- * company with the `idlebiz` command in its shell, not MCP.
+ * What a claude session loads is AGENTS.md's "A claude session". With bypass off, no settings tier
+ * can start a session in it, and `settings`, the flag tier, has ask rules that beat allow rules
+ * from any tier.
  */
 const claudeSession = ({ skills, teamNotes, userSettings }: SessionSetup): SessionStart => {
   const meta: NonNullable<SessionStart["meta"]> = {
@@ -159,7 +165,6 @@ export const RUNNERS = {
     authProbe: { args: ["auth", "status"], loggedIn: claudeLoggedIn },
     binEnvVar: "CLAUDE_CODE_EXECUTABLE",
     cli: { command: "claude", override: "CLAUDE_BIN" },
-    displayName: "Claude Code",
     fallbackRates: { cachedInput: 0.3, input: 3, output: 15 },
     loginArgs: ["auth", "login"],
     // Bedrock's bearer token signs only for Bedrock, AWS access keys for the whole account, and
@@ -180,7 +185,6 @@ export const RUNNERS = {
     authProbe: { args: ["login", "status"], loggedIn: (out) => !/not logged in/iu.test(out) },
     binEnvVar: "CODEX_PATH",
     cli: { command: "codex", override: "CODEX_BIN" },
-    displayName: "Codex",
     fallbackRates: { cachedInput: 0.125, input: 1.25, output: 10 },
     loginArgs: ["login"],
     // Bedrock as for claude; the Azure provider codex documents reads AZURE_OPENAI_API_KEY

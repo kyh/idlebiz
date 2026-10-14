@@ -254,12 +254,8 @@ button:disabled {
   height: calc(var(--ob-frame-h) * var(--s));
   transform: translateX(-50%);
   background-repeat: no-repeat;
-  background-size: calc(var(--ob-frame-w) * 6 * var(--s)) calc(var(--ob-frame-h) * 6 * var(--s));
   image-rendering: pixelated;
   pointer-events: none;
-}
-.ob-founder[data-facing="back"] {
-  background-position-y: calc(var(--ob-frame-h) * -3 * var(--s));
 }
 .ob-stage[data-look="true"] .ob-founder {
   --s: 9;

@@ -3,7 +3,6 @@ import { chatOptions } from "./chat-options";
 import type { Employee } from "@repo/domain/domain";
 
 const employee: Employee = {
-  companyId: "acme",
   createdAt: 0,
   deskIndex: 0,
   id: "priya",

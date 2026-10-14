@@ -6,6 +6,4 @@ export default defineConfig({
   testDir: "src",
   timeout: 90_000,
   tsconfig: "./tsconfig.json",
-  // one app at a time: each launch shows its window and takes focus
-  workers: 1,
 });

@@ -60,11 +60,8 @@ describe("renderProsePageMarkdown", () => {
     }
   });
 
-  it("tells the founder what Disconnect sends to this site", () => {
-    const markdown = renderProsePageMarkdown(privacyPage);
-    expect(markdown).toMatch(
-      /When you disconnect, or reset everything, the app sends that token and your Stripe account ID back to our website once/u,
-    );
+  it("claims no Stripe token of the founder's, which this site never handles", () => {
+    expect(renderProsePageMarkdown(privacyPage)).not.toMatch(/access token|Stripe Connect/iu);
   });
 
   it("renders a table as a GFM pipe table under its header row", () => {
