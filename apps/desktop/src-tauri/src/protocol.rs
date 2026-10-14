@@ -122,6 +122,7 @@ pub struct LoginItem {
 #[derive(Serialize)]
 #[cfg_attr(test, derive(Deserialize))]
 #[serde(rename_all = "kebab-case")]
+#[cfg_attr(all(not(target_os = "macos"), not(test)), expect(dead_code))]
 pub enum LaunchAtLogin {
     On,
     Off,
