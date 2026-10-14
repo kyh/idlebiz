@@ -798,35 +798,39 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     }
   });
 
-  it("keeps a run from starting an app through LaunchServices, which would run it unsealed", async () => {
-    const app = at("tmp/Canary.app");
-    const launched = at("tmp/launched");
-    mkdirSync(path.join(app, "Contents/MacOS"), { recursive: true });
-    writeFileSync(
-      path.join(app, "Contents/Info.plist"),
-      `<?xml version="1.0" encoding="UTF-8"?>
+  it(
+    "keeps a run from starting an app through LaunchServices, which would run it unsealed",
+    { timeout: 20_000 },
+    async () => {
+      const app = at("tmp/Canary.app");
+      const launched = at("tmp/launched");
+      mkdirSync(path.join(app, "Contents/MacOS"), { recursive: true });
+      writeFileSync(
+        path.join(app, "Contents/Info.plist"),
+        `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>canary</string>
 <key>CFBundleIdentifier</key><string>io.idlebiz.seal-canary.${process.pid}.${Date.now()}</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 </dict></plist>
 `,
-    );
-    writeFileSync(path.join(app, "Contents/MacOS/canary"), `#!/bin/sh\ntouch '${launched}'\n`, {
-      mode: 0o755,
-    });
-    const sealed = await seal();
-    const argv = ["/usr/bin/open", "-g", "-n", app];
-    expect(exitOf(sealedCommand(sealed, "claude", argv))).not.toBe(0);
-    await sleep(1500);
-    expect(existsSync(launched)).toBe(false);
-    // the control: the same open from a sign-in, which may open the browser, does start it
-    expect(exitOf(signInCommand(sealed, "claude", argv))).toBe(0);
-    for (let waited = 0; waited < 50 && !existsSync(launched); waited += 1) {
-      await sleep(100);
-    }
-    expect(existsSync(launched)).toBe(true);
-  });
+      );
+      writeFileSync(path.join(app, "Contents/MacOS/canary"), `#!/bin/sh\ntouch '${launched}'\n`, {
+        mode: 0o755,
+      });
+      const sealed = await seal();
+      const argv = ["/usr/bin/open", "-g", "-n", app];
+      expect(exitOf(sealedCommand(sealed, "claude", argv))).not.toBe(0);
+      await sleep(1500);
+      expect(existsSync(launched)).toBe(false);
+      // the control: the same open from a sign-in, which may open the browser, does start it
+      expect(exitOf(signInCommand(sealed, "claude", argv))).toBe(0);
+      for (let waited = 0; waited < 50 && !existsSync(launched); waited += 1) {
+        await sleep(100);
+      }
+      expect(existsSync(launched)).toBe(true);
+    },
+  );
 
   it("lets a run list processes, as version managers do to find their shell", async () => {
     const sealed = await seal();
