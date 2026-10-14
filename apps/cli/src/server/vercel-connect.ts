@@ -3,7 +3,7 @@ import * as store from "./store/store";
 import { listProjects, validateToken } from "./vercel";
 import { errorMessage } from "@repo/domain/errors";
 import type { z } from "zod";
-import type { connectInput, saveTokenInput } from "@repo/contract/vercel/vercel-schema";
+import type { connectInput, saveTokenInput } from "@repo/contract/vercel-contract";
 import type { VercelListing } from "@repo/domain/integrations";
 
 // One token per founder; each product binds its own project.

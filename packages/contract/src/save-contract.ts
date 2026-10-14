@@ -2,7 +2,7 @@
 
 import { oc, type } from "@orpc/contract";
 import type { LoadReport } from "@repo/domain/domain";
-import type { Done } from "../done";
+import type { Done } from "./done";
 
 export const saveContract = {
   openFolder: oc.output(type<Done>()),
