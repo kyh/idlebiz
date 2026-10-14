@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { HttpError } from "./lib/http";
-import { ENV_PREFIX, hasSecret, secretsUnder, setSecret } from "./secrets";
+import { ENV_PREFIX, MIN_SECRET_LENGTH, hasSecret, secretsUnder, setSecret } from "./secrets";
 import type { EnvSecretName } from "./secrets";
 import { VercelSaid, vercelCall, vercelRefusalOf, vercelSays } from "./vercel-api";
 import type { Product, VercelBinding } from "@repo/domain/domain";
@@ -73,9 +73,6 @@ export const unshippableEnvValues = (): KeptEnvValue[] =>
       : [{ kind: "env", name, product, value }];
   });
 
-// a flag or a port turns up in any value, and no key is this short
-const MIN_KEPT_LENGTH = 8;
-
 /**
  * The server-only variable whose value a public one would build into the page: one that holds
  * `value` or is held in it. The deploy guard reads only the folder, never what a build inlines,
@@ -84,8 +81,8 @@ const MIN_KEPT_LENGTH = 8;
 export const serverOnlyValueIn = (value: string): KeptEnvValue | null =>
   unshippableEnvValues().find(
     (kept) =>
-      (kept.value.length >= MIN_KEPT_LENGTH && value.includes(kept.value)) ||
-      (value.length >= MIN_KEPT_LENGTH && kept.value.includes(value)),
+      (kept.value.length >= MIN_SECRET_LENGTH && value.includes(kept.value)) ||
+      (value.length >= MIN_SECRET_LENGTH && kept.value.includes(value)),
   ) ?? null;
 
 const ENV_TIMEOUT_MS = 10_000;

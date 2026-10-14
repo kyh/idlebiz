@@ -251,13 +251,7 @@ const boot = async (launch: Launch): Promise<void> => {
 
   metricsPulse.start();
 
-  appTray.init({
-    setAutopilot: (on) => {
-      if (store.getCompany()) {
-        guarded("tray autopilot", () => setAutopilot(on));
-      }
-    },
-  });
+  appTray.start();
   if (openedAtLogin()) {
     appTray.startWindowless();
   }
@@ -299,6 +293,9 @@ peer.handle("quit", z.null(), async () => {
 
 peer.on("window", windowSchema, windowChanged);
 
+// the menu's autopilot item sets what its label said, whatever has moved since
 peer.on("tray", trayClickSchema, ({ on }) => {
-  appTray.setAutopilot(on);
+  if (store.getCompany()) {
+    guarded("tray autopilot", () => setAutopilot(on));
+  }
 });

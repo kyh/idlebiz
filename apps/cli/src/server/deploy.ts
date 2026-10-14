@@ -9,6 +9,7 @@ import { z } from "zod";
 import { HttpError } from "./lib/http";
 import { vercelCall, vercelRefusalOf } from "./vercel-api";
 import type { VercelCallOptions, VercelScope } from "./vercel-api";
+import { MIN_SECRET_LENGTH } from "./secrets";
 import type { HeldKey } from "./secrets";
 import type { KeptEnvValue } from "./vercel-env";
 import type { VercelBinding } from "@repo/domain/domain";
@@ -142,9 +143,6 @@ interface Leak {
   held: Unshippable;
 }
 
-// a flag or a port turns up in any folder, and no key is this short
-const MIN_UNSHIPPABLE_LENGTH = 8;
-
 /**
  * Every file the CLI would upload from `root`, read once here so nothing in it ever runs,
  * or the first that holds a value no deploy may ship. What is uploaded is checked against
@@ -155,7 +153,7 @@ const entriesOf = async (
   unshippable: readonly Unshippable[],
 ): Promise<{ kind: "entries"; entries: Entry[] } | Leak> => {
   const rules = await ignoreRulesOf(root);
-  const guarded = unshippable.filter((held) => held.value.length >= MIN_UNSHIPPABLE_LENGTH);
+  const guarded = unshippable.filter((held) => held.value.length >= MIN_SECRET_LENGTH);
   const entries: Entry[] = [];
   const visit = async (dir: string): Promise<Leak | null> => {
     for (const item of await readdir(path.join(root, dir), { withFileTypes: true })) {
