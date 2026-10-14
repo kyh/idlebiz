@@ -475,12 +475,12 @@ third boundary.
   delivery, one IdleBiz cannot send) and each product whose older links went unrecorded. Agents read orders, buyers' emails and addresses included, with the unsigned
   `read_orders`. Each tool above runs once the founder signs off on the action it names, which
   is the approval's key (`requireSignOff` in `server/tools.ts`): `deploy <product> to production
-on Vercel project <name>` (or `on a new Vercel project named <product>` for a product bound to
+  on Vercel project <name>` (or `on a new Vercel project named <product>` for a product bound to
   none), `payment link "<name>" at $<amount> on <product> for bet <slug> delivering "<delivery>"
-then send buyers to <url>` (the delivery is what the founder owes each buyer and the URL is
+  then send buyers to <url>` (the delivery is what the founder owes each buyer and the URL is
   where paying buyers land, so a changed one is signed anew), and `sell "<name>"
-(variants <ids>) printing <placement> (<technique>) <file URL> sha256:<digest> at $<price> via
-Printful on <product> for bet <slug>`, the file's whole digest, so a design deployed over the
+  (variants <ids>) printing <placement> (<technique>) <file URL> sha256:<digest> at $<price> via
+  Printful on <product> for bet <slug>`, the file's whole digest, so a design deployed over the
   URL is signed for anew. A sign-off belongs to the continuation task, is spent once and goes
   with the task. One such tool is unsigned: `set_env` sets a variable on the product's bound
   project, sensitive, for production and preview (`server/vercel-env.ts`), since a key the founder
@@ -527,7 +527,7 @@ Printful on <product> for bet <slug>`, the file's whole digest, so a design depl
     founder to bind instead. So no file in the folder (`.vercel/project.json`, a `name` in
     vercel.json) picks which of the founder's projects is overwritten.
   - Nothing pushes code. The founder pushes by hand from a fresh clone (`git clone --no-local
-<workspace>`), never with git inside the workspace: the seal keeps a run from git's config
+    <workspace>`), never with git inside the workspace: the seal keeps a run from git's config
     and hooks there, but git still obeys what a run leaves in the folder (a rebase's todo list,
     a `.gitattributes`), unsealed, as the founder. A clone runs only upload-pack there, which
     runs nothing its config names since git stopped lazy-fetching a partial clone's missing
