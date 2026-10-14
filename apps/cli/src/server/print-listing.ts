@@ -1,8 +1,5 @@
 import { createHash } from "node:crypto";
-import { printfulCatalog, printfulQuote } from "./printful";
-import type { CatalogReader, PrintQuote, PrintQuoter } from "./printful";
-import { stripeShippedLink, stripeListingAccess } from "./stripe-links";
-import type { ShippedLinker, StripeAccess } from "./stripe-links";
+import type { PrintQuote } from "./printful";
 import { errorMessage } from "@repo/domain/errors";
 import { formatCents } from "@repo/domain/format";
 
@@ -72,21 +69,4 @@ export const readPrintFile = async (url: string): Promise<PrintFileRead> => {
   } catch (error) {
     return { kind: "unfit", reason: errorMessage(error) };
   }
-};
-
-/** What listing a print-on-demand item takes from outside: the file, Printful's catalog and price, Stripe's grant and link. */
-export interface PrintListing {
-  readFile: (url: string) => Promise<PrintFileRead>;
-  catalog: CatalogReader;
-  quote: PrintQuoter;
-  stripeAccess: (key: string) => Promise<StripeAccess>;
-  publish: ShippedLinker;
-}
-
-export const printListing: PrintListing = {
-  catalog: printfulCatalog,
-  publish: stripeShippedLink,
-  quote: printfulQuote,
-  readFile: readPrintFile,
-  stripeAccess: stripeListingAccess,
 };

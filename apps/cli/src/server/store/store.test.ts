@@ -14,7 +14,6 @@ import { KILL_GRACE_MS, windowEnd } from "@repo/domain/bets";
 import { UNNAMED_PRODUCT_DESCRIPTION } from "@repo/domain/domain";
 import type { Listing } from "../listing";
 import { RefusalError } from "../refusal";
-import type { Integrations } from "../tools/define";
 import { runPreamble } from "../prompts/briefs";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { taskToDoc } from "./task-codec";
@@ -35,28 +34,13 @@ import {
   employeeAgentDir,
   productWorkspace,
 } from "../paths";
+import { unaskedIntegrations } from "../test-support/integrations";
 import { foundAcme, freshSave, hire } from "../test-support/save";
 
 const root = freshSave();
 const asleep = { hold: () => {} };
-const unasked = () => Promise.reject(new Error("no run here calls out"));
 /** No run here starts, so none calls out with a founder's key. */
-const integrations: Integrations = {
-  checkVercelToken: unasked,
-  checkoutAccess: unasked,
-  createPaymentLink: unasked,
-  deploy: unasked,
-  linkAccess: unasked,
-  printListing: {
-    catalog: unasked,
-    publish: unasked,
-    quote: unasked,
-    readFile: unasked,
-    stripeAccess: unasked,
-  },
-  productionHosts: unasked,
-  setEnv: unasked,
-};
+const integrations = unaskedIntegrations();
 /** The app's own runner, whose seal no test has checked: its ticks start nothing. */
 const scheduler = createScheduler(agentDriver, asleep, integrations);
 

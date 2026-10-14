@@ -32,14 +32,21 @@ import { createPageRouter } from "./page-router";
 import { devPageOrigin, startPageServer } from "./page-server";
 import type { PageServer, PageSource } from "./page-server";
 import { launchRoot, onRealSave, openSave, rootDir, runBinDir } from "./paths";
-import { printListing } from "./print-listing";
+import { readPrintFile } from "./print-listing";
+import { printfulCatalog, printfulQuote } from "./printful";
 import { stdioPeer } from "./relay/stdio";
 import { claimSave } from "./save-claim";
 import type { SaveClaim } from "./save-claim";
 import { createScheduler } from "./scheduler";
 import { DEV_SECRETS_KEY, checkSecrets, sealerFor, setSealer } from "./secrets";
 import * as store from "./store/store";
-import { stripeCheckoutAccess, stripeLinkAccess, stripePaymentLink } from "./stripe-links";
+import {
+  stripeCheckoutAccess,
+  stripeLinkAccess,
+  stripeListingAccess,
+  stripePaymentLink,
+  stripeShippedLink,
+} from "./stripe-links";
 import type { Integrations } from "./tools/define";
 import { appTray } from "./tray";
 import { productionHosts, validateToken } from "./vercel";
@@ -52,10 +59,14 @@ const integrations: Integrations = {
   checkVercelToken: validateToken,
   checkoutAccess: stripeCheckoutAccess,
   createPaymentLink: stripePaymentLink,
+  createPrintLink: stripeShippedLink,
   deploy: deployToVercel,
   linkAccess: stripeLinkAccess,
-  printListing,
+  listingAccess: stripeListingAccess,
+  printCatalog: printfulCatalog,
   productionHosts,
+  quotePrint: printfulQuote,
+  readPrintFile,
   setEnv: setVercelEnv,
 };
 

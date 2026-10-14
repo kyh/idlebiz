@@ -12,13 +12,13 @@ import type { RunResult, RunTools } from "./agents/runner-pool";
 import { keepAwake } from "./keep-awake";
 import type { KeepAwake, PowerBlocker } from "./keep-awake";
 import type { EmployeeRunner } from "./scheduler";
-import type { Integrations } from "./tools/define";
 import * as store from "./store/store";
 import { activityFile, companyDir, tasksDir, betFile, routineFile, shippedDir } from "./paths";
 import { activityEvents } from "./activity";
 import { createScheduler, loggedToolName } from "./scheduler";
 import { founderActions } from "./founder-actions";
 import { setAutopilot } from "./company-actions";
+import { unaskedIntegrations } from "./test-support/integrations";
 import { foundAcme, freshSave, hire } from "./test-support/save";
 
 const root = freshSave();
@@ -27,26 +27,8 @@ const NAMES = ["Priya", "Mae", "Sam", "Ana"];
 
 const asleep: KeepAwake = { hold: () => {} };
 
-const unasked = (what: string) => () =>
-  Promise.reject(new Error(`${what} without a test asking for it`));
-
 /** No test here calls out with a founder's key: a tool that would answers with the fault. */
-const integrations: Integrations = {
-  checkVercelToken: unasked("checked the Vercel token"),
-  checkoutAccess: unasked("read checkouts"),
-  createPaymentLink: unasked("made a payment link"),
-  deploy: unasked("deployed"),
-  linkAccess: unasked("read payment links"),
-  printListing: {
-    catalog: unasked("read the catalog"),
-    publish: unasked("listed a print"),
-    quote: unasked("priced a print"),
-    readFile: unasked("fetched a print file"),
-    stripeAccess: unasked("read Stripe's grants"),
-  },
-  productionHosts: unasked("read domains"),
-  setEnv: unasked("set a variable"),
-};
+const integrations = unaskedIntegrations();
 
 /** A power blocker that only keeps count: the ids held now, and how many were ever started. */
 const fakeBlocker = () => {

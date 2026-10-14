@@ -15,10 +15,11 @@ import type { agentDriver } from "../agents/runner-pool";
 import { postToRoom } from "../company-actions";
 import type { Deployer } from "../deploy";
 import { report } from "../lib/report";
-import type { PrintListing } from "../print-listing";
+import type { PrintFileRead } from "../print-listing";
+import type { CatalogReader, PrintQuoter } from "../printful";
 import { RefusalError } from "../refusal";
 import * as store from "../store/store";
-import type { PaymentLinker, StripeAccess } from "../stripe-links";
+import type { PaymentLinker, ShippedLinker, StripeAccess } from "../stripe-links";
 import type { ToolName, ToolOutcome, ToolSpec } from "../tool-specs";
 import type { productionHosts, validateToken } from "../vercel";
 import type { EnvSetter } from "../vercel-env";
@@ -40,8 +41,16 @@ export interface Integrations {
   setEnv: EnvSetter;
   /** Ask Vercel whether it still takes the token, before a sign-off is spent on a deploy. */
   checkVercelToken: typeof validateToken;
-  /** List a print-on-demand item with Printful and Stripe. */
-  printListing: PrintListing;
+  /** Read a print file as Printful will, hashing what the product serves at its URL now. */
+  readPrintFile: (url: string) => Promise<PrintFileRead>;
+  /** Read Printful's catalog. */
+  printCatalog: CatalogReader;
+  /** Ask Printful what printing a listing and shipping it costs. */
+  quotePrint: PrintQuoter;
+  /** Ask Stripe whether the key reaches what a print sells through, before a sign-off is spent on one. */
+  listingAccess: (key: string) => Promise<StripeAccess>;
+  /** Make a print-on-demand item's payment link on Stripe. */
+  createPrintLink: ShippedLinker;
   /** Read where a product's production deploys are served. */
   productionHosts: typeof productionHosts;
 }
