@@ -127,10 +127,11 @@ appindicator for its menu-bar icon (`libayatana-appindicator3-dev`).
 
 It signs with the Developer ID the keychain holds (`APPLE_SIGNING_IDENTITY` names another; with
 none it stops, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack, for this Mac alone) and
-notarizes with `apps/desktop/.env`'s App Store Connect key, or says it did not when `.env` names
-none. `pnpm -F @repo/desktop release:publish` packs as a release (`IDLEBIZ_RELEASE=1`), which
-stops unless the pack is both signed and notarized, then publishes the dmg as the release tagged
-`v<version>`, where the site's download link finds it.
+notarizes with the App Store Connect key `apps/desktop/.env` names by id and issuer, its `.p8` in
+`~/.appstoreconnect/private_keys/` where the seal keeps it from every run, or says it did not
+when `.env` names none. `pnpm -F @repo/desktop release:publish` packs as a release
+(`IDLEBIZ_RELEASE=1`), which stops unless the pack is both signed and notarized, then publishes
+the dmg as the release tagged `v<version>`, where the site's download link finds it.
 
 ## What is deliberately not here
 

@@ -344,8 +344,10 @@ rather than crashing boot.
   grant, since the key IdleBiz charges with makes every link.
 - `IDLEBIZ_ROOT_DIR` overrides the save and secrets directory for isolated runs. Defaults
   to `~/.idlebiz`; use a fresh temporary directory for desktop verification.
-- `apps/desktop/.env` (see `.env.example`) is release-only: Apple notarization keys for
-  `pnpm --filter @repo/desktop package`.
+- `apps/desktop/.env` (see `.env.example`) is release-only: the id and issuer of the App Store
+  Connect key `pnpm --filter @repo/desktop package` notarizes with. The key's `.p8` sits in
+  `~/.appstoreconnect/private_keys/` (`package.ts` reads it there alone), which the seal keeps
+  from every run; never keep it in the checkout, which runs can read.
 
 ## Rules that matter
 
@@ -541,7 +543,8 @@ rather than crashing boot.
 - `packages/domain` — the vocabulary both sides share, pure: `domain.ts` (the company, its
   people, products and tasks), `bets.ts` (the bets, their judge and the allocator),
   `activity.ts` (the event grammar), `digest.ts`, `hire.ts`, `integrations.ts`, `hold-rules.ts`
-  (what an approval card says each rule holds; data only, for the page), `format.ts`,
+  (every rule that holds a call, what its card says and whether signing leases it; data only,
+  for the page), `format.ts`,
   `errors.ts`, `json.ts`, and `character-frame.ts` (the sprite box every process slices by).
 - `packages/contract` — the page's API: the oRPC contract (`contract.ts`, one folder per domain),
   its routes (`routes.ts`) and the event stream's names (`events.ts`).

@@ -525,6 +525,26 @@ describe("decidePermission", () => {
   });
 
   it.each([
+    { key: "mcp: use gmail", leased: true, tool: { kind: "mcp", server: "gmail" } },
+    { key: "git push", leased: false, tool: push.tool },
+  ] as const)("leases a sign-off for the run only when its rule says so: $key", async (signed) => {
+    const company = found();
+    store.grantApproval("deploy", signed.key);
+    const leases = new Set<string>();
+    const decision = await decidePermission(
+      { companyId: company.id, id: "deploy" },
+      { tool: signed.tool },
+      leases,
+      noPage,
+      room,
+      () => null,
+      new AbortController().signal,
+    );
+    expect(decision).toEqual({ allow: true });
+    expect(leases.has(signed.key)).toBe(signed.leased);
+  });
+
+  it.each([
     { allow: true, tool: { kind: "edit" } },
     { allow: false, tool: { kind: "sandbox" } },
   ] as const)(

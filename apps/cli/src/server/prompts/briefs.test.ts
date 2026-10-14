@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { actionAnswer, autonomousBrief, continuationBrief, roomTranscript } from "./briefs";
+import {
+  actionAnswer,
+  approvalAnswer,
+  autonomousBrief,
+  continuationBrief,
+  roomTranscript,
+} from "./briefs";
 import { RUN_COST_ESTIMATE_USD } from "@repo/domain/bets";
 import type {
   BlockedAsk,
@@ -304,5 +310,27 @@ describe("the founder's reply to an action", () => {
     [{ kind: "cant", reason: "no account there" }, "They could not: no account there."],
   ] as const)("reads %j as %j", (reply, words) => {
     expect(actionAnswer(reply)).toContain(words);
+  });
+});
+
+describe("the founder's answer to a sign-off", () => {
+  it("quotes the command as sent, in a fence no line of it can close", () => {
+    const command = "npm test\ngit push origin main # ```";
+    const answer = approvalAnswer(true, { command, rule: "git-push" });
+    expect(answer).toContain(`\n\`\`\`\`\n${command}\n\`\`\`\`\n`);
+    expect(answer).toContain("character for character");
+    expect(answer).toContain("It covers one run of it.");
+  });
+
+  it("says a leased sign-off covers the rest of the run, not one run", () => {
+    const answer = approvalAnswer(true, { command: "mcp: use gmail", rule: "external-tool" });
+    expect(answer).toContain("for the rest of this run");
+    expect(answer).not.toContain("one run of it");
+  });
+
+  it("tells a refused run not to work around it", () => {
+    expect(approvalAnswer(false, { command: "git push", rule: "git-push" })).toMatch(
+      /^Not approved\./u,
+    );
   });
 });

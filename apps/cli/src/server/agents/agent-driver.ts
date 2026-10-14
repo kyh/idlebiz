@@ -28,6 +28,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
+import { isLeased } from "@repo/domain/hold-rules";
 import { createRequire } from "node:module";
 import { controlPlane } from "../control-plane";
 import { bundledSkillsDir } from "./bundled-skills";
@@ -357,7 +358,7 @@ export const decidePermission = async (
     return { allow: true };
   }
   if (store.consumeApproval(task.id, held.key)) {
-    if (held.leasable) {
+    if (isLeased(held.rule)) {
       leases.add(held.key);
     }
     return { allow: true };

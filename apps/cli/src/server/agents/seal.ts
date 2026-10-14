@@ -62,6 +62,7 @@ const LOGINS = [
   ".config/configstore",
   ".config/op",
   ".config/github-copilot",
+  ".appstoreconnect",
   ".agent-browser/auth",
   ".agent-browser/.encryption-key",
   "Library/Application Support/Google/Chrome",

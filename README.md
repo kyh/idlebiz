@@ -46,8 +46,10 @@ pnpm -F @repo/desktop release:publish  # same, then publish to GitHub releases
 
 On a Mac with Xcode's command line tools and the Rust toolchain
 (`apps/desktop/rust-toolchain.toml`). Signs with the Developer ID in the keychain (ad-hoc
-without one); notarizes with `apps/desktop/.env` (Apple notarization creds) and the
-`AuthKey_*.p8` at the repo root — both gitignored. Bump `version` in
+without one); notarizes with the App Store Connect key `apps/desktop/.env` names (its id and
+issuer, gitignored; see `.env.example`), whose `AuthKey_<id>.p8` sits in
+`~/.appstoreconnect/private_keys/`, never in the checkout: employee runs read the rest of HOME,
+but not there. Bump `version` in
 `apps/desktop/package.json` and `apps/cli/package.json` together before publishing; the release
 is tagged `v<version>`.
 

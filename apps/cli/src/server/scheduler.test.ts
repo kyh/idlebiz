@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -18,7 +18,7 @@ const root = mkdtempSync(path.join(tmpdir(), "idlebiz-scheduler-"));
 const previousRoot = process.env.IDLEBIZ_ROOT_DIR;
 process.env.IDLEBIZ_ROOT_DIR = root;
 const store = await import("./store/store");
-const { betFile, companyDir, routineFile, tasksDir } = await import("./paths");
+const { activityFile, betFile, companyDir, routineFile, tasksDir } = await import("./paths");
 const { writeMetricsConfig } = await import("./store/metrics-config");
 const { activityEvents } = await import("./activity");
 const { createScheduler, loggedToolName } = await import("./scheduler");
@@ -1328,16 +1328,53 @@ describe("an action only the founder can take", () => {
 });
 
 describe("a tool call's title in the activity log", () => {
-  it.each([
-    `idlebiz set-env '{"name":"OPENAI_API_KEY","value":"sk-proj-1"}'`,
-    `idlebiz set_env - <<'EOF'\n{"name":"OPENAI_API_KEY","value":"sk-proj-1"}\nEOF`,
-    `curl -s -X POST "$IDLEBIZ_API_URL/v1/set-env" -d '{"name":"OPENAI_API_KEY","value":"sk-proj-1"}'`,
-  ])("keeps none of the value set_env was given: %s", (title) => {
+  const value = `sk-proj-${"Zq7".repeat(60)}`;
+  const env = `{"name":"OPENAI_API_KEY","value":"${value}"}`;
+  const setEnvTitles = [
+    `idlebiz set-env '${env}'`,
+    `idlebiz set_env - <<'EOF'\n${env}\nEOF`,
+    `curl -s -X POST "$IDLEBIZ_API_URL/v1/set-env" -d '${env}'`,
+    `printf '%s' '${env}' | idlebiz set-env -`,
+    `V='${env}'\nidlebiz set-env "$V"`,
+  ];
+
+  it.each(setEnvTitles)("keeps none of the value set_env was given: %s", (title) => {
     expect(loggedToolName(title)).toBe("set_env");
   });
 
-  it("keeps every other title as it is", () => {
-    const title = `idlebiz message-team '{"text":"shipped"}'`;
-    expect(loggedToolName(title)).toBe(title);
+  it.each([
+    {
+      logged: "cat > .env <<'EOF'",
+      title: `cat > .env <<'EOF'\nAPI_TOKEN=hunter2\nEOF`,
+      what: "its heredoc body left out",
+    },
+    { logged: `${"x".repeat(160)}…`, title: "x".repeat(200), what: "capped at 160 chars" },
+    {
+      logged: `idlebiz message-team '{"text":"shipped"}'`,
+      title: `idlebiz message-team '{"text":"shipped"}'`,
+      what: "a short one whole",
+    },
+  ])("keeps any other title as one short line ($what)", ({ logged, title }) => {
+    expect(loggedToolName(title)).toBe(logged);
+  });
+
+  it("writes none of a set_env value to activity.jsonl", async () => {
+    const company = found();
+    const announcing: EmployeeRunner = {
+      ...scripted().driver,
+      runTask: (_emp, _company, _task, onEvent) => {
+        for (const title of setEnvTitles) {
+          onEvent({ kind: "execute", title, type: "tool_start" });
+        }
+        return Promise.resolve(done());
+      },
+    };
+    queue("priya");
+    createScheduler(announcing, asleep).tick();
+    await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
+
+    const log = readFileSync(activityFile(company.id), "utf-8");
+    expect(log.match(/"message":"set_env"/gu)).toHaveLength(setEnvTitles.length);
+    expect(log).not.toContain("Zq7");
   });
 });

@@ -39,11 +39,7 @@ describe("toolAskOf", () => {
     async (title) => {
       const tool = ask({ kind: "execute", rawInput: { cwd: "/w" }, title });
       expect(tool).toEqual({ kind: "unknown", title });
-      expect(await judge(tool)).toEqual({
-        key: `ask: ${title}`,
-        leasable: false,
-        rule: "unknown-ask",
-      });
+      expect(await judge(tool)).toEqual({ key: `ask: ${title}`, rule: "unknown-ask" });
     },
   );
 

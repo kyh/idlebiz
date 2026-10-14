@@ -139,6 +139,7 @@ describe("a blocked task's ask in TASK.md", () => {
     { integration: "vercel", productId: "side", reason: "to bind Side", type: "integration" },
     { integration: "stripe-key", productId: null, reason: "to sell a plan", type: "integration" },
     { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
+    { command: "npm test\ngit push origin main", rule: "git-push", type: "approval" },
     {
       action: "Post the launch thread on r/SideProject",
       draft: 'Line one\n\n"Quoted" line two: [approve] {not json}\n',
@@ -165,12 +166,6 @@ describe("a blocked task's ask in TASK.md", () => {
     );
   });
 
-  it("reads an approval without a rule id as an ask nothing recognised", () => {
-    expect(askSavedAs("[approve] git push origin main")).toEqual(
-      blocked({ command: "git push origin main", rule: "unknown-ask", type: "approval" }).state,
-    );
-  });
-
   it.each(["[action] not json", '[action] {"action":"no instructions"}'])(
     "reads an action it cannot parse, %j, as the question it says",
     (saved) => {
@@ -178,16 +173,16 @@ describe("a blocked task's ask in TASK.md", () => {
     },
   );
 
-  it("preserves a retired rule through validation and TASK.md", () => {
-    const saved = "[approve:retired-rule] git push origin main";
-    const ask: BlockedAsk = {
-      command: "git push origin main",
-      rule: "retired-rule",
-      type: "approval",
-    };
-    expect(askSavedAs(saved)).toEqual(blocked(ask).state);
-    expect(BlockedAskSchema.parse(ask)).toEqual(ask);
-    expect(taskToDoc(blocked(ask)).metadata.blockedQuestion).toBe(saved);
+  it.each(["[approve:retired-rule] git push origin main", "[approve] git push origin main"])(
+    "reads an approval naming no rule this version holds, %j, as the question it says",
+    (saved) => {
+      expect(askSavedAs(saved)).toEqual(blocked({ question: saved, type: "question" }).state);
+    },
+  );
+
+  it("takes no rule this version does not hold", () => {
+    const ask = { command: "git push origin main", rule: "retired-rule", type: "approval" };
+    expect(BlockedAskSchema.safeParse(ask).success).toBe(false);
   });
 });
 

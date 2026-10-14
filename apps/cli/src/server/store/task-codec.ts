@@ -6,6 +6,7 @@ import {
   TASK_STATUSES,
 } from "@repo/domain/domain";
 import type { BlockedAsk, Task, TaskOrigin, TaskState, TaskStatus } from "@repo/domain/domain";
+import { HOLD_RULE_IDS } from "@repo/domain/hold-rules";
 import { parseJson } from "@repo/domain/json";
 import { PACKAGE_SCHEMA, nullableNum, optNum, optStr, reqStr, strArray } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
@@ -54,11 +55,10 @@ const parseBlockedAsk = (s: string, productId: string | null): BlockedAsk => {
   if (s.startsWith(ACTION_PREFIX)) {
     return parseAction(s.slice(ACTION_PREFIX.length)) ?? { question: s, type: "question" };
   }
-  const approval = /^\[approve(?::(?<rule>[a-z-]+))?\]\s*(?<command>[\s\S]*)$/u.exec(s);
-  if (approval) {
-    const command = (approval.groups?.command ?? "").trim();
-    const rule = approval.groups?.rule ?? "unknown-ask";
-    return { command, rule, type: "approval" };
+  const approval = /^\[approve:(?<rule>[a-z-]+)\]\s*(?<command>[\s\S]*)$/u.exec(s);
+  const rule = HOLD_RULE_IDS.find((id) => id === approval?.groups?.rule);
+  if (rule) {
+    return { command: (approval?.groups?.command ?? "").trim(), rule, type: "approval" };
   }
   const m = /^\[connect:(?<kind>[a-z-]+)\]\s*(?<reason>[\s\S]*)$/u.exec(s);
   const integration = INTEGRATION_NEEDS.find((k) => k === m?.groups?.kind);

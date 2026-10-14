@@ -16,6 +16,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { KILL_GRACE_MS, windowEnd } from "@repo/domain/bets";
 import type { BetState } from "@repo/domain/bets";
 import type { Budget } from "@repo/domain/domain";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
 import { UNNAMED_PRODUCT_DESCRIPTION, taskIn } from "@repo/domain/domain";
 import type { Listing } from "../listing";
 import { RefusalError } from "../refusal";
@@ -2635,7 +2636,7 @@ describe("the save format", () => {
     const pushed = "push main (0123abcd) of acme to https://github.com/a/b.git";
     const [product] = store.listProducts();
     const [lead] = store.listEmployees();
-    const signOff = (title: string, command: string, rule: string) => {
+    const signOff = (title: string, command: string, rule: HoldRuleId) => {
       const t = store.createTask({
         assigneeId: lead?.id,
         origin: "founder",
@@ -2653,7 +2654,10 @@ describe("the save format", () => {
     const approved = signOff("Push again", pushed, "git-push");
     const deploy = signOff("Deploy", "deploy acme to production on Vercel project acme", "deploy");
     store.initStore();
-    const continuation = store.resolveBlockedWithAnswer(approved, approvalAnswer(true, pushed));
+    const continuation = store.resolveBlockedWithAnswer(
+      approved,
+      approvalAnswer(true, { command: pushed, rule: "git-push" }),
+    );
     store.grantApproval("continue-push", pushed);
     store.grantApproval("continue-deploy", "deploy acme to production on Vercel project acme");
     mkdirSync(path.join(root, ".push", "repo-1"), { recursive: true });

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { classifyCommand, holdFor, normalizeCommand } from "./command-policy";
+import { classifyCommand, holdFor } from "./command-policy";
 import type { Confinement, LivePage, RuleId } from "./command-policy";
-import { isLeased } from "@repo/domain/hold-rules";
 import { toolDocs } from "./tool-specs";
 
 const MUST_ASK = {
@@ -538,24 +537,6 @@ describe("classifyCommand", () => {
   });
 });
 
-describe("normalizeCommand", () => {
-  it("strips the plumbing the CLIs wrap around a command, so a retry reuses the sign-off", () => {
-    expect(normalizeCommand('git push origin main 2>&1; echo "exit=$?"')).toBe(
-      normalizeCommand("git push  origin   main"),
-    );
-  });
-
-  it("keeps genuinely different commands apart", () => {
-    expect(normalizeCommand("git push origin main")).not.toBe(
-      normalizeCommand("git push origin production"),
-    );
-  });
-
-  it("normalizes to one canonical string", () => {
-    expect(normalizeCommand("  npm   test 2>&1 ; echo exit=$?")).toBe("npm test");
-  });
-});
-
 const at =
   (pages: Record<string, string>, frames: readonly (string | null)[] = []): LivePage =>
   (session) => {
@@ -579,15 +560,21 @@ describe("holdFor", () => {
   it("holds an outward-facing command for one run of exactly it", async () => {
     expect(await holdFor(shell("git push origin main"), NONE, at({}), ROOM)).toEqual({
       key: "git push origin main",
-      leasable: false,
       rule: "git-push",
     });
   });
 
-  it("judges every line of a multi-line command, keyed as the founder reads it", async () => {
-    expect(await holdFor(shell("npm test\ngit push origin main"), NONE, at({}), ROOM)).toEqual({
-      key: "npm test git push origin main",
-      leasable: false,
+  it("judges every line of a multi-line command, keyed as sent", async () => {
+    expect(await holdFor(shell("npm test\ngit push origin main\n"), NONE, at({}), ROOM)).toEqual({
+      key: "npm test\ngit push origin main",
+      rule: "git-push",
+    });
+  });
+
+  it("keys a command as sent, never folding what the shell would run differently", async () => {
+    const command = "git push  origin main 2>&1; echo exit=$?";
+    expect(await holdFor(shell(command), NONE, at({}), ROOM)).toEqual({
+      key: command,
       rule: "git-push",
     });
   });
@@ -630,7 +617,6 @@ describe("holdFor", () => {
     async (command) => {
       expect(await holdFor(shell(command), NONE, at({}), ROOM)).toEqual({
         key: command,
-        leasable: false,
         rule: "browser-file",
       });
     },
@@ -681,7 +667,6 @@ describe("holdFor", () => {
     const hold = await holdFor(shell('agent-browser fill @e2 "Show: our app"'), NONE, live, ROOM);
     expect(hold).toEqual({
       key: "agent-browser: act on news.example.com",
-      leasable: true,
       rule: "browser-act",
     });
     const leased = new Set([hold?.key ?? ""]);
@@ -714,7 +699,6 @@ describe("holdFor", () => {
     const hold = await holdFor(shell("agent-browser press Enter"), NONE, at({}), ROOM);
     expect(hold).toEqual({
       key: "agent-browser press Enter",
-      leasable: false,
       rule: "browser-unseen",
     });
   });
@@ -730,7 +714,6 @@ describe("holdFor", () => {
       "agent-browser open http://localhost:3000 && agent-browser click @e1 && agent-browser fill @e2 x";
     expect(await holdFor(shell(chain), NONE, at({}), ROOM)).toEqual({
       key: chain,
-      leasable: false,
       rule: "browser-unseen",
     });
   });
@@ -750,7 +733,6 @@ describe("holdFor", () => {
       "agent-browser click @e1 && agent-browser open https://forum.example.com && agent-browser fill @e2 y";
     expect(await holdFor(shell(chain), NONE, live, ROOM)).toEqual({
       key: "agent-browser: act on forum.example.com",
-      leasable: true,
       rule: "browser-act",
     });
   });
@@ -761,7 +743,6 @@ describe("holdFor", () => {
       "agent-browser open http://localhost:3000/checkout && agent-browser snapshot && agent-browser click @e6";
     expect(await holdFor(shell(chain), NONE, checkout, ROOM)).toEqual({
       key: chain,
-      leasable: false,
       rule: "browser-unseen",
     });
   });
@@ -802,7 +783,6 @@ describe("holdFor", () => {
     const live = at({ "": "http://localhost:3000" });
     expect(await holdFor(shell(command), NONE, live, ROOM)).toEqual({
       key: command,
-      leasable: false,
       rule: "browser-unseen",
     });
   });
@@ -837,7 +817,6 @@ describe("holdFor", () => {
     const live = at({ "": "https://example.com", home: "http://localhost:3000" });
     expect(await holdFor(shell(command), NONE, live, ROOM)).toEqual({
       key: "agent-browser: act on example.com",
-      leasable: true,
       rule: "browser-act",
     });
   });
@@ -882,7 +861,6 @@ describe("holdFor", () => {
     const live = at({ "": "http://localhost:3000", default: "http://localhost:3000" });
     expect(await holdFor(shell(command), NONE, live, ROOM)).toEqual({
       key: command,
-      leasable: false,
       rule: "browser-unseen",
     });
   });
@@ -907,7 +885,6 @@ describe("holdFor", () => {
       ]);
       expect(await holdFor(shell(command), NONE, checkout, ROOM)).toEqual({
         key: command,
-        leasable: false,
         rule: "browser-unseen",
       });
     },
@@ -943,7 +920,6 @@ describe("holdFor", () => {
     const live = at({ "": "https://news.example.com/submit" }, [null]);
     expect(await holdFor(shell("agent-browser click @e5"), NONE, live, ROOM)).toEqual({
       key: "agent-browser: act on news.example.com",
-      leasable: true,
       rule: "browser-act",
     });
   });
@@ -957,7 +933,7 @@ describe("holdFor", () => {
   it("leases the founder's own MCP server to the run once signed", async () => {
     const tool = { kind: "mcp", server: "gmail" } as const;
     const hold = await holdFor(tool, NONE, at({}), ROOM);
-    expect(hold).toEqual({ key: "mcp: use gmail", leasable: true, rule: "external-tool" });
+    expect(hold).toEqual({ key: "mcp: use gmail", rule: "external-tool" });
     expect(await holdFor(tool, new Set(["mcp: use gmail"]), at({}), ROOM)).toBeNull();
   });
 
@@ -965,25 +941,8 @@ describe("holdFor", () => {
     const hold = await holdFor({ kind: "mcp", server: null }, NONE, at({}), ROOM);
     expect(hold).toEqual({
       key: "mcp: use a tool nothing could name",
-      leasable: false,
       rule: "unknown-ask",
     });
-  });
-
-  it("leases a hold exactly when its rule tells the founder it covers the rest of the run", async () => {
-    const remote = at({ "": "https://shop.example" });
-    const holds = await Promise.all([
-      holdFor(shell("agent-browser click @e5"), NONE, remote, ROOM),
-      holdFor(shell("agent-browser batch 'click @e5'"), NONE, remote, ROOM),
-      holdFor({ kind: "mcp", server: "gmail" }, NONE, remote, ROOM),
-      holdFor({ kind: "mcp", server: null }, NONE, remote, ROOM),
-      holdFor({ host: "x.com", kind: "network" }, NONE, remote, ROOM),
-      holdFor(shell("git push origin main"), NONE, remote, ROOM),
-    ]);
-    expect(holds).not.toContain(null);
-    expect(holds.map((hold) => [hold?.rule, hold?.leasable])).toEqual(
-      holds.map((hold) => [hold?.rule, hold !== null && isLeased(hold.rule)]),
-    );
   });
 
   it("lets an edit through: the seal, not the policy, judges where a run writes", async () => {
@@ -991,7 +950,7 @@ describe("holdFor", () => {
   });
 
   it("holds a host reached by a command nobody saw, naming the host", async () => {
-    const hold = { key: "network: reach x.com", leasable: false, rule: "http-write" };
+    const hold = { key: "network: reach x.com", rule: "http-write" };
     const tool = { host: "x.com", kind: "network" } as const;
     expect(await holdFor(tool, NONE, at({}), ROOM)).toEqual(hold);
     expect(await holdFor(tool, new Set([hold.key]), at({}), ROOM)).toEqual(hold);
@@ -1005,7 +964,7 @@ describe("holdFor", () => {
   });
 
   it("holds an ask it cannot recognise for one run of exactly it", async () => {
-    const hold = { key: "ask: NotebookEdit a.ipynb", leasable: false, rule: "unknown-ask" };
+    const hold = { key: "ask: NotebookEdit a.ipynb", rule: "unknown-ask" };
     const tool = { kind: "unknown", title: " NotebookEdit\n a.ipynb " } as const;
     expect(await holdFor(tool, NONE, at({}), ROOM)).toEqual(hold);
     expect(await holdFor(tool, new Set([hold.key]), at({}), ROOM)).toEqual(hold);

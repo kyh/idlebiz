@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { RunnerId } from "@repo/agent-driver/runner";
+import { HOLD_RULE_IDS } from "./hold-rules";
 
 // Shared by main and renderer. Ids are agentcompanies/v1 slugs matching package folders.
 export type AgentRunner = RunnerId;
@@ -61,8 +62,7 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     command: z.string(),
-    // Saved asks retain identifiers even after the runtime policy retires a rule.
-    rule: z.string().regex(/^[a-z-]+$/u),
+    rule: z.enum(HOLD_RULE_IDS),
     type: z.literal("approval"),
   }),
 ]);
