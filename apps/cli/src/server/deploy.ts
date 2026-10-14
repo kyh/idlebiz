@@ -6,8 +6,9 @@ import { setTimeout as sleep } from "node:timers/promises";
 import ignore from "ignore";
 import type { Ignore } from "ignore";
 import { z } from "zod";
-import { HttpError, fetchOk } from "./lib/http";
-import { VERCEL_API } from "./vercel";
+import { HttpError } from "./lib/http";
+import { vercelCall, vercelRefusalOf } from "./vercel-api";
+import type { VercelCallOptions, VercelScope } from "./vercel-api";
 import type { HeldKey } from "./secrets";
 import type { KeptEnvValue } from "./vercel-env";
 import type { VercelBinding } from "@repo/domain/domain";
@@ -209,15 +210,6 @@ export const unshippableIn = async (
   }
 };
 
-/** Vercel's word on a call it turned down, and on a deploy the files it has yet to receive. */
-const VercelRefusal = z.object({
-  error: z.object({
-    code: z.string().optional(),
-    message: z.string().optional(),
-    missing: z.array(z.string()).optional(),
-  }),
-});
-
 /** How a deployment is doing, all a poll needs, and all Vercel shows a caller who is not its owner. */
 const ProgressSchema = z.object({
   alias: z.array(z.string()).optional(),
@@ -238,21 +230,15 @@ type Deployment = z.infer<typeof DeploymentSchema>;
 
 type VercelCall = (
   route: string,
-  init?: { method: "POST"; headers: Record<string, string>; body: string | Buffer },
-  query?: Record<string, string>,
+  init?: VercelCallOptions["init"],
+  query?: VercelCallOptions["query"],
 ) => Promise<Response>;
 
-/** Calls to Vercel's API as the founder, in the target's team, all ending by `deadline`. */
+/** Calls to Vercel's API in `scope`, all ending by `deadline`. */
 const callerFor =
-  (token: string, teamId: string | null, deadline: AbortSignal): VercelCall =>
-  (route, init, query = {}) => {
-    const params = new URLSearchParams(teamId === null ? query : { ...query, teamId });
-    return fetchOk(`${VERCEL_API}${route}${params.size > 0 ? `?${params.toString()}` : ""}`, {
-      ...init,
-      headers: { ...init?.headers, Authorization: `Bearer ${token}` },
-      signal: deadline,
-    });
-  };
+  (scope: VercelScope, deadline: AbortSignal): VercelCall =>
+  (route, init, query) =>
+    vercelCall(route, scope, { init, query, signal: deadline });
 
 const hasProjectNamed = async (call: VercelCall, name: string): Promise<boolean> => {
   try {
@@ -335,12 +321,12 @@ const createDeployment = async (
   try {
     return await create();
   } catch (error) {
-    const said = error instanceof HttpError ? VercelRefusal.safeParse(error.answer) : null;
-    if (!said?.success || said.data.error.code !== "missing_files") {
+    const said = error instanceof HttpError ? vercelRefusalOf(error) : null;
+    if (said?.code !== "missing_files") {
       throw error;
     }
     const bySha = new Map(entries.map((entry) => [entry.sha, entry]));
-    const missing = (said.data.error.missing ?? []).flatMap((sha) => bySha.get(sha) ?? []);
+    const missing = (said.missing ?? []).flatMap((sha) => bySha.get(sha) ?? []);
     await eachAtMost(missing, UPLOADS_AT_ONCE, (entry) => upload(call, root, entry));
   }
   return await create();
@@ -396,8 +382,7 @@ const deployed = (target: DeployTarget, d: Deployment): DeployResult => ({
 
 /** A failed call in Vercel's words, which never repeat the token it was sent with. */
 const refusalReason = (error: HttpError): string => {
-  const said = VercelRefusal.safeParse(error.answer);
-  const why = said.success ? said.data.error.message : undefined;
+  const why = vercelRefusalOf(error)?.message;
   return `Vercel turned the deploy down (${error.status})${why === undefined ? "" : `: ${why}`}`;
 };
 
@@ -408,7 +393,10 @@ const refusalReason = (error: HttpError): string => {
  */
 export const deployToVercel: Deployer = async ({ cwd, target, token, unshippable }) => {
   const deadline = AbortSignal.timeout(DEPLOY_TIMEOUT_MS);
-  const call = callerFor(token, target.kind === "bound" ? target.binding.teamId : null, deadline);
+  const call = callerFor(
+    { teamId: target.kind === "bound" ? target.binding.teamId : null, token },
+    deadline,
+  );
   let latest: Deployment | null = null;
   try {
     const read = await entriesOf(cwd, unshippable);

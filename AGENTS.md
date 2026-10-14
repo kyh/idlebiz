@@ -368,8 +368,9 @@ tools/
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
   (every write, atomic and behind the reset gate), `lib/vendor-call.ts` (how a Stripe or
   Printful call failed, sorted once), `vercel-connect.ts` (the Vercel token the
-  founder pastes and each product's project binding), `stripe-api.ts` (what every Stripe call
-  shares), `stripe-key.ts` (the Stripe key the founder enters, which charges and reads revenue),
+  founder pastes and each product's project binding), `vercel-api.ts` (what every Vercel call
+  shares), `stripe-api.ts` (what every Stripe call shares), `stripe-key.ts` (the Stripe key the
+  founder enters, which charges and reads revenue),
   `deploy.ts` (the Vercel API calls the `deploy` tool makes),
   `vercel-env.ts` (the Vercel call `set_env` makes, and the values a deploy may not ship),
   `env-name.ts` (what set_env may name),
