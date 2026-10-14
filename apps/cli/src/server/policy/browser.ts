@@ -2,7 +2,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { HoldRuleId } from "@repo/domain/hold-rules";
 import { parseJson } from "@repo/domain/json";
-import type { Words } from "../shell-lexer";
+import type { Words } from "./shell-lexer";
 import { wordsOf } from "./reading";
 import type { Call } from "./reading";
 

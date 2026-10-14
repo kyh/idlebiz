@@ -1,6 +1,6 @@
 import type { HoldRuleId } from "@repo/domain/hold-rules";
-import { lexLine } from "../shell-lexer";
-import type { Words } from "../shell-lexer";
+import { lexLine } from "./shell-lexer";
+import type { Words } from "./shell-lexer";
 import {
   PACKAGE_MANAGERS,
   argumentsOf,

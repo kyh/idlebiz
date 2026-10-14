@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lexLine } from "../shell-lexer";
+import { lexLine } from "../policy/shell-lexer";
 import { shellQuote } from "./shell-quote";
 
 describe("shellQuote", () => {

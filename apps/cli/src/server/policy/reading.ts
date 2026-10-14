@@ -1,5 +1,5 @@
-import { lexFlat, lexLine } from "../shell-lexer";
-import type { Command, Pipeline, Words } from "../shell-lexer";
+import { lexFlat, lexLine } from "./shell-lexer";
+import type { Command, Pipeline, Words } from "./shell-lexer";
 
 // A command line is split as bash would split it, read loosely as well where another
 // shell may split it apart, and seen through every wrapper that runs another command, so a

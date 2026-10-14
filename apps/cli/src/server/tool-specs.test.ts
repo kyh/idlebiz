@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lexLine } from "./shell-lexer";
+import { lexLine } from "./policy/shell-lexer";
 import {
   MAX_ENV_VALUE_BYTES,
   MAX_REQUEST_BYTES,
