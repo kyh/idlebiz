@@ -89,6 +89,50 @@ describe("a turn's token usage", () => {
   });
 });
 
+/** An ACP agent that runs the turn `meteredTurn` describes, over the wire. */
+const codexLikeAgent = `
+const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
+const used = (sessionId, tokens) =>
+  send({ method: "session/update", params: { sessionId, update: { sessionUpdate: "usage_update", size: 400000, used: tokens } } });
+require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
+  const { id, method, params } = JSON.parse(line);
+  if (method === "initialize") send({ id, result: { agentCapabilities: { sessionCapabilities: { resume: {} } }, protocolVersion: 1 } });
+  if (method === "session/resume") {
+    used(params.sessionId, 90000);
+    send({ id, result: {} });
+  }
+  if (method === "session/set_mode") send({ id, result: {} });
+  if (method === "session/prompt") {
+    for (const tokens of [1000, 2000, 2000, 3000]) used(params.sessionId, tokens);
+    const usage = { cachedReadTokens: 1500, inputTokens: 900, outputTokens: 600, totalTokens: 3000 };
+    send({ id, result: { stopReason: "end_turn", usage } });
+  }
+});
+`;
+
+describe("a resumed turn the agent answered", () => {
+  it("bills the prompt's requests at the answer's split, not the resume's replay", async () => {
+    const result = await runAcpTurn({
+      agent: {
+        command: [process.execPath, "-e", codexLikeAgent],
+        env: {},
+        sessionModeId: "default",
+        usagePerRequest: true,
+      },
+      cwd,
+      idleTimeoutMs: 0,
+      maxSessionMs: 0,
+      onEvent: () => {},
+      onPermission: () => Promise.resolve({ allow: true }),
+      prompt: () => "work",
+      resumeSessionId: "stored",
+      teardownGraceMs: 100,
+    });
+    expect(result).toMatchObject({ end: { kind: "completed" }, resumed: true });
+    expect(result.usage).toEqual(meteredTurn(true));
+  });
+});
+
 /** An agent that reports three requests' usage, then works on until the watchdog cuts the turn off. */
 const cutOffAgent = `
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
