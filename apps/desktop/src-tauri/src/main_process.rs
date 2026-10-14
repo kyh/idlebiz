@@ -106,7 +106,7 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn describe(code: Option<i32>) -> String {
+pub fn describe(code: Option<i32>) -> String {
     code.map_or_else(|| "a signal".to_owned(), |code| format!("code {code}"))
 }
 
