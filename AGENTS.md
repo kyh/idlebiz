@@ -417,7 +417,8 @@ tools/
   lists), `secrets.ts`, `metrics.ts`, `tray.ts`, `login-item.ts` (open at login).
 - `apps/cli/resources` — what main reads beside its bundle: IdleBiz's skills (`skills/`).
 - `apps/web` — the landing page, its trust pages and their Markdown for agents; it holds no
-  secret and the app calls none of it.
+  secret and the app calls none of it. `next.config.ts` turns on `cacheComponents` and
+  `partialPrefetching`: every page prerenders static, so a link prefetches its whole shell.
 - `packages/domain` — zod only, importing no other package of the repo's: `domain.ts` (the
   company, its people, products and tasks), `runners.ts` (the runners' ids and the names the
   founder knows them by), `bets.ts` (the bets, their judge and the allocator),
