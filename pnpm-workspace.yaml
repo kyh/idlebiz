@@ -11,7 +11,7 @@ catalog:
   "@agentclientprotocol/codex-acp": 1.12.0
   "@agentclientprotocol/sdk": 1.7.0
   "@orpc/client": 2.0.0-beta.42
-  "@orpc/contract": 2.0.0-beta.42
+  "@orpc/contract": 2.0.0-beta.43
   "@orpc/publisher": 2.0.0-beta.42
   "@orpc/server": 2.0.0-beta.42
   "@orpc/tanstack-query": 2.0.0-beta.42
