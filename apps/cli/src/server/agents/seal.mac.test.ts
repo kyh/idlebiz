@@ -825,7 +825,8 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     expect(existsSync(launched)).toBe(false);
     // the control: the same open from a sign-in, which may open the browser, does start it
     expect(exitOf(signInCommand(sealed, "claude", argv))).toBe(0);
-    for (let waited = 0; waited < 50 && !existsSync(launched); waited += 1) {
+    // LaunchServices registers a bundle it has never seen before it starts it, which a cold runner can take seconds over
+    for (let waited = 0; waited < 200 && !existsSync(launched); waited += 1) {
       await sleep(100);
     }
     expect(existsSync(launched)).toBe(true);
