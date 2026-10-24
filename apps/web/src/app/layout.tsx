@@ -7,6 +7,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   description: siteConfig.description,
+  manifest: "/manifest.webmanifest",
   metadataBase: new URL(siteConfig.url),
   openGraph: {
     description: siteConfig.description,
@@ -24,7 +25,7 @@ export const metadata: Metadata = {
     template: `%s | ${siteConfig.name}`,
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     creator: siteConfig.twitter,
     description: siteConfig.description,
     title: siteConfig.name,

@@ -59,7 +59,7 @@ export const config = {
     {
       has: [{ key: "accept", type: "header", value: ".*[Mm][Aa][Rr][Kk][Dd][Oo][Ww][Nn].*" }],
       source:
-        "/((?!api/|_next/|_vercel/|office/|robots\\.txt$|sitemap\\.xml$|llms\\.txt$|icon\\.png$|opengraph-image).*)",
+        "/((?!api/|_next/|_vercel/|office/|robots\\.txt$|sitemap\\.xml$|llms\\.txt$|og/|icon\\.png$|apple-icon\\.png$|manifest\\.webmanifest$|.*opengraph-image).*)",
     },
   ],
 };

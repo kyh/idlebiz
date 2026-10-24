@@ -6,7 +6,19 @@ import { homeGraph, organization, pageGraph, serializeJsonLd } from "./structure
 describe("homeGraph", () => {
   it("identifies the organization, the site and the app", () => {
     const types = homeGraph["@graph"].map((node) => node["@type"]);
-    expect(types).toEqual(["Organization", "WebSite", "SoftwareApplication"]);
+    expect(types).toEqual(["Organization", "WebSite", "SoftwareApplication", "VideoObject"]);
+  });
+
+  it("describes the office clip with absolute URLs and an ISO duration", () => {
+    const app = homeGraph["@graph"].find((node) => node["@type"] === "SoftwareApplication");
+    const video = homeGraph["@graph"].find((node) => node["@type"] === "VideoObject");
+    expect(app).toHaveProperty("video", { "@id": "https://idlebiz.com/#video" });
+    expect(app).toHaveProperty("operatingSystem", "macOS");
+    expect(video).toMatchObject({
+      contentUrl: "https://idlebiz.com/og/og.mp4",
+      duration: "PT8S",
+      thumbnailUrl: "https://idlebiz.com/og/og.jpg",
+    });
   });
 
   it("requires Apple silicon, since every released .dmg is arm64", () => {
@@ -36,7 +48,19 @@ describe("pageGraph", () => {
       expect(page?.["@type"]).toBe("WebPage");
       expect(page?.name).toBe(legal.title);
       expect(page?.url).toBe(`https://idlebiz.com${legal.path}`);
+      expect(page).toHaveProperty("dateModified", "2026-10-10");
     }
+  });
+
+  it("places each page under the home page in a breadcrumb", () => {
+    const breadcrumb = pageGraph(aboutPage)["@graph"].find(
+      (node) => node["@type"] === "BreadcrumbList",
+    );
+    expect(breadcrumb?.["@type"]).toBe("BreadcrumbList");
+    expect(breadcrumb).toHaveProperty("itemListElement", [
+      { "@type": "ListItem", item: "https://idlebiz.com", name: "IdleBiz", position: 1 },
+      { "@type": "ListItem", item: "https://idlebiz.com/about", name: "About", position: 2 },
+    ]);
   });
 });
 
