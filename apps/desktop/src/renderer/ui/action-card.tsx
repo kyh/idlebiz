@@ -39,8 +39,8 @@ export const ActionCard = ({ t, by, ask }: { t: Task; by: string; ask: ActionAsk
       <div className="text-xs text-accent-lo">
         ✋ {by} · <span className="text-fg-dim">{t.title}</span>
       </div>
-      <div className="mt-1 text-sm leading-snug text-fg">{ask.action}</div>
-      <div className="mt-1 whitespace-pre-wrap text-xs leading-snug text-fg-dim">
+      <div className="mt-1 text-sm leading-snug text-fg select-text">{ask.action}</div>
+      <div className="mt-1 whitespace-pre-wrap text-xs leading-snug text-fg-dim select-text">
         <RichText text={ask.instructions} />
       </div>
       {ask.draft === null ? null : <Draft text={ask.draft} />}
