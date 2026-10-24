@@ -10,4 +10,13 @@ export const siteConfig = {
   repository: `https://github.com/${githubRepo}`,
   twitter: "@kaiyuhsu",
   url: process.env.NODE_ENV === "development" ? "http://localhost:3000" : "https://idlebiz.com",
+  /** The office clip `scripts/og-video.ts` records, and the frame it keeps as its poster. */
+  video: {
+    durationSeconds: 8,
+    height: 630,
+    poster: "/og/og.jpg",
+    uploadDate: "2026-10-24",
+    url: "/og/og.mp4",
+    width: 1200,
+  },
 };

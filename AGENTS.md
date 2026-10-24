@@ -419,6 +419,10 @@ tools/
 - `apps/web` — the landing page, its trust pages and their Markdown for agents; it holds no
   secret and the app calls none of it. `next.config.ts` turns on `cacheComponents` and
   `partialPrefetching`: every page prerenders static, so a link prefetches its whole shell.
+  Its og:video (`public/og/og.mp4` and its poster) is recorded by `pnpm -F @repo/web og:video`
+  (`scripts/og-video.ts`), never by a build: a canvas scene of the real office from the desktop
+  app's own files (office-design.json, the employee sheets, px-kit), stepped on a fixed clock,
+  screenshotted in Playwright's Chromium and encoded by ffmpeg.
 - `packages/domain` — zod only, importing no other package of the repo's: `domain.ts` (the
   company, its people, products and tasks), `runners.ts` (the runners' ids and the names the
   founder knows them by), `bets.ts` (the bets, their judge and the allocator),
