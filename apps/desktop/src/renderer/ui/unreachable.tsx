@@ -17,7 +17,7 @@ export const Unreachable = ({ message }: { message: string }) => {
         IdleBiz asked for your company and got an error back. Try again; if it keeps failing,
         relaunch.
       </AlertDialog.Description>
-      <div className="px-inset mt-2 p-2 text-xs text-fg-dim">{message}</div>
+      <div className="px-inset mt-2 p-2 text-xs text-fg-dim select-text">{message}</div>
       <div className="mt-3 flex justify-end">
         <button
           type="button"

@@ -44,7 +44,7 @@ const ShipRowView = ({ t, by }: { t: ShipLine; by: string }) => {
         </span>
       </button>
       {open ? (
-        <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-[#4c5064]">
+        <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-[#4c5064] select-text">
           <RichText text={t.summary} />
         </p>
       ) : null}
