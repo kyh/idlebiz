@@ -1,6 +1,8 @@
-// Records the landing page's og:video: the whole office, drawn from the desktop app's own files
-// (office-design.json, the employee sheets, px-kit and its VG5000, the wordmark), with the team
-// typing at their desks, walking to the cooler and across the floor, beside the IdleBiz logo and its line, while the HUD's revenue plate counts up in the corner.
+// Records the landing page's og:video: the office filling the frame, drawn from the desktop
+// app's own files (office-design.json, the employee sheets, px-kit and its VG5000, the
+// wordmark), the camera drifting slowly down over the desks and back while the team types,
+// walks to the cooler and along the corridors, with the HUD's revenue plate counting up each
+// sale in the top left and the IdleBiz logo and its line in the bottom right.
 //
 // The real office needs a signed-in CLI, so this draws the same art the same way the scene
 // does (placed sprites, floor-contact sorting, seated busts) on a canvas, one frame at a time
@@ -41,10 +43,17 @@ const OUT_DIR = path.join(WEB_ROOT, "public/og");
 const VIDEO = { fps: 24, height: 630, seconds: 8, width: 1200 } as const;
 /** Captured at twice the clip's size, then scaled down, so the office's pixels stay even. */
 const CAPTURE_SCALE = 2;
-/** The canvas draws the office at a whole multiple, so every sprite pixel starts square. */
-const SCALE = 4;
-/** Where the whole office sits in the frame, in CSS px. */
-const STAGE = { height: 612, right: 20 } as const;
+/**
+ * CSS px per office px: 2.5 covers the frame's width with the office's 512 (480 of them show),
+ * and is a whole 5 device px at the capture's scale, so every sprite pixel stays square.
+ */
+const SCALE = 2.5;
+/**
+ * The camera, as the office px at the frame's top left: centred across, drifting from the
+ * whiteboards down to the back corridor and home again over the loop, on a cosine so it
+ * eases at both ends and meets itself at the seam.
+ */
+const CAMERA = { bottom: 86, top: 34, x: 16 } as const;
 
 // What the office scene uses: walk speed and walk-strip rate (npc.ts, characters.ts), the
 // seated bust's lift (seat-depth.ts) and depth bands (office-depth.ts).
@@ -65,7 +74,6 @@ const placedSchema = {
 };
 const dirSchema = z.enum(["down", "left", "right", "up"]);
 const officeSchema = z.object({
-  height: z.number(),
   objects: z.array(
     z.discriminatedUnion("layer", [
       z.object({ layer: z.literal("floor"), ...placedSchema }),
@@ -117,6 +125,8 @@ interface SpriteDraw {
 }
 
 interface FrameSpec {
+  /** The office px at the frame's top left. */
+  camera: Point;
   /** The revenue plate: its figure, its usage line, and a sale floating off it. */
   revenue: string;
   sale: { lift: number; opacity: number; text: string } | null;
@@ -127,6 +137,7 @@ interface FrameSpec {
 interface SceneSetup {
   frame: { columns: number; h: number; originX: number; originY: number; w: number };
   objects: Placed[];
+  /** Device px per office px, and the canvas's size in device px. */
   scale: number;
   seats: Seat[];
   sheets: string[];
@@ -245,8 +256,8 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
   ) {
     throw new Error("the scene page is missing an element");
   }
-  canvas.width = setup.view.width * setup.scale;
-  canvas.height = setup.view.height * setup.scale;
+  canvas.width = setup.view.width;
+  canvas.height = setup.view.height;
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     throw new Error("no 2d context");
@@ -268,7 +279,14 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.imageSmoothingEnabled = false;
-      ctx.setTransform(setup.scale, 0, 0, setup.scale, 0, 0);
+      ctx.setTransform(
+        setup.scale,
+        0,
+        0,
+        setup.scale,
+        -Math.round(spec.camera.x * setup.scale),
+        -Math.round(spec.camera.y * setup.scale),
+      );
 
       interface Item {
         depth: number;
@@ -450,16 +468,17 @@ const outAndBack = (points: Point[]): [Leg, Leg] => [
 ];
 
 // Work seats are office-design.json's, by index: [0]-[2] face down, [3]-[9] face up across the
-// two rows of desks, [10] faces left in the back room. [5] is the one who gets up for the cooler.
+// two rows of desks, [10] faces left in the back room, out of frame. [5] is the one who gets up
+// for the cooler; [9], under the logo, stays empty.
 const SEATED = [
   { seat: 0, sheet: 4 },
   { seat: 1, sheet: 9 },
   { seat: 2, sheet: 12 },
   { seat: 3, sheet: 6 },
   { seat: 4, sheet: 15 },
+  { seat: 6, sheet: 3 },
   { seat: 7, sheet: 11 },
-  { seat: 9, sheet: 17 },
-  { seat: 10, sheet: 3 },
+  { seat: 8, sheet: 17 },
 ] as const;
 const COOLER_SEAT = 5;
 
@@ -483,16 +502,16 @@ const actors: Actor[] = [
     sheet: 2,
   },
   {
-    // from the back room's printer up the passage to the desks, a look, and back
+    // down the left aisle and along the back corridor between two desks, a look, and back, at the far
+    // end as the camera reaches the bottom of its drift
     legs: [
-      { at: { x: 304, y: 408 }, facing: "up", kind: "stand", seconds: 0.4 },
+      { at: { x: 40, y: 232 }, facing: "up", kind: "stand", seconds: 0.3 },
       ...outAndBack([
-        { x: 304, y: 408 },
-        { x: 336, y: 408 },
-        { x: 336, y: 296 },
-        { x: 272, y: 296 },
-      ]).toSpliced(1, 0, { at: { x: 272, y: 296 }, facing: "up", kind: "stand", seconds: 1 }),
-      { at: { x: 304, y: 408 }, facing: "up", kind: "stand", seconds: VIDEO.seconds },
+        { x: 40, y: 232 },
+        { x: 40, y: 296 },
+        { x: 160, y: 296 },
+      ]).toSpliced(1, 0, { at: { x: 160, y: 296 }, facing: "up", kind: "stand", seconds: 1.8 }),
+      { at: { x: 40, y: 232 }, facing: "up", kind: "stand", seconds: VIDEO.seconds },
     ],
     sheet: 7,
   },
@@ -544,6 +563,13 @@ const revenueAt = (t: number): number => {
 const usageAt = (t: number): number =>
   USAGE.from + (USAGE.to - USAGE.from) * clamp01(t / ROLLBACK.from) * (1 - rolledBack(t));
 
+const cameraAt = (t: number): Point => ({
+  x: CAMERA.x,
+  y:
+    CAMERA.top +
+    ((CAMERA.bottom - CAMERA.top) * (1 - Math.cos((2 * Math.PI * t) / VIDEO.seconds))) / 2,
+});
+
 const frameAt = (t: number, seats: Seat[], seatDepths: number[]): FrameSpec => {
   const sprites = actors.flatMap((actor) => spriteAt(actor, t, seats, seatDepths) ?? []);
   const recent = SALES.findLast((s) => t >= s.at && t < s.at + SALE_FLOAT_SECONDS);
@@ -555,6 +581,7 @@ const frameAt = (t: number, seats: Seat[], seatDepths: number[]): FrameSpec => {
       }
     : null;
   return {
+    camera: cameraAt(t),
     revenue: `$${Math.round(revenueAt(t)).toLocaleString("en-US")}`,
     sale,
     sprites,
@@ -566,24 +593,22 @@ const frameAt = (t: number, seats: Seat[], seatDepths: number[]): FrameSpec => {
 
 /** The wordmark's art inside its canvas, in its own px: the page crops the margin away. */
 const WORDMARK = { art: { h: 728, w: 1029, x: 257, y: 166 }, width: 1513 } as const;
-const LOGO_WIDTH = 400;
-/** The brand sits under the HUD's plate, which takes the top of the frame's left side. */
-const BRAND_TOP = 168;
+const LOGO_WIDTH = 250;
 
-const scenePage = (view: SceneSetup["view"]): string => {
-  const officeWidth = Math.round((STAGE.height * view.width) / view.height);
+const scenePage = (): string => {
   const logoScale = LOGO_WIDTH / WORDMARK.art.w;
-  const brandWidth = VIDEO.width - officeWidth - STAGE.right;
   return `<!doctype html>
 <html><head><meta charset="utf-8">
 <link rel="stylesheet" href="/packages/px-kit/px-kit.css">
 <style>
   html, body { margin: 0; width: ${VIDEO.width}px; height: ${VIDEO.height}px; overflow: hidden; background: var(--void); font-family: "VG5000", monospace; }
-  #office { position: absolute; right: ${STAGE.right}px; top: ${(VIDEO.height - STAGE.height) / 2}px; width: ${officeWidth}px; height: ${STAGE.height}px; }
-  .brand { position: absolute; left: 0; top: ${BRAND_TOP}px; width: ${brandWidth}px; height: ${VIDEO.height - BRAND_TOP - 12}px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; }
-  .logo { width: ${LOGO_WIDTH}px; height: ${Math.round(WORDMARK.art.h * logoScale)}px; overflow: hidden; }
+  #office { position: absolute; inset: 0; width: ${VIDEO.width}px; height: ${VIDEO.height}px; }
+  /* a soft shade under the brand, so it holds over the busy floor */
+  .shade { position: absolute; right: 0; bottom: 0; width: 620px; height: 420px; background: radial-gradient(ellipse at 100% 100%, rgb(10 10 18 / 0.86) 0%, rgb(10 10 18 / 0.66) 40%, rgb(10 10 18 / 0) 72%); }
+  .brand { position: absolute; right: 26px; bottom: 22px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .logo { width: ${LOGO_WIDTH}px; height: ${Math.round(WORDMARK.art.h * logoScale)}px; overflow: hidden; filter: drop-shadow(0 4px 0 rgb(10 10 18 / 0.7)); }
   .logo img { display: block; width: ${Math.round(WORDMARK.width * logoScale)}px; margin: ${-Math.round(WORDMARK.art.y * logoScale)}px 0 0 ${-Math.round(WORDMARK.art.x * logoScale)}px; }
-  .line { width: 440px; text-align: center; font-size: 21px; line-height: 1.5; color: var(--light); }
+  .line { width: 410px; text-align: center; font-size: 20px; line-height: 1.35; color: var(--light); text-shadow: 2px 2px 0 var(--ink), -1px -1px 0 var(--ink), 1px -1px 0 var(--ink), -1px 1px 0 var(--ink); }
   .line b { color: var(--accent-hi); font-weight: 400; }
   /* hud.tsx's revenue Stat (top-3 left-3), drawn at twice its size so it reads in a share card */
   .hud { position: absolute; top: 12px; left: 12px; zoom: 2; display: flex; align-items: center; gap: 6px; }
@@ -591,10 +616,11 @@ const scenePage = (view: SceneSetup["view"]): string => {
   .stat .label { display: block; color: #c3c9de; }
   .stat .value { display: block; font-size: 16px; line-height: 1.25; color: #9fe6b0; font-variant-numeric: tabular-nums; }
   .stat .sub { display: block; font-size: 12px; color: #a7adc6; font-variant-numeric: tabular-nums; }
-  #sale { font-size: 14px; color: #9fe6b0; text-shadow: 1px 1px 0 var(--ink); }
+  #sale { font-size: 14px; color: #9fe6b0; text-shadow: 1px 1px 0 var(--ink), -1px -1px 0 var(--ink), 1px -1px 0 var(--ink), -1px 1px 0 var(--ink); }
 </style></head>
 <body>
   <canvas id="office"></canvas>
+  <div class="shade"></div>
   <div class="brand">
     <div class="logo"><img src="/apps/desktop/public/onboarding/idlebiz-wordmark.webp" alt=""></div>
     <div class="line">An idle game business simulator where your employees are <b>real AI agents</b>.</div>
@@ -688,7 +714,7 @@ const main = async (): Promise<void> => {
     x: seat.x,
     y: seat.y,
   }));
-  const view = { height: layout.height, width: layout.width };
+  const view = { height: VIDEO.height * CAPTURE_SCALE, width: VIDEO.width * CAPTURE_SCALE };
   const setup: SceneSetup = {
     frame: {
       columns: SHEET_COLUMNS,
@@ -698,13 +724,13 @@ const main = async (): Promise<void> => {
       w: FRAME_W,
     },
     objects: paintOrder(layout),
-    scale: SCALE,
+    scale: SCALE * CAPTURE_SCALE,
     seats,
     sheets: actors.map((actor) => sheetPath(actor.sheet)),
     view,
   };
 
-  const { server, url } = await serve(scenePage(view));
+  const { server, url } = await serve(scenePage());
   const frames = await mkdtemp(path.join(tmpdir(), "idlebiz-og-"));
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM;
   const browser = await chromium.launch(executablePath ? { executablePath } : {});
@@ -741,7 +767,7 @@ const main = async (): Promise<void> => {
       "-profile:v",
       "high",
       "-crf",
-      "24",
+      "27",
       "-tune",
       "animation",
       "-movflags",

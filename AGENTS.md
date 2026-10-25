@@ -420,10 +420,11 @@ tools/
   secret and the app calls none of it. `next.config.ts` turns on `cacheComponents` and
   `partialPrefetching`: every page prerenders static, so a link prefetches its whole shell.
   Its og:video (`public/og/og.mp4` and its poster) is recorded by `pnpm -F @repo/web og:video`
-  (`scripts/og-video.ts`), never by a build: a canvas scene of the whole office from the desktop
-  app's own files (office-design.json, the employee sheets, px-kit, the wordmark) beside the logo
-  and its line, with the HUD's revenue plate counting up in the top left, stepped on a fixed
-  clock, screenshotted in Playwright's Chromium and encoded by ffmpeg.
+  (`scripts/og-video.ts`), never by a build: a canvas scene of the office from the desktop app's
+  own files (office-design.json, the employee sheets, px-kit, the wordmark), filling the frame
+  under a slow camera drift, with the HUD's revenue plate counting up in the top left and the
+  logo and its line in the bottom right, stepped on a fixed clock, screenshotted in Playwright's
+  Chromium and encoded by ffmpeg.
 - `packages/domain` — zod only, importing no other package of the repo's: `domain.ts` (the
   company, its people, products and tasks), `runners.ts` (the runners' ids and the names the
   founder knows them by), `bets.ts` (the bets, their judge and the allocator),
