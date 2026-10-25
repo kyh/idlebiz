@@ -1,6 +1,6 @@
-// Records the landing page's og:video: a small scene of the real office, drawn from the
-// desktop app's own files (office-design.json, the employee sheets, px-kit and its VG5000),
-// with a few employees typing, walking the floor and talking, beside a revenue ticker.
+// Records the landing page's og:video: the whole office, drawn from the desktop app's own files
+// (office-design.json, the employee sheets, px-kit and its VG5000, the wordmark), with the team
+// typing at their desks, walking to the cooler and across the floor, beside the IdleBiz logo and its line, while the HUD's revenue plate counts up in the corner.
 //
 // The real office needs a signed-in CLI, so this draws the same art the same way the scene
 // does (placed sprites, floor-contact sorting, seated busts) on a canvas, one frame at a time
@@ -29,6 +29,7 @@ import {
   WALK_START,
 } from "@repo/domain/character-frame";
 import type { Dir } from "@repo/domain/character-frame";
+import { usageLabel } from "@repo/domain/format";
 import { chromium } from "playwright";
 import { z } from "zod";
 
@@ -36,20 +37,22 @@ const WEB_ROOT = path.resolve(import.meta.dirname, "..");
 const REPO_ROOT = path.resolve(WEB_ROOT, "../..");
 const OUT_DIR = path.join(WEB_ROOT, "public/og");
 
+/** 8s holds whole cycles of the 6-frame walk strip at 9fps, so the loop has no seam. */
 const VIDEO = { fps: 24, height: 630, seconds: 8, width: 1200 } as const;
-/** The office drawn at a whole multiple, so every sprite pixel stays square. */
-const SCALE = 3;
-/** The left of the frame is the office; the right is the panel beside it. */
-const VIEW = { height: 210, width: 280, x: 72, y: 38 } as const;
+/** Captured at twice the clip's size, then scaled down, so the office's pixels stay even. */
+const CAPTURE_SCALE = 2;
+/** The canvas draws the office at a whole multiple, so every sprite pixel starts square. */
+const SCALE = 4;
+/** Where the whole office sits in the frame, in CSS px. */
+const STAGE = { height: 612, right: 20 } as const;
 
-// What the office scene uses: walk speed and walk-strip rate (npc.ts, characters.ts),
-// the seated bust (character-sheet.ts) and its lift (seat-depth.ts), depth bands (office-depth.ts).
+// What the office scene uses: walk speed and walk-strip rate (npc.ts, characters.ts), the
+// seated bust's lift (seat-depth.ts) and depth bands (office-depth.ts).
 const NPC_SPEED = 64;
 const WALK_FPS = 9;
 const BEHIND_CHAIR_RISE = 12;
-const DEPTH = { emote: 3000, entityBase: 1000, ground: 0, overhead: 2000 } as const;
+const DEPTH = { entityBase: 1000, ground: 0, overhead: 2000 } as const;
 const STACK_STEP = 1e-3;
-const BUBBLE_DY = -56;
 
 const characterDepth = (y: number): number => DEPTH.entityBase + y + SOLE_OFFSET;
 
@@ -60,7 +63,9 @@ const placedSchema = {
   x: z.number(),
   y: z.number(),
 };
+const dirSchema = z.enum(["down", "left", "right", "up"]);
 const officeSchema = z.object({
+  height: z.number(),
   objects: z.array(
     z.discriminatedUnion("layer", [
       z.object({ layer: z.literal("floor"), ...placedSchema }),
@@ -68,6 +73,18 @@ const officeSchema = z.object({
       z.object({ layer: z.literal("overhead"), ...placedSchema }),
     ]),
   ),
+  seats: z.array(
+    z.discriminatedUnion("role", [
+      z.object({ facing: dirSchema, role: z.literal("work"), x: z.number(), y: z.number() }),
+      z.object({
+        role: z.literal("rest"),
+        sit: z.enum(["left", "right"]),
+        x: z.number(),
+        y: z.number(),
+      }),
+    ]),
+  ),
+  width: z.number(),
 });
 
 interface Point {
@@ -99,24 +116,12 @@ interface SpriteDraw {
   y: number;
 }
 
-interface BubbleDraw {
-  text: string;
-  x: number;
-  y: number;
-}
-
-interface FeedLine {
-  name: string;
-  portrait: string;
-  text: string;
-}
-
 interface FrameSpec {
-  bubbles: BubbleDraw[];
-  feed: FeedLine[];
+  /** The revenue plate: its figure, its usage line, and a sale floating off it. */
   revenue: string;
-  sale: string | null;
+  sale: { lift: number; opacity: number; text: string } | null;
   sprites: SpriteDraw[];
+  usage: string;
 }
 
 interface SceneSetup {
@@ -125,7 +130,7 @@ interface SceneSetup {
   scale: number;
   seats: Seat[];
   sheets: string[];
-  view: { height: number; width: number; x: number; y: number };
+  view: { height: number; width: number };
 }
 
 declare global {
@@ -170,6 +175,7 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
   const sources = [...new Set([...setup.objects.map((obj) => obj.src), ...setup.sheets])];
   const images = new Map<string, HTMLImageElement>();
   await Promise.all(sources.map(async (src) => images.set(src, await load(src))));
+  await Promise.all([...document.images].map(async (img) => await img.decode()));
   await document.fonts.ready;
 
   const opaque = new Map<string, Uint8ClampedArray>();
@@ -229,13 +235,13 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
 
   const canvas = document.querySelector("#office");
   const revenue = document.querySelector("#revenue");
+  const usage = document.querySelector("#usage");
   const sale = document.querySelector("#sale");
-  const feed = document.querySelector("#feed");
   if (
     !(canvas instanceof HTMLCanvasElement) ||
     !(revenue instanceof HTMLElement) ||
-    !(sale instanceof HTMLElement) ||
-    !(feed instanceof HTMLElement)
+    !(usage instanceof HTMLElement) ||
+    !(sale instanceof HTMLElement)
   ) {
     throw new Error("the scene page is missing an element");
   }
@@ -257,60 +263,12 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
     ctx.restore();
   };
 
-  const bubble = (draw: BubbleDraw): void => {
-    // npc-attachments.ts `say`: cream rounded box, ink outline, a tail under it
-    ctx.font = "9px monospace";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
-    const textW = ctx.measureText(draw.text).width;
-    const w = Math.max(34, Math.ceil(textW) + 12);
-    const h = 9 + 10;
-    const ox = Math.round(draw.x);
-    const oy = Math.round(draw.y);
-    ctx.fillStyle = "#f8f5ec";
-    ctx.strokeStyle = "#1d2136";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(ox - w / 2, oy - h - 4, w, h, 5);
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(ox - 4, oy - 5);
-    ctx.lineTo(ox + 4, oy - 5);
-    ctx.lineTo(ox, oy + 1);
-    ctx.closePath();
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(ox - 4, oy - 4);
-    ctx.lineTo(ox, oy + 1);
-    ctx.lineTo(ox + 4, oy - 4);
-    ctx.stroke();
-    ctx.fillStyle = "#2b2f46";
-    ctx.fillText(draw.text, ox, oy - 8);
-  };
-
-  // oxlint-disable-next-line unicorn/consistent-function-scoping -- page.evaluate sends this function alone, so its helpers live inside it
-  const ink = (tag: string, className: string, text: string): HTMLElement => {
-    const el = document.createElement(tag);
-    el.className = className;
-    el.textContent = text;
-    return el;
-  };
-
   window.ogScene = {
     draw: (spec) => {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = "#12141c";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.imageSmoothingEnabled = false;
-      ctx.setTransform(
-        setup.scale,
-        0,
-        0,
-        setup.scale,
-        -setup.view.x * setup.scale,
-        -setup.view.y * setup.scale,
-      );
+      ctx.setTransform(setup.scale, 0, 0, setup.scale, 0, 0);
 
       interface Item {
         depth: number;
@@ -340,26 +298,12 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
       for (const item of items) {
         item.paint();
       }
-      for (const draw of spec.bubbles) {
-        bubble(draw);
-      }
 
       revenue.textContent = spec.revenue;
-      sale.textContent = spec.sale ?? "";
-      sale.style.visibility = spec.sale ? "visible" : "hidden";
-      feed.replaceChildren(
-        ...spec.feed.map((line) => {
-          const row = ink("li", "row", "");
-          const bust = document.createElement("img");
-          bust.className = "px-bust";
-          bust.src = line.portrait;
-          bust.alt = "";
-          const text = ink("div", "said", "");
-          text.append(ink("div", "name", line.name), ink("div", "line", line.text));
-          row.append(bust, text);
-          return row;
-        }),
-      );
+      usage.textContent = spec.usage;
+      sale.textContent = spec.sale?.text ?? "";
+      sale.style.opacity = String(spec.sale?.opacity ?? 0);
+      sale.style.transform = `translateY(${String(-(spec.sale?.lift ?? 0))}px)`;
     },
   };
   return seatDepths;
@@ -369,8 +313,6 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
 
 const sheetPath = (n: number): string =>
   `/apps/desktop/public/characters/employee-sheet-${String(n).padStart(2, "0")}.png`;
-const portraitPath = (n: number): string =>
-  `/apps/desktop/public/characters/employee-portrait-${String(n).padStart(2, "0")}.png`;
 
 const walkFrame = (dir: Dir, t: number): number =>
   WALK_START[dir] + (Math.floor(t * WALK_FPS) % STRIP_FRAMES);
@@ -387,13 +329,10 @@ const facingOf = (from: Point, to: Point): Dir => {
 type Leg =
   | { kind: "seated"; seat: number; seconds: number }
   | { kind: "walk"; path: Point[] }
-  | { kind: "stand"; at: Point; facing: Dir; seconds: number }
-  | { kind: "away"; seconds: number };
+  | { kind: "stand"; at: Point; facing: Dir; seconds: number };
 
 interface Actor {
-  /** Their seat, if they start and end in it; the rest only ever sit. */
   legs: Leg[];
-  name: string;
   sheet: number;
 }
 
@@ -435,6 +374,58 @@ const alongPath = (pathPoints: Point[], distance: number): Step => {
   return { at: pathPoints[0] ?? { x: 0, y: 0 }, facing: "down" };
 };
 
+const legSprite = (
+  leg: Leg,
+  since: number,
+  t: number,
+  sheet: string,
+  seats: Seat[],
+  seatDepths: number[],
+): SpriteDraw | null => {
+  switch (leg.kind) {
+    case "seated": {
+      const seat = seats[leg.seat];
+      if (!seat) {
+        return null;
+      }
+      // the sheet has no typing strip: walking in place, facing the screen, reads as typing
+      return {
+        crop: true,
+        depth: seatDepths[leg.seat] ?? characterDepth(seat.y),
+        frame: walkFrame(seat.facing, t),
+        rise: seat.facing === "up" ? BEHIND_CHAIR_RISE : 0,
+        sheet,
+        x: seat.x,
+        y: seat.y,
+      };
+    }
+    case "stand": {
+      return {
+        crop: false,
+        depth: characterDepth(leg.at.y),
+        frame: WALK_START[leg.facing],
+        rise: 0,
+        sheet,
+        x: leg.at.x,
+        y: leg.at.y,
+      };
+    }
+    case "walk": {
+      const { at, facing } = alongPath(leg.path, (t - since) * NPC_SPEED);
+      return {
+        crop: false,
+        depth: characterDepth(at.y),
+        frame: walkFrame(facing, t),
+        rise: 0,
+        sheet,
+        x: at.x,
+        y: at.y,
+      };
+    }
+    // no default
+  }
+};
+
 const spriteAt = (
   actor: Actor,
   t: number,
@@ -442,236 +433,182 @@ const spriteAt = (
   seatDepths: number[],
 ): SpriteDraw | null => {
   let start = 0;
-  const sheet = sheetPath(actor.sheet);
   for (const leg of actor.legs) {
     const seconds = legSeconds(leg);
     if (t < start + seconds || leg === actor.legs.at(-1)) {
-      switch (leg.kind) {
-        case "away": {
-          return null;
-        }
-        case "seated": {
-          const seat = seats[leg.seat];
-          if (!seat) {
-            return null;
-          }
-          // the sheet has no typing strip: walking in place, facing the screen, reads as typing
-          return {
-            crop: true,
-            depth: seatDepths[leg.seat] ?? characterDepth(seat.y),
-            frame: walkFrame(seat.facing, t),
-            rise: seat.facing === "up" ? BEHIND_CHAIR_RISE : 0,
-            sheet,
-            x: seat.x,
-            y: seat.y,
-          };
-        }
-        case "stand": {
-          return {
-            crop: false,
-            depth: characterDepth(leg.at.y),
-            frame: WALK_START[leg.facing],
-            rise: 0,
-            sheet,
-            x: leg.at.x,
-            y: leg.at.y,
-          };
-        }
-        case "walk": {
-          const { at, facing } = alongPath(leg.path, (t - start) * NPC_SPEED);
-          return {
-            crop: false,
-            depth: characterDepth(at.y),
-            frame: walkFrame(facing, t),
-            rise: 0,
-            sheet,
-            x: at.x,
-            y: at.y,
-          };
-        }
-        // no default
-      }
+      return legSprite(leg, start, t, sheetPath(actor.sheet), seats, seatDepths);
     }
     start += seconds;
   }
   return null;
 };
 
-// Work seats from office-design.json, in its order: [2] top-left desk, [3]/[4] the row
-// facing up, [1] the desk facing down beside the corridor.
-const SEAT_INDEX = { corridor: 1, front: 2, middle: 4, wanderer: 3 } as const;
+/** A walk there and the same walk back. */
+const outAndBack = (points: Point[]): [Leg, Leg] => [
+  { kind: "walk", path: points },
+  { kind: "walk", path: points.toReversed() },
+];
+
+// Work seats are office-design.json's, by index: [0]-[2] face down, [3]-[9] face up across the
+// two rows of desks, [10] faces left in the back room. [5] is the one who gets up for the cooler.
+const SEATED = [
+  { seat: 0, sheet: 4 },
+  { seat: 1, sheet: 9 },
+  { seat: 2, sheet: 12 },
+  { seat: 3, sheet: 6 },
+  { seat: 4, sheet: 15 },
+  { seat: 7, sheet: 11 },
+  { seat: 9, sheet: 17 },
+  { seat: 10, sheet: 3 },
+] as const;
+const COOLER_SEAT = 5;
 
 const actors: Actor[] = [
+  ...SEATED.map(({ seat, sheet }): Actor => ({
+    legs: [{ kind: "seated", seat, seconds: VIDEO.seconds }],
+    sheet,
+  })),
   {
-    legs: [{ kind: "seated", seat: SEAT_INDEX.front, seconds: VIDEO.seconds }],
-    name: "Ada",
-    sheet: 4,
-  },
-  {
-    legs: [{ kind: "seated", seat: SEAT_INDEX.middle, seconds: VIDEO.seconds }],
-    name: "Rui",
-    sheet: 9,
-  },
-  {
-    legs: [{ kind: "seated", seat: SEAT_INDEX.corridor, seconds: VIDEO.seconds }],
-    name: "Noor",
-    sheet: 12,
-  },
-  {
+    // up from the desk, along the corridor to the cooler, a drink, and back
     legs: [
-      { kind: "seated", seat: SEAT_INDEX.wanderer, seconds: 0.9 },
-      {
-        kind: "walk",
-        path: [
-          { x: 144, y: 180 },
-          { x: 144, y: 200 },
-          { x: 264, y: 200 },
-        ],
-      },
-      { at: { x: 264, y: 200 }, facing: "right", kind: "stand", seconds: 2 },
-      {
-        kind: "walk",
-        path: [
-          { x: 264, y: 200 },
-          { x: 144, y: 200 },
-          { x: 144, y: 180 },
-        ],
-      },
-      { kind: "seated", seat: SEAT_INDEX.wanderer, seconds: VIDEO.seconds },
+      { kind: "seated", seat: COOLER_SEAT, seconds: 0.6 },
+      ...outAndBack([
+        { x: 336, y: 180 },
+        { x: 336, y: 200 },
+        { x: 440, y: 200 },
+        { x: 440, y: 172 },
+      ]).toSpliced(1, 0, { at: { x: 440, y: 172 }, facing: "up", kind: "stand", seconds: 1.8 }),
+      { kind: "seated", seat: COOLER_SEAT, seconds: VIDEO.seconds },
     ],
-    name: "Theo",
     sheet: 2,
   },
   {
+    // from the back room's printer up the passage to the desks, a look, and back
     legs: [
-      { kind: "away", seconds: 0.4 },
-      {
-        kind: "walk",
-        path: [
-          { x: 372, y: 166 },
-          { x: 196, y: 166 },
-        ],
-      },
-      { at: { x: 196, y: 166 }, facing: "down", kind: "stand", seconds: 1.4 },
-      {
-        kind: "walk",
-        path: [
-          { x: 196, y: 166 },
-          { x: 372, y: 166 },
-        ],
-      },
-      { kind: "away", seconds: VIDEO.seconds },
+      { at: { x: 304, y: 408 }, facing: "up", kind: "stand", seconds: 0.4 },
+      ...outAndBack([
+        { x: 304, y: 408 },
+        { x: 336, y: 408 },
+        { x: 336, y: 296 },
+        { x: 272, y: 296 },
+      ]).toSpliced(1, 0, { at: { x: 272, y: 296 }, facing: "up", kind: "stand", seconds: 1 }),
+      { at: { x: 304, y: 408 }, facing: "up", kind: "stand", seconds: VIDEO.seconds },
     ],
-    name: "Mika",
     sheet: 7,
+  },
+  {
+    // across the front corridor to chat at a desk, and back
+    legs: [
+      { at: { x: 96, y: 200 }, facing: "right", kind: "stand", seconds: 0.8 },
+      ...outAndBack([
+        { x: 96, y: 200 },
+        { x: 200, y: 200 },
+      ]).toSpliced(1, 0, { at: { x: 200, y: 200 }, facing: "up", kind: "stand", seconds: 2.2 }),
+      { at: { x: 96, y: 200 }, facing: "right", kind: "stand", seconds: VIDEO.seconds },
+    ],
+    sheet: 14,
   },
 ];
 
-interface Line {
-  from: number;
-  /** Who says it: an actor's index. */
-  speaker: number;
-  text: string;
-  until: number;
-}
-
-const LINES: Line[] = [
-  { from: 3.1, speaker: 3, text: "deploying…", until: 4.6 },
-  { from: 5, speaker: 1, text: "first sale!", until: 6.4 },
-  { from: 6.3, speaker: 2, text: "ship it", until: 7.7 },
-];
+// ---- the HUD's revenue plate ----
 
 const SALES = [
-  { amount: 9, at: 1.4 },
-  { amount: 29, at: 4.9 },
-  { amount: 9, at: 6.2 },
-];
+  { amount: 29, at: 0.9 },
+  { amount: 9, at: 2.4 },
+  { amount: 49, at: 3.8 },
+  { amount: 9, at: 5.2 },
+  { amount: 29, at: 6.4 },
+] as const;
 const REVENUE_START = 1284;
-const TICK_SECONDS = 0.6;
+const USAGE = { from: 41.2, to: 43.6 } as const;
+/** How long a sale takes to count onto the plate, and the loop's roll back to its start. */
+const TICK_SECONDS = 0.5;
+const ROLLBACK = { from: 7.65, to: 7.95 } as const;
+const SALE_FLOAT_SECONDS = 1.1;
 
-const usd = (amount: number): string =>
-  `$${amount.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+const easeOut = (f: number): number => 1 - (1 - f) ** 3;
+const clamp01 = (f: number): number => Math.min(1, Math.max(0, f));
 
-const revenueAt = (t: number): number =>
-  SALES.reduce(
-    (sum, sale) => sum + sale.amount * Math.min(1, Math.max(0, (t - sale.at) / TICK_SECONDS)),
+/** How far the loop's roll back has gone: 0 until it starts, 1 once both figures are home. */
+const rolledBack = (t: number): number =>
+  clamp01((t - ROLLBACK.from) / (ROLLBACK.to - ROLLBACK.from));
+
+const revenueAt = (t: number): number => {
+  const counted = SALES.reduce(
+    (sum, sale) => sum + sale.amount * easeOut(clamp01((t - sale.at) / TICK_SECONDS)),
     REVENUE_START,
   );
+  return counted + (REVENUE_START - counted) * rolledBack(t);
+};
+
+const usageAt = (t: number): number =>
+  USAGE.from + (USAGE.to - USAGE.from) * clamp01(t / ROLLBACK.from) * (1 - rolledBack(t));
 
 const frameAt = (t: number, seats: Seat[], seatDepths: number[]): FrameSpec => {
-  const sprites: SpriteDraw[] = [];
-  const positions = new Map<number, SpriteDraw>();
-  for (const [index, actor] of actors.entries()) {
-    const sprite = spriteAt(actor, t, seats, seatDepths);
-    if (sprite) {
-      sprites.push(sprite);
-      positions.set(index, sprite);
-    }
-  }
-  const bubbles: BubbleDraw[] = [];
-  for (const line of LINES) {
-    const sprite = positions.get(line.speaker);
-    if (sprite && t >= line.from && t < line.until) {
-      bubbles.push({ text: line.text, x: sprite.x, y: sprite.y + BUBBLE_DY - sprite.rise });
-    }
-  }
-  const feed = LINES.filter((line) => t >= line.from).map((line): FeedLine => {
-    const actor = actors[line.speaker];
-    return {
-      name: actor?.name ?? "",
-      portrait: portraitPath(actor?.sheet ?? 1),
-      text: line.text,
-    };
-  });
-  const recent = SALES.findLast((s) => t >= s.at && t < s.at + 1.2);
+  const sprites = actors.flatMap((actor) => spriteAt(actor, t, seats, seatDepths) ?? []);
+  const recent = SALES.findLast((s) => t >= s.at && t < s.at + SALE_FLOAT_SECONDS);
+  const sale = recent
+    ? {
+        lift: 22 * easeOut((t - recent.at) / SALE_FLOAT_SECONDS),
+        opacity: Math.min(1, (recent.at + SALE_FLOAT_SECONDS - t) / 0.35),
+        text: `+$${String(recent.amount)}`,
+      }
+    : null;
   return {
-    bubbles,
-    feed: feed.length > 0 ? feed : [{ name: "Ada", portrait: portraitPath(4), text: "on it" }],
-    revenue: usd(revenueAt(t)),
-    sale: recent ? `+${usd(recent.amount)} sale` : null,
+    revenue: `$${Math.round(revenueAt(t)).toLocaleString("en-US")}`,
+    sale,
     sprites,
+    usage: usageLabel(usageAt(t)),
   };
 };
 
 // ---- the page and the capture ----
 
-const scenePage = (): string => `<!doctype html>
+/** The wordmark's art inside its canvas, in its own px: the page crops the margin away. */
+const WORDMARK = { art: { h: 728, w: 1029, x: 257, y: 166 }, width: 1513 } as const;
+const LOGO_WIDTH = 400;
+/** The brand sits under the HUD's plate, which takes the top of the frame's left side. */
+const BRAND_TOP = 168;
+
+const scenePage = (view: SceneSetup["view"]): string => {
+  const officeWidth = Math.round((STAGE.height * view.width) / view.height);
+  const logoScale = LOGO_WIDTH / WORDMARK.art.w;
+  const brandWidth = VIDEO.width - officeWidth - STAGE.right;
+  return `<!doctype html>
 <html><head><meta charset="utf-8">
 <link rel="stylesheet" href="/packages/px-kit/px-kit.css">
 <style>
   html, body { margin: 0; width: ${VIDEO.width}px; height: ${VIDEO.height}px; overflow: hidden; background: var(--void); font-family: "VG5000", monospace; }
-  .stage { display: flex; width: 100%; height: 100%; }
-  #office { display: block; width: ${VIEW.width * SCALE}px; height: ${VIEW.height * SCALE}px; image-rendering: pixelated; border-right: 3px solid var(--ink); }
-  .panel { flex: 1; display: flex; flex-direction: column; gap: 14px; padding: 18px 18px 18px 16px; box-sizing: border-box; }
-  .wordmark { width: 230px; align-self: center; margin: -14px 0 -18px; }
-  .tag { padding: 10px 12px; font-size: 13px; line-height: 1.5; color: var(--fg); }
-  .tag b { color: var(--accent-lo); font-weight: 400; }
-  .money { padding: 0; }
-  .money .bar { display: flex; justify-content: space-between; padding: 5px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; }
-  .money .body { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 12px 10px; }
-  #revenue { font-size: 30px; color: var(--fg); }
-  #sale { font-size: 13px; color: var(--ok); }
-  #feed { list-style: none; margin: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
-  #feed .row { display: flex; align-items: center; gap: 10px; }
-  #feed .name { font-size: 11px; color: var(--accent-lo); }
-  #feed .line { font-size: 13px; color: var(--fg); }
-  .team { flex: 1; overflow: hidden; }
+  #office { position: absolute; right: ${STAGE.right}px; top: ${(VIDEO.height - STAGE.height) / 2}px; width: ${officeWidth}px; height: ${STAGE.height}px; }
+  .brand { position: absolute; left: 0; top: ${BRAND_TOP}px; width: ${brandWidth}px; height: ${VIDEO.height - BRAND_TOP - 12}px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; }
+  .logo { width: ${LOGO_WIDTH}px; height: ${Math.round(WORDMARK.art.h * logoScale)}px; overflow: hidden; }
+  .logo img { display: block; width: ${Math.round(WORDMARK.width * logoScale)}px; margin: ${-Math.round(WORDMARK.art.y * logoScale)}px 0 0 ${-Math.round(WORDMARK.art.x * logoScale)}px; }
+  .line { width: 440px; text-align: center; font-size: 21px; line-height: 1.5; color: var(--light); }
+  .line b { color: var(--accent-hi); font-weight: 400; }
+  /* hud.tsx's revenue Stat (top-3 left-3), drawn at twice its size so it reads in a share card */
+  .hud { position: absolute; top: 12px; left: 12px; zoom: 2; display: flex; align-items: center; gap: 6px; }
+  .stat { display: flex; min-width: 64px; align-items: center; padding: 6px 12px; }
+  .stat .label { display: block; color: #c3c9de; }
+  .stat .value { display: block; font-size: 16px; line-height: 1.25; color: #9fe6b0; font-variant-numeric: tabular-nums; }
+  .stat .sub { display: block; font-size: 12px; color: #a7adc6; font-variant-numeric: tabular-nums; }
+  #sale { font-size: 14px; color: #9fe6b0; text-shadow: 1px 1px 0 var(--ink); }
 </style></head>
-<body><div class="stage">
+<body>
   <canvas id="office"></canvas>
-  <div class="panel">
-    <img class="wordmark" src="/apps/desktop/public/onboarding/idlebiz-wordmark.webp" alt="">
-    <div class="px-battle tag">An idle business sim where your employees are <b>real AI agents</b>.</div>
-    <div class="px-window money">
-      <div class="px-titlebar bar"><span>Revenue</span><span>live</span></div>
-      <div class="body"><span id="revenue"></span><span id="sale"></span></div>
-    </div>
-    <div class="px-window team">
-      <div class="px-titlebar money"><div class="bar"><span>#team</span><span></span></div></div>
-      <ul id="feed"></ul>
-    </div>
+  <div class="brand">
+    <div class="logo"><img src="/apps/desktop/public/onboarding/idlebiz-wordmark.webp" alt=""></div>
+    <div class="line">An idle game business simulator where your employees are <b>real AI agents</b>.</div>
   </div>
-</div></body></html>`;
+  <div class="hud">
+    <div class="px-plate stat"><span>
+      <span class="px-label label">revenue ⚡</span>
+      <span class="value" id="revenue"></span>
+      <span class="sub" id="usage"></span>
+    </span></div>
+    <span id="sale"></span>
+  </div>
+</body></html>`;
+};
 
 const MIME = new Map([
   [".css", "text/css"],
@@ -684,9 +621,10 @@ const addressSchema = z.object({ port: z.number() });
 
 const respond = async (
   pathname: string,
+  page: string,
 ): Promise<{ body: Buffer | string; type: string } | null> => {
   if (pathname === "/") {
-    return { body: scenePage(), type: "text/html" };
+    return { body: page, type: "text/html" };
   }
   const file = path.join(REPO_ROOT, pathname);
   const relative = path.relative(REPO_ROOT, file);
@@ -701,9 +639,14 @@ const respond = async (
   }
 };
 
-const answer = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+const answer = async (
+  request: IncomingMessage,
+  response: ServerResponse,
+  page: string,
+): Promise<void> => {
   const reply = await respond(
     decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname),
+    page,
   );
   if (reply) {
     response.writeHead(200, { "Content-Type": reply.type }).end(reply.body);
@@ -713,10 +656,10 @@ const answer = async (request: IncomingMessage, response: ServerResponse): Promi
 };
 
 /** The scene page and the repo files it draws, on a loopback port of its own. */
-const serve = async (): Promise<{ server: Server; url: string }> => {
+const serve = async (page: string): Promise<{ server: Server; url: string }> => {
   // respond() answers every failure as a 404, so the request's promise never rejects
   const server = createServer((request, response) => {
-    void answer(request, response);
+    void answer(request, response, page);
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -740,13 +683,12 @@ const main = async (): Promise<void> => {
       ),
     ),
   );
-  const seats: Seat[] = [
-    { facing: "down", x: 112, y: 212 },
-    { facing: "down", x: 304, y: 212 },
-    { facing: "down", x: 144, y: 84 },
-    { facing: "up", x: 144, y: 180 },
-    { facing: "up", x: 240, y: 180 },
-  ];
+  const seats = layout.seats.map((seat): Seat => ({
+    facing: seat.role === "work" ? seat.facing : "down",
+    x: seat.x,
+    y: seat.y,
+  }));
+  const view = { height: layout.height, width: layout.width };
   const setup: SceneSetup = {
     frame: {
       columns: SHEET_COLUMNS,
@@ -759,15 +701,18 @@ const main = async (): Promise<void> => {
     scale: SCALE,
     seats,
     sheets: actors.map((actor) => sheetPath(actor.sheet)),
-    view: VIEW,
+    view,
   };
 
-  const { server, url } = await serve();
+  const { server, url } = await serve(scenePage(view));
   const frames = await mkdtemp(path.join(tmpdir(), "idlebiz-og-"));
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM;
   const browser = await chromium.launch(executablePath ? { executablePath } : {});
   try {
-    const page = await browser.newPage({ viewport: { height: VIDEO.height, width: VIDEO.width } });
+    const page = await browser.newPage({
+      deviceScaleFactor: CAPTURE_SCALE,
+      viewport: { height: VIDEO.height, width: VIDEO.width },
+    });
     await page.goto(url);
     const seatDepths = await page.evaluate(mountScene, setup);
     const total = VIDEO.fps * VIDEO.seconds;
@@ -781,11 +726,14 @@ const main = async (): Promise<void> => {
     }
     await mkdir(OUT_DIR, { recursive: true });
     const video = path.join(OUT_DIR, "og.mp4");
+    const scale = `scale=${String(VIDEO.width)}:${String(VIDEO.height)}:flags=lanczos`;
     ffmpeg([
       "-framerate",
       String(VIDEO.fps),
       "-i",
       path.join(frames, "frame-%04d.png"),
+      "-vf",
+      scale,
       "-c:v",
       "libx264",
       "-pix_fmt",
@@ -793,7 +741,7 @@ const main = async (): Promise<void> => {
       "-profile:v",
       "high",
       "-crf",
-      "26",
+      "24",
       "-tune",
       "animation",
       "-movflags",
@@ -801,7 +749,16 @@ const main = async (): Promise<void> => {
       "-an",
       video,
     ]);
-    ffmpeg(["-i", path.join(frames, "frame-0060.png"), "-q:v", "3", path.join(OUT_DIR, "og.jpg")]);
+    // the poster is the moment the third sale lands
+    ffmpeg([
+      "-i",
+      path.join(frames, "frame-0096.png"),
+      "-vf",
+      scale,
+      "-q:v",
+      "3",
+      path.join(OUT_DIR, "og.jpg"),
+    ]);
     const { size } = await stat(video);
     process.stdout.write(`wrote ${video} (${(size / 1024).toFixed(0)} KiB)\n`);
   } finally {

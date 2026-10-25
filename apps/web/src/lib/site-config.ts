@@ -15,7 +15,7 @@ export const siteConfig = {
     durationSeconds: 8,
     height: 630,
     poster: "/og/og.jpg",
-    uploadDate: "2026-10-24",
+    uploadDate: "2026-10-25",
     url: "/og/og.mp4",
     width: 1200,
   },
