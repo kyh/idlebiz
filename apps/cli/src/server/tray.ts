@@ -102,7 +102,7 @@ class AppTray {
     });
   }
 
-  /** Notify once when the office continues working after its last window closes. */
+  /** Notify once when the office keeps working after the founder closes its window, which hides it. */
   setWindowless(windowless: boolean): void {
     if (this.windowless === windowless) {
       return;

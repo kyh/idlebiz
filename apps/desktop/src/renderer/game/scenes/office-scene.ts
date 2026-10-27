@@ -41,7 +41,7 @@ const FACING_OFFSET = {
   up: { x: 0, y: -1 },
 } satisfies Record<Dir, { x: number; y: number }>;
 
-const WORKSPACE_KIT_PATH = "workspace-kit";
+const WORKSPACE_KIT_PATH = "/workspace-kit";
 
 /** The founder on screen: their sprite and the anims cut from its sheet. */
 interface Player {
@@ -94,7 +94,7 @@ export class OfficeScene extends Scene {
   preload() {
     // the loader skips a key it already holds or has queued, so a sprite placed twice loads once
     for (const placement of OFFICE.placements) {
-      this.load.image(placement.key, placement.path);
+      this.load.image(placement.key, placement.url);
     }
     this.load.spritesheet("emotes", `${WORKSPACE_KIT_PATH}/emotes.png`, {
       frameHeight: 32,

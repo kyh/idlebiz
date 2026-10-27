@@ -70,17 +70,10 @@ const integrations: Integrations = {
   setEnv: setVercelEnv,
 };
 
-// the shell's power assertion: one at a time, since keepAwake starts at most one
 const scheduler = createScheduler(
   runnerPool,
-  keepAwake({
-    start: () => {
-      host().keepAwake(true);
-      return 1;
-    },
-    stop: () => {
-      host().keepAwake(false);
-    },
+  keepAwake((on) => {
+    host().keepAwake(on);
   }),
   integrations,
 );

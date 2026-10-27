@@ -25,8 +25,8 @@ describe("a file path in agent text", () => {
     ["**https://acme.vercel.app**", "https://acme.vercel.app"],
     ["is it live (https://acme.vercel.app/pricing?)", "https://acme.vercel.app/pricing"],
     [
-      "see /Users/x/.idlebiz/acme/workspace/docs/spec.md.",
-      "/Users/x/.idlebiz/acme/workspace/docs/spec.md",
+      "see /Users/x/.idlebiz/company/products/ledger/workspace/docs/spec.md.",
+      "/Users/x/.idlebiz/company/products/ledger/workspace/docs/spec.md",
     ],
   ])("leaves the sentence's punctuation off the link in %j", (text, token) => {
     expect(tokensIn(text)).toEqual([token]);

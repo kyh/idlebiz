@@ -16,7 +16,7 @@ const SEAL: Seal = {
   writable: [],
 };
 
-const WORKSPACE = "/Users/me/.idlebiz/acme/workspace";
+const WORKSPACE = "/Users/me/.idlebiz/company/products/ledger/workspace";
 
 describe("sealedCommand", () => {
   it("runs argv under sandbox-exec with the profile inline", () => {

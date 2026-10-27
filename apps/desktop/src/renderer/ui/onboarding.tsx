@@ -83,8 +83,8 @@ const LOOKS = founderChoices(6);
 const TitleScreen = ({ onStart }: { onStart: () => void }) => (
   <div className="ob-title-screen">
     <div className="ob-title-art">
-      <img className="ob-title-props" src="./onboarding/founding-props.webp" alt="" />
-      <img className="ob-title-logo" src="./onboarding/idlebiz-wordmark.webp" alt="IdleBiz" />
+      <img className="ob-title-props" src="/onboarding/founding-props.webp" alt="" />
+      <img className="ob-title-logo" src="/onboarding/idlebiz-wordmark.webp" alt="IdleBiz" />
     </div>
     <p className="ob-tagline">A little office. A big idea. Your company.</p>
     <button type="button" className="px-btn ob-start" onClick={onStart}>

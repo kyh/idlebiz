@@ -200,8 +200,8 @@ describe("keys sealed with the Keychain", () => {
     expect(getSecret("VERCEL_TOKEN")).toBeNull();
   });
 
-  it("reads a value an older scheme sealed as one to enter again, never as pasted text", () => {
-    const old = "sealed:v1:djEwc2VhbGVk";
+  it("reads a value a scheme this build does not know sealed as one to enter again, never as pasted text", () => {
+    const old = "sealed:v3:AAAA";
     writeFileSync(secretsFile, JSON.stringify({ STRIPE_SECRET_KEY: old }));
 
     expect(getSecret("STRIPE_SECRET_KEY")).toBeNull();

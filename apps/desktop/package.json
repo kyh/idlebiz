@@ -47,6 +47,5 @@
     "vite": "^8.3.4",
     "vitest": "catalog:",
     "zod": "catalog:"
-  },
-  "productName": "IdleBiz"
+  }
 }
