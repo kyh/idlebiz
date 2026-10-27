@@ -9,7 +9,8 @@ export const ErrorStatus = ({
   description,
   retry,
 }: {
-  error: Error;
+  /** What was thrown: an Error from a Server Component, anything at all from a Client one. */
+  error: unknown;
   description: string;
   retry: () => void;
 }) => {

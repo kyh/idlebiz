@@ -17,3 +17,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  # the desktop shell's crates, Tauri and its plugins among them, in one PR: CI's ci job runs clippy
+  # and cargo test on them, and its test-macos job the macOS-only code and the packaged smoke
+  - package-ecosystem: cargo
+    directory: /apps/desktop/src-tauri
+    schedule:
+      interval: weekly
+    groups:
+      crates:
+        patterns:
+          - "*"
