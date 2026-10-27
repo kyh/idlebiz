@@ -14,8 +14,6 @@ import {
   rootDir,
   ensureAppDirs,
   companyDir,
-  toolCacheDir,
-  runBinDir,
   companyFile,
   sharedDir,
   activityFile,
@@ -71,13 +69,7 @@ import type { RoutineDefinition } from "../prompts/routines";
 import { betToDoc, docToBet } from "./bet-codec";
 import { docToProduct, productToDoc } from "./product-codec";
 import { docToTask, taskToDoc } from "./task-codec";
-import {
-  SAVE_FORMAT,
-  SaveFormatError,
-  companyToDoc,
-  docToCompany,
-  formatOf,
-} from "./company-codec";
+import { companyToDoc, docToCompany } from "./company-codec";
 import { docToEmployee, employeeBody, employeeToDoc } from "./employee-codec";
 import { docToRoutine, routineToDoc } from "./routine-codec";
 import {
@@ -550,24 +542,6 @@ const routineRecord = (input: RoutineDefinition, id: string): Routine => ({
   name: input.name,
   role: input.role,
 });
-
-const createRoutine = (input: RoutineDefinition): Routine => {
-  const list = current().routines;
-  const id = uniqueSlug(
-    input.name,
-    list.map((r) => r.id),
-  );
-  const routine = routineRecord(input, id);
-  saveRoutine(routine);
-  list.push(routine);
-  return routine;
-};
-
-const seedDefaultRoutines = (businessType: BusinessTypeId): void => {
-  for (const routine of defaultRoutines(businessType)) {
-    createRoutine(routine);
-  }
-};
 
 export const listRoutines = (): Routine[] => [...current().routines];
 
@@ -1842,32 +1816,6 @@ export const killProduct = (productId: string, reason: string, by: string | null
 };
 
 // ---- founding and boot -------------------------------------------------------
-/**
- * A COMPANY.md in a folder of the root beside company/, stamped before this build's format or
- * not at all: a pre-release save from before the save had a folder of its own, refused as it
- * would be in company/ so that no company is founded beside it. One at this build's format was
- * moved aside to start over. Dot folders are main's own, and cache/ and bin/ the runs'.
- */
-const strayPreReleaseSave = (): { file: string; format: number | null } | null => {
-  const notSaves = new Set([companyDir(), toolCacheDir(), runBinDir()]);
-  for (const entry of safeReaddir(rootDir())) {
-    const dir = path.join(rootDir(), entry);
-    if (entry.startsWith(".") || notSaves.has(dir)) {
-      continue;
-    }
-    const file = path.join(dir, "COMPANY.md");
-    const text = readTextIfPresent(file);
-    if (text === null) {
-      continue;
-    }
-    const format = formatOf(parseDoc(text));
-    if (format === null || format < SAVE_FORMAT) {
-      return { file, format };
-    }
-  }
-  return null;
-};
-
 /** Publish a complete company with one directory rename; boot ignores staging directories. */
 export const foundCompany = (input: {
   name: string;
@@ -1881,7 +1829,7 @@ export const foundCompany = (input: {
   if (c().active) {
     throw new RefusalError("a company is already active");
   }
-  if (existsSync(companyDir()) || strayPreReleaseSave() !== null) {
+  if (existsSync(companyDir())) {
     throw new RefusalError("an existing company save must be loaded or repaired before founding");
   }
   const co: Company = {
@@ -1958,10 +1906,6 @@ export const foundCompany = (input: {
 /** The root's one company, or null when it holds none or one that does not read, which the load report names. */
 const readCompany = (): Company | null => {
   if (!existsSync(companyDir())) {
-    const stray = strayPreReleaseSave();
-    if (stray) {
-      skip("company", stray.file, new SaveFormatError(stray.format));
-    }
     return null;
   }
   try {
@@ -2127,9 +2071,6 @@ export const initStore = (): LoadReport => {
       saveCompany(active.company);
     }
     releaseOrphanedTasks(active);
-    if (!holdsPackage(routinesDir(), routineFile)) {
-      seedDefaultRoutines(company.businessType);
-    }
     for (const employee of active.employees) {
       try {
         saveEmployee(employee, { onlyIfChanged: true });

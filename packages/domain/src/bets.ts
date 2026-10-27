@@ -89,8 +89,7 @@ export const isClosed = (bet: Bet): bet is ClosedBet =>
 /**
  * Whether a new bet must keep off this one's path. A live bet holds it; so does
  * a closed one that named a section, since its links keep sending visitors
- * there. A closed /b/ path is never handed out again, and a whole-site claim
- * from before bets owned paths would bar every section.
+ * there. A closed /b/ path is never handed out again, so nothing need keep off it.
  */
 export const holdsItsPath = (bet: Bet): boolean =>
   !isClosed(bet) ||

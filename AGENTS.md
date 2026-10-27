@@ -473,10 +473,8 @@ boot reads alone (`server/paths.ts`), so no record carries a company id and no p
 Its paths are read when asked for, never at import, and refused until a save is open: serve opens
 its launch's (`IDLEBIZ_ROOT_DIR`, or `~/.idlebiz`) first, a test its own. Founding refuses while
 it exists, and one boot cannot read (its COMPANY.md missing or refused) blocks the office like a
-save of another format. So does a COMPANY.md stamped below this build's format, or not at all,
-in another folder of the root: a save from before `company/`, which would otherwise be founded
-beside. A reset deletes the whole root, `secrets.json` included; to start over otherwise, move
-`company/` out.
+save of another format. A reset deletes the whole root, `secrets.json` included; to start over
+otherwise, move `company/` out.
 
 COMPANY.md carries `format` (`SAVE_FORMAT`, `store/company-codec.ts`), and a save stamped at any
 other blocks loading and founding (`SaveFormatError`). Each codec reads its kind through one
@@ -1096,11 +1094,11 @@ Stripe, the product's site and Printful at `fetch` (`server/order-pump.test.ts`)
   confirmed only on a read that shows it still a draft costing no more than Stripe collected less
   its dearest fee on a card (`netOfStripeCents`), with the payment's charges read just before,
   neither refunded nor disputed and paid by card (`readPaymentStanding`, Read on Charges, whose
-  refusal cards the founder at once; a listing's link takes only cards, but one made before it did
-  may have taken Klarna or Affirm, whose fee is dearer), so no restart confirms twice or past that
-  guard. A send whose last try failed asks Printful once more for a draft it may have made before
-  the founder is told to place it by hand. Waiting orders are sent and sent ones' Printful status
-  read every 10 minutes.
+  refusal cards the founder at once; IdleBiz makes a listing's link take only cards, but the link
+  can be widened on Stripe's side after, to Klarna or Affirm, whose fee is dearer), so no restart
+  confirms twice or past that guard. A send whose last try failed asks Printful once more for a
+  draft it may have made before the founder is told to place it by hand. Waiting orders are sent
+  and sent ones' Printful status read every 10 minutes.
 - A test-mode sale is priced, then its draft deleted (one Printful never prices is deleted too),
   and anything that stops it goes to the room, never a card: nobody paid.
 - A paid session on a `create_payment_link` link (its `product` tag names a product of the

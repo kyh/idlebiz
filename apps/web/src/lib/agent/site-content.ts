@@ -187,7 +187,7 @@ export const contactPage: ProsePage = {
       "Use email for anything private: questions about how the app handles your data, a request to delete data, press, or partnership. Expect a reply within a few days.",
     ),
     p(
-      "For bugs — an employee stuck in a loop, an office that will not load, a save that fails to migrate, a release that will not open — open a GitHub issue. Include your macOS version, which CLI you use (claude or codex) and the relevant lines from ~/Library/Logs/IdleBiz/main.log. Public issues help the next person who hits the same thing.",
+      "For bugs — an employee stuck in a loop, an office that will not load, a save the app refuses, a release that will not open — open a GitHub issue. Include your macOS version, which CLI you use (claude or codex) and the relevant lines from ~/Library/Logs/IdleBiz/main.log. Public issues help the next person who hits the same thing.",
     ),
     h2("Channels"),
     {
@@ -222,7 +222,7 @@ export const contactPage: ProsePage = {
 const legalRevisedIso = "2026-10-10";
 
 /** The last change to the home page and to the pages without a revision date of their own. */
-export const siteUpdatedIso = "2026-10-24";
+export const siteUpdatedIso = "2026-10-27";
 
 /** The same date as each document states it. */
 export const legalRevisedOn = new Date(legalRevisedIso).toLocaleDateString("en-US", {

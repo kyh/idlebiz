@@ -183,14 +183,12 @@ describe("holdsItsPath", () => {
   const killed: BetState = { closedAt: 1, kind: "killed", moved: 0, reason: "dud" };
 
   it("holds every live bet's path, and a section a closed bet named", () => {
-    expect(holdsItsPath(landing("a", "/"))).toBe(true);
     expect(holdsItsPath(landing("a", "/b/a"))).toBe(true);
     expect(holdsItsPath({ ...landing("a", "/guides"), state: killed })).toBe(true);
   });
 
-  it("frees a closed bet's /b/ path, and a whole-site claim from before bets owned paths", () => {
+  it("frees a closed bet's /b/ path, and a revenue bet's", () => {
     expect(holdsItsPath({ ...landing("a", "/b/a"), state: killed })).toBe(false);
-    expect(holdsItsPath({ ...landing("a", "/"), state: killed })).toBe(false);
     expect(holdsItsPath(bet({ claim: { metric: "revenue" }, state: killed }))).toBe(false);
   });
 });

@@ -382,41 +382,6 @@ describe("the one company a root holds", () => {
     },
   );
 
-  it.each([
-    { metadata: { format: 11 }, stamped: "an older format" },
-    { metadata: {}, stamped: "no format" },
-  ])(
-    "refuses a save from before company/ stamped with $stamped, and founds none beside it",
-    ({ metadata }) => {
-      const stray = path.join(root, "pocket-ledger");
-      mkdirSync(stray, { recursive: true });
-      writeFileSync(
-        path.join(stray, "COMPANY.md"),
-        serializeDoc({
-          body: "",
-          fields: { name: "Pocket Ledger", slug: "pocket-ledger" },
-          metadata,
-        }),
-      );
-      const before = saveSnapshot(stray);
-
-      const report = store.initStore();
-
-      expect(report.skipped).toEqual([
-        expect.objectContaining({
-          kind: "company",
-          newerBuild: false,
-          path: path.join(stray, "COMPANY.md"),
-        }),
-      ]);
-      expect(report.skipped[0]?.error).toContain("pre-release IdleBiz");
-      expect(store.getCompany()).toBeNull();
-      expect(() => foundAcme()).toThrow("loaded or repaired");
-      expect(existsSync(companyDir())).toBe(false);
-      expect(saveSnapshot(stray)).toEqual(before);
-    },
-  );
-
   it("founds beside a save of this build's format moved out of company/", () => {
     foundAcme();
     renameSync(companyDir(), path.join(root, "old-acme"));
@@ -837,7 +802,7 @@ describe("the save format", () => {
     expect(store.listRoutines().map((r) => r.id)).not.toContain("foreign");
   });
 
-  it("seeds no routine over, or beside, the only one it could not read", () => {
+  it("skips a routine it could not read, and leaves it as the founder wrote it", () => {
     foundAcme([], { businessType: "ecommerce", mission: "sell" });
     const dir = path.join(companyDir(), "routines");
     expect(readdirSync(dir)).toEqual(["store-audit"]);
