@@ -11,6 +11,7 @@ mod protocol;
 mod relay;
 mod runtime;
 mod shell;
+mod shell_log;
 mod tray;
 mod window;
 
@@ -34,11 +35,12 @@ fn quit_on_signals<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
                 }
             });
         }
-        Err(error) => eprintln!("[shell] a SIGTERM will not stop the runs first: {error}"),
+        Err(error) => log::warn!("a SIGTERM will not stop the runs first: {error}"),
     }
 }
 
 pub fn run() {
+    shell_log::init();
     let bundled = std::env::current_exe().is_ok_and(|exe| runtime::is_bundled(&exe));
 
     let mut builder = tauri::Builder::default();
@@ -73,7 +75,7 @@ pub fn run() {
     let app = match built {
         Ok(app) => app,
         Err(error) => {
-            eprintln!("[shell] IdleBiz failed to start: {error}");
+            log::error!("IdleBiz failed to start: {error}");
             std::process::exit(1);
         }
     };

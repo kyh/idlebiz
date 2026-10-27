@@ -77,7 +77,7 @@ pub fn hear<R: Runtime>(app: &AppHandle<R>, method: &str, params: Value) {
                 .body(note.body)
                 .show()
             {
-                eprintln!("[shell] could not post a notification: {error}");
+                log::warn!("could not post a notification: {error}");
             }
         }
         // the save is gone and main has stopped its runs: the app starts again on a new one,
@@ -94,7 +94,7 @@ static UNHEARD: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 /// answer, never hears of it. A development build says so in a box, once a method: main sends its
 /// tray model many times a minute.
 fn unheard<R: Runtime>(app: &AppHandle<R>, method: &str, reason: &str) {
-    eprintln!("[shell] {reason}");
+    log::error!("{reason}");
     if !tauri::is_dev() {
         return;
     }

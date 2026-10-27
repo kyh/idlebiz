@@ -12,7 +12,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use crate::main_log::{self, MAIN_LOG_MAX_BYTES, MainLog};
 use crate::main_process::{Host, MainProcess, MainSpec, RequestError, describe};
 use crate::protocol::Hello;
-use crate::{host, keychain, runtime, window};
+use crate::{host, keychain, runtime, shell_log, window};
 
 /// How long main has to boot once it is said hello to: it opens the save, the control plane and
 /// the page's server, and waits on nothing of the founder's.
@@ -50,7 +50,7 @@ pub fn tell_main<R: Runtime>(app: &AppHandle<R>, method: &str, params: &impl Ser
     };
     match serde_json::to_value(params) {
         Ok(params) => main.notify(method, &params),
-        Err(error) => eprintln!("[shell] could not tell main {method}: {error}"),
+        Err(error) => log::warn!("could not tell main {method}: {error}"),
     }
 }
 
@@ -60,7 +60,7 @@ static FAILED: AtomicBool = AtomicBool::new(false);
 
 /// Said once and fatal: the office has nothing to show without main.
 fn fail<R: Runtime>(app: &AppHandle<R>, title: &str, reason: &str) {
-    eprintln!("[shell] {title}: {reason}");
+    log::error!("{title}: {reason}");
     if FAILED.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -93,6 +93,7 @@ fn spawn_main<R: Runtime>(app: &AppHandle<R>, log_path: &Path) -> Result<Arc<Mai
         log_path.to_path_buf(),
         MAIN_LOG_MAX_BYTES,
     )));
+    shell_log::write_to(Arc::clone(&log));
     let spec = MainSpec {
         node: resolved.node.clone(),
         entry: resolved.serve_entry(),
@@ -182,7 +183,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
         // a launch at login keeps to the menu bar until the founder opens the office
         #[cfg(target_os = "macos")]
         if let Err(error) = app.set_dock_visibility(false) {
-            eprintln!("[shell] could not hide the dock icon: {error}");
+            log::warn!("could not hide the dock icon: {error}");
         }
         return;
     }

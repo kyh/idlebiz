@@ -348,8 +348,8 @@ tools/
   (`main_process.rs` over the relay's framing in `relay.rs` and its messages in `protocol.rs`,
   `runtime.rs` for where node and the server are), what main asks of a native app (`host.rs`:
   message boxes, the clipboard, Finder, opening a path or a URL, notifications; `tray.rs`,
-  `login_item.rs`, `keep_awake.rs`, `keychain.rs`), and main's log (`main_log.rs`). No capability
-  grants the page a command.
+  `login_item.rs`, `keep_awake.rs`, `keychain.rs`), and main's log (`main_log.rs`, which the
+  shell's own lines reach through `shell_log.rs`). No capability grants the page a command.
 - `apps/desktop/src/renderer` — the office page: a React overlay (`ui/`) over a Phaser 4 scene
   (`game/`, with the office's geometry: `office-depth.ts` the draw bands,
   `office-layout-schema.ts` the shape of office-design.json, `office-grid.ts` walking as pure
@@ -1340,7 +1340,11 @@ which only that run's seal reaches, and what it does is the run's.
 - **Main's log.** Main's console is its stderr, which the shell appends, stamped, to `main.log`
   (`src-tauri/src/main_log.rs`; `~/Library/Logs/IdleBiz/`; dev: `logs/` in the `IdleBiz (dev)`
   data folder, or in `roots/<id>/` beneath it for an isolated `IDLEBIZ_ROOT_DIR`), never under the
-  save root, which a reset deletes; `server/lib/log.ts` sends uncaught errors there too. A catch
+  save root, which a reset deletes; `server/lib/log.ts` sends uncaught errors there too. The
+  shell's own lines go there too, since a Finder launch's stderr goes nowhere: through the `log`
+  facade Tauri logs with (`src-tauri/src/shell_log.rs`: the shell's own down to info, other
+  crates' warnings), and on stderr for a terminal launch. Runs read the file, so a line names a
+  page by its origin alone. A catch
   that carries on past an unexpected error calls `report` (`server/lib/report.ts`); a boot that
   throws says where the log is and exits.
 
