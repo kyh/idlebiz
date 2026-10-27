@@ -2,7 +2,7 @@ import { isReady, probeRunners } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { priceUsage } from "@repo/agent-driver/pricing";
 import { RUNNERS } from "@repo/agent-driver/registry";
-import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_SESSION_MS } from "@repo/agent-driver/runner";
+import type { Argv } from "@repo/agent-driver/registry";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import type { AcpTurnEnd, AcpTurnResult } from "@repo/agent-driver/acp-session";
 import { addUsage } from "@repo/agent-driver/events";
@@ -129,6 +129,11 @@ export const memoryAfter = (
  */
 export const resumeIn = (session: RunSession | null, workspace: string): string | undefined =>
   session?.workspace === workspace ? session.id : undefined;
+
+/** A turn that says nothing this long is hung, and fails. */
+export const RUN_IDLE_TIMEOUT_MS = 10 * 60_000;
+/** The longest one turn may run. */
+const RUN_MAX_SESSION_MS = 45 * 60_000;
 
 const BACKOFF_MS = 60_000;
 
@@ -271,7 +276,7 @@ export class RunnerPool {
   }
 
   /** `argv` as main starts `runner`'s CLI itself, to sign it in: under a seal of no folders, free to open the browser. */
-  async sealedSignIn(runner: RunnerId, argv: readonly string[]): Promise<string[]> {
+  async sealedSignIn(runner: RunnerId, argv: readonly string[]): Promise<Argv> {
     return signInCommand(await this.seal([]), runner, argv);
   }
 
@@ -550,8 +555,8 @@ export class RunnerPool {
           // the company's tools are the `idlebiz` command, main's own whatever else PATH holds
           PATH: pathWithLauncher(runBinDir(), agent.env.PATH),
         },
-        idleTimeoutMs: DEFAULT_IDLE_TIMEOUT_MS,
-        maxSessionMs: DEFAULT_MAX_SESSION_MS,
+        idleTimeoutMs: RUN_IDLE_TIMEOUT_MS,
+        maxSessionMs: RUN_MAX_SESSION_MS,
         onEvent: (e) => {
           sawOutput = true;
           // a listener must never break the run

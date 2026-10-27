@@ -108,17 +108,13 @@ export const resolveMentions = (
 export const OPEN_TASK_STATUSES = ["todo", "queued", "running", "blocked", "dead"] as const;
 export type OpenTaskStatus = (typeof OPEN_TASK_STATUSES)[number];
 /**
- * The open ones plus history, shelved in shipped/. superseded: an ask the founder answered.
- * settled: an order card the founder closed. dropped: work the steering loop took away — its
- * bet stopped taking work, its product was retired, or its assignee was released.
+ * History, shelved in shipped/. superseded: an ask the founder answered. settled: an order card
+ * the founder closed. dropped: work the steering loop took away — its bet stopped taking work,
+ * its product was retired, or its assignee was released.
  */
-export const TASK_STATUSES = [
-  ...OPEN_TASK_STATUSES,
-  "done",
-  "superseded",
-  "settled",
-  "dropped",
-] as const;
+export const HISTORY_TASK_STATUSES = ["done", "superseded", "settled", "dropped"] as const;
+/** The open ones plus history. */
+export const TASK_STATUSES = [...OPEN_TASK_STATUSES, ...HISTORY_TASK_STATUSES] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];

@@ -4,7 +4,7 @@ import { report } from "./lib/report";
 import { switchOffPaymentLink } from "./stripe-links";
 import { betNews } from "./prompts/briefs";
 import { STRIPE_SECRET_KEY, getSecret, hasSecret, heldKeyIn } from "./secrets";
-import { holdsStripeSecretKey } from "./stripe-api";
+import { holdsStripeKey, holdsStripeSecretKey } from "./stripe-api";
 import { CHAT_EVENT_TEXT } from "@repo/domain/activity";
 import type { Bet } from "@repo/domain/bets";
 import { isOutOfBudget } from "@repo/domain/domain";
@@ -117,14 +117,14 @@ export const ship = (
 };
 
 /** Pause autopilot at the cap; running turns finish and report their cost. */
-export const haltForBudget = (company: Company, spentUsd = company.spentUsd): void => {
+export const haltForBudget = (company: Company): void => {
   if (!company.autopilot) {
     return;
   }
   store.setAutopilot(false);
   publishActivity({
     kind: "budget.exhausted",
-    payload: { budget: company.budget, spentUsd },
+    payload: { budget: company.budget, spentUsd: company.spentUsd },
   });
 };
 
@@ -189,9 +189,6 @@ export const refuseHeldKey = (text: string): void => {
   }
 };
 
-// a Stripe secret or restricted key, which no order card asks for
-const STRIPE_KEY_IN_TEXT = /\b[rs]k_(?:live|test)_[0-9A-Za-z]{8,}/u;
-
 const replyText = (reply: ActionReply): string =>
   reply.kind === "cant" ? reply.reason : reply.note;
 
@@ -209,7 +206,8 @@ const switchedOffByHand = (linkId: string): void => {
  */
 export const settleOrderCard = (taskId: string, reply: ActionReply): Task => {
   const said = replyText(reply);
-  if (STRIPE_KEY_IN_TEXT.test(said)) {
+  // no order card asks for a Stripe key, secret or restricted
+  if (holdsStripeKey(said)) {
     throw new RefusalError(
       "Nothing was sent: that holds a Stripe key, and what you type here goes to the team room. A key goes in the Budget panel; press Done here with no key once it is saved.",
     );

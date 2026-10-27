@@ -141,7 +141,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       TRY_FILES,
       JSON.stringify(files),
     ]);
-    const [bin = "", ...args] = argv;
+    const [bin, ...args] = argv;
     const { stdout } = spawnSync(bin, args, { encoding: "utf-8", env: { HOME: home } });
     return Outcomes.parse(parseJson(stdout));
   };
@@ -672,7 +672,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     }).stdout.trim();
     return seal({ scratch: [at("tmp"), darwinTemp] }).then((sealed) => {
       const run = (script: string) => {
-        const [bin = "", ...args] = sealedCommand(sealed, "codex", ["/bin/sh", "-c", script]);
+        const [bin, ...args] = sealedCommand(sealed, "codex", ["/bin/sh", "-c", script]);
         return spawnSync(bin, args, { cwd: workspace, encoding: "utf-8", env });
       };
       const done = run(`set -e; ${work}`);
@@ -924,7 +924,7 @@ for (const target of targets) {
         CONNECT,
         JSON.stringify([targets, moves]),
       ]);
-      const [bin = "", ...args] = argv;
+      const [bin, ...args] = argv;
       return Outcomes.parse(parseJson(spawnSync(bin, args, { encoding: "utf-8" }).stdout));
     };
 

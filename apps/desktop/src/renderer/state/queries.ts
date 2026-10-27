@@ -1,4 +1,5 @@
-// Main's answers as the page holds them: one tanstack-query cache, which only main's events move.
+// Main's answers as the page holds them: one tanstack-query cache, which main's events and its
+// answers to the founder's own actions move.
 
 import {
   CancelledError,

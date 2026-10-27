@@ -6,7 +6,6 @@ import { isReady } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { runnerPool } from "./runner-pool";
 import type { RunnerPool } from "./runner-pool";
-import { SANDBOX_EXEC } from "./seal";
 import { foundingTeamPrompt } from "../prompts/onboarding";
 import { errorMessage } from "@repo/domain/errors";
 import { RUNNER_NAMES } from "@repo/domain/runners";
@@ -121,10 +120,7 @@ export const startLogin = async (
         continue;
       }
       emit({ message: `Signing in to ${label(p)} — your browser will open…`, type: "progress" });
-      const [cmd = SANDBOX_EXEC, ...args] = await runners.sealedSignIn(p.id, [
-        p.bin,
-        ...RUNNERS[p.id].loginArgs,
-      ]);
+      const [cmd, ...args] = await runners.sealedSignIn(p.id, [p.bin, ...RUNNERS[p.id].loginArgs]);
       const code = await streamCommand(cmd, args, emit);
       if (code === 0) {
         runners.signedInAgain(p.id);

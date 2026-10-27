@@ -2,8 +2,6 @@
 export const RUNNER_IDS = ["claude", "codex"] as const;
 export type RunnerId = (typeof RUNNER_IDS)[number];
 
-export const isRunnerId = (v: string): v is RunnerId => RUNNER_IDS.some((id) => id === v);
-
 /** Each runner as the founder knows it: the name of the CLI it signs in. */
 export const RUNNER_NAMES = {
   claude: "Claude Code",

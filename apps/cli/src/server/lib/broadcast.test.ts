@@ -27,7 +27,7 @@ const serve = async (): Promise<Client> => {
     void handler.handle(request, response, { context: {}, prefix: RPC_PREFIX });
   });
   server = http;
-  const port = await listenLoopback(http);
+  const port = await listenLoopback(http, "a test's server");
   return createORPCClient(new RPCLink({ origin: `http://127.0.0.1:${port}`, url: RPC_PREFIX }));
 };
 

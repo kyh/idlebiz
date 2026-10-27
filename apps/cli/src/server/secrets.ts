@@ -104,7 +104,10 @@ const heldSchema = z
   .string()
   .transform((text): Held => ({ kind: text.startsWith(SEALED) ? "sealed" : "plain", text }));
 
-/** The file's keys, and the rest (the _readme, any other _note, any value not text) kept as it was. */
+/**
+ * The file's keys, and the rest (the _readme, any other _note, any value not text, a key left
+ * blank, which is no key) kept as it was.
+ */
 interface Secrets {
   keys: Map<string, Held>;
   rest: JsonRecord;
@@ -114,7 +117,7 @@ const secretsSchema = jsonRecordSchema.transform((raw): Secrets => {
   const secrets: Secrets = { keys: new Map(), rest: {} };
   for (const [name, value] of Object.entries(raw)) {
     const held = heldSchema.safeParse(value);
-    if (held.success && !name.startsWith("_")) {
+    if (held.success && held.data.text !== "" && !name.startsWith("_")) {
       secrets.keys.set(name, held.data);
     } else {
       secrets.rest[name] = value;
@@ -254,17 +257,22 @@ export const heldKeys = (): HeldKey[] =>
 export const heldKeyIn = (text: string): string | null =>
   heldKeys().find(({ value }) => text.includes(value))?.name ?? null;
 
-export const setSecret = (key: SecretKey, value: string): void => {
-  const secrets = readSecretsForUpdate() ?? { keys: new Map(), rest: {} };
-  secrets.keys.set(key, { kind: "plain", text: value });
-  writeSecretsFile(secrets);
-};
-
 export const deleteSecret = (key: SecretKey): void => {
   const secrets = readSecretsForUpdate();
   if (secrets === null) {
     return;
   }
   secrets.keys.delete(key);
+  writeSecretsFile(secrets);
+};
+
+/** Keeps `value` under `key`; a blank one is no key, so it removes the key. */
+export const setSecret = (key: SecretKey, value: string): void => {
+  if (value === "") {
+    deleteSecret(key);
+    return;
+  }
+  const secrets = readSecretsForUpdate() ?? { keys: new Map(), rest: {} };
+  secrets.keys.set(key, { kind: "plain", text: value });
   writeSecretsFile(secrets);
 };

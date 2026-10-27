@@ -129,6 +129,7 @@ import type {
 import type { RunnerId } from "@repo/domain/runners";
 import {
   DEFAULT_MAX_AGENTS,
+  HISTORY_TASK_STATUSES,
   LastShipSchema,
   ProductDraftSchema,
   RunMetricsSchema,
@@ -362,7 +363,7 @@ const shelve = (t: Task): void => {
 };
 
 /** Shipped work, answered asks, settled order cards and dropped work: shelved in shipped/, never acted on again. */
-const HISTORY: ReadonlySet<TaskStatus> = new Set(["done", "superseded", "settled", "dropped"]);
+const HISTORY: ReadonlySet<TaskStatus> = new Set(HISTORY_TASK_STATUSES);
 const isHistory = (t: Task): boolean => HISTORY.has(t.state.kind);
 
 /** Move a task just saved as history out of the open queue; one the move fails stays for boot to shelve. */
@@ -727,7 +728,7 @@ const handOver = (active: ActiveCompany, leaverId: string, leaverName: string): 
   return moved;
 };
 
-/** Archive the employee package and hand their open work on, as `handOver` counts it. */
+/** Archive the employee package and hand their open work on, as `handOver` counts it. The lead stays. */
 export const archiveEmployee = (
   employeeId: string,
 ): ({ employee: Employee } & HandedOver) | null => {
@@ -735,15 +736,14 @@ export const archiveEmployee = (
   if (!emp) {
     return null;
   }
-  moveDir(employeeAgentDir(employeeId), archiveTo(alumniDir(), employeeId));
   const active = current();
+  if (active.company.leaderId === employeeId) {
+    throw new RefusalError(`${emp.name} leads the team, and a lead is never released.`);
+  }
+  moveDir(employeeAgentDir(employeeId), archiveTo(alumniDir(), employeeId));
   const idx = active.employees.findIndex((e) => e.id === employeeId);
   if (idx !== -1) {
     active.employees.splice(idx, 1);
-  }
-  // the lead left: whoever remains elects one, so the tools keep an owner
-  if (active.company.leaderId === employeeId) {
-    patchCompany({ leaderId: leadOf(listEmployees()) });
   }
   return { employee: emp, ...handOver(active, employeeId, emp.name) };
 };
@@ -1370,11 +1370,7 @@ export const postTeamMessage = (from: Speaker, text: string): TeamMessage => {
   return stored;
 };
 
-export const recentTeamMessages = (limit = 20, since = 0): TeamMessage[] => {
-  const ring = current().chat;
-  const filtered = since > 0 ? ring.filter((m) => m.createdAt > since) : ring;
-  return filtered.slice(-limit);
-};
+export const recentTeamMessages = (limit = 20): TeamMessage[] => current().chat.slice(-limit);
 
 // ---- tasks -----------------------------------------------------------------
 interface NewTask {

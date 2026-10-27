@@ -9,6 +9,14 @@ import { block, firstProduct, launch, stateOf, writeDead } from "../test-support
 freshSave();
 
 describe("a release", () => {
+  it("never takes the lead, whose package stays where it is", () => {
+    foundAcme([hire("Mae"), hire("Priya")]);
+    expect(store.getCompany()?.leaderId).toBe("mae");
+    expect(() => store.archiveEmployee("mae")).toThrow("a lead is never released");
+    expect(store.getEmployee("mae")).not.toBeNull();
+    expect(store.getCompany()?.leaderId).toBe("mae");
+  });
+
   it("refuses a claim for anyone off the roster", () => {
     foundAcme([hire("Mae"), hire("Priya")]);
     const task = store.createTask({ origin: "founder", title: "Ship it" });

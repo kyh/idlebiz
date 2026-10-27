@@ -210,6 +210,16 @@ describe("keys sealed with the Keychain", () => {
     expect(raw().STRIPE_SECRET_KEY).toBe(old);
   });
 
+  it("reads a key left blank as no key, for every reader, and leaves the file as it was", () => {
+    writeFileSync(secretsFile, '{"VERCEL_TOKEN":""}');
+
+    expect(getSecret("VERCEL_TOKEN")).toBeNull();
+    expect(hasSecret("VERCEL_TOKEN")).toBe(false);
+    expect(readFileSync(secretsFile, "utf-8")).toBe('{"VERCEL_TOKEN":""}');
+    setSecret("STRIPE_SECRET_KEY", "");
+    expect(hasSecret("STRIPE_SECRET_KEY")).toBe(false);
+  });
+
   it("seals a key pasted by hand the next time it is read, and still returns it", () => {
     writeFileSync(secretsFile, '{"_readme":"docs","VERCEL_TOKEN":"vercel_pasted"}');
 

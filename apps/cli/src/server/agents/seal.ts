@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { Argv } from "@repo/agent-driver/registry";
 import { RUNNER_IDS } from "@repo/domain/runners";
 import type { RunnerId } from "@repo/domain/runners";
 
@@ -182,7 +183,7 @@ const commandUnder = (
   runner: RunnerId,
   sealed: Sealed,
   argv: readonly string[],
-): string[] => {
+): Argv => {
   // Each path is a parameter, never quoted into the profile's source.
   const params: string[] = [];
   const param = (value: string): string => `(param "P${params.push(value) - 1}")`;
@@ -261,9 +262,9 @@ const commandUnder = (
 };
 
 /** `argv` as a `runner` run starts it: under the profile, with this machine's paths. */
-export const sealedCommand = (seal: Seal, runner: RunnerId, argv: readonly string[]): string[] =>
+export const sealedCommand = (seal: Seal, runner: RunnerId, argv: readonly string[]): Argv =>
   commandUnder(seal, runner, "run", argv);
 
 /** A runner's sign-in, sealed as its runs are but free to open the browser it signs in through and record the login. */
-export const signInCommand = (seal: Seal, runner: RunnerId, argv: readonly string[]): string[] =>
+export const signInCommand = (seal: Seal, runner: RunnerId, argv: readonly string[]): Argv =>
   commandUnder(seal, runner, "sign-in", argv);

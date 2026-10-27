@@ -167,12 +167,9 @@ interface StripeSnapshot {
 
 /**
  * The key revenue is read with: the founder's own, which makes every payment link, so its
- * account is the one a bet's tagged money lands on. A key left blank in the file is no key.
+ * account is the one a bet's tagged money lands on.
  */
-export const stripeCredential = (): string | null => {
-  const key = getSecret(STRIPE_SECRET_KEY);
-  return key === "" ? null : key;
-};
+export const stripeCredential = (): string | null => getSecret(STRIPE_SECRET_KEY);
 
 /** Whether test-mode money counts: only in an end-to-end run of a revenue bet, never by default. */
 const countsTestMoney = (): boolean => process.env.IDLEBIZ_COUNT_TEST_MONEY === "1";

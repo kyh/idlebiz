@@ -317,7 +317,7 @@ const Encounter = ({
   const team = step === "team" ? flow.team : null;
   const showingPanel = team?.kind === "cast" || step === "budget";
   return (
-    <div className="ob-stage" data-look={pickingLook} data-panel={showingPanel}>
+    <div className="ob-stage" data-look={pickingLook}>
       <OfficeBackdrop />
       <div className="ob-status ob-status-guide px-plate">
         <strong>Chad Runwayson</strong>

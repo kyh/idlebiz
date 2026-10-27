@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DEFAULT_IDLE_TIMEOUT_MS } from "@repo/agent-driver/runner";
+import { RUN_IDLE_TIMEOUT_MS } from "./agents/runner-pool";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
@@ -170,7 +170,7 @@ afterAll(() => {
 
 describe("deploying through Vercel's API", () => {
   it("answers well inside the run's idle watchdog, since the agent's call waits on it in silence", () => {
-    expect(DEPLOY_TIMEOUT_MS * 2).toBeLessThanOrEqual(DEFAULT_IDLE_TIMEOUT_MS);
+    expect(DEPLOY_TIMEOUT_MS * 2).toBeLessThanOrEqual(RUN_IDLE_TIMEOUT_MS);
   });
 
   it("uploads what the CLI would, deploys it to production in the bound project, and waits for its domain", async () => {

@@ -23,7 +23,7 @@ import { claudeUserSettings } from "./claude-user-settings";
 import { runEnv } from "./run-env";
 import { runTmpdir } from "./run-workspace";
 import { browserSocketDir, namespaceUnder } from "./machine-seal";
-import { SANDBOX_EXEC, sealedCommand } from "./seal";
+import { sealedCommand } from "./seal";
 import type { Seal } from "./seal";
 import { TEAM_NOTES_MAX_BYTES, readTeamNotes } from "./team-notes";
 
@@ -141,7 +141,7 @@ export const codexSessionEnv = async (
   seal: Seal,
   env: Record<string, string> = {},
 ): Promise<Record<string, string>> => {
-  const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, "codex", [
+  const [bin, ...rest] = sealedCommand(seal, "codex", [
     runnerBin("codex"),
     "mcp",
     "list",
@@ -190,7 +190,7 @@ export const sessionAgent = async (
 export const sealedBrowser =
   (seal: Seal, runner: RunnerId): BrowserCli =>
   async (args) => {
-    const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, runner, ["agent-browser", ...args]);
+    const [bin, ...rest] = sealedCommand(seal, runner, ["agent-browser", ...args]);
     const env = { ...runnerEnv(runner), ...browserEnv(seal, runner) };
     const { stdout } = await execFileAsync(bin, rest, { env, timeout: 8000 });
     return stdout;

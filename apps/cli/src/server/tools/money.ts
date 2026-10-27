@@ -12,9 +12,9 @@ import { CHECKOUT_SESSION_PARAM } from "../stripe-links";
 import type { StripeAccess } from "../stripe-links";
 import { TOOL_SPECS } from "../tool-specs";
 import type { ToolName } from "../tool-specs";
-import { define, holdOnFounder, needIntegration, productFor, requireSignOff } from "./define";
+import { define, needIntegration, productFor, requireSignOff } from "./define";
 import type { RunContext, Tool } from "./define";
-import { VERCEL_WAITING, domainsLabel, needVercel, productHosts } from "./vercel";
+import { domainsLabel, needVercelToken, productHosts } from "./vercel";
 
 /** Why money on `product` cannot be counted for `bet`, or null when it can. */
 export const revenueBetRefusal = (bet: string, product: Product): string | null => {
@@ -36,7 +36,17 @@ export const UNRECORDED_LINK =
 const RESUMES_ON_LIVE_KEY =
   "this task resumes automatically once a live key is saved: a test-mode one counts no money, so it keeps waiting.";
 
-export const NO_STRIPE_KEY = `IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. Continue with what you can — ${RESUMES_ON_LIVE_KEY}`;
+const NO_STRIPE_KEY = `IdleBiz has no Stripe key to charge with: the founder has a Stripe card waiting that takes them to the Budget panel to add one. Continue with what you can — ${RESUMES_ON_LIVE_KEY}`;
+
+/** Ask the founder for a Stripe key to charge with, saying `reason`, which holds the call. */
+export const needStripeKey = (ctx: RunContext, reason: string): never =>
+  needIntegration(
+    ctx,
+    "stripe",
+    reason,
+    NO_STRIPE_KEY,
+    "IdleBiz has no Stripe key to charge with.",
+  );
 
 /** Why buyers cannot be sent to `url` once they have paid, or null when they can. */
 const afterPaymentRefusal = (url: URL): string | null => {
@@ -77,13 +87,7 @@ const afterPaymentPage = async (
   }
   const token =
     getSecret(VERCEL_TOKEN) ??
-    needVercel(
-      ctx,
-      product.id,
-      `to check where ${product.name} sends buyers who paid`,
-      VERCEL_WAITING,
-      "Vercel is not connected.",
-    );
+    needVercelToken(ctx, product.id, `to check where ${product.name} sends buyers who paid`);
   const hosts = await productHosts(ctx, product, product.vercel, token);
   if (!hosts.includes(url.hostname)) {
     throw new RefusalError(
@@ -317,20 +321,9 @@ export const MONEY_TOOLS = {
           : await afterPaymentPage(ctx, product, afterPaymentUrl);
       const cents = Math.round(amountUsd * 100);
       const price = formatCents(cents);
-      const key = getSecret(STRIPE_SECRET_KEY);
-      if (!key) {
-        return holdOnFounder(
-          ctx,
-          {
-            integration: "stripe",
-            productId: null,
-            reason: `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
-            type: "integration",
-          },
-          NO_STRIPE_KEY,
-          "IdleBiz has no Stripe key to charge with.",
-        );
-      }
+      const key =
+        getSecret(STRIPE_SECRET_KEY) ??
+        needStripeKey(ctx, `to sell ${JSON.stringify(name)} at ${price} through a payment link`);
       await requireStripeAccess(ctx, ctx.linkAccess(key), LINK_GRANT);
       if (delivery !== undefined) {
         await requireStripeAccess(ctx, ctx.checkoutAccess(key), DELIVERY_GRANT);

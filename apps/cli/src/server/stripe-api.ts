@@ -35,3 +35,7 @@ export const isTestKey = (key: string): boolean => /^[rs]k_test_/u.test(key);
  */
 export const holdsStripeSecretKey = (text: string): boolean =>
   /\bsk_(?:live|test)_[0-9A-Za-z]{8,}/u.test(text);
+
+/** Whether `text` carries any Stripe API key, secret or restricted. */
+export const holdsStripeKey = (text: string): boolean =>
+  /\b[rs]k_(?:live|test)_[0-9A-Za-z]{8,}/u.test(text);

@@ -3,6 +3,9 @@ import { z } from "zod";
 import type { RunnerId } from "@repo/domain/runners";
 import type { Rates } from "./pricing";
 
+/** A command line: the program, then its arguments. Never empty, so a spawn always has a program. */
+export type Argv = readonly [bin: string, ...args: string[]];
+
 export interface RunnerAdapter {
   /** Module specifier of the ACP subprocess. */
   acpEntry: string;
@@ -92,7 +95,7 @@ export interface SessionSetup {
   teamNotes: string | null;
 }
 
-export interface SessionStart {
+interface SessionStart {
   meta?: NewSessionRequest["_meta"];
   /** Folders handed to the session besides the run's own, which it only reads. */
   readDirs: readonly string[];

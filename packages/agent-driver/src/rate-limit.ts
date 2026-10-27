@@ -14,7 +14,7 @@ import { z } from "zod";
  * limit, a provider too busy for now, a session out of room, or anything else, which is only the
  * task's.
  */
-export const FAILURE_CLASSES = [
+const FAILURE_CLASSES = [
   "auth",
   "access-denied",
   "usage-limit",
