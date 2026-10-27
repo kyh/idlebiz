@@ -479,8 +479,9 @@ otherwise, move `company/` out.
 COMPANY.md carries `format` (`SAVE_FORMAT`, `store/company-codec.ts`), and a save stamped at any
 other blocks loading and founding (`SaveFormatError`). Each codec reads its kind through one
 strict zod schema, the one its encoder writes to: a package it refuses (a hand edit, a field
-missing) is skipped and named in the load report, never read with a default. A frontmatter key
-the app does not know is still dropped on the next write of that file. Boot alone repairs what a
+missing) is skipped and named in the load report, never read with a default, and so is an
+`approvals.json` that does not parse, which no sign-off then writes over. A frontmatter key the
+app does not know is still dropped on the next write of that file. Boot alone repairs what a
 hand edit or a release with no lead leaves (`initStore`): a run that names no lock is queued
 again, and queued or running work nobody holds is to do. No repair stands in for a package it
 skipped: a lead whose AGENTS.md did not read stays lead, and a teammate's open work stays theirs.

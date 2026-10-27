@@ -6,6 +6,7 @@
 import { z } from "zod";
 import type { Peer } from "./relay/rpc";
 import { sealingKeySchema } from "./secrets";
+import { LAUNCH_AT_LOGIN } from "@repo/domain/domain";
 import type { LaunchAtLogin } from "@repo/domain/domain";
 
 export const RELAY_METHODS = [
@@ -24,9 +25,6 @@ export const RELAY_METHODS = [
   "host.relaunch",
 ] as const;
 export type RelayMethod = (typeof RELAY_METHODS)[number];
-
-/** How long a host's quit waits for main to stop its runs, as the shell's does (main_process.rs). */
-export const QUIT_TIMEOUT_MS = 45_000;
 
 export const launchSchema = z.strictObject({
   // a launch at login starts in the menu bar
@@ -78,13 +76,7 @@ type Opening = z.infer<typeof openingSchema>;
 export const loginItemSchema = z.strictObject({ on: z.boolean().nullable() });
 type LoginItem = z.infer<typeof loginItemSchema>;
 
-export const launchAtLoginSchema = z.enum([
-  "on",
-  "off",
-  "requires-approval",
-  "not-found",
-  "unavailable",
-]) satisfies z.ZodType<LaunchAtLogin>;
+export const launchAtLoginSchema = z.enum(LAUNCH_AT_LOGIN);
 
 export const noteSchema = z.strictObject({ body: z.string(), title: z.string() });
 type Note = z.infer<typeof noteSchema>;

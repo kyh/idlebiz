@@ -18,6 +18,7 @@ import * as store from "./store";
 import { createScheduler } from "../scheduler";
 import { runnerPool } from "../agents/runner-pool";
 import {
+  approvalsFile,
   companyDir,
   companyFile,
   productsDir,
@@ -743,6 +744,22 @@ describe("founder approvals", () => {
     expect(store.claimTask(t.id, mae.id)?.state.kind).toBe("queued");
     expect(store.consumeApproval(t.id, "git push origin main")).toBe(false);
     expect(store.consumeApproval(waiting.id, "vercel deploy --prod")).toBe(true);
+  });
+
+  it("name a file that does not read at boot, and never write over it", () => {
+    foundAcme();
+    const edited = '[{"key": "git push", "taskId": ';
+    writeFileSync(approvalsFile(), edited);
+
+    const report = store.initStore();
+    expect(report.skipped).toEqual([
+      expect.objectContaining({ kind: "approvals", path: approvalsFile() }),
+    ]);
+    expect(store.holdsApproval("continue-deploy")).toBe(false);
+    expect(() => store.grantApproval("continue-deploy", "vercel deploy --prod")).toThrow(
+      "it will not be overwritten",
+    );
+    expect(readFileSync(approvalsFile(), "utf-8")).toBe(edited);
   });
 });
 

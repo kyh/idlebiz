@@ -21,6 +21,7 @@ import { rootDir } from "./paths";
 import { printfulTokenStatus, removePrintfulToken, savePrintfulToken } from "./printful-token";
 import { openProduct, openWorkspacePath, productStatus } from "./product";
 import { chatOptions } from "./prompts/chat-options";
+import { RefusalError } from "./refusal";
 import * as store from "./store/store";
 import { removeStripeKey, saveStripeKey, stripeKeyStatus } from "./stripe-key";
 import {
@@ -102,7 +103,7 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       options: os.employees.options.handler(({ input }) => {
         const emp = store.getEmployee(input.employeeId);
         if (!emp) {
-          throw new Error(`no employee ${input.employeeId}`);
+          throw new RefusalError(`no employee ${input.employeeId}`);
         }
         return chatOptions(emp, store.openTasksFor(input.employeeId));
       }),
@@ -140,9 +141,7 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
         retireProduct(input.productId, input.reason, null),
       ),
       list: os.products.list.handler(() => store.listProducts()),
-      open: os.products.open.handler(async ({ input }) => ({
-        opened: await openProduct(input.productId),
-      })),
+      open: os.products.open.handler(({ input }) => openProduct(input.productId)),
       status: os.products.status.handler(({ input }) => productStatus(input.productId)),
     },
     save: {

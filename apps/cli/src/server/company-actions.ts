@@ -68,6 +68,10 @@ export const startProduct = (input: ProductDraft, by: string | null): Product =>
     message: product.name,
     payload: { productId: product.id },
   });
+  postToRoom(
+    by === null ? { kind: "founder" } : { id: by, kind: "employee" },
+    `🆕 New product: ${product.name} — ${product.description}`,
+  );
   return product;
 };
 

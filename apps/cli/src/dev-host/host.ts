@@ -10,7 +10,6 @@ import type { Readable, Writable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { z } from "zod";
 import {
-  QUIT_TIMEOUT_MS,
   copyTextSchema,
   handoffSchema,
   keepAwakeSchema,
@@ -28,8 +27,36 @@ import { errorMessage } from "@repo/domain/errors";
 /** The bundle `pnpm build` leaves, the page it serves beside it (`dist/page`). */
 const SERVE_ENTRY = path.resolve(import.meta.dirname, "../../dist/index.js");
 
+// The shell's deadlines on main (src-tauri/src: shell.rs, window.rs, main_process.rs), kept here so
+// a main that wedges fails a dev launch or an e2e test as it would fail the app, not hang it.
+/** How long main has to boot once it is said hello to, before it is killed with its group. */
+const BOOT_TIMEOUT_MS = 60_000;
+/** How long main has to hand over a link: it only mints one. */
+const HANDOFF_TIMEOUT_MS = 10_000;
+/** How long a quit waits for main to stop its runs and answer. */
+const QUIT_TIMEOUT_MS = 45_000;
 /** How long main has to exit once its stdin closes, before SIGKILL. */
 const EXIT_GRACE_MS = 5000;
+
+/** A deadline on main that passed, which no answer of its own can be. */
+class MainLateError extends Error {
+  override name = "MainLateError";
+}
+
+/** Main's answer, or MainLateError once `ms` pass without one. */
+const within = async <T>(answer: Promise<T>, ms: number, what: string): Promise<T> => {
+  const deadline = new AbortController();
+  try {
+    return await Promise.race([
+      answer,
+      sleep(ms, undefined, { ref: false, signal: deadline.signal }).then(() => {
+        throw new MainLateError(`main did not ${what} within ${ms / 1000} seconds`);
+      }),
+    ]);
+  } finally {
+    deadline.abort();
+  }
+};
 
 export interface DevHostOptions {
   /** The save main opens (`IDLEBIZ_ROOT_DIR`); the environment's when absent. */
@@ -124,6 +151,16 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
     });
   };
 
+  /** Ends main at once, asking it nothing: main leads its own group, and what it started goes with it. */
+  const killMain = async (running: Main): Promise<void> => {
+    if (!isRunning(running.child) || running.child.pid === undefined) {
+      return;
+    }
+    const exited = once(running.child, "exit");
+    process.kill(-running.child.pid, "SIGKILL");
+    await exited;
+  };
+
   const stopMain = async (running: Main): Promise<void> => {
     if (!isRunning(running.child)) {
       return;
@@ -140,11 +177,7 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
     await Promise.race([answered(), sleep(QUIT_TIMEOUT_MS, undefined, { ref: false })]);
     running.child.stdin.end();
     await Promise.race([exited, sleep(EXIT_GRACE_MS, undefined, { ref: false })]);
-    if (isRunning(running.child) && running.child.pid !== undefined) {
-      // main leads its own group: what it started and did not end goes with it
-      process.kill(-running.child.pid, "SIGKILL");
-      await exited;
-    }
+    await killMain(running);
   };
 
   const startMain = async (): Promise<Main> => {
@@ -195,9 +228,10 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       sealingKey: null,
     };
     try {
-      await peer.request("hello", hello, z.null());
+      await within(peer.request("hello", hello, z.null()), BOOT_TIMEOUT_MS, "boot");
     } catch (error) {
-      await stopMain(started);
+      // a boot that never ends would wait a quit out too
+      await (error instanceof MainLateError ? killMain(started) : stopMain(started));
       throw new Error(`main did not boot: ${errorMessage(error)}`, { cause: error });
     }
     return started;
@@ -250,7 +284,11 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
     if (main === null) {
       throw new Error("main is not running");
     }
-    const { handoffUrl } = await main.peer.request("handoff", null, handoffSchema);
+    const { handoffUrl } = await within(
+      main.peer.request("handoff", null, handoffSchema),
+      HANDOFF_TIMEOUT_MS,
+      "hand over a link",
+    );
     return handoffUrl;
   };
 

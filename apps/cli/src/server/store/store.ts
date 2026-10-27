@@ -6,6 +6,7 @@ import {
   atomicWrite,
   moveDir,
   readJsonFile,
+  readJsonFileForUpdate,
   readJsonlTail,
   writeJsonFile,
 } from "../lib/fs";
@@ -145,6 +146,7 @@ import type { ActivityEvent, PersistedActivity } from "@repo/domain/activity";
 
 const GrantSchema = z.object({ grantedAt: z.number(), key: z.string(), taskId: z.string() });
 type Grant = z.infer<typeof GrantSchema>;
+const GrantsSchema = z.array(GrantSchema);
 
 const ProposalEndSchema = z.object({
   briefedAt: z.number(),
@@ -439,8 +441,20 @@ export const setAutopilot = (on: boolean): Company => patchCompany({ autopilot: 
 // command) would wait for anyone who later ran that exact string.
 const writeGrants = (grants: Grant[]): void => {
   const active = current();
+  // a file that does not read is the founder's to fix: rewriting it would lose the sign-offs in it
+  readJsonFileForUpdate(approvalsFile(), GrantsSchema);
   writeJsonFile(approvalsFile(), grants);
   active.grants = grants;
+};
+
+/** The sign-offs no run has used yet; a file that does not read is named in the load report. */
+const readGrants = (): Grant[] => {
+  try {
+    return readJsonFileForUpdate(approvalsFile(), GrantsSchema) ?? [];
+  } catch (error) {
+    skip("approvals", approvalsFile(), error);
+    return [];
+  }
 };
 
 export const grantApproval = (taskId: string, key: string): void => {
@@ -1990,7 +2004,7 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
   active.links = loadRecords("link", linksDir(), ChargeLinkSchema);
   active.orders = loadRecords("order", ordersDir(), OrderSchema);
   active.policy = readJsonFile(policyFile(), PolicyParamsSchema) ?? DEFAULT_POLICY;
-  active.grants = readJsonFile(approvalsFile(), z.array(GrantSchema)) ?? [];
+  active.grants = readGrants();
   active.routines = loadPackages("routine", routinesDir(), routineFile, docToRoutine);
   loadRecentChat(active);
   active.sinceLastLook = readJsonFile(sinceLastLookFile(), DigestSchema);

@@ -88,8 +88,14 @@ const devServer = (mode: string): Plugin => ({
       })();
     });
     server.httpServer?.once("close", () => {
-      void watching.close();
-      void host?.stop();
+      void (async () => {
+        const stopped = await Promise.allSettled([watching.close(), host?.stop()]);
+        for (const result of stopped) {
+          if (result.status === "rejected") {
+            server.config.logger.error(`[host] could not stop: ${errorMessage(result.reason)}`);
+          }
+        }
+      })();
     });
     if (mode !== "browser") {
       return;
