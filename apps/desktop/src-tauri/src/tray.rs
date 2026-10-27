@@ -12,8 +12,9 @@ use crate::protocol::{self, TrayClick, TrayItem, TrayModel};
 use crate::{shell, window};
 
 const TRAY_ID: &str = "office";
-/// 32 px, the 2x the menu bar draws at 16 pt: the system scales it to the bar's height.
-const ICON: &[u8] = include_bytes!("../icons/tray.png");
+/// 32 px, the 2x the menu bar draws at 16 pt: the system scales it to the bar's height. Decoded
+/// as the shell compiles, so a file that is no PNG fails the build, not the first draw.
+const ICON: Image<'static> = tauri::include_image!("icons/tray.png");
 
 const OPEN: &str = "open";
 const STATUS: &str = "status";
@@ -63,7 +64,7 @@ fn redraw<R: Runtime>(app: &AppHandle<R>, model: &TrayModel) -> tauri::Result<()
         return Ok(());
     }
     TrayIconBuilder::with_id(TRAY_ID)
-        .icon(Image::from_bytes(ICON)?)
+        .icon(ICON)
         .icon_as_template(true)
         .menu(&menu)
         .tooltip(&model.tooltip)
@@ -75,6 +76,6 @@ fn redraw<R: Runtime>(app: &AppHandle<R>, model: &TrayModel) -> tauri::Result<()
 
 pub fn draw<R: Runtime>(app: &AppHandle<R>, model: &TrayModel) {
     if let Err(error) = redraw(app, model) {
-        eprintln!("[shell] could not draw the menu-bar icon: {error}");
+        log::warn!("could not draw the menu-bar icon: {error}");
     }
 }
