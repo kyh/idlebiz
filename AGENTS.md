@@ -1251,7 +1251,9 @@ On purpose or for want of a rule:
   padding (`.px-btn`, `.px-opt`, `.px-hint`, `.px-inset`…). `renderer/px-kit-overrides.test.ts`
   fails on one in any class string of the desktop renderer that names a kit class; a class built
   at runtime goes unread. A variant is a kit modifier (`.px-hint-danger`, `.px-inset-hover`),
-  never a utility. Cursors are the opposite: no kit class sets one, each app does by element.
+  never a utility, and a colour is one of the kit's tokens (`text-fg-mid`, `bg-veil/90`), never a
+  hex of a component's own, which the same test refuses. Cursors are the opposite: no kit class
+  sets one, each app does by element.
   Icons are font glyphs, so "icon size" is font-size: use `.px-icon`.
 - **The office's art and its collision don't know about each other.**
   `renderer/game/office-design.json` is the one office: placed sprites, each naming its PNG under

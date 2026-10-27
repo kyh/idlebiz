@@ -19,7 +19,7 @@ export const EmployeeTag = ({
     <span
       className={size === "lg" ? "text-base uppercase tracking-wide text-fg" : "text-sm text-fg"}
     >
-      {lead ? <span className="text-[#c9a227]">★ </span> : null}
+      {lead ? <span className="text-gold">★ </span> : null}
       {name}
     </span>
     <span className="text-xs text-accent-lo">{title}</span>

@@ -106,3 +106,14 @@ it("puts no Tailwind utility beside a kit class that sets the same property", as
   );
   expect(beaten).toEqual([]);
 });
+
+it("colours the page from the kit's palette, never a hex of a component's own", () => {
+  const own = readdirSync(renderer, { encoding: "utf-8", recursive: true })
+    .filter((file) => file.endsWith(".tsx"))
+    .flatMap((file) =>
+      [...readFileSync(path.join(renderer, file), "utf-8").matchAll(/-\[#[\da-f]+\]/giu)].map(
+        ([hex]) => `${file}: ${hex}`,
+      ),
+    );
+  expect(own).toEqual([]);
+});

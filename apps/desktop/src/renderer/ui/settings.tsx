@@ -185,8 +185,7 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
                   type="button"
                   onClick={() => resetting.submit()}
                   disabled={!armed}
-                  className="px-btn"
-                  style={armed ? { background: "var(--danger)", color: "var(--light)" } : undefined}
+                  className={armed ? "px-btn px-btn-danger" : "px-btn"}
                 >
                   Reset everything
                 </button>

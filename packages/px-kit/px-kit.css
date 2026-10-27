@@ -28,10 +28,21 @@
   --ok: #57b86c;
   --warn: #e8b04b;
   --danger: #d9645a;
+  --light-dim: #c3c9de; /* quieter light text on chrome */
+  --light-faint: #a7adc6; /* quieter still: a figure's note */
+  --fg-mid: #4c5064; /* text on cream between --fg and --fg-dim */
+  --name: #3a76b8; /* a speaker's name on cream */
+  --gold: #c9a227; /* the lead's star */
+  --money: #9fe6b0; /* revenue on chrome */
+  --veil: #10121b; /* what a curtain lays over the office */
+  /* the dialogue's feed: a colour for each kind of line */
+  --line-tool: #2f6fb0;
+  --line-ship: #2e8a4e;
+  --line-chat: #5a4fae;
+  --line-quiet: #6d7187;
 
   font-family: "VG5000", ui-monospace, Menlo, monospace;
   -webkit-font-smoothing: none;
-  font-smooth: never;
   letter-spacing: 0.02em;
 }
 
@@ -54,6 +65,17 @@
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-danger: var(--danger);
+  --color-light-dim: var(--light-dim);
+  --color-light-faint: var(--light-faint);
+  --color-fg-mid: var(--fg-mid);
+  --color-name: var(--name);
+  --color-gold: var(--gold);
+  --color-money: var(--money);
+  --color-veil: var(--veil);
+  --color-line-tool: var(--line-tool);
+  --color-line-ship: var(--line-ship);
+  --color-line-chat: var(--line-chat);
+  --color-line-quiet: var(--line-quiet);
 }
 
 /* ---- pixel-UI kit -------------------------------------------------------- */
@@ -170,6 +192,13 @@
   box-shadow:
     inset 2px 2px 0 0 var(--accent-lo),
     inset -2px -2px 0 0 var(--accent-hi);
+}
+
+/* a destructive button, armed */
+.px-btn-danger,
+.px-btn-danger:hover:not(:disabled) {
+  color: var(--light);
+  background: var(--danger);
 }
 
 .px-opt {
