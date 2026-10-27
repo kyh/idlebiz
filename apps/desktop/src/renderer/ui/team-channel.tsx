@@ -187,7 +187,7 @@ export const TeamChannel = () => {
       </div>
       <div
         ref={scrollRef}
-        className="px-inset px-scroll max-h-48 min-h-16 space-y-1 overflow-y-auto p-2 text-xs leading-snug"
+        className="px-inset px-scroll max-h-48 min-h-16 space-y-1 overflow-y-auto p-2 text-xs leading-snug select-text"
       >
         {feed.length === 0 ? (
           <div className="text-fg-dim">

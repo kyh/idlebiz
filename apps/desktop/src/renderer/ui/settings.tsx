@@ -104,7 +104,9 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
           {company.mission === null ? null : (
             <div className="text-xs text-fg-dim">{company.mission}</div>
           )}
-          <div className="mt-1 truncate text-xs text-fg-dim">{company.workspaceDir}</div>
+          <div className="mt-1 truncate text-xs text-fg-dim select-text">
+            {company.workspaceDir}
+          </div>
         </div>
 
         {saveIssues.length > 0 ? (
