@@ -159,7 +159,8 @@ so the browser is the one the agents drive; `pnpm dev:desktop` is for looking at
 
 > **Use an empty temporary save root for desktop verification.** Boot starts the scheduler,
 > which immediately drains queued work, even with autopilot off. Existing companies can
-> launch paid CLI sessions. `IDLEBIZ_ROOT_DIR` overrides the default `~/.idlebiz` root.
+> launch paid CLI sessions, so ask before a dev launch on the real `~/.idlebiz`.
+> `IDLEBIZ_ROOT_DIR` overrides the default `~/.idlebiz` root.
 > Isolation protects the real save, but onboarding and employee runs still bill the signed-in
 > CLI. A dev launch on `~/.idlebiz` while the installed IdleBiz has it open refuses to boot
 > ("The save").
