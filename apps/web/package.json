@@ -9,7 +9,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next .cache",
-    "test": "vitest run"
+    "test": "vitest run",
+    "og:video": "node scripts/og-video.ts"
   },
   "dependencies": {
     "@repo/px-kit": "workspace:*",
@@ -20,10 +21,12 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@repo/domain": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "playwright": "^1.64.1",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

@@ -218,8 +218,17 @@ export const contactPage: ProsePage = {
   title: "Contact",
 };
 
-/** The date both legal documents took effect, as each states it. */
-export const legalRevisedOn = "October 10, 2026";
+/** The date both legal documents took effect, as an ISO date for the sitemap and JSON-LD. */
+const legalRevisedIso = "2026-10-10";
+
+/** The last change to the home page and to the pages without a revision date of their own. */
+export const siteUpdatedIso = "2026-10-24";
+
+/** The same date as each document states it. */
+export const legalRevisedOn = new Date(legalRevisedIso).toLocaleDateString("en-US", {
+  dateStyle: "long",
+  timeZone: "UTC",
+});
 
 /** The file that holds the legal text, whose history is each document's previous versions. */
 export const legalSourcePath = "apps/web/src/lib/agent/site-content.ts";
@@ -1264,6 +1273,10 @@ export const prosePages: ProsePage[] = [aboutPage, contactPage, privacyPage];
  * linked from those alone, never from anything a sighted visitor sees.
  */
 export const servedPages: ProsePage[] = [...prosePages, termsPage];
+
+/** The ISO date a page was last revised: the legal documents carry their own, the rest the site's. */
+export const pageRevisedOn = (page: ProsePage): string =>
+  page === privacyPage || page === termsPage ? legalRevisedIso : siteUpdatedIso;
 
 export const findProsePage = (path: string): ProsePage | undefined =>
   servedPages.find((page) => page.path === path);

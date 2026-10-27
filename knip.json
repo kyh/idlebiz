@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreBinaries": ["agent-browser"],
+  "ignoreBinaries": ["agent-browser", "ffmpeg"],
   "workspaces": {
     "apps/cli": {
       "entry": ["src/index.ts", "scripts/*.ts"],

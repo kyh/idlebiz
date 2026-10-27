@@ -1,6 +1,6 @@
 import { siteConfig } from "@/lib/site-config";
 
-import { siteSummary } from "@/lib/agent/site-content";
+import { pageRevisedOn, siteSummary } from "@/lib/agent/site-content";
 import type { ProsePage } from "@/lib/agent/site-content";
 
 type JsonLdValue =
@@ -17,6 +17,8 @@ export interface JsonLdNode {
 
 const ORGANIZATION_ID = `${siteConfig.url}/#organization`;
 const WEBSITE_ID = `${siteConfig.url}/#website`;
+
+const VIDEO_ID = `${siteConfig.url}/#video`;
 
 const sameAs = [siteConfig.repository, "https://x.com/kaiyuhsu"];
 
@@ -80,14 +82,31 @@ const application = {
   operatingSystem: "macOS",
   publisher: { "@id": ORGANIZATION_ID },
   sameAs,
+  screenshot: `${siteConfig.url}${siteConfig.video.poster}`,
   softwareRequirements:
     "An Apple silicon Mac and a signed-in Claude Code (claude) or Codex (codex) CLI",
   url: siteConfig.url,
+  video: { "@id": VIDEO_ID },
+} satisfies JsonLdNode;
+
+/** The office clip the home page shares as og:video. */
+const video = {
+  "@id": VIDEO_ID,
+  "@type": "VideoObject",
+  contentUrl: `${siteConfig.url}${siteConfig.video.url}`,
+  description: `The ${siteConfig.name} office filling the frame as the camera drifts over the desks: the team typing and walking to the cooler and along the corridors, while the revenue plate in the top left counts up each sale and the logo sits in the bottom right.`,
+  duration: `PT${siteConfig.video.durationSeconds}S`,
+  height: siteConfig.video.height,
+  name: `${siteConfig.name} — the office at work`,
+  publisher: { "@id": ORGANIZATION_ID },
+  thumbnailUrl: `${siteConfig.url}${siteConfig.video.poster}`,
+  uploadDate: siteConfig.video.uploadDate,
+  width: siteConfig.video.width,
 } satisfies JsonLdNode;
 
 export const homeGraph = {
   "@context": "https://schema.org",
-  "@graph": [organization, website, application],
+  "@graph": [organization, website, application, video],
 } satisfies JsonLdNode;
 
 export const pageGraph = (page: ProsePage) =>
@@ -99,10 +118,26 @@ export const pageGraph = (page: ProsePage) =>
         "@id": `${siteConfig.url}${page.path}#webpage`,
         "@type": page.schemaType,
         about: { "@id": ORGANIZATION_ID },
+        breadcrumb: { "@id": `${siteConfig.url}${page.path}#breadcrumb` },
+        dateModified: pageRevisedOn(page),
         description: page.description,
+        inLanguage: "en-US",
         isPartOf: { "@id": WEBSITE_ID },
         name: page.title,
         url: `${siteConfig.url}${page.path}`,
+      },
+      {
+        "@id": `${siteConfig.url}${page.path}#breadcrumb`,
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", item: siteConfig.url, name: siteConfig.name, position: 1 },
+          {
+            "@type": "ListItem",
+            item: `${siteConfig.url}${page.path}`,
+            name: page.title,
+            position: 2,
+          },
+        ],
       },
     ],
   }) satisfies JsonLdNode;
