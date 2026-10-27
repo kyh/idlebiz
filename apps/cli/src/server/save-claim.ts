@@ -86,6 +86,11 @@ const listenOn = async (socket: string): Promise<Server | null> => {
 /** Whether a main answers on `socket`. */
 const answers = async (socket: string): Promise<boolean> => {
   const probe = createConnection(socket);
+  // the wait below stops hearing errors once it connects, but the claim's server ends each
+  // connection it takes, so the probe can still fail after: unheard, that would take main down
+  probe.on("error", () => {
+    // what answers is heard below; a failure after the connect changes nothing
+  });
   try {
     await once(probe, "connect");
   } catch (error) {
