@@ -57,6 +57,7 @@ const MESSAGES = {
   "host.tray": { from: "main", params: trayModelSchema },
   quit: { from: "shell", params: z.null(), result: z.null() },
   tray: { from: "shell", params: trayClickSchema },
+  update: { from: "shell", params: z.null() },
   window: { from: "shell", params: windowSchema },
 } satisfies Record<RelayMethod, Message>;
 

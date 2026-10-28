@@ -166,13 +166,7 @@ class AppTray {
         ...(s.company ? [autopilotItem(s.company)] : []),
         { kind: "separator" },
         ...(update.kind === "available"
-          ? [
-              {
-                kind: "update" as const,
-                label: `Update to IdleBiz ${update.version}…`,
-                version: update.version,
-              },
-            ]
+          ? [{ kind: "update" as const, label: `Update to IdleBiz ${update.version}…` }]
           : []),
         { kind: "quit", label: "Quit IdleBiz" },
       ],

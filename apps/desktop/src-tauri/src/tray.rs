@@ -1,7 +1,8 @@
 //! The menu-bar icon: a template image the system colours, beside the title, tooltip and menu main
 //! decides (`apps/cli/src/server/tray.ts`). It is drawn on main's first model and redrawn on each
-//! one after. A click the shell can answer itself (Open, Quit, an update) is answered here. A click
-//! on the autopilot item goes to main with the state its label promised.
+//! one after. A click the shell can answer itself (Open, Quit) is answered here. A click on the
+//! autopilot item goes to main with the state its label promised, and one on the update item goes
+//! to main, which installs the release it offers.
 
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -9,7 +10,7 @@ use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Runtime};
 
 use crate::protocol::{self, TrayClick, TrayItem, TrayModel};
-use crate::{shell, updater, window};
+use crate::{shell, window};
 
 const TRAY_ID: &str = "office";
 /// 32 px, the 2x the menu bar draws at 16 pt: the system scales it to the bar's height. Decoded
@@ -21,8 +22,7 @@ const STATUS: &str = "status";
 const AUTOPILOT_ON: &str = "autopilot-on";
 const AUTOPILOT_OFF: &str = "autopilot-off";
 const QUIT: &str = "quit";
-/// An update item's id is this and the version it installs.
-const UPDATE: &str = "update:";
+const UPDATE: &str = "update";
 
 fn menu<R: Runtime>(app: &AppHandle<R>, items: &[TrayItem]) -> tauri::Result<Menu<R>> {
     let menu = Menu::new(app)?;
@@ -39,9 +39,8 @@ fn menu<R: Runtime>(app: &AppHandle<R>, items: &[TrayItem]) -> tauri::Result<Men
                 menu.append(&MenuItem::with_id(app, id, label, *enabled, None::<&str>)?)?;
             }
             TrayItem::Separator {} => menu.append(&PredefinedMenuItem::separator(app)?)?,
-            TrayItem::Update { label, version } => {
-                let id = format!("{UPDATE}{version}");
-                menu.append(&MenuItem::with_id(app, id, label, true, None::<&str>)?)?;
+            TrayItem::Update { label } => {
+                menu.append(&MenuItem::with_id(app, UPDATE, label, true, None::<&str>)?)?;
             }
             TrayItem::Quit { label } => {
                 menu.append(&MenuItem::with_id(app, QUIT, label, true, None::<&str>)?)?;
@@ -52,15 +51,11 @@ fn menu<R: Runtime>(app: &AppHandle<R>, items: &[TrayItem]) -> tauri::Result<Men
 }
 
 fn clicked<R: Runtime>(app: &AppHandle<R>, event: &MenuEvent) {
-    let id = event.id().as_ref();
-    if let Some(version) = id.strip_prefix(UPDATE) {
-        updater::install_from_menu(app, version);
-        return;
-    }
-    match id {
+    match event.id().as_ref() {
         OPEN => window::show(app),
         AUTOPILOT_ON => shell::tell_main(app, protocol::TRAY_CLICK, &TrayClick { on: true }),
         AUTOPILOT_OFF => shell::tell_main(app, protocol::TRAY_CLICK, &TrayClick { on: false }),
+        UPDATE => shell::tell_main(app, protocol::UPDATE_CLICK, &()),
         QUIT => app.exit(0),
         _ => {}
     }

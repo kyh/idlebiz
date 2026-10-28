@@ -49,7 +49,7 @@ import {
 } from "./stripe-links";
 import type { Integrations } from "./tools/define";
 import { appTray } from "./tray";
-import { startUpdateChecks } from "./updates";
+import { installFromMenu, startUpdateChecks } from "./updates";
 import { productionHosts, validateToken } from "./vercel";
 import { setVercelEnv } from "./vercel-env";
 
@@ -306,4 +306,9 @@ peer.on("tray", trayClickSchema, ({ on }) => {
   if (store.getCompany()) {
     guarded("tray autopilot", () => setAutopilot(on));
   }
+});
+
+// the menu's update item installs the release main offers, as Settings' button does
+peer.on("update", z.null(), () => {
+  void installFromMenu();
 });

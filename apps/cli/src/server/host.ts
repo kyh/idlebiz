@@ -15,6 +15,7 @@ export const RELAY_METHODS = [
   "quit",
   "window",
   "tray",
+  "update",
   "host.messageBox",
   "host.copyText",
   "host.open",
@@ -94,8 +95,8 @@ const trayItemSchema = z.discriminatedUnion("kind", [
     on: z.boolean(),
   }),
   z.strictObject({ kind: z.literal("separator") }),
-  // installs `version`, the release main last heard of
-  z.strictObject({ kind: z.literal("update"), label: z.string(), version: z.string() }),
+  // a click tells main `update`, and main installs the release it offers
+  z.strictObject({ kind: z.literal("update"), label: z.string() }),
   z.strictObject({ kind: z.literal("quit"), label: z.string() }),
 ]);
 export type TrayItem = z.infer<typeof trayItemSchema>;

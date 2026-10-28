@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, orpc } from "@/renderer/api";
 import { useSubmission } from "@/renderer/hooks/use-submission";
-import { setAnswer, useCompany, useSaveIssues } from "@/renderer/state/queries";
+import { queryClient, setAnswer, useCompany, useSaveIssues } from "@/renderer/state/queries";
 import { setMaxAgents } from "@/renderer/state/store";
 import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
@@ -104,7 +104,13 @@ const updateLine = (status: UpdateStatus): string => {
 const UpdateSetting = () => {
   const { data: status, error } = useQuery(update);
   const installing = useSubmission(async () => {
-    await api.app.installUpdate();
+    try {
+      await api.app.installUpdate();
+    } catch (installError) {
+      // a download that fails has main ask the feed again, which may offer another release or none
+      await queryClient.invalidateQueries({ queryKey: update.queryKey });
+      throw installError;
+    }
   });
   const pressed = installing.submission.kind === "sending" || installing.submission.kind === "sent";
 

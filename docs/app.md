@@ -78,11 +78,13 @@ which only that run's seal reaches, and what it does is the run's.
   GitHub release's `latest.json`, whose archive is signed with the key `plugins.updater.pubkey`
   checks; a build packed with no public key takes no updates. Main decides when the founder hears of
   one (`server/updates.ts`): it asks the shell (`host.checkUpdate`) at boot and every six hours,
-  notifies once a version each launch, and offers it in Settings and as a menu-bar item. An install
-  (`host.installUpdate`, or that item, which the shell answers itself) downloads the release and
-  checks its signature while the office keeps working; then the shell stops main as Quit does,
-  installs the release over the app and starts it again. A download that fails leaves main running,
-  and an install that fails says so in a box and starts the app again on the version it has.
+  notifies once a version each launch, and offers it in Settings and as a menu-bar item, which both
+  install through main (the shell tells main `update` on the item's click), so both show one
+  status. A check that fails keeps a release already on offer. An install (`host.installUpdate`)
+  downloads the release and checks its signature while the office keeps working; then the shell
+  stops main as Quit does, installs the release over the app and starts it again. A download that
+  fails leaves main running and has it ask the feed again, which may offer a newer release or none;
+  an install that fails says so in a box and starts the app again on the version it has.
 - **Main's log.** Main's console is its stderr, which the shell appends, stamped, to `main.log`
   (`src-tauri/src/main_log.rs`; `~/Library/Logs/IdleBiz/`; dev: `logs/` in the `IdleBiz (dev)`
   data folder, or in `roots/<id>/` beneath it for an isolated `IDLEBIZ_ROOT_DIR`), never under the

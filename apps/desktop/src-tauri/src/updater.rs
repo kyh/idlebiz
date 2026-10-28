@@ -1,6 +1,6 @@
 //! IdleBiz's own updates, through tauri-plugin-updater: a check of the release feed and an install,
-//! each when main asks, or the menu bar's update item for the install. The feed and its public key
-//! are tauri.conf.json's `plugins.updater`; a build packed with no key takes no updates.
+//! each when main asks. The feed and its public key are tauri.conf.json's `plugins.updater`; a
+//! build packed with no key takes no updates.
 //!
 //! An update replaces the server main loads as it goes and the launcher the runs call, so it is
 //! installed only once main has stopped its runs: the release is downloaded and its signature
@@ -17,7 +17,7 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 use crate::protocol::Release;
 use crate::shell::{self, Shell};
 
-/// Whether an install has begun: a second, from the menu bar while Settings' downloads, is refused.
+/// Whether an install has begun, so a second is refused rather than run twice.
 static INSTALLING: AtomicBool = AtomicBool::new(false);
 
 fn has_key<R: Runtime>(app: &AppHandle<R>) -> bool {
@@ -55,7 +55,7 @@ fn download<R: Runtime>(app: &AppHandle<R>, version: &str) -> Result<(Update, Ve
     let update = newest(app)?.ok_or_else(|| "no newer IdleBiz is offered any more".to_owned())?;
     if update.version != version {
         return Err(format!(
-            "IdleBiz {} has replaced {version} as the newest: check again",
+            "IdleBiz {} has replaced {version} as the newest",
             update.version
         ));
     }
@@ -90,23 +90,4 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, version: &str) -> Result<(), Stri
         app.request_restart();
     });
     Ok(())
-}
-
-/// The menu bar's update item: the download waits on the network, never on the main thread, and
-/// what stops it is said in a box, since no page asked.
-pub fn install_from_menu<R: Runtime>(app: &AppHandle<R>, version: &str) {
-    let app = app.clone();
-    let version = version.to_owned();
-    std::thread::spawn(move || {
-        if let Err(reason) = install(&app, &version) {
-            log::warn!("could not update to IdleBiz {version}: {reason}");
-            app.dialog()
-                .message(format!(
-                    "IdleBiz {version} could not be downloaded: {reason}"
-                ))
-                .title("IdleBiz couldn't update")
-                .kind(MessageDialogKind::Warning)
-                .blocking_show();
-        }
-    });
 }
