@@ -1,6 +1,6 @@
 # Keys and what spends them
 
-Paths are short, as in [AGENTS.md](../AGENTS.md); the decisions behind it are `CLAUDE.md`'s.
+Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the decisions.
 
 **Keys.** The keys IdleBiz holds live in `~/.idlebiz/secrets.json`, which the seal keeps from
 every run. They are IdleBiz's own: main reads each where it uses it (`getSecret` in

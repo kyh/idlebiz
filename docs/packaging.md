@@ -1,6 +1,6 @@
 # Packaging and release
 
-Paths are short, as in [AGENTS.md](../AGENTS.md); the decisions behind it are `CLAUDE.md`'s.
+Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the decisions.
 
 ```sh
 pnpm -F @repo/desktop package               # build, sign, notarize → apps/desktop/.output/bin/*.dmg

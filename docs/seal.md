@@ -1,6 +1,6 @@
 # The seal and the command policy
 
-Paths are short, as in [AGENTS.md](../AGENTS.md); the decisions behind it are `CLAUDE.md`'s.
+Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the decisions.
 
 ## A run's seal
 

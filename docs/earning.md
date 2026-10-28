@@ -1,6 +1,6 @@
 # How a product earns
 
-Paths are short, as in [AGENTS.md](../AGENTS.md); the decisions behind it are `CLAUDE.md`'s.
+Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the decisions.
 
 `BUSINESS_MODELS` in `server/prompts/instructions.ts` tells each run how its type makes money with
 the tools there are: software sells once through `create_payment_link`, a game studio a web

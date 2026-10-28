@@ -1,7 +1,7 @@
 # Map
 
-Paths are short, as in [AGENTS.md](../AGENTS.md); the decisions behind it are `CLAUDE.md`'s. The
-tree is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
+Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the decisions. The tree
+is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
 
 - `apps/desktop/src-tauri` — the shell, Rust: the window over main's page, opened on the handoff
   main hands it, and its navigation pin (`window.rs`, `navigation.rs`), main as its one child

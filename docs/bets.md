@@ -1,6 +1,6 @@
 # Bets steer the company
 
-Paths are short, as in [AGENTS.md](../AGENTS.md); the decisions behind it are `CLAUDE.md`'s.
+Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the decisions.
 
 `@repo/domain/bets` is the whole steering loop, pure: a bet is one hypothesis about one real
 number (`users` | `revenue`) of one product, with a spend cap and a window. Its target has a
