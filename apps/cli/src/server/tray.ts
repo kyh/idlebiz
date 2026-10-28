@@ -3,6 +3,7 @@ import { runnerPool } from "./agents/runner-pool";
 import { host } from "./host";
 import type { TrayItem } from "./host";
 import * as store from "./store/store";
+import { updateStatus } from "./updates";
 import { isOutOfBudget } from "@repo/domain/domain";
 import { earliestReset, napLabel, usageLabel } from "@repo/domain/format";
 
@@ -129,6 +130,11 @@ class AppTray {
     });
   }
 
+  /** Something the menu offers changed outside the office: an update, found or begun. */
+  refresh(): void {
+    this.scheduleRebuild();
+  }
+
   /** Opened at login, into the menu bar: the founder asked for that, so nothing announces it. */
   startWindowless(): void {
     this.windowless = true;
@@ -151,6 +157,7 @@ class AppTray {
       return;
     }
     const s = officeStatus();
+    const update = updateStatus();
     host().tray({
       items: [
         { kind: "open", label: `Open ${s.company?.name ?? "IdleBiz"}` },
@@ -158,6 +165,15 @@ class AppTray {
         { kind: "status", label: statusLine(s) },
         ...(s.company ? [autopilotItem(s.company)] : []),
         { kind: "separator" },
+        ...(update.kind === "available"
+          ? [
+              {
+                kind: "update" as const,
+                label: `Update to IdleBiz ${update.version}…`,
+                version: update.version,
+              },
+            ]
+          : []),
         { kind: "quit", label: "Quit IdleBiz" },
       ],
       title: badge(s, this.windowless),

@@ -51,6 +51,8 @@ const LOGINS = [
   ".config/op",
   ".config/github-copilot",
   ".appstoreconnect",
+  // the updater's signing key: whoever holds it ships code to every installed IdleBiz
+  ".tauri",
   ".agent-browser/auth",
   ".agent-browser/.encryption-key",
   "Library/Application Support/Google/Chrome",

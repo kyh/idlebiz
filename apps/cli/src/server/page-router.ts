@@ -16,6 +16,7 @@ import { host } from "./host";
 import { answerOf } from "./lib/answers";
 import { broadcast, pageEvents } from "./lib/broadcast";
 import { launchAtLogin, setLaunchAtLogin } from "./login-item";
+import { installUpdate, updateStatus } from "./updates";
 import { metricsPulse } from "./metrics-pulse";
 import { rootDir } from "./paths";
 import { printfulTokenStatus, removePrintfulToken, savePrintfulToken } from "./printful-token";
@@ -71,8 +72,10 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       copyText: os.app.copyText.handler(async ({ input }) => {
         await host().copyText(input.text);
       }),
+      installUpdate: os.app.installUpdate.handler(() => installUpdate()),
       launchAtLogin: os.app.launchAtLogin.handler(() => launchAtLogin()),
       setLaunchAtLogin: os.app.setLaunchAtLogin.handler(({ input }) => setLaunchAtLogin(input.on)),
+      update: os.app.update.handler(() => updateStatus()),
     },
     bets: {
       kill: os.bets.kill.handler(({ input }) => killBet(input.betId, input.reason)),

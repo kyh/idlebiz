@@ -76,6 +76,9 @@ orient a reader and link into them, never telling a mechanic again.
   are what a run could write for the next to load.
 - **Nothing pushes code.** The founder pushes by hand from a fresh clone: git inside a workspace
   obeys what a run left there, unsealed, as the founder.
+- **The updater's key is a login**: `~/.tauri/idlebiz.key` signs every update the installed app
+  takes, so whoever holds it ships code to every install. The seal keeps it from every run, as it
+  keeps the notary key, and it never sits in the checkout.
 - **What the boundaries leave open is listed**, on purpose or for want of a rule, in
   `docs/seal.md`'s "What stays open".
 
@@ -151,6 +154,9 @@ orient a reader and link into them, never telling a mechanic again.
   own are off, and a codex-acp upgrade must carry the app's patch.
 - **One main per save**: boot claims the save before it reads it, so a second main refuses rather
   than run each task twice.
+- **An update lands between runs**: it replaces the server main loads as it goes and the launcher
+  the runs call, so the shell downloads it and checks its signature while the office works, stops
+  main as Quit does, and only then installs it and starts the app again.
 - **The shell is copied between sibling repos, never shared.** Its log, origin-pin and runtime
   modules (`main_log.rs`, `navigation.rs`, `window.rs`, `runtime.rs` in `src-tauri/src/`) and the
   pack's scripts (`apps/desktop/scripts`) are copied between kyh/init, this repo and

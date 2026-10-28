@@ -8,7 +8,7 @@
 import { spawnSync } from "node:child_process";
 import type { SpawnSyncOptions } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { copyFile, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
@@ -27,6 +27,15 @@ const { version } = z
 const DMG_NAME = `IdleBiz-${version}-arm64.dmg`;
 // node 24's own floor (its binary's LC_BUILD_VERSION): below it the sidecar cannot start
 const MINIMUM_MACOS = "13.5";
+// what the installed app updates from, beside the dmg in each release: the archive it installs,
+// and the feed (src-tauri/tauri.conf.json's plugins.updater) naming it and its signature
+const ARCHIVE_NAME = `IdleBiz-${version}-arm64.app.tar.gz`;
+const FEED_NAME = "latest.json";
+// the key that signs each release's archive, made once with
+// `pnpm -F @repo/desktop tauri signer generate -w ~/.tauri/idlebiz.key`: under HOME, where the seal
+// keeps it from every run (`LOGINS` in apps/cli/src/server/agents/machine-seal.ts), never in the
+// checkout, since whoever holds it ships code to every install
+const UPDATER_KEY = path.join(homedir(), ".tauri", "idlebiz.key");
 
 const log = (line: string): void => {
   process.stdout.write(`package: ${line}\n`);
@@ -122,6 +131,69 @@ const NOTARY_VARIABLES = new Set([
   "APPLE_TEAM_ID",
 ]);
 
+// what `tauri build` signs the update with: only these reach it, so a stale export in the shell
+// never signs a pack that is no release
+const SIGNING_VARIABLES = new Set([
+  "TAURI_SIGNING_PRIVATE_KEY",
+  "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+]);
+
+const {
+  plugins: { updater },
+} = z
+  .object({
+    plugins: z.object({
+      updater: z.object({ endpoints: z.tuple([z.string()]), pubkey: z.string() }),
+    }),
+  })
+  .parse(JSON.parse(readFileSync(path.join(packageRoot, "src-tauri", "tauri.conf.json"), "utf-8")));
+
+// where this release's assets download from: the feed is the latest release's `latest.json`
+const releaseAssets = (): string => {
+  const [feed] = updater.endpoints;
+  const assets = feed.replace(
+    /\/releases\/latest\/download\/latest\.json$/u,
+    `/releases/download/v${version}`,
+  );
+  if (assets === feed) {
+    throw new Error(`the updater's feed, ${feed}, is no GitHub release's latest.json`);
+  }
+  return assets;
+};
+
+// the key's password, from apps/desktop/.env: empty for a key made without one
+const updaterPassword = (): string => {
+  const file = path.join(packageRoot, ".env");
+  const name = "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=";
+  const line = existsSync(file)
+    ? readFileSync(file, "utf-8")
+        .split("\n")
+        .map((each) => each.trim())
+        .find((each) => each.startsWith(name))
+    : undefined;
+  return line?.slice(name.length) ?? "";
+};
+
+// a release is one the installed app can update from, so it signs its archive; no other pack does
+const updaterSigning = (): Record<string, string> | null => {
+  if (process.env.IDLEBIZ_RELEASE !== "1") {
+    return null;
+  }
+  if (updater.pubkey === "") {
+    throw new Error(
+      `a release is signed for the updater, but src-tauri/tauri.conf.json's plugins.updater.pubkey is empty: make the key once with \`pnpm -F @repo/desktop tauri signer generate -w ${UPDATER_KEY}\` and paste its .pub file's contents there`,
+    );
+  }
+  if (!existsSync(UPDATER_KEY)) {
+    throw new Error(`a release signs its update with ${UPDATER_KEY}, which is missing`);
+  }
+  releaseAssets();
+  return {
+    TAURI_SIGNING_PRIVATE_KEY: UPDATER_KEY,
+    TAURI_SIGNING_PRIVATE_KEY_PASSWORD: updaterPassword(),
+  };
+};
+
 const findOne = async (dir: string, suffix: string): Promise<string> => {
   const entries = await readdir(dir);
   const names = entries.filter((name) => name.endsWith(suffix));
@@ -150,6 +222,10 @@ log(
     ? "apps/desktop/.env names no notary key — not notarized"
     : `notarizing with ${notary.APPLE_API_KEY_PATH}`,
 );
+const signing = updaterSigning();
+log(
+  signing === null ? "no update archive: not a release" : `signing the update with ${UPDATER_KEY}`,
+);
 
 // the page first, then the server, which stages it beside its bundle
 run("pnpm", ["run", "build"], { cwd: packageRoot });
@@ -165,6 +241,8 @@ log(`noted the licences of the ${crateCount} Rust crates the shell links`);
 
 const config = {
   bundle: {
+    // the signed archive the updater installs, beside the app: a release's alone
+    createUpdaterArtifacts: signing !== null,
     externalBin: ["binaries/node"],
     macOS: {
       entitlements: "../resources/entitlements.mac.plist",
@@ -189,11 +267,13 @@ await writeFile(configFile, `${JSON.stringify(config, null, 2)}\n`);
 
 await rm(bundleDir, { force: true, recursive: true });
 const inherited = Object.fromEntries(
-  Object.entries(process.env).filter(([name]) => !NOTARY_VARIABLES.has(name)),
+  Object.entries(process.env).filter(
+    ([name]) => !NOTARY_VARIABLES.has(name) && !SIGNING_VARIABLES.has(name),
+  ),
 );
 run("pnpm", ["exec", "tauri", "build", "--config", configFile], {
   cwd: packageRoot,
-  env: { ...inherited, ...notary },
+  env: { ...inherited, ...notary, ...signing },
 });
 
 await rm(outDir, { force: true, recursive: true });
@@ -202,3 +282,20 @@ await copyFile(await findOne(path.join(bundleDir, "dmg"), ".dmg"), path.join(out
 log(
   `${path.join("src-tauri", "target", "release", "bundle", "macos", "IdleBiz.app")} and ${DMG_NAME}`,
 );
+if (signing !== null) {
+  const archive = await findOne(path.join(bundleDir, "macos"), ".app.tar.gz");
+  await copyFile(archive, path.join(outDir, ARCHIVE_NAME));
+  const signature = await readFile(`${archive}.sig`, "utf-8");
+  const feed = {
+    platforms: {
+      "darwin-aarch64": {
+        signature: signature.trim(),
+        url: `${releaseAssets()}/${ARCHIVE_NAME}`,
+      },
+    },
+    pub_date: new Date().toISOString(),
+    version,
+  };
+  await writeFile(path.join(outDir, FEED_NAME), `${JSON.stringify(feed, null, 2)}\n`);
+  log(`${ARCHIVE_NAME} and ${FEED_NAME}, for the installed app's updater`);
+}

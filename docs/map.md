@@ -8,8 +8,9 @@ is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
   (`main_process.rs` over the relay's framing in `relay.rs` and its messages in `protocol.rs`,
   `runtime.rs` for where node and the server are), what main asks of a native app (`host.rs`:
   message boxes, the clipboard, Finder, opening a path or a URL, notifications; `tray.rs`,
-  `login_item.rs`, `keep_awake.rs`, `keychain.rs`), and main's log (`main_log.rs`, which the
-  shell's own lines reach through `shell_log.rs`). No capability grants the page a command.
+  `login_item.rs`, `keep_awake.rs`, `keychain.rs`), its own updates (`updater.rs`), and main's log
+  (`main_log.rs`, which the shell's own lines reach through `shell_log.rs`). No capability grants
+  the page a command.
 - `apps/desktop/src/renderer` — the office page: a React overlay (`ui/`) over a Phaser 4 scene
   (`game/`, with the office's geometry: `office-depth.ts` the draw bands,
   `office-layout-schema.ts` the shape of office-design.json, `office-grid.ts` walking as pure
@@ -74,7 +75,8 @@ is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
   kept print order to Printful), `order-card.ts` (how the founder's order cards name an order),
   `printful-token.ts` (the Printful token the founder enters and the one store it sells
   through, kept as one credential), `print-listing.ts` (what `sell_print` checks before it
-  lists), `secrets.ts`, `metrics.ts`, `tray.ts`, `login-item.ts` (open at login).
+  lists), `secrets.ts`, `metrics.ts`, `tray.ts`, `login-item.ts` (open at login), `updates.ts`
+  (when the founder hears of an update, and its install asked of the shell).
 - `apps/cli/resources` — what main reads beside its bundle: IdleBiz's skills (`skills/`).
 - `apps/web` — the landing page, its trust pages and their Markdown for agents; it holds no
   secret and the app calls none of it. `next.config.ts` turns on `cacheComponents` and

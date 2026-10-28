@@ -10,20 +10,20 @@ run, every path a `-D` parameter. Each run resolves its own (`machineSeal`,
 `server/agents/machine-seal.ts`), so a path that became a symlink since boot is sealed where it
 leads from the next run on.
 
-- _Reads_ are open but for the founder's logins (`LOGINS`: ssh, gh, npm, netrc, git
-  credentials, cloud and deploy CLIs, App Store Connect's notary keys, browser and chat-app
-  profiles, agent-browser's saved logins), `secrets.json` with every name that starts with it,
-  the other runner's home, and, for a codex run, what of the founder's own it would load
-  (`personal` in `RUNNER_HOMES`): their skills (`$CODEX_HOME/skills`, codex's own `.system` ones
-  in it, and `~/.agents/skills`), since codex loads every skill it can read and no setting leaves
-  them all out; their instructions (`AGENTS.md` and `AGENTS.override.md` in its home), which it
-  loads whatever its config says; and their `memories/`. A plugin's skills (in `plugins/cache`)
-  stay readable: the session config turning plugins off keeps them out. Their rules
-  (`$CODEX_HOME/rules`), whose `allow` decisions run a command without asking, and which no
-  setting of the app server's leaves out, a codex run finds missing (`absent` in `RUNNER_HOMES`,
-  denied `with errno ENOENT`) rather than refused: codex refuses to start a session on a rules
-  folder it cannot read. The admin's `/etc/codex/rules` still loads, and so would a trusted
-  project's `.codex/rules`, but no run makes a `.codex` folder.
+- _Reads_ are open but for the founder's logins (`LOGINS`: ssh, gh, npm, netrc, git credentials,
+  cloud and deploy CLIs, App Store Connect's notary keys, the updater's signing key, browser and
+  chat-app profiles, agent-browser's saved logins), `secrets.json` with every name that starts with
+  it, the other runner's home, and, for a codex run, what of the founder's own it would load
+  (`personal` in `RUNNER_HOMES`): their skills (`$CODEX_HOME/skills`, codex's own `.system` ones in
+  it, and `~/.agents/skills`), since codex loads every skill it can read and no setting leaves them
+  all out; their instructions (`AGENTS.md` and `AGENTS.override.md` in its home), which it loads
+  whatever its config says; and their `memories/`. A plugin's skills (in `plugins/cache`) stay
+  readable: the session config turning plugins off keeps them out. Their rules
+  (`$CODEX_HOME/rules`), whose `allow` decisions run a command without asking, and which no setting
+  of the app server's leaves out, a codex run finds missing (`absent` in `RUNNER_HOMES`, denied
+  `with errno ENOENT`) rather than refused: codex refuses to start a session on a rules folder it
+  cannot read. The admin's `/etc/codex/rules` still loads, and so would a trusted project's
+  `.codex/rules`, but no run makes a `.codex` folder.
 - _Writes_ are denied by default. A run writes its own folders (`Seal.writable`: its workspace,
   the shared one, its memory, the save's `cache/`), its runner's state in its home (`state` in
   `RUNNER_HOMES`, a list of names: sessions, logs, caches, databases, codex's refreshed login;

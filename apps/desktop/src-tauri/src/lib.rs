@@ -13,6 +13,7 @@ mod runtime;
 mod shell;
 mod shell_log;
 mod tray;
+mod updater;
 mod window;
 
 use tauri::RunEvent;
@@ -57,6 +58,8 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        // checked and installed from Rust alone (updater.rs), when main asks
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // only Rust opens links (window.rs): the plugin's own script would catch a `_blank` click
         // and ask for a command no page is granted, so the link would do nothing
         .plugin(

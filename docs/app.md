@@ -40,25 +40,25 @@ which only that run's seal reaches, and what it does is the run's.
   the menu bar, and Open brings the same page back, or makes it on a fresh handoff when a launch at
   login never did. Each boot binds a port of its own, so nothing of the page is kept between boots
   (`no-store`), and the page keeps nothing in the browser's storage.
-- **The relay.** The shell starts main on node (`src-tauri/src/main_process.rs`):
-  `node <server>/dist/index.js serve`, where `<server>` is `Contents/Resources/server` in the .app
-  and `apps/cli` in a checkout (`src-tauri/src/runtime.rs`). It reaches no part of the page's API:
-  it talks to main over main's stdio (JSON-RPC 2.0, one message a line, requests both ways:
+- **The relay.** The shell starts main on node (`src-tauri/src/main_process.rs`): `node
+  <server>/dist/index.js serve`, where `<server>` is `Contents/Resources/server` in the .app and
+  `apps/cli` in a checkout (`src-tauri/src/runtime.rs`). It reaches no part of the page's API: it
+  talks to main over main's stdio (JSON-RPC 2.0, one message a line, requests both ways:
   `server/relay/rpc.ts`, `src-tauri/src/relay.rs`), and main's stdout carries the protocol alone:
   anything else main or a library writes there is moved to stderr. Main asks the shell for what only
   a native app does (`server/host.ts`): a message box, the clipboard, Finder and the browser, the
   menu-bar icon (main decides it, `server/tray.ts`; the shell draws it, `src-tauri/src/tray.rs`), a
-  notification, the login item, the Mac kept awake, a relaunch. The shell says hello first, with
-  what only it knows: whether it is the packaged app, the dev server's address in dev, whether the
-  login item launched it, the Keychain's sealing key; main finds its own files beside itself (the
-  skills in `resources/`, the built page in `dist/page`). Each end names every method once
-  (`RELAY_METHODS` and its zod schemas in `server/host.ts`; the consts and serde types of
-  `src-tauri/src/protocol.rs`), and both are pinned to one sample a method,
-  `src-tauri/tests/fixtures/relay/<method>.json`: `server/host.test.ts` parses each with main's
-  schema, `cargo test` reads each into the shell's types and writes it back unchanged, and each
-  checks its own methods are the samples'. Both ends refuse a field they do not know. A notification
-  the shell cannot read goes to its stderr, and under `tauri dev` to a box too, once a method: main
-  waits on no answer, so would never hear of it.
+  notification, the login item, the Mac kept awake, a relaunch, and an update checked or installed.
+  The shell says hello first, with what only it knows: whether it is the packaged app, the dev
+  server's address in dev, whether the login item launched it, the Keychain's sealing key; main
+  finds its own files beside itself (the skills in `resources/`, the built page in `dist/page`).
+  Each end names every method once (`RELAY_METHODS` and its zod schemas in `server/host.ts`; the
+  consts and serde types of `src-tauri/src/protocol.rs`), and both are pinned to one sample a
+  method, `src-tauri/tests/fixtures/relay/<method>.json`: `server/host.test.ts` parses each with
+  main's schema, `cargo test` reads each into the shell's types and writes it back unchanged, and
+  each checks its own methods are the samples'. Both ends refuse a field they do not know. A
+  notification the shell cannot read goes to its stderr, and under `tauri dev` to a box too, once a
+  method: main waits on no answer, so would never hear of it.
 - **Main's lifetime.** Main boots on the hello; one that fails says where the log is, in a box, and
   the app quits, as does one not booted within a minute, killed with its process group first, since
   its quit would wait the stuck boot out. A quit asks main to stop its runs (`quit`) and waits up to
@@ -73,6 +73,16 @@ which only that run's seal reaches, and what it does is the run's.
   login (`server/login-item.ts`): the macOS login item (`SMAppService`,
   `src-tauri/src/login_item.rs`) is its only record, only a packaged app registers one, and a
   launch at login starts in the menu bar.
+- **Updates.** The packaged app updates itself through tauri-plugin-updater
+  (`src-tauri/src/updater.rs`) from the feed tauri.conf.json's `plugins.updater` names, the latest
+  GitHub release's `latest.json`, whose archive is signed with the key `plugins.updater.pubkey`
+  checks; a build packed with no public key takes no updates. Main decides when the founder hears of
+  one (`server/updates.ts`): it asks the shell (`host.checkUpdate`) at boot and every six hours,
+  notifies once a version each launch, and offers it in Settings and as a menu-bar item. An install
+  (`host.installUpdate`, or that item, which the shell answers itself) downloads the release and
+  checks its signature while the office keeps working; then the shell stops main as Quit does,
+  installs the release over the app and starts it again. A download that fails leaves main running,
+  and an install that fails says so in a box and starts the app again on the version it has.
 - **Main's log.** Main's console is its stderr, which the shell appends, stamped, to `main.log`
   (`src-tauri/src/main_log.rs`; `~/Library/Logs/IdleBiz/`; dev: `logs/` in the `IdleBiz (dev)`
   data folder, or in `roots/<id>/` beneath it for an isolated `IDLEBIZ_ROOT_DIR`), never under the

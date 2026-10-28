@@ -192,6 +192,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     ".config/op/config",
     ".config/github-copilot/apps.json",
     ".appstoreconnect/private_keys/AuthKey_CANARY.p8",
+    ".tauri/idlebiz.key",
     ".agent-browser/auth/site.json",
     ".agent-browser/.encryption-key",
     "Library/Application Support/Google/Chrome/Default/Cookies",

@@ -557,6 +557,18 @@ export const LAUNCH_AT_LOGIN = [
 ] as const;
 export type LaunchAtLogin = (typeof LAUNCH_AT_LOGIN)[number];
 
+/**
+ * IdleBiz's own updates, as main last heard from the release feed: `off` in a build that takes
+ * none, and `installing` once the shell has the release, when the app is about to start again on it.
+ */
+export type UpdateStatus =
+  | { kind: "off"; why: string }
+  | { kind: "checking" }
+  | { kind: "current" }
+  | { kind: "available"; version: string }
+  | { kind: "installing"; version: string }
+  | { kind: "failed"; reason: string };
+
 /** One thing the founder can ask an employee from the battle box: the label shown, the brief sent. */
 export interface ChatOption {
   label: string;

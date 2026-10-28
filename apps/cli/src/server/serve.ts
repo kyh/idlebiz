@@ -49,6 +49,7 @@ import {
 } from "./stripe-links";
 import type { Integrations } from "./tools/define";
 import { appTray } from "./tray";
+import { startUpdateChecks } from "./updates";
 import { productionHosts, validateToken } from "./vercel";
 import { setVercelEnv } from "./vercel-env";
 
@@ -259,6 +260,9 @@ const boot = async (launch: Launch): Promise<void> => {
   if (openedAtLogin()) {
     appTray.startWindowless();
   }
+  startUpdateChecks(() => {
+    appTray.refresh();
+  });
 
   // the queue waits on the seal's check: drain it the moment that settles, not a tick later
   void (async () => {

@@ -13,7 +13,7 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::protocol::{Ask, BoxKind, OpeningKind, Tell};
-use crate::{keep_awake, login_item, tray};
+use crate::{keep_awake, login_item, tray, updater};
 
 pub fn answer<R: Runtime>(
     app: &AppHandle<R>,
@@ -60,6 +60,13 @@ pub fn answer<R: Runtime>(
                 None => login_item::status(),
             };
             serde_json::to_value(status).map_err(|error| error.to_string())
+        }
+        Ask::CheckUpdate => {
+            serde_json::to_value(updater::check(app)?).map_err(|error| error.to_string())
+        }
+        Ask::InstallUpdate(request) => {
+            updater::install(app, &request.version)?;
+            Ok(Value::Null)
         }
     }
 }

@@ -12,6 +12,7 @@ import { z } from "zod";
 import {
   copyTextSchema,
   handoffSchema,
+  installUpdateSchema,
   keepAwakeSchema,
   loginItemSchema,
   messageBoxSchema,
@@ -136,6 +137,13 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       return null;
     });
     peer.handle("host.loginItem", loginItemSchema, () => "unavailable");
+    // as the shell of a dev build answers: only the installed app updates itself
+    peer.handle("host.checkUpdate", z.null(), () => {
+      throw new Error("only the installed app updates itself");
+    });
+    peer.handle("host.installUpdate", installUpdateSchema, () => {
+      throw new Error("only the installed app updates itself");
+    });
     peer.on("host.notify", noteSchema, ({ body, title }) => {
       log(`[host] notification: ${title} — ${body}`);
     });

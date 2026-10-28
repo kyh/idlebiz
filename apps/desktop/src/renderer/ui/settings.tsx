@@ -10,7 +10,7 @@ import { Picker } from "@/renderer/ui/picker";
 import type { PickerOption } from "@/renderer/ui/picker";
 import { SaveIssues } from "@/renderer/ui/save-issues";
 import { MAX_AGENTS, MaxAgentsSchema } from "@repo/domain/domain";
-import type { LaunchAtLogin } from "@repo/domain/domain";
+import type { LaunchAtLogin, UpdateStatus } from "@repo/domain/domain";
 import { errorMessage } from "@repo/domain/errors";
 
 const LOGIN_CHOICES: readonly PickerOption<"off" | "on">[] = [
@@ -70,6 +70,67 @@ const LaunchAtLoginSetting = () => {
         </>
       )}
       <Failure submission={setting.submission} doing="change the login item" />
+    </div>
+  );
+};
+
+// read again each time Settings opens: a check every six hours may have found one since
+const update = orpc.app.update.queryOptions({ staleTime: 0 });
+
+const updateLine = (status: UpdateStatus): string => {
+  switch (status.kind) {
+    case "off": {
+      return status.why;
+    }
+    case "checking": {
+      return "Checking for a newer IdleBiz…";
+    }
+    case "current": {
+      return "IdleBiz is up to date. It checks again every six hours.";
+    }
+    case "available": {
+      return `IdleBiz ${status.version} is ready. Updating stops the office's runs, installs it and opens IdleBiz again.`;
+    }
+    case "installing": {
+      return `Downloading IdleBiz ${status.version}. IdleBiz opens again on it shortly.`;
+    }
+    case "failed": {
+      return `Couldn't check for updates: ${status.reason}`;
+    }
+    // no default
+  }
+};
+
+const UpdateSetting = () => {
+  const { data: status, error } = useQuery(update);
+  const installing = useSubmission(async () => {
+    await api.app.installUpdate();
+  });
+  const pressed = installing.submission.kind === "sending" || installing.submission.kind === "sent";
+
+  return (
+    <div className="px-inset p-3 text-sm text-fg">
+      <div className="px-label text-fg-dim">Updates</div>
+      {status === undefined && error !== null ? (
+        <div role="alert" className="mt-1 text-xs text-danger">
+          Could not read the update status: {errorMessage(error)}
+        </div>
+      ) : null}
+      {status === undefined ? null : (
+        <>
+          <div className="mt-1 text-xs text-fg-dim">
+            {pressed && status.kind === "available"
+              ? updateLine({ kind: "installing", version: status.version })
+              : updateLine(status)}
+          </div>
+          {status.kind === "available" && !pressed ? (
+            <button type="button" onClick={() => installing.submit()} className="px-btn mt-2">
+              Update and relaunch
+            </button>
+          ) : null}
+        </>
+      )}
+      <Failure submission={installing.submission} doing="update IdleBiz" />
     </div>
   );
 };
@@ -152,6 +213,8 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
         </div>
 
         <LaunchAtLoginSetting />
+
+        <UpdateSetting />
 
         <div className="px-inset p-3 text-sm text-fg">
           <div className="px-label text-fg-dim">Controls</div>
