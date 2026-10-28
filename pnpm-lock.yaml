@@ -259,7 +259,7 @@ importers:
         version: 2.0.0-beta.45
       '@orpc/tanstack-query':
         specifier: 'catalog:'
-        version: 2.0.0-beta.45(@tanstack/query-core@5.104.5)
+        version: 2.0.0-beta.45(@tanstack/query-core@5.105.0)
       '@repo/contract':
         specifier: workspace:*
         version: link:../../packages/contract
@@ -273,8 +273,8 @@ importers:
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.5(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1))
       '@tanstack/react-query':
-        specifier: ^5.104.5
-        version: 5.104.5(@types/react@19.3.0)(react@19.3.1)
+        specifier: ^5.105.0
+        version: 5.105.0(@types/react@19.3.0)(react@19.3.1)
       '@tauri-apps/cli':
         specifier: ^2.12.4
         version: 2.12.4
@@ -1790,11 +1790,11 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
-  '@tanstack/query-core@5.104.5':
-    resolution: {integrity: sha512-Q94gI8Opd+CbdVNOdj8ZCyV8WqLYitrDq1t96Xc8WZT6lY0r5iRnJLXYDxMex7EEf2v+mXvn4FcjaBKSxXZQ9A==}
+  '@tanstack/query-core@5.105.0':
+    resolution: {integrity: sha512-7p56vRmT/z4UJ6sctGIdl5WRUQyUv53IUpUwEKi2g97zMbO7zh8ZsCLffGAvCPBR4xD72e3VXsDyLwXHhoNTMQ==}
 
-  '@tanstack/react-query@5.104.5':
-    resolution: {integrity: sha512-RORgFe052U+93weaNuqg7qHq7vNVNzXN/VrXqD4bbAuQCWUqOl2lV5Ui9flWk5CVvMyL/Bh27QWhzwH0aaOx9g==}
+  '@tanstack/react-query@5.105.0':
+    resolution: {integrity: sha512-y+hMuDERvgg6ay1da0V1a6ZC0ZONt7dELxSFkqRZuwm7p1TTZs0MoXrPlBRflIpRoYjvzQVYxycnLImpFLhWrw==}
     peerDependencies:
       '@types/react': ^18 || ^19
       react: ^18 || ^19
@@ -4005,13 +4005,13 @@ snapshots:
       radash: 12.1.1
       type-fest: 5.10.0
 
-  '@orpc/tanstack-query@2.0.0-beta.45(@tanstack/query-core@5.104.5)':
+  '@orpc/tanstack-query@2.0.0-beta.45(@tanstack/query-core@5.105.0)':
     dependencies:
       '@orpc/client': 2.0.0-beta.45
       '@orpc/contract': 2.0.0-beta.45
       '@orpc/openapi': 2.0.0-beta.45
       '@orpc/shared': 2.0.0-beta.45
-      '@tanstack/query-core': 5.104.5
+      '@tanstack/query-core': 5.105.0
     transitivePeerDependencies:
       - '@scalar/api-reference'
       - '@types/swagger-ui'
@@ -4449,11 +4449,11 @@ snapshots:
       tailwindcss: 4.3.3
       vite: 8.3.5(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1)
 
-  '@tanstack/query-core@5.104.5': {}
+  '@tanstack/query-core@5.105.0': {}
 
-  '@tanstack/react-query@5.104.5(@types/react@19.3.0)(react@19.3.1)':
+  '@tanstack/react-query@5.105.0(@types/react@19.3.0)(react@19.3.1)':
     dependencies:
-      '@tanstack/query-core': 5.104.5
+      '@tanstack/query-core': 5.105.0
       react: 19.3.1
     optionalDependencies:
       '@types/react': 19.3.0
