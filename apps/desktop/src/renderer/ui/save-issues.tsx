@@ -1,7 +1,7 @@
 import type { LoadSkip } from "@repo/domain/domain";
 
 export const SaveIssues = ({ issues }: { issues: readonly LoadSkip[] }) => (
-  <ul className="space-y-2">
+  <ul className="space-y-2 select-text">
     {issues.map((issue) => (
       <li key={issue.path} className="px-inset p-2 text-xs">
         <div className="break-all text-fg">{issue.path}</div>

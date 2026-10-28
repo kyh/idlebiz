@@ -29,7 +29,9 @@ export class CrashScreen extends Component<{ children: ReactNode }, Crashed> {
             The panel crashed while drawing. Your company is safe on disk; reload the window to pick
             up where it was.
           </div>
-          <div className="px-inset mt-2 p-2 text-xs text-fg-dim">{this.state.error}</div>
+          <div className="px-inset mt-2 p-2 text-xs text-fg-dim select-text">
+            {this.state.error}
+          </div>
           <div className="mt-3 flex justify-end">
             <button
               type="button"

@@ -76,7 +76,7 @@ const Speech = ({ text }: { text: string }) => {
   const { shown, done, skip } = useTypewriter(text);
   if (done) {
     return (
-      <div className={SPEECH_CLASS} style={{ cursor: "default" }}>
+      <div className={cn(SPEECH_CLASS, "select-text")} style={{ cursor: "default" }}>
         <RichText text={text} />
         <TypeCursor done more />
       </div>
@@ -155,7 +155,7 @@ const QUIET_LINE: LineStyle = { color: "text-line-quiet", prefix: "· " };
 const FeedLine = ({ e }: { e: Said }) => {
   const { color, prefix } = LINE_STYLES.get(e.kind) ?? QUIET_LINE;
   return (
-    <div className={cn("break-words", color)}>
+    <div className={cn("break-words select-text", color)}>
       {prefix}
       <RichText text={e.message.slice(0, 300)} />
     </div>
@@ -322,7 +322,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
                 {asked.state.ask.type === "question" ? (
                   <div className="px-inset px-inset-warn p-2.5">
                     <div className="text-xs text-danger">❗ {emp.name} needs your call:</div>
-                    <div className="mt-1 text-sm leading-snug whitespace-pre-wrap text-fg">
+                    <div className="mt-1 text-sm leading-snug whitespace-pre-wrap text-fg select-text">
                       <RichText text={asked.state.ask.question} />
                     </div>
                     <AnswerForm
