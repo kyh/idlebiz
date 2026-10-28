@@ -7,9 +7,9 @@ packages:
 # cannot drift between them, and the ACP adapters, pinned beside codex-acp's patch.
 catalog:
   # Exact: a bump changes the wire acp-session.ts speaks and moves codex-acp's patch key.
-  "@agentclientprotocol/claude-agent-acp": 0.85.1
+  "@agentclientprotocol/claude-agent-acp": 0.97.0
   "@agentclientprotocol/codex-acp": 1.12.0
-  "@agentclientprotocol/sdk": 1.7.0
+  "@agentclientprotocol/sdk": 2.0.2
   "@orpc/client": 2.0.0-beta.45
   "@orpc/contract": 2.0.0-beta.45
   "@orpc/publisher": 2.0.0-beta.45
