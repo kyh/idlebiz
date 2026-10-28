@@ -28,7 +28,7 @@
     "oxlint-tsgolint": "^7.0.2005",
     "turbo": "^2.11.10",
     "typescript": "catalog:",
-    "ultracite": "^8.0.0"
+    "ultracite": "^8.1.0"
   },
   "engines": {
     "node": "24.x"
