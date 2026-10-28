@@ -120,9 +120,9 @@ const claudeLoggedIn = (output: string): boolean => {
 };
 
 /**
- * What a claude session loads is AGENTS.md's "A claude session". With bypass off, no settings tier
- * can start a session in it, and `settings`, the flag tier, has ask rules that beat allow rules
- * from any tier.
+ * What a claude session loads is docs/runs.md's "A claude session". With bypass off, no settings
+ * tier can start a session in it, and `settings`, the flag tier, has ask rules that beat allow
+ * rules from any tier.
  */
 const claudeSession = ({ skills, teamNotes, userSettings }: SessionSetup): SessionStart => {
   const meta: NonNullable<SessionStart["meta"]> = {

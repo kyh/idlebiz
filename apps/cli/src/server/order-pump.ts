@@ -15,7 +15,7 @@ import type { Sale } from "./order";
 import { REFUND, describe } from "./order-card";
 import { takePaidCheckouts } from "./order-intake";
 
-// Each kept sale through Printful, as AGENTS.md's "The order pump" describes.
+// Each kept sale through Printful, as docs/keys.md's "The order pump" describes.
 
 /** How often waiting orders are sent and sent ones' statuses read: Printful takes days to ship. */
 export const ORDER_TRACK_MS = 10 * 60_000;

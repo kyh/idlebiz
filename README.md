@@ -41,5 +41,5 @@ agentcompanies/v1 packages (COMPANY.md, agents/, tasks/, shipped/, products/, sh
 
 ## Release (desktop)
 
-Packing, signing, notarizing and publishing the app, and smoke-testing the pack, are AGENTS.md's
-[Packaging and release](AGENTS.md#packaging-and-release).
+Packing, signing, notarizing and publishing the app, and smoke-testing the pack, are
+[Packaging and release](docs/packaging.md).

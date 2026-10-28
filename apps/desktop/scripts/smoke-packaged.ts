@@ -1,5 +1,5 @@
-// The packaged app booted on a scratch save, on a macOS arm64 host with a display: AGENTS.md's
-// "Packaging and release" says what it checks.
+// The packaged app booted on a scratch save, on a macOS arm64 host with a display:
+// docs/packaging.md says what it checks.
 //
 // `pnpm -F @repo/desktop smoke <path/to/IdleBiz.app>` smokes another .app, a release's from its dmg.
 

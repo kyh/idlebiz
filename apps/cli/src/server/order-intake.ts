@@ -15,8 +15,8 @@ import type { Order, Recipient } from "./order";
 import type { LinkState } from "./link-record";
 import { REFUND, describe } from "./order-card";
 
-// Each paid checkout on the company's links kept as an order, as AGENTS.md's "The order pump"
-// describes.
+// Each paid checkout on the company's links kept as an order, as docs/keys.md's "The order
+// pump" describes.
 
 // Stripe's reads are allotted by sales (on average 500 a transaction over 30 days, at least
 // 10k a month), and metrics already spends most of a quiet store's: checkouts are read on a

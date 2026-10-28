@@ -1,4 +1,4 @@
-// Main, the server `idlebiz serve` runs, as AGENTS.md's "The page, the shell and main" describes.
+// Main, the server `idlebiz serve` runs, as docs/app.md's "The page, the shell and main" describes.
 // Importing this module boots it, so commands/serve.ts loads it for `serve` alone.
 
 import { existsSync } from "node:fs";

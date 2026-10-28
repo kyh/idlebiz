@@ -23,12 +23,12 @@ idlebiz ask-boss --help    # the tool's doc and an example
 Each verb is a tool's name as a command-line word (`ask_boss` is accepted too), generated from
 its spec in `src/server/tool-specs.ts` (`src/commands/tools.ts`).
 
-The rest is told once, in the repo's [AGENTS.md](../../AGENTS.md):
+The rest is told once, in the repo's [AGENTS.md](../../AGENTS.md) and `docs/`:
 
 - the verb as a client of its run's control plane, its exit codes and the launcher main writes
-  each run: [The store and the company's tools](../../AGENTS.md#the-store-and-the-companys-tools);
-- the build (`pnpm --filter idlebiz build`) and `src/dev-host/`: [Map](../../AGENTS.md#map);
+  each run: [The store and the company's tools](../../docs/save.md#the-store-and-the-companys-tools);
+- the build (`pnpm --filter idlebiz build`) and `src/dev-host/`: [Map](../../docs/map.md);
 - what the .app ships of this package, and why only the ACP adapters are `dependencies`:
-  [Packaging and release](../../AGENTS.md#packaging-and-release);
+  [Packaging and release](../../docs/packaging.md);
 - the suites (`pnpm --filter idlebiz test`), the seal's and the gates' on macOS among them:
   [Tests](../../AGENTS.md#tests).

@@ -25,16 +25,14 @@ pnpm dev:desktop   # tauri dev: the window, the page hot-reloaded, main rebuilt 
 pnpm dev:browser   # the same page and main in a browser, at http://localhost:31100/
 ```
 
-How each part works is told once, in the repo's [AGENTS.md](../../AGENTS.md):
+How each part works is told once, in the repo's [AGENTS.md](../../AGENTS.md) and `docs/`:
 
 - main as the shell's child over its stdio, the window as main's own page, the menu bar and the
-  login item: [The page, the shell and main](../../AGENTS.md#the-page-the-shell-and-main);
-- the Keychain's sealing key:
-  [Keys and what spends them](../../AGENTS.md#keys-and-what-spends-them);
+  login item: [The page, the shell and main](../../docs/app.md#the-page-the-shell-and-main);
+- the Keychain's sealing key: [Keys and what spends them](../../docs/keys.md);
 - the dev loop, the toolchain and what Linux needs besides:
   [Quickstart](../../AGENTS.md#quickstart);
-- the pack, the release and the smoke:
-  [Packaging and release](../../AGENTS.md#packaging-and-release).
+- the pack, the release and the smoke: [Packaging and release](../../docs/packaging.md).
 
 ## What is deliberately not here
 

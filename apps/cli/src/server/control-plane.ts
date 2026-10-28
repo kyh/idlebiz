@@ -17,7 +17,7 @@ import type { JsonValue } from "@repo/domain/json";
 // Each run's own line back to the company: an HTTP server on a unix socket only that run's seal
 // lets it connect to (`apiSocket` in agents/seal.ts). What the tools are and do lives in
 // tool-specs.ts and tools/; this only carries the call. Why the socket, not the bearer, names the
-// caller: AGENTS.md, "A run's seal".
+// caller: docs/seal.md, "A run's seal".
 
 /** Answers one call of the tool `name`: how it ended, in prose the agent reads. */
 export type ToolCaller = (name: ToolName, raw: JsonValue) => Promise<ToolOutcome>;

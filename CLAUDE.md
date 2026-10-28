@@ -1,10 +1,10 @@
 # IdleBiz
 
 Tauri game where AI employees — real `claude` / `codex` CLI sessions — operate a business. This
-file holds the premises and the decisions, each in a line or two with its reason. The workflow,
-the map and how each mechanic works are `AGENTS.md`'s, imported at the end, each described there
-once: change a mechanic there, and a decision here. The READMEs orient a reader and link into
-`AGENTS.md`, never telling a mechanic again.
+file holds the premises and the decisions, each in a line or two with its reason. The workflow and
+the map are `AGENTS.md`'s, imported at the end, and how each mechanic works is `docs/`'s, one file
+an area, each described there once: change a mechanic there, and a decision here. The READMEs
+orient a reader and link into them, never telling a mechanic again.
 
 ## Premises
 
@@ -76,8 +76,8 @@ once: change a mechanic there, and a decision here. The READMEs orient a reader 
   are what a run could write for the next to load.
 - **Nothing pushes code.** The founder pushes by hand from a fresh clone: git inside a workspace
   obeys what a run left there, unsealed, as the founder.
-- **What the boundaries leave open is listed**, on purpose or for want of a rule, in AGENTS.md's
-  "What stays open".
+- **What the boundaries leave open is listed**, on purpose or for want of a rule, in
+  `docs/seal.md`'s "What stays open".
 
 ## Code
 
@@ -161,5 +161,8 @@ once: change a mechanic there, and a decision here. The READMEs orient a reader 
   `apps/desktop/scripts/fetch-node.ts`) and `apps/desktop/rust-toolchain.toml` move together
   across all three. inteligir's pin allows `about:srcdoc` and this one refuses it, on purpose: the
   office draws no frame.
+- **AGENTS.md stays under 32 KiB**: codex reads AGENTS.md only that far (`project_doc_max_bytes`'s
+  default) and Claude loads it, with this file, into every session. So it holds the workflow, the
+  map and the traps, and each mechanic is a `docs/` file read by whoever changes it.
 
 @AGENTS.md

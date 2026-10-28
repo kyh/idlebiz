@@ -66,9 +66,9 @@ const LOGINS = [
 
 /**
  * Each runner's home, and what of it the seal treats apart from the rest, which no run writes; why
- * each is sealed so is AGENTS.md's "A run's seal". `state` is what its runs write, each a prefix,
- * since a CLI writes a file through a sibling it renames over it; one ending in a slash is only
- * that folder. claude's `projects/` is written only for the run's own folder
+ * each is sealed so is docs/seal.md's "A run's seal". `state` is what its runs write, each a
+ * prefix, since a CLI writes a file through a sibling it renames over it; one ending in a slash is
+ * only that folder. claude's `projects/` is written only for the run's own folder
  * (`Seal.claudeProjects`). `account` is where the CLI records the founder's account, in the home
  * and beside it in HOME, each with every name that starts with it, which only the sign-in writes.
  * `personal` is what of the founder's own its runs cannot read, in the home and in HOME, and
