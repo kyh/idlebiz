@@ -37,7 +37,7 @@
     "@repo/domain": "workspace:*",
     "@types/node": "catalog:",
     "citty": "^0.2.2",
-    "ignore": "^7.0.12",
+    "ignore": "^7.0.14",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:",
