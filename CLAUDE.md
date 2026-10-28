@@ -136,8 +136,9 @@ orient a reader and link into them, never telling a mechanic again.
   `renderer/ui/choice-menu.tsx` are the patterns). Its composites learn their items a render after
   mount, so focus them from a deferred effect and mark the default tab stop with
   `data-composite-item-active`, not `autoFocus`.
-- **Size and colour belong in px-kit as a class, never per-component**: the kit is unlayered, so it
-  beats any Tailwind utility on the same element.
+- **Size and colour belong in px-kit as a class, never per-component**: the kit is Tailwind's
+  components layer, as Tailwind documents, so a utility beside a kit class would override it, and
+  `px-kit-overrides.test.ts` refuses one.
 - **Some icons deliberately use OS fonts.** VG5000 lacks recognizable equivalents for ⚙ settings,
   💼 company and ☕ idle; ❗ attention and ⚠ warnings keep their colour cues. Keep the vendored font
   unchanged.

@@ -51,7 +51,7 @@ const Stat = ({
   <button
     type="button"
     onClick={onClick}
-    className="px-plate pointer-events-auto flex min-w-16 cursor-pointer items-center gap-2 px-3 py-1.5 text-center"
+    className="px-plate pointer-events-auto flex min-w-16 items-center gap-2 px-3 py-1.5 text-center"
     title={title}
   >
     {face}
