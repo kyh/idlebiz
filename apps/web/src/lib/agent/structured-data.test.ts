@@ -48,7 +48,7 @@ describe("pageGraph", () => {
       expect(page?.["@type"]).toBe("WebPage");
       expect(page?.name).toBe(legal.title);
       expect(page?.url).toBe(`https://idlebiz.com${legal.path}`);
-      expect(page).toHaveProperty("dateModified", "2026-10-10");
+      expect(page).toHaveProperty("dateModified", "2026-10-29");
     }
   });
 

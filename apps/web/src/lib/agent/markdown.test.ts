@@ -132,6 +132,14 @@ describe("what the site claims the app does", () => {
       expect(markdown.slice(cut)).toContain(at);
     }
   });
+
+  it("names the app's update checks of GitHub and the IP address each shows it, never that a check sends nothing", () => {
+    const markdown = renderProsePageMarkdown(privacyPage);
+    expect(markdown).toMatch(/asks GitHub for the latest IdleBiz release[^.]*every six hours/u);
+    expect(markdown).toMatch(/requests shows GitHub your IP address/u);
+    expect(markdown).toMatch(/GitHub also answers the desktop app's update checks/u);
+    expect(markdown).not.toMatch(/update[^.]*nothing about you\b/iu);
+  });
 });
 
 describe("renderNotFoundMarkdown", () => {
