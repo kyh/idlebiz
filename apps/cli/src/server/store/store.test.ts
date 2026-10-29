@@ -10,7 +10,9 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import type { ActivityEvent } from "@repo/domain/activity";
 import { UNNAMED_PRODUCT_DESCRIPTION } from "@repo/domain/domain";
+import { activityEvents, publishActivity } from "../activity";
 import { RefusalError } from "../refusal";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { taskToDoc } from "./task-codec";
@@ -24,6 +26,7 @@ import {
   productsDir,
   sharedDir,
   shippedDir,
+  sinceLastLookFile,
   tasksDir,
   employeeAgentDir,
   productWorkspace,
@@ -449,6 +452,32 @@ describe("the digest", () => {
     store.logActivity({ ...inRun, createdAt: 2000, kind: "ship", message: "while closed" }, true);
     store.initStore();
     expect(store.takeDigest()).toMatchObject({ ships: ["while closed"], since: 1234 });
+  });
+
+  it("still counts, and the event still goes out, when its file cannot be written", () => {
+    foundAcme();
+    store.markSeen(1);
+    rmSync(sinceLastLookFile());
+    mkdirSync(sinceLastLookFile());
+    const heard: ActivityEvent["kind"][] = [];
+    const listen = (event: ActivityEvent): void => {
+      heard.push(event.kind);
+    };
+    activityEvents.on("activity", listen);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      publishActivity({
+        ...inRun,
+        kind: "run.end",
+        payload: { costUsd: 0.25, outcome: { kind: "done" }, settled: "done", summary: "done" },
+      });
+      expect(store.takeDigest()).toMatchObject({ runs: 1, since: 1, spentUsd: 0.25 });
+      expect(logged).toHaveBeenCalledWith("[save the digest]", expect.any(Error));
+    } finally {
+      activityEvents.off("activity", listen);
+      logged.mockRestore();
+    }
+    expect(heard).toEqual(["run.end"]);
   });
 });
 

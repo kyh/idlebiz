@@ -72,11 +72,12 @@ on `kind`; nobody re-parses a payload.
 
 State that outlives a run is written where it is known: the founder's digest folds into
 `state/since-last-look.json` as each event publishes (`store.logActivity`,
-`server/store/digest.ts`), and what a run leaves for the next — the session to resume and a
-digest of the instructions it holds, where the real numbers stood, what they last shipped — sits
-in `agents/<slug>/run-state.json`, so AGENTS.md changes only when the instructions do. A resumed
-session is sent them again only when that digest no longer matches. The brief's "recently
-shipped" lines come from `state/recent-ships.json`, written with the ship. Nothing reads
+`server/store/digest.ts`; a write there that fails is reported, and costs the summary a count
+after a restart, never the event), and what a run leaves for the next — the session to resume
+and a digest of the instructions it holds, where the real numbers stood, what they last shipped
+— sits in `agents/<slug>/run-state.json`, so AGENTS.md changes only when the instructions do. A
+resumed session is sent them again only when that digest no longer matches. The brief's
+"recently shipped" lines come from `state/recent-ships.json`, written with the ship. Nothing reads
 `activity.jsonl` back: main appends to it and pushes each event to the renderer, whose activity
 ring starts empty every launch; #team reads the room back from main's copy of `chat.jsonl`
 instead.

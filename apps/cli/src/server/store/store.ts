@@ -2099,9 +2099,14 @@ export const initStore = (): LoadReport => {
 };
 
 // ---- activity log ----------------------------------------------------------
+/** Losing it costs one count in the founder's summary, never the event, so a failed write is only reported. */
 const saveSinceLastLook = (active: ActiveCompany, next: Digest): void => {
-  writeJsonFile(sinceLastLookFile(), next);
   active.sinceLastLook = next;
+  try {
+    writeJsonFile(sinceLastLookFile(), next);
+  } catch (error) {
+    report("save the digest", error);
+  }
 };
 
 /** The founder has the office in view as of `at`: what came before is seen, and the count starts over. */
