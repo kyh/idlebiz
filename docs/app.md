@@ -81,7 +81,8 @@ which only that run's seal reaches, and what it does is the run's.
   one (`server/updates.ts`): it asks the shell (`host.checkUpdate`) at boot and every six hours,
   notifies once a version each launch, and offers it in Settings and as a menu-bar item, which both
   install through main (the shell tells main `update` on the item's click), so both show one
-  status. A check that fails keeps a release already on offer. An install (`host.installUpdate`)
+  status, which reaches the page as main's `update` event each time it moves. A check that fails
+  keeps a release already on offer. An install (`host.installUpdate`)
   downloads the release and checks its signature while the office keeps working; then the shell
   stops main as Quit does, installs the release over the app and starts it again. A download that
   fails leaves main running and has it ask the feed again, which may offer a newer release or none;

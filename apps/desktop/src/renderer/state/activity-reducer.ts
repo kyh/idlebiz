@@ -49,6 +49,7 @@ export const EVERYTHING: readonly QueryKey[] = [
   ...SLICE_KEYS.all,
   ...SLICE_KEYS.stripeKey,
   orpc.agents.hasAuth.key(),
+  orpc.app.update.key(),
 ];
 
 const ACTIVITY_RING = 300;

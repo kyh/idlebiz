@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, orpc } from "@/renderer/api";
 import { useSubmission } from "@/renderer/hooks/use-submission";
-import { queryClient, setAnswer, useCompany, useSaveIssues } from "@/renderer/state/queries";
+import { setAnswer, updateQuery, useCompany, useSaveIssues } from "@/renderer/state/queries";
 import { setMaxAgents } from "@/renderer/state/store";
 import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
@@ -74,9 +74,6 @@ const LaunchAtLoginSetting = () => {
   );
 };
 
-// read again each time Settings opens: a check every six hours may have found one since
-const update = orpc.app.update.queryOptions({ staleTime: 0 });
-
 const updateLine = (status: UpdateStatus): string => {
   switch (status.kind) {
     case "off": {
@@ -102,15 +99,9 @@ const updateLine = (status: UpdateStatus): string => {
 };
 
 const UpdateSetting = () => {
-  const { data: status, error } = useQuery(update);
+  const { data: status, error } = useQuery(updateQuery);
   const installing = useSubmission(async () => {
-    try {
-      await api.app.installUpdate();
-    } catch (installError) {
-      // a download that fails has main ask the feed again, which may offer another release or none
-      await queryClient.invalidateQueries({ queryKey: update.queryKey });
-      throw installError;
-    }
+    await api.app.installUpdate();
   });
   const pressed = installing.submission.kind === "sending" || installing.submission.kind === "sent";
 

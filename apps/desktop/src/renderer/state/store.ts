@@ -22,6 +22,7 @@ import {
   restingQuery,
   setAnswer,
   stripeKeyQuery,
+  updateQuery,
   useRoom,
   warm,
 } from "@/renderer/state/queries";
@@ -305,6 +306,9 @@ export const initStore = (): void => {
     if (e.type === "done") {
       void signedIn();
     }
+  });
+  listen("update", (status) => {
+    void setAnswer(updateQuery.queryKey, status);
   });
   hearMain(resync);
 };

@@ -66,6 +66,8 @@ const productsQuery = orpc.products.list.queryOptions();
 const betsQuery = orpc.bets.list.queryOptions();
 const roomQuery = orpc.team.messages.queryOptions({ input: { limit: FEED_LINES } });
 export const stripeKeyQuery = orpc.stripe.keyStatus.queryOptions();
+/** IdleBiz's own update status, which main's `update` event moves (Settings' Updates row). */
+export const updateQuery = orpc.app.update.queryOptions();
 
 // ---- outside React ---------------------------------------------------------
 

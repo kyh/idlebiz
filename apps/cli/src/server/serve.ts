@@ -49,7 +49,7 @@ import {
 } from "./stripe-links";
 import type { Integrations } from "./tools/define";
 import { appTray } from "./tray";
-import { installFromMenu, startUpdateChecks } from "./updates";
+import { installFromMenu, startUpdateChecks, updateStatus } from "./updates";
 import { productionHosts, validateToken } from "./vercel";
 import { setVercelEnv } from "./vercel-env";
 
@@ -262,6 +262,7 @@ const boot = async (launch: Launch): Promise<void> => {
   }
   startUpdateChecks(() => {
     appTray.refresh();
+    broadcast("update", updateStatus());
   });
 
   // the queue waits on the seal's check: drain it the moment that settles, not a tick later
