@@ -35,7 +35,7 @@ const ConnectRow = ({
   by: string;
   integration: IntegrationKind;
   reason: string;
-  onConnect: (kind: IntegrationKind) => void;
+  onConnect: () => void;
 }) => {
   const stripeKey = useStripeKey();
   const copy = connectAskCopy(integration, stripeKey);
@@ -49,11 +49,7 @@ const ConnectRow = ({
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-xs text-fg-dim">{copy.resumes}</span>
-        <button
-          type="button"
-          onClick={() => onConnect(integration)}
-          className="px-btn-accent px-btn"
-        >
+        <button type="button" onClick={onConnect} className="px-btn-accent px-btn">
           {copy.button}
         </button>
       </div>

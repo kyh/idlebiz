@@ -1,9 +1,11 @@
 import { Input, Scene, Scenes } from "phaser";
 import type Phaser from "phaser";
 import { listen } from "@/renderer/page-events";
+import { reportFault } from "@/renderer/report-fault";
 import {
   companyQuery,
   employeesQuery,
+  held,
   openTasksQuery,
   read,
   watch,
@@ -41,7 +43,7 @@ const FACING_OFFSET = {
   up: { x: 0, y: -1 },
 } satisfies Record<Dir, { x: number; y: number }>;
 
-const WORKSPACE_KIT_PATH = "workspace-kit";
+const WORKSPACE_KIT_PATH = "/workspace-kit";
 
 /** The founder on screen: their sprite and the anims cut from its sheet. */
 interface Player {
@@ -94,7 +96,7 @@ export class OfficeScene extends Scene {
   preload() {
     // the loader skips a key it already holds or has queued, so a sprite placed twice loads once
     for (const placement of OFFICE.placements) {
-      this.load.image(placement.key, placement.path);
+      this.load.image(placement.key, placement.url);
     }
     this.load.spritesheet("emotes", `${WORKSPACE_KIT_PATH}/emotes.png`, {
       frameHeight: 32,
@@ -148,11 +150,21 @@ export class OfficeScene extends Scene {
       this.claimKeyboard();
     };
     const onCompanyReady = () => this.scene.restart();
+    // the window's answers as they stand when the office runs it, newer than any it was told of
+    const onResynced = () =>
+      this.npcEvents.run((npcs) => {
+        const roster = held(employeesQuery);
+        const tasks = held(openTasksQuery);
+        if (roster && tasks) {
+          npcs.resync(roster, waitingOf(tasks));
+        }
+      });
     const stopHearing = [
       hear(this.game, "spawn-employee", onSpawn),
       hear(this.game, "despawn-employee", onDespawn),
       hear(this.game, "ui-modal", onModal),
       hear(this.game, "company-ready", onCompanyReady),
+      hear(this.game, "resynced", onResynced),
     ];
     tell(this.game, "office-input-ready", null);
     // Phaser captures its keys on window and cancels their default whoever has
@@ -220,6 +232,7 @@ export class OfficeScene extends Scene {
       await this.bootOffice(generation);
     } catch (error) {
       console.error("Could not boot the office", error);
+      reportFault("office-boot", error);
       // left booting, the gate would hold every later event for the scene's life;
       // a boot already replaced must leave its successor's gate alone
       if (generation === this.generation) {

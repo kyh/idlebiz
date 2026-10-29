@@ -23,12 +23,12 @@ import { claudeUserSettings } from "./claude-user-settings";
 import { runEnv } from "./run-env";
 import { runTmpdir } from "./run-workspace";
 import { browserSocketDir, namespaceUnder } from "./machine-seal";
-import { SANDBOX_EXEC, sealedCommand } from "./seal";
+import { sealedCommand } from "./seal";
 import type { Seal } from "./seal";
 import { TEAM_NOTES_MAX_BYTES, readTeamNotes } from "./team-notes";
 
-// The desktop app ships the ACP binaries, so resolve them against its node_modules.
-const resolveFromApp = createRequire(import.meta.url);
+// The ACP adapters are this package's own dependencies, which the .app ships beside the bundle.
+const fromPackage = createRequire(import.meta.url);
 
 /** What of main's env a runner's CLI gets, for a run or a probe of its login alike. */
 export const runnerEnv = (runner: RunnerId): Record<string, string> =>
@@ -79,10 +79,7 @@ export const acpAgentFor = (
     env.BASH_DEFAULT_TIMEOUT_MS = String(DEPLOY_TIMEOUT_MS + 60_000);
   }
   return {
-    command: sealedCommand(seal, runner, [
-      process.execPath,
-      resolveFromApp.resolve(adapter.acpEntry),
-    ]),
+    command: sealedCommand(seal, runner, [process.execPath, fromPackage.resolve(adapter.acpEntry)]),
     env,
     readDirs: session.readDirs,
     sessionMeta: session.meta,
@@ -94,7 +91,7 @@ export const acpAgentFor = (
 
 export const acpAgentInstalled = (runner: RunnerId): boolean => {
   try {
-    resolveFromApp.resolve(RUNNERS[runner].acpEntry);
+    fromPackage.resolve(RUNNERS[runner].acpEntry);
     return true;
   } catch {
     return false;
@@ -144,7 +141,7 @@ export const codexSessionEnv = async (
   seal: Seal,
   env: Record<string, string> = {},
 ): Promise<Record<string, string>> => {
-  const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, "codex", [
+  const [bin, ...rest] = sealedCommand(seal, "codex", [
     runnerBin("codex"),
     "mcp",
     "list",
@@ -193,7 +190,7 @@ export const sessionAgent = async (
 export const sealedBrowser =
   (seal: Seal, runner: RunnerId): BrowserCli =>
   async (args) => {
-    const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, runner, ["agent-browser", ...args]);
+    const [bin, ...rest] = sealedCommand(seal, runner, ["agent-browser", ...args]);
     const env = { ...runnerEnv(runner), ...browserEnv(seal, runner) };
     const { stdout } = await execFileAsync(bin, rest, { env, timeout: 8000 });
     return stdout;

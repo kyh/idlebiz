@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
+import type { Argv } from "@repo/agent-driver/registry";
 import type { LoadReport } from "@repo/domain/domain";
 import { errorMessage } from "@repo/domain/errors";
 import { RUNNER_IDS } from "@repo/domain/runners";
@@ -12,10 +13,7 @@ import { SANDBOX_EXEC, sealedCommand } from "./seal";
 import type { Seal } from "./seal";
 
 /** How a program run under the profile ended: its exit code, or null when it never ran or was killed. */
-export type SealProbe = (
-  argv: readonly string[],
-  env: Record<string, string>,
-) => Promise<number | null>;
+export type SealProbe = (argv: Argv, env: Record<string, string>) => Promise<number | null>;
 
 const PROBE_TIMEOUT_MS = 15_000;
 
@@ -23,7 +21,7 @@ const execFileAsync = promisify(execFile);
 
 const Exited = z.object({ code: z.number() });
 
-const runProbe: SealProbe = async ([bin = SANDBOX_EXEC, ...args], env) => {
+const runProbe: SealProbe = async ([bin, ...args], env) => {
   try {
     await execFileAsync(bin, args, { env, timeout: PROBE_TIMEOUT_MS });
     return 0;

@@ -254,7 +254,7 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
     !(usage instanceof HTMLElement) ||
     !(sale instanceof HTMLElement)
   ) {
-    throw new Error("the scene page is missing an element");
+    throw new TypeError("the scene page is missing an element");
   }
   canvas.width = setup.view.width;
   canvas.height = setup.view.height;

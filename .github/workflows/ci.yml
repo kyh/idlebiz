@@ -9,8 +9,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# the token only checks the repo out, since no step writes to it: a wider default the repo or the
+# org sets later does not reach this workflow
+permissions:
+  contents: read
+
 env:
+  # turbo and Next report their use unless told not to, and a CI run reports nothing
   TURBO_TELEMETRY_DISABLED: 1
+  NEXT_TELEMETRY_DISABLED: 1
   # what the Turbo cache step saves, oldest entries out first: turbo never evicts unasked, and
   # every cache of the repo's shares 10GB
   TURBO_CACHE_MAX_SIZE: 1GB
@@ -18,8 +25,14 @@ env:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    # a backstop: a cold run is a quarter of it, and a hung step would otherwise hold the runner
+    # for GitHub's default six hours
+    timeout-minutes: 30
     steps:
+      # no later step reaches the remote, so the token is not left behind in .git/config
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
@@ -82,7 +95,10 @@ jobs:
       # timing-bound gate tests past their limits
       TEST_CONCURRENCY: 2
     steps:
+      # as the ci job's: no later step reaches the remote
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:

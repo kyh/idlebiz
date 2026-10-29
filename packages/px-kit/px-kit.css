@@ -1,5 +1,7 @@
-/* Unlayered kit rules override Tailwind utilities. Keep kit sizing and colors here;
- * apps own cursors through element selectors. */
+/* The kit's classes are Tailwind components (`@layer components`), so a utility beside one
+ * overrides it, as Tailwind documents. Sizing and colour still belong here, never in a
+ * component's utilities (px-kit-overrides.test.ts holds the renderer to that); apps own cursors
+ * through element selectors. */
 
 @font-face {
   font-family: "VG5000";
@@ -28,10 +30,21 @@
   --ok: #57b86c;
   --warn: #e8b04b;
   --danger: #d9645a;
+  --light-dim: #c3c9de; /* quieter light text on chrome */
+  --light-faint: #a7adc6; /* quieter still: a figure's note */
+  --fg-mid: #4c5064; /* text on cream between --fg and --fg-dim */
+  --name: #3a76b8; /* a speaker's name on cream */
+  --gold: #c9a227; /* the lead's star */
+  --money: #9fe6b0; /* revenue on chrome */
+  --veil: #10121b; /* what a curtain lays over the office */
+  /* the dialogue's feed: a colour for each kind of line */
+  --line-tool: #2f6fb0;
+  --line-ship: #2e8a4e;
+  --line-chat: #5a4fae;
+  --line-quiet: #6d7187;
 
   font-family: "VG5000", ui-monospace, Menlo, monospace;
   -webkit-font-smoothing: none;
-  font-smooth: never;
   letter-spacing: 0.02em;
 }
 
@@ -54,420 +67,440 @@
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-danger: var(--danger);
+  --color-light-dim: var(--light-dim);
+  --color-light-faint: var(--light-faint);
+  --color-fg-mid: var(--fg-mid);
+  --color-name: var(--name);
+  --color-gold: var(--gold);
+  --color-money: var(--money);
+  --color-veil: var(--veil);
+  --color-line-tool: var(--line-tool);
+  --color-line-ship: var(--line-ship);
+  --color-line-chat: var(--line-chat);
+  --color-line-quiet: var(--line-quiet);
 }
 
-/* ---- pixel-UI kit -------------------------------------------------------- */
+@layer components {
+  /* ---- pixel-UI kit -------------------------------------------------------- */
 
-/* a beveled window/dialog: dark outline + inner light/dark bevel + drop */
-.px-window {
-  background: var(--face);
-  border: 3px solid var(--ink);
-  box-shadow:
-    inset 0 0 0 1px var(--edge),
-    inset 3px 3px 0 0 var(--face-hi),
-    inset -3px -3px 0 0 var(--face-lo),
-    0 5px 0 0 rgba(0, 0, 0, 0.32),
-    0 10px 22px 0 rgba(0, 0, 0, 0.45);
-  image-rendering: pixelated;
-}
-
-/* a slate title bar that sits inside a window */
-.px-titlebar {
-  background: var(--chrome);
-  color: var(--light);
-  border-bottom: 3px solid var(--ink);
-  box-shadow:
-    inset 0 2px 0 0 var(--chrome-hi),
-    inset 0 -2px 0 0 var(--chrome-lo);
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
-}
-
-/* inset sub-panel (e.g. activity feed, list area) carved into the cream */
-.px-inset {
-  background: #f6f3e9;
-  border: 2px solid var(--ink);
-  box-shadow:
-    inset 2px 2px 0 0 var(--face-lo),
-    inset -1px -1px 0 0 var(--face-hi);
-}
-.px-inset-hover:hover {
-  background: var(--face-hi);
-}
-/* an inset that warns or refuses, by its edge: the inset's border beats a border utility */
-.px-inset-warn {
-  border-color: var(--warn);
-}
-.px-inset-danger {
-  border-color: var(--danger);
-}
-
-.px-btn {
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.25;
-  min-height: 36px;
-  color: var(--fg);
-  background: var(--face);
-  border: 3px solid var(--ink);
-  box-shadow:
-    inset 2px 2px 0 0 var(--face-hi),
-    inset -2px -2px 0 0 var(--face-lo),
-    0 3px 0 0 rgba(0, 0, 0, 0.3);
-  padding: 8px 14px;
-  text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.4);
-  transition: none;
-}
-.px-btn:hover:not(:disabled) {
-  background: var(--face-hi);
-}
-.px-btn:active:not(:disabled) {
-  transform: translateY(3px);
-  box-shadow:
-    inset 2px 2px 0 0 var(--face-lo),
-    inset -2px -2px 0 0 var(--face-hi);
-}
-.px-btn:disabled {
-  opacity: 0.5;
-}
-
-/* Glyph icons need their own font size, independent of the surrounding button. */
-.px-icon {
-  font-size: 18px;
-  line-height: 1;
-  display: inline-block;
-  vertical-align: -0.1em;
-}
-/* icon carrying the weight of a button on its own, with no label to sit beside */
-.px-icon-solo {
-  font-size: 22px;
-}
-
-/* Balance the larger glyph against the text button's height. */
-.px-btn-icon {
-  padding: 6px 10px;
-}
-
-.px-btn-accent {
-  color: var(--light);
-  background: var(--accent);
-  border-color: var(--ink);
-  box-shadow:
-    inset 2px 2px 0 0 var(--accent-hi),
-    inset -2px -2px 0 0 var(--accent-lo),
-    0 3px 0 0 rgba(0, 0, 0, 0.3);
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
-}
-/* a control showing that something is running right now: autopilot while it is on */
-.px-btn-live {
-  color: #0e2a16;
-  background: var(--ok);
-}
-.px-btn-accent:hover:not(:disabled) {
-  background: #5aa9e8;
-}
-.px-btn-accent:active:not(:disabled) {
-  transform: translateY(3px);
-  box-shadow:
-    inset 2px 2px 0 0 var(--accent-lo),
-    inset -2px -2px 0 0 var(--accent-hi);
-}
-
-.px-opt {
-  font-family: inherit;
-  font-size: 14px;
-  color: var(--fg);
-  background: #e2ddcd;
-  border: 3px solid var(--ink);
-  box-shadow: inset 2px 2px 0 0 var(--face-lo);
-  padding: 10px;
-}
-.px-opt[data-disabled] {
-  opacity: 0.5;
-}
-.px-opt[data-pressed] {
-  background: var(--accent);
-  color: var(--light);
-  box-shadow:
-    inset 2px 2px 0 0 var(--accent-lo),
-    inset -2px -2px 0 0 var(--accent-hi);
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
-}
-
-.px-field {
-  font-family: inherit;
-  font-size: 14px;
-  color: var(--fg);
-  background: #f8f5ec;
-  border: 3px solid var(--ink);
-  box-shadow: inset 2px 2px 0 0 var(--face-lo);
-  padding: 8px 10px;
-  outline: none;
-}
-.px-field::placeholder {
-  color: #837e63;
-}
-.px-field:focus {
-  box-shadow:
-    inset 2px 2px 0 0 var(--face-lo),
-    inset 0 0 0 2px var(--accent);
-}
-
-.px-chip {
-  font-family: inherit;
-  font-size: 12px;
-  color: var(--fg);
-  background: #e6e1d1;
-  border: 2px solid var(--ink);
-  box-shadow: inset 1px 1px 0 0 var(--face-hi);
-  padding: 5px 10px;
-}
-.px-chip:hover {
-  background: var(--accent);
-  color: var(--light);
-}
-
-/* a character portrait: the frame every composed face sits in */
-/* a drawn 44px bust at a whole multiple, plus its own border, so the pixels stay square */
-.px-bust {
-  --bust-scale: 1;
-  display: inline-block;
-  width: calc(44px * var(--bust-scale) + 6px);
-  height: calc(44px * var(--bust-scale) + 6px);
-  border: 3px solid var(--ink);
-  background: #cfd6ea;
-  box-shadow: inset 0 0 0 2px var(--face-hi);
-  image-rendering: pixelated;
-}
-.px-bust-md {
-  --bust-scale: 2;
-}
-.px-bust-lg {
-  --bust-scale: 5;
-}
-
-/* dim helper text under a control or a page of dialogue */
-.px-hint {
-  font-size: 11px;
-  color: var(--fg-dim);
-}
-.px-hint-danger {
-  color: var(--danger);
-}
-
-/* a section's small-caps label; it sets no colour, so the label's own utility still applies */
-.px-label {
-  font-size: 0.75rem;
-  line-height: calc(1 / 0.75);
-  text-transform: uppercase;
-  letter-spacing: 0.025em;
-}
-
-/* a dialog over the office: the backdrop dims, the window centres itself */
-.px-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  background: rgba(0, 0, 0, 0.55);
-}
-.px-dialog {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  z-index: 31;
-  display: flex;
-  flex-direction: column;
-  width: calc(100% - 3rem);
-  max-height: 85vh;
-  /* the individual property, so .px-pop's transform animation composes with it */
-  translate: -50% -50%;
-  outline: none;
-}
-
-/* the RPG choice window: a list with a ▶ cursor. Position it from the caller. */
-.px-menu {
-  display: flex;
-  flex-direction: column;
-  min-width: 200px;
-  padding: 8px 0;
-}
-.px-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 16px 6px 10px;
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.3;
-  color: var(--fg);
-  background: transparent;
-  border: 0;
-  text-align: left;
-  white-space: nowrap;
-}
-/* Base UI's Toolbar.Button keeps a disabled item focusable, so it never sets native `disabled` */
-.px-menu-item[data-disabled] {
-  opacity: 0.5;
-}
-/* the ▶ is the focus ring */
-.px-menu-item:focus-visible {
-  outline: none;
-}
-.px-menu-cursor {
-  width: 14px;
-  color: var(--accent);
-  visibility: hidden;
-}
-.px-menu-item[data-cur="true"] .px-menu-cursor {
-  visibility: visible;
-  animation: px-menu-cursor 0.5s steps(2, start) infinite alternate;
-}
-@keyframes px-menu-cursor {
-  to {
-    transform: translateX(2px);
+  /* a beveled window/dialog: dark outline + inner light/dark bevel + drop */
+  .px-window {
+    background: var(--face);
+    border: 3px solid var(--ink);
+    box-shadow:
+      inset 0 0 0 1px var(--edge),
+      inset 3px 3px 0 0 var(--face-hi),
+      inset -3px -3px 0 0 var(--face-lo),
+      0 5px 0 0 rgba(0, 0, 0, 0.32),
+      0 10px 22px 0 rgba(0, 0, 0, 0.45);
+    image-rendering: pixelated;
   }
-}
 
-.px-badge {
-  border: 2px solid var(--ink);
-  padding: 2px 8px;
-  font-size: 12px;
-}
-/* something that wants you now, in the HUD's warning colours; and its quiet counterpart */
-.px-hot {
-  background: var(--warn);
-  color: #3a2c0a;
-}
-.px-quiet {
-  background: #d8d4c4;
-  color: var(--fg);
-}
-
-/* a HUD plate (compact info box, slate) */
-.px-plate {
-  background: var(--chrome);
-  color: var(--light);
-  border: 3px solid var(--ink);
-  box-shadow:
-    inset 2px 2px 0 0 var(--chrome-hi),
-    inset -2px -2px 0 0 var(--chrome-lo),
-    0 3px 0 0 rgba(0, 0, 0, 0.3);
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
-}
-
-/* the RPG dialog box: rounded cream panel with a double outline */
-.px-battle {
-  position: relative;
-  background: var(--face);
-  border: 3px solid var(--ink);
-  border-radius: 12px;
-  box-shadow:
-    0 0 0 3px var(--face-hi),
-    0 0 0 6px var(--ink),
-    inset 0 0 0 2px var(--accent-lo),
-    inset 4px 4px 0 0 var(--face-hi),
-    inset -4px -4px 0 0 var(--face-lo),
-    0 10px 26px rgba(0, 0, 0, 0.5);
-  image-rendering: pixelated;
-}
-
-/* a hard on/off blink for "press start" prompts */
-.px-blink {
-  animation: px-blink 0.7s steps(1, start) infinite;
-}
-@keyframes px-blink {
-  50% {
-    opacity: 0;
+  /* a slate title bar that sits inside a window */
+  .px-titlebar {
+    background: var(--chrome);
+    color: var(--light);
+    border-bottom: 3px solid var(--ink);
+    box-shadow:
+      inset 0 2px 0 0 var(--chrome-hi),
+      inset 0 -2px 0 0 var(--chrome-lo);
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
   }
-}
 
-/* Wrap held commands mid-token so the founder can inspect the complete command. */
-.px-code {
-  font-family: inherit;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--fg);
-  white-space: pre-wrap;
-  word-break: break-all;
-  /* a held command reads in the order it runs: right-to-left letters never reorder it */
-  unicode-bidi: bidi-override;
-  direction: ltr;
-}
-
-/* Prose to paste, as written: wrapped between words, and a long URL wherever it must be. */
-.px-draft {
-  font-family: inherit;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--fg);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.px-link {
-  font-family: inherit;
-  font-size: 11px;
-  line-height: 1.3;
-  color: var(--fg-dim);
-  background: transparent;
-  border: none;
-  padding: 0;
-}
-.px-link:hover {
-  color: var(--fg);
-}
-.px-link-danger:hover {
-  color: var(--danger);
-}
-
-/* a window arriving: two frames from small to full, the way a menu box opens */
-.px-pop {
-  animation: px-pop 0.16s steps(2, end) both;
-}
-@keyframes px-pop {
-  from {
-    transform: scale(0.92);
-    opacity: 0;
+  /* inset sub-panel (e.g. activity feed, list area) carved into the cream */
+  .px-inset {
+    background: #f6f3e9;
+    border: 2px solid var(--ink);
+    box-shadow:
+      inset 2px 2px 0 0 var(--face-lo),
+      inset -1px -1px 0 0 var(--face-hi);
   }
-}
+  .px-inset-hover:hover {
+    background: var(--face-hi);
+  }
+  /* an inset that warns or refuses, by its edge: the inset's border beats a border utility */
+  .px-inset-warn {
+    border-color: var(--warn);
+  }
+  .px-inset-danger {
+    border-color: var(--danger);
+  }
 
-.px-more {
-  display: inline-block;
-  animation: px-more 0.6s steps(2, start) infinite;
-}
-@keyframes px-more {
-  50% {
+  .px-btn {
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.25;
+    min-height: 36px;
+    color: var(--fg);
+    background: var(--face);
+    border: 3px solid var(--ink);
+    box-shadow:
+      inset 2px 2px 0 0 var(--face-hi),
+      inset -2px -2px 0 0 var(--face-lo),
+      0 3px 0 0 rgba(0, 0, 0, 0.3);
+    padding: 8px 14px;
+    text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.4);
+    transition: none;
+  }
+  .px-btn:hover:not(:disabled) {
+    background: var(--face-hi);
+  }
+  .px-btn:active:not(:disabled) {
     transform: translateY(3px);
+    box-shadow:
+      inset 2px 2px 0 0 var(--face-lo),
+      inset -2px -2px 0 0 var(--face-hi);
   }
-}
-
-/* a soft blink for "working" indicators */
-.px-live-dot {
-  animation: px-pulse 1s ease-in-out infinite;
-}
-@keyframes px-pulse {
-  50% {
-    opacity: 0.35;
+  .px-btn:disabled {
+    opacity: 0.5;
   }
-}
 
-/* the cursor's selector matches the specificity of the rule that animates it */
-@media (prefers-reduced-motion: reduce) {
-  .px-pop,
-  .px-blink,
-  .px-more,
-  .px-live-dot,
+  /* Glyph icons need their own font size, independent of the surrounding button. */
+  .px-icon {
+    font-size: 18px;
+    line-height: 1;
+    display: inline-block;
+    vertical-align: -0.1em;
+  }
+  /* icon carrying the weight of a button on its own, with no label to sit beside */
+  .px-icon-solo {
+    font-size: 22px;
+  }
+
+  /* Balance the larger glyph against the text button's height. */
+  .px-btn-icon {
+    padding: 6px 10px;
+  }
+
+  .px-btn-accent {
+    color: var(--light);
+    background: var(--accent);
+    border-color: var(--ink);
+    box-shadow:
+      inset 2px 2px 0 0 var(--accent-hi),
+      inset -2px -2px 0 0 var(--accent-lo),
+      0 3px 0 0 rgba(0, 0, 0, 0.3);
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
+  }
+  /* a control showing that something is running right now: autopilot while it is on */
+  .px-btn-live {
+    color: #0e2a16;
+    background: var(--ok);
+  }
+  .px-btn-accent:hover:not(:disabled) {
+    background: #5aa9e8;
+  }
+  .px-btn-accent:active:not(:disabled) {
+    transform: translateY(3px);
+    box-shadow:
+      inset 2px 2px 0 0 var(--accent-lo),
+      inset -2px -2px 0 0 var(--accent-hi);
+  }
+
+  /* a destructive button, armed */
+  .px-btn-danger,
+  .px-btn-danger:hover:not(:disabled) {
+    color: var(--light);
+    background: var(--danger);
+  }
+
+  .px-opt {
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--fg);
+    background: #e2ddcd;
+    border: 3px solid var(--ink);
+    box-shadow: inset 2px 2px 0 0 var(--face-lo);
+    padding: 10px;
+  }
+  .px-opt[data-disabled] {
+    opacity: 0.5;
+  }
+  .px-opt[data-pressed] {
+    background: var(--accent);
+    color: var(--light);
+    box-shadow:
+      inset 2px 2px 0 0 var(--accent-lo),
+      inset -2px -2px 0 0 var(--accent-hi);
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
+  }
+
+  .px-field {
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--fg);
+    background: #f8f5ec;
+    border: 3px solid var(--ink);
+    box-shadow: inset 2px 2px 0 0 var(--face-lo);
+    padding: 8px 10px;
+    outline: none;
+  }
+  .px-field::placeholder {
+    color: #837e63;
+  }
+  .px-field:focus {
+    box-shadow:
+      inset 2px 2px 0 0 var(--face-lo),
+      inset 0 0 0 2px var(--accent);
+  }
+
+  .px-chip {
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--fg);
+    background: #e6e1d1;
+    border: 2px solid var(--ink);
+    box-shadow: inset 1px 1px 0 0 var(--face-hi);
+    padding: 5px 10px;
+  }
+  .px-chip:hover {
+    background: var(--accent);
+    color: var(--light);
+  }
+
+  /* a character portrait: the frame every composed face sits in */
+  /* a drawn 44px bust at a whole multiple, plus its own border, so the pixels stay square */
+  .px-bust {
+    --bust-scale: 1;
+    display: inline-block;
+    width: calc(44px * var(--bust-scale) + 6px);
+    height: calc(44px * var(--bust-scale) + 6px);
+    border: 3px solid var(--ink);
+    background: #cfd6ea;
+    box-shadow: inset 0 0 0 2px var(--face-hi);
+    image-rendering: pixelated;
+  }
+  .px-bust-md {
+    --bust-scale: 2;
+  }
+  .px-bust-lg {
+    --bust-scale: 5;
+  }
+
+  /* dim helper text under a control or a page of dialogue */
+  .px-hint {
+    font-size: 11px;
+    color: var(--fg-dim);
+  }
+  .px-hint-danger {
+    color: var(--danger);
+  }
+
+  /* a section's small-caps label; it sets no colour, so the label's own utility still applies */
+  .px-label {
+    font-size: 0.75rem;
+    line-height: calc(1 / 0.75);
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+  }
+
+  /* a dialog over the office: the backdrop dims, the window centres itself */
+  .px-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgba(0, 0, 0, 0.55);
+  }
+  .px-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    z-index: 31;
+    display: flex;
+    flex-direction: column;
+    width: calc(100% - 3rem);
+    max-height: 85vh;
+    /* the individual property, so .px-pop's transform animation composes with it */
+    translate: -50% -50%;
+    outline: none;
+  }
+
+  /* the RPG choice window: a list with a ▶ cursor. Position it from the caller. */
+  .px-menu {
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    padding: 8px 0;
+  }
+  .px-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px 6px 10px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.3;
+    color: var(--fg);
+    background: transparent;
+    border: 0;
+    text-align: left;
+    white-space: nowrap;
+  }
+  /* Base UI's Toolbar.Button keeps a disabled item focusable, so it never sets native `disabled` */
+  .px-menu-item[data-disabled] {
+    opacity: 0.5;
+  }
+  /* the ▶ is the focus ring */
+  .px-menu-item:focus-visible {
+    outline: none;
+  }
+  .px-menu-cursor {
+    width: 14px;
+    color: var(--accent);
+    visibility: hidden;
+  }
   .px-menu-item[data-cur="true"] .px-menu-cursor {
-    animation: none;
+    visibility: visible;
+    animation: px-menu-cursor 0.5s steps(2, start) infinite alternate;
   }
-}
+  @keyframes px-menu-cursor {
+    to {
+      transform: translateX(2px);
+    }
+  }
 
-.px-scroll::-webkit-scrollbar {
-  width: 10px;
-}
-.px-scroll::-webkit-scrollbar-track {
-  background: var(--face-lo);
-}
-.px-scroll::-webkit-scrollbar-thumb {
-  background: var(--edge);
-  border: 2px solid var(--ink);
+  .px-badge {
+    border: 2px solid var(--ink);
+    padding: 2px 8px;
+    font-size: 12px;
+  }
+  /* something that wants you now, in the HUD's warning colours; and its quiet counterpart */
+  .px-hot {
+    background: var(--warn);
+    color: #3a2c0a;
+  }
+  .px-quiet {
+    background: #d8d4c4;
+    color: var(--fg);
+  }
+
+  /* a HUD plate (compact info box, slate) */
+  .px-plate {
+    background: var(--chrome);
+    color: var(--light);
+    border: 3px solid var(--ink);
+    box-shadow:
+      inset 2px 2px 0 0 var(--chrome-hi),
+      inset -2px -2px 0 0 var(--chrome-lo),
+      0 3px 0 0 rgba(0, 0, 0, 0.3);
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
+  }
+
+  /* the RPG dialog box: rounded cream panel with a double outline */
+  .px-battle {
+    position: relative;
+    background: var(--face);
+    border: 3px solid var(--ink);
+    border-radius: 12px;
+    box-shadow:
+      0 0 0 3px var(--face-hi),
+      0 0 0 6px var(--ink),
+      inset 0 0 0 2px var(--accent-lo),
+      inset 4px 4px 0 0 var(--face-hi),
+      inset -4px -4px 0 0 var(--face-lo),
+      0 10px 26px rgba(0, 0, 0, 0.5);
+    image-rendering: pixelated;
+  }
+
+  /* a hard on/off blink for "press start" prompts */
+  .px-blink {
+    animation: px-blink 0.7s steps(1, start) infinite;
+  }
+  @keyframes px-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  /* Wrap held commands mid-token so the founder can inspect the complete command. */
+  .px-code {
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fg);
+    white-space: pre-wrap;
+    word-break: break-all;
+    /* a held command reads in the order it runs: right-to-left letters never reorder it */
+    unicode-bidi: bidi-override;
+    direction: ltr;
+  }
+
+  /* Prose to paste, as written: wrapped between words, and a long URL wherever it must be. */
+  .px-draft {
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fg);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .px-link {
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--fg-dim);
+    background: transparent;
+    border: none;
+    padding: 0;
+  }
+  .px-link:hover {
+    color: var(--fg);
+  }
+  .px-link-danger:hover {
+    color: var(--danger);
+  }
+
+  /* a window arriving: two frames from small to full, the way a menu box opens */
+  .px-pop {
+    animation: px-pop 0.16s steps(2, end) both;
+  }
+  @keyframes px-pop {
+    from {
+      transform: scale(0.92);
+      opacity: 0;
+    }
+  }
+
+  .px-more {
+    display: inline-block;
+    animation: px-more 0.6s steps(2, start) infinite;
+  }
+  @keyframes px-more {
+    50% {
+      transform: translateY(3px);
+    }
+  }
+
+  /* a soft blink for "working" indicators */
+  .px-live-dot {
+    animation: px-pulse 1s ease-in-out infinite;
+  }
+  @keyframes px-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  /* the cursor's selector matches the specificity of the rule that animates it */
+  @media (prefers-reduced-motion: reduce) {
+    .px-pop,
+    .px-blink,
+    .px-more,
+    .px-live-dot,
+    .px-menu-item[data-cur="true"] .px-menu-cursor {
+      animation: none;
+    }
+  }
+
+  .px-scroll::-webkit-scrollbar {
+    width: 10px;
+  }
+  .px-scroll::-webkit-scrollbar-track {
+    background: var(--face-lo);
+  }
+  .px-scroll::-webkit-scrollbar-thumb {
+    background: var(--edge);
+    border: 2px solid var(--ink);
+  }
 }

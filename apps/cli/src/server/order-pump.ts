@@ -15,7 +15,7 @@ import type { Sale } from "./order";
 import { REFUND, describe } from "./order-card";
 import { takePaidCheckouts } from "./order-intake";
 
-// Each kept sale through Printful, as AGENTS.md's "The order pump" describes.
+// Each kept sale through Printful, as docs/keys.md's "The order pump" describes.
 
 /** How often waiting orders are sent and sent ones' statuses read: Printful takes days to ship. */
 export const ORDER_TRACK_MS = 10 * 60_000;
@@ -331,7 +331,8 @@ const paymentRefusal = (
       why: "Stripe shows the buyer's payment refunded or disputed, so IdleBiz left Printful's draft unconfirmed. Delete the draft in Printful's dashboard, or confirm it there if the buyer is still owed it.",
     };
   }
-  // a listing's link takes only cards, but one made before it did can take a method with a dearer fee
+  // IdleBiz makes a listing's link take only cards, but the link can be widened on Stripe's side
+  // after, to a method whose fee is dearer
   if (payment.method !== "card") {
     const method = payment.method ?? "a method Stripe did not name";
     return {

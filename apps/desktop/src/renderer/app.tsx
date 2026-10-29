@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { PhaserGame } from "@/renderer/game/phaser-game";
 import { queryClient, useBoot } from "@/renderer/state/queries";
-import { initStore, setGame } from "@/renderer/state/store";
+import { bootShown, initStore, setGame } from "@/renderer/state/store";
 import type { Boot } from "@/renderer/state/boot";
 import { Onboarding } from "@/renderer/ui/onboarding";
 import { SaveUnreadable } from "@/renderer/ui/save-unreadable";
@@ -105,6 +105,11 @@ const Page = () => {
   useEffect(() => {
     initStore();
   }, []);
+
+  // the office boots on the window's own reads: it fails with them, and boots again once they land
+  useEffect(() => {
+    bootShown(boot.kind);
+  }, [boot.kind]);
 
   return (
     <div className="relative h-full w-full overflow-hidden">

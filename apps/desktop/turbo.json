@@ -2,7 +2,10 @@
   "$schema": "https://turborepo.org/schema.json",
   "extends": ["//"],
   "tasks": {
+    // The page's vite build reads nothing of the shell's, and `idlebiz#build` takes this task's
+    // hash, so a change to the shell alone would otherwise build the page and main again.
     "build": {
+      "inputs": ["$TURBO_DEFAULT$", "!src-tauri/**", "!rust-toolchain.toml"],
       "outputs": ["dist/**"]
     },
     "test": {

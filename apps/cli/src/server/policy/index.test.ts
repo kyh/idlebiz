@@ -550,8 +550,8 @@ const shell = (command: string) => ({ command, kind: "shell" }) as const;
 const NONE: ReadonlySet<string> = new Set();
 
 const SAVE = "/Users/me/.idlebiz";
-const WORKSPACE = `${SAVE}/acme/workspace`;
-const MEMORY = `${SAVE}/acme/agents/mae/memory`;
+const WORKSPACE = `${SAVE}/company/products/ledger/workspace`;
+const MEMORY = `${SAVE}/company/agents/mae/memory`;
 const ROOM: Confinement = {
   real: (file) => Promise.resolve(file),
   writable: [WORKSPACE, MEMORY, `${SAVE}/cache`],

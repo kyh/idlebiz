@@ -19,6 +19,7 @@ import type { Activity } from "@/renderer/game/npc-look";
 import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 import { planSeats } from "@/renderer/game/office-placement";
 import type { SeatPlan } from "@/renderer/game/office-placement";
+import { activityOf, resyncOf } from "@/renderer/game/office-resync";
 import { DEFAULT_WORK_POSE } from "@/renderer/game/office-poses";
 import type { WorkPose } from "@/renderer/game/office-poses";
 import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y } from "@repo/domain/character-frame";
@@ -56,6 +57,8 @@ export class NpcManager {
   private chain: Promise<void> = Promise.resolve();
   /** Released while their spawn was still queued in the chain: never let them in. */
   private readonly released = new Set<string>();
+  /** Who main says waits on the founder, as last heard: whoever comes in later shows it too. */
+  private waiting: ReadonlySet<string> = new Set();
   // a restart reuses this scene: a spawn still queued must not land in the next one's office
   private disposed = false;
   private readonly scene: Phaser.Scene;
@@ -136,14 +139,14 @@ export class NpcManager {
       plan: null,
       seat,
       sprite,
-      waiting: false,
+      waiting: this.waiting.has(emp.id),
     };
     this.npcs.set(emp.id, npc);
     if (passage === "door") {
       sprite.setAlpha(0);
       this.arrivals.push(emp.id);
     }
-    this.setState(emp.id, emp.status);
+    this.setState(emp.id, activityOf(emp.status, npc.waiting));
     applyDepth(npc);
   }
 
@@ -286,6 +289,7 @@ export class NpcManager {
 
   /** Who main says still waits on the founder: they keep the "!" whatever they do, and nobody else does. */
   setWaiting(waiting: ReadonlySet<string>): void {
+    this.waiting = waiting;
     for (const [id, npc] of this.npcs) {
       npc.waiting = waiting.has(id);
       if (!npc.waiting && npc.activity.kind === "blocked") {
@@ -293,6 +297,31 @@ export class NpcManager {
       } else {
         applyLook(npc);
       }
+    }
+  }
+
+  /**
+   * Agree with main's roster and who it says waits on the founder, read again after the page
+   * missed main's events: the missing come in, the released leave, and whoever does something
+   * other than main says is set (office-resync.ts).
+   */
+  resync(roster: readonly Employee[], waiting: ReadonlySet<string>): void {
+    const office = [...this.npcs.values()].map(({ activity, id, phase }) => ({
+      activity: activity.kind,
+      id,
+      phase,
+    }));
+    const { arrive, leave, set } = resyncOf(office, roster, waiting);
+    for (const id of leave) {
+      this.despawn(id, "door");
+    }
+    for (const [id, state] of set) {
+      this.setState(id, state);
+    }
+    // before anyone comes in, so they come in showing it
+    this.setWaiting(waiting);
+    for (const emp of arrive) {
+      void this.spawn(emp, "door");
     }
   }
 

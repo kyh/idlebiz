@@ -12,8 +12,8 @@ export const OfficeBackdrop = () => (
     <div className="ob-office-wall" />
     <div className="ob-office-floor" />
     <div className="ob-office-board" />
-    <img className="ob-office-desk" src="./onboarding/office-desk.png" alt="" />
-    <img className="ob-office-cooler" src="./onboarding/office-cooler.png" alt="" />
+    <img className="ob-office-desk" src="/onboarding/office-desk.png" alt="" />
+    <img className="ob-office-cooler" src="/onboarding/office-cooler.png" alt="" />
   </div>
 );
 

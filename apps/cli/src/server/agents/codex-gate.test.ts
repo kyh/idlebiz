@@ -414,7 +414,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     "lets a patch through unheld, and the seal refuses one that moves a file into the save",
     { timeout: 60_000 },
     async () => {
-      const approvals = path.join(root, "acme", "approvals.json");
+      const approvals = path.join(root, "company", "approvals.json");
       mkdirSync(path.dirname(approvals), { recursive: true });
       const patch = [
         "*** Begin Patch",

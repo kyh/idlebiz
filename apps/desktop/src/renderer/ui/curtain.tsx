@@ -16,7 +16,7 @@ export const Curtain = ({ children }: { children: ReactNode }) => {
   return (
     <AlertDialog.Root open>
       <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="fixed inset-0 z-40 bg-[#10121b]/90" />
+        <AlertDialog.Backdrop className="fixed inset-0 z-40 bg-veil/90" />
         <AlertDialog.Viewport className="fixed inset-0 z-40 flex items-center justify-center p-6">
           <AlertDialog.Popup
             ref={popup}

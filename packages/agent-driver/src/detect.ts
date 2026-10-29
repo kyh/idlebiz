@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { RUNNER_IDS } from "@repo/domain/runners";
 import type { RunnerId } from "@repo/domain/runners";
 import { RUNNERS } from "./registry";
+import type { Argv } from "./registry";
 
 export const runnerBin = (id: RunnerId): string => {
   const { command, override } = RUNNERS[id].cli;
@@ -19,13 +20,13 @@ export const isReady = (p: RunnerProbe): boolean => p.installed && p.authed;
 const PROBE_TIMEOUT_MS = 15_000;
 
 /** `argv` as the caller starts a runner's CLI: itself, or inside whatever confines it. */
-type CliLaunch = (id: RunnerId, argv: readonly string[]) => readonly string[];
+type CliLaunch = (id: RunnerId, argv: Argv) => Argv;
 
 const execFileAsync = promisify(execFile);
 
 /** Whether `argv` exited 0 within the probe's time, and what it printed then. */
 const run = async (
-  [bin = "", ...args]: readonly string[],
+  [bin, ...args]: Argv,
   env: Record<string, string>,
 ): Promise<{ ok: boolean; output: string }> => {
   try {

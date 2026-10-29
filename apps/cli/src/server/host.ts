@@ -6,6 +6,7 @@
 import { z } from "zod";
 import type { Peer } from "./relay/rpc";
 import { sealingKeySchema } from "./secrets";
+import { LAUNCH_AT_LOGIN } from "@repo/domain/domain";
 import type { LaunchAtLogin } from "@repo/domain/domain";
 
 export const RELAY_METHODS = [
@@ -14,6 +15,7 @@ export const RELAY_METHODS = [
   "quit",
   "window",
   "tray",
+  "update",
   "host.messageBox",
   "host.copyText",
   "host.open",
@@ -22,11 +24,10 @@ export const RELAY_METHODS = [
   "host.tray",
   "host.keepAwake",
   "host.relaunch",
+  "host.checkUpdate",
+  "host.installUpdate",
 ] as const;
 export type RelayMethod = (typeof RELAY_METHODS)[number];
-
-/** How long a host's quit waits for main to stop its runs, as the shell's does (main_process.rs). */
-export const QUIT_TIMEOUT_MS = 45_000;
 
 export const launchSchema = z.strictObject({
   // a launch at login starts in the menu bar
@@ -78,13 +79,7 @@ type Opening = z.infer<typeof openingSchema>;
 export const loginItemSchema = z.strictObject({ on: z.boolean().nullable() });
 type LoginItem = z.infer<typeof loginItemSchema>;
 
-export const launchAtLoginSchema = z.enum([
-  "on",
-  "off",
-  "requires-approval",
-  "not-found",
-  "unavailable",
-]) satisfies z.ZodType<LaunchAtLogin>;
+export const launchAtLoginSchema = z.enum(LAUNCH_AT_LOGIN);
 
 export const noteSchema = z.strictObject({ body: z.string(), title: z.string() });
 type Note = z.infer<typeof noteSchema>;
@@ -100,6 +95,8 @@ const trayItemSchema = z.discriminatedUnion("kind", [
     on: z.boolean(),
   }),
   z.strictObject({ kind: z.literal("separator") }),
+  // a click tells main `update`, and main installs the release it offers
+  z.strictObject({ kind: z.literal("update"), label: z.string() }),
   z.strictObject({ kind: z.literal("quit"), label: z.string() }),
 ]);
 export type TrayItem = z.infer<typeof trayItemSchema>;
@@ -115,6 +112,14 @@ type TrayModel = z.infer<typeof trayModelSchema>;
 export const keepAwakeSchema = z.strictObject({ on: z.boolean() });
 type KeepAwake = z.infer<typeof keepAwakeSchema>;
 
+// a release newer than this build, as the shell finds it on the release feed; none is null
+export const releaseSchema = z.strictObject({ version: z.string() });
+type Release = z.infer<typeof releaseSchema>;
+
+// installs the release main offered, by its version: one the feed has moved past is refused
+export const installUpdateSchema = z.strictObject({ version: z.string() });
+type InstallUpdate = z.infer<typeof installUpdateSchema>;
+
 export interface Host {
   messageBox: (box: MessageBox) => Promise<void>;
   copyText: (text: string) => Promise<void>;
@@ -126,11 +131,19 @@ export interface Host {
   keepAwake: (on: boolean) => void;
   // ends main and starts the app again: what a reset does once the save is gone
   relaunch: () => void;
+  // the newest release on the feed, when it is newer than this build
+  checkUpdate: () => Promise<Release | null>;
+  // downloads `version` and answers; then the shell stops main, installs it and starts the app again
+  installUpdate: (version: string) => Promise<void>;
 }
 
 export const hostOver = (peer: Peer<RelayMethod>): Host => ({
+  checkUpdate: async () => await peer.request("host.checkUpdate", null, releaseSchema.nullable()),
   copyText: async (text) => {
     await peer.request("host.copyText", { text } satisfies CopyText, z.null());
+  },
+  installUpdate: async (version) => {
+    await peer.request("host.installUpdate", { version } satisfies InstallUpdate, z.null());
   },
   keepAwake: (on) => {
     peer.notify("host.keepAwake", { on } satisfies KeepAwake);

@@ -236,7 +236,7 @@ const standInModel = (
  * session, when the tests run inside one, and the Keychain, where claude looks for a login.
  */
 const standInAgent = (agent: AcpAgent): AcpAgent => {
-  const [bin = "", flag = "", profile = "", ...rest] = agent.command;
+  const [bin, flag = "", profile = "", ...rest] = agent.command;
   const inherited = /^(?:ANTHROPIC_|CLAUDE|CMUX_)/u;
   return {
     ...agent,

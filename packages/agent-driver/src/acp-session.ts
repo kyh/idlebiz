@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { ChildProcess } from "node:child_process";
+import type { ChildProcess, ChildProcessByStdio } from "node:child_process";
 import { once } from "node:events";
 import { Readable, Writable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
@@ -17,6 +17,7 @@ import type { FailureClass } from "./rate-limit";
 import { toolAskOf } from "./tool-ask";
 import type { ToolAsk } from "./tool-ask";
 import type { AgentEvent, AgentUsage } from "./events";
+import type { Argv } from "./registry";
 
 // One ACP turn. Owns subprocess teardown and watchdogs, and bills what `usageMeter` counts;
 // adapters own the CLI wire formats.
@@ -60,7 +61,7 @@ const SessionFailureMeta = z.object({
 /** The agent a turn spawns. Its session fields are a `RunnerAdapter`'s, which says why each is. */
 export interface AcpAgent {
   /** Argv of the ACP agent to spawn (e.g. the claude or codex adapter). */
-  command: readonly string[];
+  command: Argv;
   /** Session mode to set every turn. */
   sessionModeId: string;
   /** Sent as `_meta` when the session is created or resumed. */
@@ -84,13 +85,13 @@ export interface AcpTurnOptions {
   agent: AcpAgent;
   /** The turn's text, given whether the stored session was resumed. */
   prompt: (resumed: boolean) => string;
-  /** Working directory — the company workspace where real work lands. */
+  /** Working directory: where the turn's work lands. */
   cwd: string;
   /** Continue this session instead of starting fresh (the employee's memory). */
   resumeSessionId?: string | undefined;
   /** Extra dirs the agent may read/write (e.g. its own memory folder). */
   addDirs?: string[];
-  /** Run-scoped additions to the agent's env (the control-plane URL and token, tool caches). */
+  /** Run-scoped additions to the agent's env (its line to the company, tool caches, PATH). */
   env?: Record<string, string>;
   /**
    * Decides each tool call the agent asks to make. `signal` aborts when the turn ends, so an
@@ -314,13 +315,10 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     };
 
     const [bin, ...args] = opts.agent.command;
-    if (bin === undefined) {
-      settle(failed("no ACP agent command configured"));
-      return;
-    }
 
+    let spawned: ChildProcessByStdio<Writable, Readable, Readable>;
     try {
-      child = spawn(bin, args, {
+      spawned = spawn(bin, args, {
         cwd: opts.cwd,
         // its own process group, so the backstop can reach the CLI it runs
         detached: true,
@@ -328,17 +326,14 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         signal: opts.signal,
         stdio: ["pipe", "pipe", "pipe"],
       });
+      child = spawned;
     } catch (error) {
       settle(failed(`failed to spawn ${bin}: ${errorMessage(error)}`));
       return;
     }
-    unkilled.add(child);
+    unkilled.add(spawned);
 
-    const { stdin, stdout, stderr } = child;
-    if (!stdin || !stdout || !stderr) {
-      settle(failed(`${bin}: stdio pipes unavailable`));
-      return;
-    }
+    const { stdin, stdout, stderr } = spawned;
     // Node's adapters hear each pipe's errors: one mid-turn fails the turn in its own words, and one
     // once the turn has ended reaches nothing that still awaits
     const output: WritableStream<Uint8Array> = Writable.toWeb(stdin);
@@ -480,13 +475,19 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         settle(result(tail ? { ...failure, error: `${failure.error}\n${tail}` } : failure));
         return;
       }
-      if (stopReason === "end_turn" || stopReason === "max_tokens") {
+      if (stopReason === "end_turn") {
         settle(result({ kind: "completed" }));
         return;
       }
       const tail = agentStderr.text();
+      const error = tail ? `agent stopped: ${stopReason}\n${tail}` : `agent stopped: ${stopReason}`;
+      // a turn cut off at the output cap is unfinished, and its session's failure, as claude's
+      // `max_output_tokens` errorKind is. claude-agent-acp reports one as this stop reason, ahead
+      // of any error its result carries: recheck that whenever the adapter is bumped.
       settle(
-        failed(tail ? `agent stopped: ${stopReason}\n${tail}` : `agent stopped: ${stopReason}`),
+        stopReason === "max_tokens"
+          ? result({ class: "context", error, kind: "failed" })
+          : failed(error),
       );
     };
     void (async () => {

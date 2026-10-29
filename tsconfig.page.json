@@ -1,8 +1,10 @@
 {
   // ES2023, a ceiling, for the code the page runs (apps/desktop's renderer, and @repo/domain and
   // @repo/contract, which it imports): the window is the system WebKit, at the macOS 13.5 floor
-  // Safari 16.6's, and Vite lowers syntax, never stdlib, so an ES2024 builtin
-  // (Promise.withResolvers, Object.groupBy) would typecheck here and then throw there.
+  // Safari 16.6's, and Vite lowers syntax to it (`build.target` in apps/desktop/vite.config.ts),
+  // never stdlib, so an ES2024 builtin (Promise.withResolvers, Object.groupBy) would typecheck here
+  // and then throw there. The floor is MINIMUM_MACOS in apps/desktop/scripts/package.ts: the three
+  // move together.
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023"],

@@ -11,7 +11,9 @@ mod protocol;
 mod relay;
 mod runtime;
 mod shell;
+mod shell_log;
 mod tray;
+mod updater;
 mod window;
 
 use tauri::RunEvent;
@@ -34,11 +36,12 @@ fn quit_on_signals<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
                 }
             });
         }
-        Err(error) => eprintln!("[shell] a SIGTERM will not stop the runs first: {error}"),
+        Err(error) => log::warn!("a SIGTERM will not stop the runs first: {error}"),
     }
 }
 
 pub fn run() {
+    shell_log::init();
     let bundled = std::env::current_exe().is_ok_and(|exe| runtime::is_bundled(&exe));
 
     let mut builder = tauri::Builder::default();
@@ -53,8 +56,12 @@ pub fn run() {
     }
     let built = builder
         .plugin(tauri_plugin_clipboard_manager::init())
+        // shown from Rust alone, yet each puts its script in the page, as every plugin does: there
+        // `alert`, `confirm` and `Notification` ask for commands no page is granted (docs/app.md)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        // checked and installed from Rust alone (updater.rs), when main asks
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // only Rust opens links (window.rs): the plugin's own script would catch a `_blank` click
         // and ask for a command no page is granted, so the link would do nothing
         .plugin(
@@ -73,7 +80,7 @@ pub fn run() {
     let app = match built {
         Ok(app) => app,
         Err(error) => {
-            eprintln!("[shell] IdleBiz failed to start: {error}");
+            log::error!("IdleBiz failed to start: {error}");
             std::process::exit(1);
         }
     };

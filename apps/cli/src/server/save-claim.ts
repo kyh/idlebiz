@@ -1,12 +1,14 @@
 import { randomBytes, randomInt } from "node:crypto";
 import { rmSync } from "node:fs";
 import { link, mkdir, readdir, rm } from "node:fs/promises";
+import { once } from "node:events";
 import { createConnection, createServer } from "node:net";
 import type { Server } from "node:net";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { SOCKET_PATH_MAX_BYTES, socketDirs } from "./control-plane";
+import { listening } from "./lib/listening";
 import { RefusalError } from "./refusal";
 
 // One main per save: two would drain one queue, each task paid for twice. Main holds the save by
@@ -68,39 +70,39 @@ const listenOn = async (socket: string): Promise<Server | null> => {
   const server = createServer((connection) => {
     connection.destroy();
   });
-  // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
-  return await new Promise((resolve, reject) => {
-    server.once("error", (error) => {
-      if (codeOf(error) === "EADDRINUSE") {
-        resolve(null);
-      } else {
-        reject(error);
-      }
+  try {
+    await listening(server, "the save's claim", () => {
+      server.listen(socket);
     });
-    server.listen(socket, () => {
-      resolve(server);
-    });
-  });
+  } catch (error) {
+    if (error instanceof Error && codeOf(error) === "EADDRINUSE") {
+      return null;
+    }
+    throw error;
+  }
+  return server;
 };
 
 /** Whether a main answers on `socket`. */
-const answers = async (socket: string): Promise<boolean> =>
-  // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
-  await new Promise((resolve, reject) => {
-    const probe = createConnection(socket);
-    probe.once("connect", () => {
-      probe.destroy();
-      resolve(true);
-    });
-    probe.once("error", (error) => {
-      const code = codeOf(error);
-      if (code !== null && UNHELD.has(code)) {
-        resolve(false);
-      } else {
-        reject(error);
-      }
-    });
+const answers = async (socket: string): Promise<boolean> => {
+  const probe = createConnection(socket);
+  // the wait below stops hearing errors once it connects, but the claim's server ends each
+  // connection it takes, so the probe can still fail after: unheard, that would take main down
+  probe.on("error", () => {
+    // what answers is heard below; a failure after the connect changes nothing
   });
+  try {
+    await once(probe, "connect");
+  } catch (error) {
+    const code = error instanceof Error ? codeOf(error) : null;
+    if (code !== null && UNHELD.has(code)) {
+      return false;
+    }
+    throw error;
+  }
+  probe.destroy();
+  return true;
+};
 
 interface Published {
   server: Server;

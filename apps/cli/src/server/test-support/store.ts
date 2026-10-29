@@ -33,7 +33,7 @@ export const firstProduct = () => {
 export const stateOf = (id: string) =>
   (store.getTask(id) ?? store.listShippedTasks().find((t) => t.id === id))?.state;
 
-/** Rewrite an open task on disk as dead of `lastError`, as five failed runs or an older build left it; boot reads it. */
+/** Rewrite an open task on disk as dead of `lastError`, as five failed runs left it; boot reads it. */
 export const writeDead = (taskId: string, lastError: string): void => {
   const t = store.getTask(taskId);
   if (!t) {

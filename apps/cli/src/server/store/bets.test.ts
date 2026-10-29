@@ -163,10 +163,10 @@ describe("bets", () => {
     expect(store.getBet(bet.id)).toMatchObject({ reading: 10, spentUsd: 1.5 });
   });
 
-  it("keeps a tuned policy's explore, but not a plateau an older build tuned with it", () => {
+  it("keeps a tuned policy across a restart", () => {
     foundAcme();
     mkdirSync(path.dirname(policyFile()), { recursive: true });
-    writeFileSync(policyFile(), JSON.stringify({ explore: 0.5, plateau: 2 }));
+    writeFileSync(policyFile(), JSON.stringify({ explore: 0.5 }));
     store.initStore();
     expect(store.allocationPolicy()).toEqual({ explore: 0.5 });
   });

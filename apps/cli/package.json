@@ -39,7 +39,7 @@
     "citty": "^0.2.2",
     "ignore": "^7.0.14",
     "typescript": "catalog:",
-    "vite": "^8.3.5",
+    "vite": "catalog:",
     "vitest": "catalog:",
     "zod": "catalog:"
   },

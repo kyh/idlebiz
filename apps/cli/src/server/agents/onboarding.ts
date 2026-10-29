@@ -6,7 +6,6 @@ import { isReady } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { runnerPool } from "./runner-pool";
 import type { RunnerPool } from "./runner-pool";
-import { SANDBOX_EXEC } from "./seal";
 import { foundingTeamPrompt } from "../prompts/onboarding";
 import { errorMessage } from "@repo/domain/errors";
 import { RUNNER_NAMES } from "@repo/domain/runners";
@@ -15,7 +14,17 @@ import type { AuthFlowEvent, BusinessTypeId } from "@repo/domain/domain";
 import { HireCandidateSchema } from "@repo/domain/hire";
 import type { HireCandidate } from "@repo/domain/hire";
 
-let setupRunning = false;
+/** How long a CLI's sign-in has to be finished in the browser before main stops it. */
+const SIGN_IN_DEADLINE_MS = 5 * 60_000;
+
+/** How long a command told to stop has to let go of what it holds, before its group is killed. */
+const STOP_GRACE_MS = 2000;
+
+/**
+ * The setup under way: aborting it stops the step it is on and the command that step waits on.
+ * A cancel, and a retry that takes over, reach it here.
+ */
+let underWay: AbortController | null = null;
 
 const CLAUDE_INSTALL_CMD = "curl -fsSL https://claude.ai/install.sh | bash";
 
@@ -34,27 +43,65 @@ const reportLine =
     }
   };
 
-/** Spawn a command, streaming its output lines as progress (URLs get their own event). */
+const signalGroup = (pid: number, signal: NodeJS.Signals): void => {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // already gone
+  }
+};
+
+/**
+ * Spawn a command, streaming its output lines as progress (URLs get their own event), until it
+ * exits or `signal` aborts. It leads a process group of its own, so an abort stops what it started
+ * too (a login's browser opener): the group is asked to stop, so a login can let go of its
+ * callback port, then killed. Main's exit kills it outright, with no time left to ask.
+ */
 const streamCommand = (
   cmd: string,
   args: string[],
   emit: (e: AuthFlowEvent) => void,
+  signal: AbortSignal,
 ): Promise<number | null> =>
   // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
   new Promise((resolve) => {
-    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    if (signal.aborted) {
+      resolve(null);
+      return;
+    }
+    const child = spawn(cmd, args, { detached: true, stdio: ["ignore", "pipe", "pipe"] });
     const onLine = reportLine(emit);
-    if (child.stdout) {
-      createInterface({ input: child.stdout }).on("line", onLine);
-    }
-    if (child.stderr) {
-      createInterface({ input: child.stderr }).on("line", onLine);
-    }
+    const reading = [child.stdout, child.stderr].map((input) =>
+      createInterface({ input }).on("line", onLine),
+    );
+    const { pid } = child;
+    const kill = (): void => {
+      if (pid !== undefined) {
+        signalGroup(pid, "SIGKILL");
+      }
+    };
+    const stop = (): void => {
+      for (const lines of reading) {
+        lines.close();
+      }
+      if (pid !== undefined) {
+        signalGroup(pid, "SIGTERM");
+        setTimeout(kill, STOP_GRACE_MS).unref();
+      }
+      resolve(null);
+    };
+    signal.addEventListener("abort", stop, { once: true });
+    process.once("exit", kill);
+    const settle = (code: number | null): void => {
+      signal.removeEventListener("abort", stop);
+      process.off("exit", kill);
+      resolve(code);
+    };
     child.on("error", (err) => {
       emit({ message: err.message, type: "error" });
-      resolve(null);
+      settle(null);
     });
-    child.on("close", (code) => resolve(code));
+    child.on("close", settle);
   });
 
 const label = (p: RunnerProbe): string => RUNNER_NAMES[p.id];
@@ -75,25 +122,42 @@ const signInState = (runners: SignIn, p: Extract<RunnerProbe, { installed: true 
   return runners.needsSignIn(p) ? " — its login was refused, signing in again" : " — signed in ✓";
 };
 
+/**
+ * Detects, installs and signs in the CLIs, saying how it goes in `emit`'s events. One setup runs
+ * at a time: a second takes over from the first, whose command is stopped, and which says nothing
+ * more, since the setup now under way speaks for both. A sign-in not finished in `deadlineMs`, or
+ * a setup cancelled, is stopped and ends in an error, so the page can offer it again.
+ */
 export const startLogin = async (
   runners: SignIn,
   emit: (e: AuthFlowEvent) => void,
+  deadlineMs = SIGN_IN_DEADLINE_MS,
 ): Promise<void> => {
-  if (setupRunning) {
-    emit({ message: "Setup already in progress…", type: "progress" });
-    return;
-  }
-  setupRunning = true;
+  underWay?.abort(new Error("Another setup took over."));
+  const setup = new AbortController();
+  underWay = setup;
+  const { signal } = setup;
+  const say = (e: AuthFlowEvent): void => {
+    if (underWay === setup && !signal.aborted) {
+      emit(e);
+    }
+  };
+  /** What `step` answers, unless the setup was stopped while it ran. */
+  const unlessStopped = async <T>(step: Promise<T>): Promise<T> => {
+    const answer = await step;
+    signal.throwIfAborted();
+    return answer;
+  };
   try {
-    let probes = await runners.refresh();
+    let probes = await unlessStopped(runners.refresh());
     // no CLI is found without the seal, so installing one would not help
-    const refusal = await runners.sealRefusal();
+    const refusal = await unlessStopped(runners.sealRefusal());
     if (refusal !== null) {
-      emit({ message: refusal, type: "error" });
+      say({ message: refusal, type: "error" });
       return;
     }
     for (const p of probes) {
-      emit({
+      say({
         message: p.installed
           ? `Found ${label(p)} (${p.version ?? "unknown version"})${signInState(runners, p)}`
           : `${label(p)} not installed`,
@@ -102,56 +166,79 @@ export const startLogin = async (
     }
 
     if (probes.every((p) => !p.installed)) {
-      emit({ message: "No coding CLI found — installing Claude Code…", type: "progress" });
+      say({ message: "No coding CLI found — installing Claude Code…", type: "progress" });
       // not a login shell: whatever its startup files source, a run could have written
-      const code = await streamCommand("/bin/bash", ["-c", CLAUDE_INSTALL_CMD], emit);
+      const code = await unlessStopped(
+        streamCommand("/bin/bash", ["-c", CLAUDE_INSTALL_CMD], say, signal),
+      );
       if (code !== 0) {
-        emit({
+        say({
           message: "Install failed — install Claude Code or Codex manually, then retry.",
           type: "error",
         });
         return;
       }
-      emit({ message: "Claude Code installed.", type: "progress" });
-      probes = await runners.refresh();
+      say({ message: "Claude Code installed.", type: "progress" });
+      probes = await unlessStopped(runners.refresh());
     }
 
     for (const p of probes) {
       if (!runners.needsSignIn(p)) {
         continue;
       }
-      emit({ message: `Signing in to ${label(p)} — your browser will open…`, type: "progress" });
-      const [cmd = SANDBOX_EXEC, ...args] = await runners.sealedSignIn(p.id, [
-        p.bin,
-        ...RUNNERS[p.id].loginArgs,
-      ]);
-      const code = await streamCommand(cmd, args, emit);
+      say({ message: `Signing in to ${label(p)} — your browser will open…`, type: "progress" });
+      const [cmd, ...args] = await unlessStopped(
+        runners.sealedSignIn(p.id, [p.bin, ...RUNNERS[p.id].loginArgs]),
+      );
+      const deadline = AbortSignal.timeout(deadlineMs);
+      const code = await unlessStopped(
+        streamCommand(cmd, args, say, AbortSignal.any([signal, deadline])),
+      );
+      if (code === null && deadline.aborted) {
+        throw new Error(`The sign-in to ${label(p)} timed out — sign in again.`);
+      }
       if (code === 0) {
         runners.signedInAgain(p.id);
       } else {
-        emit({
+        say({
           message: `Couldn't finish automatically. In a terminal, run: ${p.bin} ${RUNNERS[p.id].loginArgs.join(" ")} — then come back and retry.${p.id === "codex" ? ` ${CODEX_FILE_LOGIN}` : ""}`,
           type: "progress",
         });
       }
     }
 
-    probes = await runners.refresh();
+    probes = await unlessStopped(runners.refresh());
     const ready = probes.filter((p) => isReady(p) && !runners.needsSignIn(p));
     if (ready.length > 0) {
-      emit({ message: `Workforce ready: ${ready.map(label).join(" + ")}.`, type: "progress" });
-      emit({ type: "done" });
+      say({ message: `Workforce ready: ${ready.map(label).join(" + ")}.`, type: "progress" });
+      say({ type: "done" });
     } else {
-      emit({
+      say({
         message: "No signed-in coding CLI yet. Sign in to Claude Code or Codex, then retry.",
         type: "error",
       });
     }
   } catch (error) {
-    emit({ message: errorMessage(error), type: "error" });
+    if (underWay === setup) {
+      emit({ message: errorMessage(error), type: "error" });
+    }
   } finally {
-    setupRunning = false;
+    if (underWay === setup) {
+      underWay = null;
+    }
   }
+};
+
+/**
+ * Stops the setup under way, which ends in an error saying so; with none under way, says that
+ * instead, so a page still waiting on one stops waiting.
+ */
+export const cancelLogin = (emit: (e: AuthFlowEvent) => void): void => {
+  if (underWay === null) {
+    emit({ message: "No setup was under way.", type: "error" });
+    return;
+  }
+  underWay.abort(new Error("Setup cancelled."));
 };
 
 const CandidatesSchema = z.array(HireCandidateSchema).min(3).max(8);

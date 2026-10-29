@@ -12,12 +12,13 @@ import {
 import { once } from "node:events";
 import { createServer } from "node:net";
 import type { Server } from "node:net";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
+import type { RunnerId } from "@repo/domain/runners";
 import { browserNamespace, machineSeal, sealFor } from "./machine-seal";
 import { sealedCommand, signInCommand } from "./seal";
 import type { Seal } from "./seal";
@@ -38,6 +39,28 @@ const exitOf = (argv: readonly string[]): number | null => {
   const [bin = "", ...args] = argv;
   return spawnSync(bin, args, { encoding: "utf-8" }).status;
 };
+
+/** What `argv` printed, run as it stands with `input` on stdin; given up on after 20s, a hang too. */
+const outputOf = (argv: readonly string[], input = ""): string => {
+  const [bin = "", ...args] = argv;
+  return spawnSync(bin, args, { encoding: "utf-8", input, timeout: 20_000 }).stdout;
+};
+
+/**
+ * Whether a `runner` run under `sealed` starts a program at all: until it does, a canary that finds
+ * nothing landed would pass on a profile that never compiled.
+ */
+const startsUnder = (sealed: Seal, runner: RunnerId): boolean =>
+  exitOf(sealedCommand(sealed, runner, ["/usr/bin/true"])) === 0;
+
+// the find pasteboard, which pboard serves over the one service as it does the general one, so the
+// canary leaves what the founder copied alone
+const PASTE = ["/usr/bin/pbpaste", "-pboard", "find"];
+const COPY = ["/usr/bin/pbcopy", "-pboard", "find"];
+
+// pbpaste answers only in a session with a window server, which CI's macOS runner has
+const pasteboardAnswers =
+  onMac && spawnSync(PASTE[0] ?? "", PASTE.slice(1), { timeout: 20_000 }).status === 0;
 
 /** A real probe of the checked command, its profile swapped for `profile`. */
 const under =
@@ -107,11 +130,12 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     symlinkSync(at(target), at(name));
     return at(target);
   };
-  /** The folders a run on acme's workspace writes, as the runner pool hands them over. */
+  /** The folders a run on a product writes, which the runner pool hands it. */
   const own = () => [
-    at(".idlebiz/acme/workspace"),
-    at(".idlebiz/acme/agents/ann/memory"),
+    at(".idlebiz/company/products/ledger/workspace"),
+    at(".idlebiz/company/agents/ann/memory"),
     at(".idlebiz/cache"),
+    at(".idlebiz/company/shared"),
   ];
   const seal = (more: Partial<Parameters<typeof sealFor>[0]> = {}): Promise<Seal> =>
     sealFor({
@@ -140,7 +164,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       TRY_FILES,
       JSON.stringify(files),
     ]);
-    const [bin = "", ...args] = argv;
+    const [bin, ...args] = argv;
     const { stdout } = spawnSync(bin, args, { encoding: "utf-8", env: { HOME: home } });
     return Outcomes.parse(parseJson(stdout));
   };
@@ -161,16 +185,19 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   const LOGINS = [
     ".ssh/id_ed25519",
     ".config/gh/hosts.yml",
+    ".config/hub",
     ".npmrc",
     ".netrc",
     ".git-credentials",
     ".config/git/credentials",
     ".aws/credentials",
     ".azure/msal_token_cache.json",
+    ".oci/config",
     ".kube/config",
     ".docker/config.json",
     ".gnupg/private-keys-v1.d/key",
     ".config/gcloud/credentials.db",
+    "Library/Application Support/doctl/config.yaml",
     ".config/stripe/config.toml",
     ".wrangler/config/default.toml",
     ".config/.wrangler/config/default.toml",
@@ -185,12 +212,27 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     ".railway/config.json",
     ".supabase/access-token",
     ".terraform.d/credentials.tfrc.json",
+    ".terraformrc",
+    ".pulumi/credentials.json",
+    ".vault-token",
+    ".pgpass",
+    ".my.cnf",
+    ".mylogin.cnf",
     ".pypirc",
     ".cargo/credentials.toml",
+    ".gem/credentials",
+    ".local/share/gem/credentials",
+    ".m2/settings.xml",
+    ".m2/settings-security.xml",
+    ".gradle/gradle.properties",
+    ".cache/huggingface/token",
+    ".cache/huggingface/stored_tokens",
+    ".sentryclirc",
     ".config/configstore/firebase-tools.json",
     ".config/op/config",
     ".config/github-copilot/apps.json",
     ".appstoreconnect/private_keys/AuthKey_CANARY.p8",
+    ".tauri/idlebiz.key",
     ".agent-browser/auth/site.json",
     ".agent-browser/.encryption-key",
     "Library/Application Support/Google/Chrome/Default/Cookies",
@@ -227,6 +269,11 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       ".cache/node/corepack/pnpm/9.0.0/bin/pnpm.cjs",
       "Library/Caches/ms-playwright/chromium/chrome",
       ".agent-browser/config.json",
+      // what a toolchain reads on every build, beside the logins sealed in its folder
+      ".yarnrc.yml",
+      ".m2/repository/org/a/a.jar",
+      ".gradle/caches/modules-2/a.bin",
+      ".pulumi/plugins/resource-aws/pulumi-resource-aws",
     ].map(plant);
     const fresh = [at("Documents/new.md"), at(".zlogin"), at("Library/LaunchAgents/new.plist")];
     expect(await tryAs("codex", { reads: files })).toEqual(all(files, "read"));
@@ -478,7 +525,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   });
 
   it("lets a claude run keep its own folder's transcripts and memory, and no other's", async () => {
-    const workspace = realpathSync(at(".idlebiz/acme/workspace"));
+    const workspace = realpathSync(at(".idlebiz/company/products/ledger/workspace"));
     const project = at(`.claude/projects/${workspace.replaceAll(/[^a-zA-Z0-9]/gu, "-")}`);
     mkdirSync(at(".claude/projects"), { recursive: true });
     const mine = path.join(project, "memory/MEMORY.md");
@@ -519,29 +566,29 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   });
 
   it("keeps the rest of the save from a run, so it forges no approval, verdict or teammate", async () => {
-    const workspace = plant(".idlebiz/acme/workspace/index.html");
-    const memory = plant(".idlebiz/acme/agents/ann/memory/notes.md");
+    const workspace = plant(".idlebiz/company/products/ledger/workspace/index.html");
+    const memory = plant(".idlebiz/company/agents/ann/memory/notes.md");
     const cache = plant(".idlebiz/cache/npm/_cacache/x");
+    const shared = plant(".idlebiz/company/shared/brief.md");
     const forged = [
-      plant(".idlebiz/acme/approvals.json"),
-      plant(".idlebiz/acme/bets/more-users/BET.md"),
-      plant(".idlebiz/acme/agents/ann/AGENTS.md"),
-      plant(".idlebiz/acme/agents/bob/AGENTS.md"),
-      plant(".idlebiz/acme/agents/bob/memory/notes.md"),
-      plant(".idlebiz/acme/tasks/landing/TASK.md"),
-      plant(".idlebiz/acme/shared/brief.md"),
-      at(".idlebiz/acme/tasks/landing/PLAN.md"),
+      plant(".idlebiz/company/approvals.json"),
+      plant(".idlebiz/company/bets/more-users/BET.md"),
+      plant(".idlebiz/company/agents/ann/AGENTS.md"),
+      plant(".idlebiz/company/agents/bob/AGENTS.md"),
+      plant(".idlebiz/company/agents/bob/memory/notes.md"),
+      plant(".idlebiz/company/tasks/landing/TASK.md"),
+      at(".idlebiz/company/tasks/landing/PLAN.md"),
       at(".idlebiz/notes.json"),
     ];
-    const linked = at(".idlebiz/acme/workspace/approvals.json");
+    const linked = at(".idlebiz/company/products/ledger/workspace/approvals.json");
     expect(
       await tryAs("claude", {
-        links: [[at(".idlebiz/acme/approvals.json"), linked]],
-        writes: [workspace, memory, cache, ...forged],
+        links: [[at(".idlebiz/company/approvals.json"), linked]],
+        writes: [workspace, memory, cache, shared, ...forged],
       }),
     ).toEqual({
       ...all(forged, "EPERM"),
-      ...all([workspace, memory, cache], "written"),
+      ...all([workspace, memory, cache, shared], "written"),
       [linked]: "EPERM",
     });
     expect(await tryAs("claude", { writes: [workspace, memory] }, seal({ writable: [] }))).toEqual(
@@ -551,10 +598,10 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
 
   it("closes a save that sits in a scratch folder, as a test's does, but for the run's own folders", async () => {
     const save = at("tmp/save");
-    const workspace = path.join(save, "acme/workspace");
+    const workspace = path.join(save, "company/products/ledger/workspace");
     mkdirSync(workspace, { recursive: true });
     const sealed = seal({ save, writable: [workspace] });
-    const approvals = path.join(save, "acme/approvals.json");
+    const approvals = path.join(save, "company/approvals.json");
     const writes = [approvals, path.join(workspace, "index.html"), at("tmp/other.log")];
     expect(await tryAs("codex", { writes }, sealed)).toEqual({
       ...all(writes, "written"),
@@ -566,36 +613,38 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     "keeps a %s run from writing what the founder's tools run on opening its folder",
     async (runner) => {
       const opened = [
-        plant(".idlebiz/acme/workspace/.git/config"),
-        plant(".idlebiz/acme/workspace/.git/hooks/pre-commit.sample"),
-        at(".idlebiz/acme/workspace/.git/hooks/pre-commit"),
-        at(".idlebiz/acme/workspace/.git/config.lock"),
-        at(".idlebiz/acme/workspace/.git/commondir"),
-        plant(".idlebiz/acme/workspace/.git/info/attributes"),
-        plant(".idlebiz/acme/workspace/.git/worktrees/w/config.worktree"),
-        at(".idlebiz/acme/workspace/.git/worktrees/w/commondir"),
-        plant(".idlebiz/acme/workspace/.git/modules/m/config"),
-        plant(".idlebiz/acme/workspace/.git/objects/info/alternates"),
-        plant(".idlebiz/acme/workspace/web/.git/config"),
-        at(".idlebiz/acme/workspace/.mcp.json"),
-        plant(".idlebiz/acme/workspace/.claude/settings.json"),
-        at(".idlebiz/acme/workspace/.claude/settings.local.json"),
-        at(".idlebiz/acme/agents/ann/memory/.codex"),
+        plant(".idlebiz/company/products/ledger/workspace/.git/config"),
+        plant(".idlebiz/company/products/ledger/workspace/.git/hooks/pre-commit.sample"),
+        at(".idlebiz/company/products/ledger/workspace/.git/hooks/pre-commit"),
+        at(".idlebiz/company/products/ledger/workspace/.git/config.lock"),
+        at(".idlebiz/company/products/ledger/workspace/.git/commondir"),
+        plant(".idlebiz/company/products/ledger/workspace/.git/info/attributes"),
+        plant(".idlebiz/company/products/ledger/workspace/.git/worktrees/w/config.worktree"),
+        at(".idlebiz/company/products/ledger/workspace/.git/worktrees/w/commondir"),
+        plant(".idlebiz/company/products/ledger/workspace/.git/modules/m/config"),
+        plant(".idlebiz/company/products/ledger/workspace/.git/objects/info/alternates"),
+        plant(".idlebiz/company/products/ledger/workspace/web/.git/config"),
+        at(".idlebiz/company/products/ledger/workspace/.mcp.json"),
+        plant(".idlebiz/company/products/ledger/workspace/.claude/settings.json"),
+        at(".idlebiz/company/products/ledger/workspace/.claude/settings.local.json"),
+        at(".idlebiz/company/agents/ann/memory/.codex"),
       ];
-      mkdirSync(at(".idlebiz/acme/workspace/.git/objects/ab"), { recursive: true });
-      mkdirSync(at(".idlebiz/acme/workspace/.git/logs"), { recursive: true });
+      mkdirSync(at(".idlebiz/company/products/ledger/workspace/.git/objects/ab"), {
+        recursive: true,
+      });
+      mkdirSync(at(".idlebiz/company/products/ledger/workspace/.git/logs"), { recursive: true });
       const work = [
-        plant(".idlebiz/acme/workspace/.git/index"),
-        at(".idlebiz/acme/workspace/.git/index.lock"),
-        at(".idlebiz/acme/workspace/.git/COMMIT_EDITMSG"),
-        at(".idlebiz/acme/workspace/.git/objects/ab/cdef"),
-        at(".idlebiz/acme/workspace/.git/logs/HEAD"),
-        plant(".idlebiz/acme/workspace/.git/refs/heads/main"),
-        plant(".idlebiz/acme/workspace/.claude/notes.md"),
-        plant(".idlebiz/acme/workspace/src/config"),
-        plant(".idlebiz/acme/workspace/hooks/use-x.ts"),
+        plant(".idlebiz/company/products/ledger/workspace/.git/index"),
+        at(".idlebiz/company/products/ledger/workspace/.git/index.lock"),
+        at(".idlebiz/company/products/ledger/workspace/.git/COMMIT_EDITMSG"),
+        at(".idlebiz/company/products/ledger/workspace/.git/objects/ab/cdef"),
+        at(".idlebiz/company/products/ledger/workspace/.git/logs/HEAD"),
+        plant(".idlebiz/company/products/ledger/workspace/.git/refs/heads/main"),
+        plant(".idlebiz/company/products/ledger/workspace/.claude/notes.md"),
+        plant(".idlebiz/company/products/ledger/workspace/src/config"),
+        plant(".idlebiz/company/products/ledger/workspace/hooks/use-x.ts"),
       ];
-      const workspace = at(".idlebiz/acme/workspace");
+      const workspace = at(".idlebiz/company/products/ledger/workspace");
       // nor built anywhere else a run writes, to be moved in whole: a move is checked where it
       // lands, never for what it carries
       const built = [
@@ -640,7 +689,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   );
 
   it("lets a run commit, branch, merge, rebase, stash and gc in the repository main made, never changing its config", () => {
-    const workspace = at(".idlebiz/acme/workspace");
+    const workspace = at(".idlebiz/company/products/ledger/workspace");
     const env = {
       GIT_AUTHOR_EMAIL: "ann@idlebiz.local",
       GIT_AUTHOR_NAME: "Ann",
@@ -669,7 +718,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     }).stdout.trim();
     return seal({ scratch: [at("tmp"), darwinTemp] }).then((sealed) => {
       const run = (script: string) => {
-        const [bin = "", ...args] = sealedCommand(sealed, "codex", ["/bin/sh", "-c", script]);
+        const [bin, ...args] = sealedCommand(sealed, "codex", ["/bin/sh", "-c", script]);
         return spawnSync(bin, args, { cwd: workspace, encoding: "utf-8", env });
       };
       const done = run(`set -e; ${work}`);
@@ -752,11 +801,11 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   });
 
   it("keeps a run from swapping a folder of its own for a link, so the next run's seal holds too", async () => {
-    const approvals = plant(".idlebiz/acme/approvals.json");
-    const memory = at(".idlebiz/acme/agents/ann/memory");
+    const approvals = plant(".idlebiz/company/approvals.json");
+    const memory = at(".idlebiz/company/agents/ann/memory");
     const cache = at(".idlebiz/cache");
     plant(".idlebiz/cache/npm/x");
-    const swap = at(".idlebiz/acme/workspace/swap");
+    const swap = at(".idlebiz/company/products/ledger/workspace/swap");
     mkdirSync(swap);
     const first = seal();
     expect(await tryAs("codex", { removes: [memory, cache] }, first)).toEqual(
@@ -768,7 +817,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         "codex",
         {
           moves: [
-            [memory, at(".idlebiz/acme/workspace/memory")],
+            [memory, at(".idlebiz/company/products/ledger/workspace/memory")],
             [swap, cache],
           ],
         },
@@ -779,7 +828,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     expect(await tryAs("codex", { symlinks: [[at(".idlebiz"), inMemory]] }, first)).toEqual({
       [inMemory]: "linked",
     });
-    const through = path.join(inMemory, "acme/approvals.json");
+    const through = path.join(inMemory, "company/approvals.json");
     expect(await tryAs("codex", { writes: [approvals, through] }, seal())).toEqual(
       all([approvals, through], "EPERM"),
     );
@@ -787,7 +836,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
 
   it("starts no run whose folder is a link or lies outside the save", async () => {
     await expect(seal()).resolves.toBeDefined();
-    const ann = at(".idlebiz/acme/agents/ann");
+    const ann = at(".idlebiz/company/agents/ann");
     const memory = path.join(ann, "memory");
     rmSync(memory, { recursive: true });
     symlinkSync(at(".idlebiz"), memory);
@@ -851,6 +900,142 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     spawnSync("chmod", ["+x", helper]);
     for (const runner of ["claude", "codex"] as const) {
       expect(await tryAs(runner, { runs: [helper] })).toEqual({ [helper]: "EPERM" });
+    }
+  });
+
+  it.skipIf(!pasteboardAnswers)(
+    "keeps a run from the pasteboard, where a key the founder pastes sits, which a sign-in may still read",
+    async () => {
+      const sealed = await seal();
+      const held = outputOf(PASTE);
+      const canary = `idlebiz-seal-canary-${process.pid}-${Date.now()}`;
+      outputOf(COPY, canary);
+      try {
+        for (const runner of ["claude", "codex"] as const) {
+          expect(startsUnder(sealed, runner)).toBe(true);
+          expect(outputOf(sealedCommand(sealed, runner, PASTE))).not.toContain(canary);
+          // nor does it put its own in place of what the founder copied
+          outputOf(sealedCommand(sealed, runner, COPY), "planted");
+        }
+        expect(outputOf(PASTE)).toBe(canary);
+        // the control: the same read from a sign-in does reach it
+        expect(outputOf(signInCommand(sealed, "claude", PASTE))).toBe(canary);
+      } finally {
+        outputOf(COPY, held);
+      }
+    },
+  );
+
+  // launchd refuses a job from any sandboxed caller, a sign-in's too, so the control is unsealed:
+  // it shows this session starts jobs at all, without which the canary proves nothing
+  it("keeps a run from having launchd start a job, which runs unsealed", async ({ skip }) => {
+    const sealed = await seal();
+    const label = `io.idlebiz.seal-canary.${process.pid}.${Date.now()}`;
+    const control = at("tmp/control");
+    const submitted = at("tmp/submitted");
+    const bootstrapped = at("tmp/bootstrapped");
+    const plist = at("tmp/canary.plist");
+    writeFileSync(
+      plist,
+      `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>Label</key><string>${label}.boot</string>
+<key>ProgramArguments</key><array><string>/usr/bin/touch</string><string>${bootstrapped}</string></array>
+<key>RunAtLoad</key><true/>
+</dict></plist>
+`,
+    );
+    const domain = `gui/${userInfo().uid}`;
+    const submit = ["/bin/launchctl", "submit", "-l", label, "--", "/usr/bin/touch", submitted];
+    try {
+      spawnSync("/bin/launchctl", [
+        "submit",
+        "-l",
+        `${label}.control`,
+        "--",
+        "/usr/bin/touch",
+        control,
+      ]);
+      for (let waited = 0; waited < 200 && !existsSync(control); waited += 1) {
+        await sleep(100);
+      }
+      if (!existsSync(control)) {
+        skip();
+      }
+      expect(startsUnder(sealed, "claude")).toBe(true);
+      expect(startsUnder(sealed, "codex")).toBe(true);
+      outputOf(sealedCommand(sealed, "claude", submit));
+      outputOf(sealedCommand(sealed, "codex", ["/bin/launchctl", "bootstrap", domain, plist]));
+      await sleep(1500);
+      expect(existsSync(submitted)).toBe(false);
+      expect(existsSync(bootstrapped)).toBe(false);
+    } finally {
+      spawnSync("/bin/launchctl", ["remove", `${label}.control`]);
+      spawnSync("/bin/launchctl", ["remove", label]);
+      spawnSync("/bin/launchctl", ["bootout", `${domain}/${label}.boot`]);
+    }
+  });
+
+  it("keeps a run from mounting devfs, whose files carry no provenance for LaunchServices to check", async () => {
+    const sealed = await seal();
+    const mountpoint = realpathSync(mkdtempSync(path.join(tmpdir(), "idlebiz-mount-")));
+    const mount = ["/sbin/mount", "-t", "devfs", "-o", "noowners", "devfs", mountpoint];
+    try {
+      for (const runner of ["claude", "codex"] as const) {
+        expect(startsUnder(sealed, runner)).toBe(true);
+        outputOf(sealedCommand(sealed, runner, mount));
+        expect(existsSync(path.join(mountpoint, "null"))).toBe(false);
+      }
+    } finally {
+      spawnSync("/sbin/umount", [mountpoint]);
+      // never recursive: through a mount the seal missed it would remove device nodes; and a
+      // folder still mounted over is left, never thrown over the failure that explains it
+      spawnSync("/bin/rmdir", [mountpoint]);
+    }
+  });
+
+  it("keeps a run from laying an image it made over a folder the founder runs programs from", async () => {
+    const sealed = await seal();
+    const bin = at(".local/bin");
+    mkdirSync(bin, { recursive: true });
+    plant("image/claude");
+    const image = at("tmp/canary.dmg");
+    spawnSync("/usr/bin/hdiutil", ["create", "-quiet", "-srcfolder", at("image"), image]);
+    expect(existsSync(image)).toBe(true);
+    const attached: string[] = [];
+    try {
+      const attach = ["/usr/bin/hdiutil", "attach", "-nobrowse", "-mountpoint", bin, image];
+      for (const runner of ["claude", "codex"] as const) {
+        expect(startsUnder(sealed, runner)).toBe(true);
+        // diskarbitrationd mounts it, and checks its caller's seal for a folder the caller names
+        const printed = outputOf(sealedCommand(sealed, runner, attach));
+        attached.push(...Array.from(printed.matchAll(/\/dev\/disk\d+/gu), ([disk]) => disk));
+        expect(existsSync(path.join(bin, "claude"))).toBe(false);
+      }
+    } finally {
+      for (const disk of new Set([bin, ...attached])) {
+        spawnSync("/usr/bin/hdiutil", ["detach", "-force", disk]);
+      }
+    }
+  });
+
+  it("keeps a run from having cfprefsd write a preference, as a sign-in still could", async () => {
+    const sealed = await seal();
+    const domain = `io.idlebiz.seal-canary.${process.pid}.${Date.now()}`;
+    const write = ["/usr/bin/defaults", "write", domain, "canary", "-string", "landed"];
+    const read = () => outputOf(["/usr/bin/defaults", "read", domain, "canary"]).trim();
+    try {
+      for (const runner of ["claude", "codex"] as const) {
+        expect(startsUnder(sealed, runner)).toBe(true);
+        outputOf(sealedCommand(sealed, runner, write));
+      }
+      expect(read()).toBe("");
+      // the control: cfprefsd writes for a caller allowed this or the plist's own write, and a
+      // sign-in is denied only the second
+      outputOf(signInCommand(sealed, "claude", write));
+      expect(read()).toBe("landed");
+    } finally {
+      spawnSync("/usr/bin/defaults", ["delete", domain]);
     }
   });
 
@@ -921,19 +1106,19 @@ for (const target of targets) {
         CONNECT,
         JSON.stringify([targets, moves]),
       ]);
-      const [bin = "", ...args] = argv;
+      const [bin, ...args] = argv;
       return Outcomes.parse(parseJson(spawnSync(bin, args, { encoding: "utf-8" }).stdout));
     };
 
     it("answers only in the run's own folders and the agent-browser namespace of its runner and folders", async () => {
       const save = path.join(short, ".idlebiz");
-      const workspace = path.join(save, "acme/workspace");
+      const workspace = path.join(save, "company/products/ledger/workspace");
       const namespaces = path.join(short, ".agent-browser/namespaces");
       const daemon = (runner: "claude" | "codex", folders: readonly string[]) =>
         `.agent-browser/namespaces/${browserNamespace(save, runner, folders)}/run/d.sock`;
       const [inWorkspace, claude, codex, otherFolders, ...founders] = await Promise.all(
         [
-          ".idlebiz/acme/workspace/tmp/tsx-501/1.pipe",
+          ".idlebiz/company/products/ledger/workspace/tmp/tsx-501/1.pipe",
           daemon("claude", [workspace]),
           daemon("codex", []),
           daemon("claude", []),
@@ -973,7 +1158,7 @@ for (const target of targets) {
           listen(path.join(short, name)),
         ),
       );
-      const workspace = path.join(save, "acme/workspace");
+      const workspace = path.join(save, "company/products/ledger/workspace");
       mkdirSync(workspace, { recursive: true });
       for (const runner of ["claude", "codex"] as const) {
         expect(
@@ -1083,7 +1268,7 @@ describe.skipIf(!onMac)("sealRuns", () => {
     mkdirSync(path.join(box, "dotfiles/claude"), { recursive: true });
     symlinkSync(path.join(box, "dotfiles/claude"), path.join(home, ".claude"));
     expect(await sealRuns()).toEqual({ kind: "sealed" });
-    const seal = await machineSeal([path.join(root, "acme/workspace")]);
+    const seal = await machineSeal([path.join(root, "company/products/ledger/workspace")]);
     expect(seal.runners.claude.home).toEqual([
       { match: "subpath", path: path.join(home, ".claude") },
       { match: "subpath", path: path.join(box, "dotfiles/claude") },
@@ -1108,10 +1293,16 @@ describe.skipIf(!onMac)("sealRuns", () => {
       ]),
     );
     expect(seal.writable).toEqual([
-      { match: "subpath", path: path.join(realpathSync(root), "acme/workspace") },
+      {
+        match: "subpath",
+        path: path.join(realpathSync(root), "company/products/ledger/workspace"),
+      },
     ]);
     expect(seal.skillFolders).toEqual([
-      { match: "subpath", path: path.join(realpathSync(root), "acme/workspace/.agents") },
+      {
+        match: "subpath",
+        path: path.join(realpathSync(root), "company/products/ledger/workspace/.agents"),
+      },
     ]);
     expect(seal.runners.codex.personal).toEqual([
       { match: "subpath", path: path.join(home, ".codex/skills") },

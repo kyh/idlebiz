@@ -139,22 +139,23 @@ const SendStatus = ({ submission, note }: { submission: Submission; note: string
 };
 
 interface LineStyle {
+  /** The line's colour, as a px-kit text class. */
   color: string;
   prefix: string;
 }
 const LINE_STYLES = new Map<ActivityKind, LineStyle>([
-  ["tool_call", { color: "#2f6fb0", prefix: "⚙ " }],
-  ["message", { color: "#2b2f46", prefix: "💬 " }],
-  ["ship", { color: "#2e8a4e", prefix: "📦 " }],
-  ["chat", { color: "#5a4fae", prefix: "🗨 " }],
-  ["status", { color: "#6d7187", prefix: "› " }],
+  ["tool_call", { color: "text-line-tool", prefix: "⚙ " }],
+  ["message", { color: "text-fg", prefix: "💬 " }],
+  ["ship", { color: "text-line-ship", prefix: "📦 " }],
+  ["chat", { color: "text-line-chat", prefix: "🗨 " }],
+  ["status", { color: "text-line-quiet", prefix: "› " }],
 ]);
-const QUIET_LINE: LineStyle = { color: "#6d7187", prefix: "· " };
+const QUIET_LINE: LineStyle = { color: "text-line-quiet", prefix: "· " };
 
 const FeedLine = ({ e }: { e: Said }) => {
   const { color, prefix } = LINE_STYLES.get(e.kind) ?? QUIET_LINE;
   return (
-    <div className="break-words select-text" style={{ color }}>
+    <div className={cn("break-words select-text", color)}>
       {prefix}
       <RichText text={e.message.slice(0, 300)} />
     </div>
@@ -334,7 +335,7 @@ const DialoguePanel = ({ emp, onClose }: { emp: Employee; onClose: () => void })
                 ) : null}
               </div>
             ) : (
-              <div className="px-scroll flex min-h-[64px] flex-1 flex-col overflow-y-auto">
+              <div className="px-scroll flex min-h-16 flex-1 flex-col overflow-y-auto">
                 <Speech key={latest?.id ?? "flavor"} text={speech.slice(0, 280)} />
                 {trail.length > 0 ? (
                   <div className="mt-auto space-y-0.5 pt-2 text-xs leading-snug opacity-70">

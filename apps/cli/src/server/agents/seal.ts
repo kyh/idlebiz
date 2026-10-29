@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { Argv } from "@repo/agent-driver/registry";
 import { RUNNER_IDS } from "@repo/domain/runners";
 import type { RunnerId } from "@repo/domain/runners";
 
@@ -142,10 +143,29 @@ const SCRIPTING_CLIS = String.raw`(deny process-exec (literal "/usr/bin/osascrip
 // rule on its path, never this. claude keeps its own login there, so only codex runs lose it.
 const KEYCHAIN = String.raw`(deny mach-lookup (global-name "com.apple.SecurityServer") (global-name "com.apple.securityd.xpc"))`;
 
+// The pasteboard answers over this, whichever program asks, as the Keychain does: the founder
+// enters a key by pasting it, and the runs work on while it sits there.
+const PASTEBOARD = String.raw`(deny mach-lookup (global-name "com.apple.pasteboard.1"))`;
+
+// What the system does for a run outside the seal, as the founder: a filesystem mounted over a
+// folder the founder runs programs from (the kernel checks a run's own mount and unmount;
+// diskarbitrationd checks only a mount at a folder its caller names, as `hdiutil attach
+// -mountpoint` asks, and who owns the disk for the rest), a job launchd starts, and a preference
+// cfprefsd writes, which it does for a caller allowed either this or a write to the plist itself.
+const DONE_FOR_IT = [
+  // no file-mount-update: no list before macOS 15 names it, and a name the floor's sandbox does not
+  // know fails the whole profile, which would refuse every run there
+  "(deny file-mount file-unmount)",
+  "(deny job-creation)",
+  "(deny user-preference-write)",
+];
+
 /**
  * Who is sealed: an employee run, or the founder's CLI sign-in. A run asks LaunchServices to open
- * nothing, since an app it starts runs outside the seal as the founder, and writes no account
- * file; the sign-in opens the browser it signs in through and records the login it makes.
+ * nothing, launchd to start nothing, diskarbitrationd to mount nothing over a folder it names and
+ * cfprefsd to write nothing, and mounts nothing itself, since what they start or write is outside
+ * the seal as the founder; it reads no pasteboard and writes no account file. The sign-in opens
+ * the browser it signs in through and records the login it makes.
  */
 type Sealed = "run" | "sign-in";
 
@@ -182,7 +202,7 @@ const commandUnder = (
   runner: RunnerId,
   sealed: Sealed,
   argv: readonly string[],
-): string[] => {
+): Argv => {
   // Each path is a parameter, never quoted into the profile's source.
   const params: string[] = [];
   const param = (value: string): string => `(param "P${params.push(value) - 1}")`;
@@ -219,7 +239,7 @@ const commandUnder = (
       : PROJECT_CODEX;
   const profile = [
     BASE_PROFILE,
-    ...(sealed === "run" ? ["(deny lsopen)", SCRIPTING_CLIS] : []),
+    ...(sealed === "run" ? ["(deny lsopen)", ...DONE_FOR_IT, SCRIPTING_CLIS, PASTEBOARD] : []),
     ...(runner === "codex" ? [KEYCHAIN] : []),
     "(deny file-write*)",
     DEV_NODES,
@@ -261,9 +281,9 @@ const commandUnder = (
 };
 
 /** `argv` as a `runner` run starts it: under the profile, with this machine's paths. */
-export const sealedCommand = (seal: Seal, runner: RunnerId, argv: readonly string[]): string[] =>
+export const sealedCommand = (seal: Seal, runner: RunnerId, argv: readonly string[]): Argv =>
   commandUnder(seal, runner, "run", argv);
 
 /** A runner's sign-in, sealed as its runs are but free to open the browser it signs in through and record the login. */
-export const signInCommand = (seal: Seal, runner: RunnerId, argv: readonly string[]): string[] =>
+export const signInCommand = (seal: Seal, runner: RunnerId, argv: readonly string[]): Argv =>
   commandUnder(seal, runner, "sign-in", argv);

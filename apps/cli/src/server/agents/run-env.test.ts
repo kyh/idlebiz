@@ -29,6 +29,13 @@ describe("runEnv", () => {
       "SENTRY_DSN",
       "SLACK_WEBHOOK_URL",
       "SSH_AUTH_SOCK",
+      "PGPASSWORD",
+      "MYSQL_PWD",
+      "SMTP_PASS",
+      "GPG_PASSPHRASE",
+      "BW_SESSION",
+      "BW_CLIENTSECRET",
+      "OP_SESSION_my",
     ];
     const env = runEnv(Object.fromEntries(dropped.map((name) => [name, "secret"])), PROVIDERS);
     expect(env).toEqual({});
@@ -42,9 +49,15 @@ describe("runEnv", () => {
       HOME: "/Users/kai",
       KEYCHAIN: "login",
       LANG: "en_US.UTF-8",
+      OLDPWD: "/Users/kai",
       OPENAI_API_KEY: "sk-openai",
       PATH: "/usr/bin",
+      PGPASSFILE: "/Users/kai/work/.pgpass",
+      PWD: "/Users/kai/work",
+      SSH_ASKPASS: "/usr/local/bin/askpass",
+      TERM_SESSION_ID: "w0t0p0:1",
       TOKENIZERS_PARALLELISM: "false",
+      XDG_SESSION_TYPE: "tty",
     };
     expect(runEnv(base, PROVIDERS)).toEqual(base);
   });

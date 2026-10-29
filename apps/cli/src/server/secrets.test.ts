@@ -200,14 +200,24 @@ describe("keys sealed with the Keychain", () => {
     expect(getSecret("VERCEL_TOKEN")).toBeNull();
   });
 
-  it("reads a value an older scheme sealed as one to enter again, never as pasted text", () => {
-    const old = "sealed:v1:djEwc2VhbGVk";
+  it("reads a value a scheme this build does not know sealed as one to enter again, never as pasted text", () => {
+    const old = "sealed:v3:AAAA";
     writeFileSync(secretsFile, JSON.stringify({ STRIPE_SECRET_KEY: old }));
 
     expect(getSecret("STRIPE_SECRET_KEY")).toBeNull();
     expect(hasSecret("STRIPE_SECRET_KEY")).toBe(true);
     expect(String(checkSecrets()?.cause)).toContain("Enter each again");
     expect(raw().STRIPE_SECRET_KEY).toBe(old);
+  });
+
+  it("reads a key left blank as no key, for every reader, and leaves the file as it was", () => {
+    writeFileSync(secretsFile, '{"VERCEL_TOKEN":""}');
+
+    expect(getSecret("VERCEL_TOKEN")).toBeNull();
+    expect(hasSecret("VERCEL_TOKEN")).toBe(false);
+    expect(readFileSync(secretsFile, "utf-8")).toBe('{"VERCEL_TOKEN":""}');
+    setSecret("STRIPE_SECRET_KEY", "");
+    expect(hasSecret("STRIPE_SECRET_KEY")).toBe(false);
   });
 
   it("seals a key pasted by hand the next time it is read, and still returns it", () => {

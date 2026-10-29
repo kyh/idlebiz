@@ -12,6 +12,12 @@
   "app": {
     "windows": []
   },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://github.com/kyh/idlebiz/releases/latest/download/latest.json"],
+      "pubkey": ""
+    }
+  },
   "bundle": {
     "active": true,
     "category": "Game",

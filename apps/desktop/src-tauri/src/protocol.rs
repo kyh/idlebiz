@@ -11,6 +11,9 @@ pub const WINDOW: &str = "window";
 /// A click on the menu-bar icon's autopilot item, which the shell tells main; `TRAY` is main's
 /// model of the icon, which main tells the shell.
 pub const TRAY_CLICK: &str = "tray";
+/// A click on the menu-bar icon's update item, which the shell tells main: main installs the
+/// release it offers, as Settings' button does.
+pub const UPDATE_CLICK: &str = "update";
 pub const MESSAGE_BOX: &str = "host.messageBox";
 pub const COPY_TEXT: &str = "host.copyText";
 pub const OPEN: &str = "host.open";
@@ -19,6 +22,8 @@ pub const NOTIFY: &str = "host.notify";
 pub const TRAY: &str = "host.tray";
 pub const KEEP_AWAKE: &str = "host.keepAwake";
 pub const RELAUNCH: &str = "host.relaunch";
+pub const CHECK_UPDATE: &str = "host.checkUpdate";
+pub const INSTALL_UPDATE: &str = "host.installUpdate";
 
 /// What only the shell knows of this launch (`launchSchema`).
 #[derive(Serialize)]
@@ -166,6 +171,10 @@ pub enum TrayItem {
     },
     /// A struct, not a unit: serde drops a unit variant's other fields unread.
     Separator {},
+    /// Has main install the release it offers.
+    Update {
+        label: String,
+    },
     Quit {
         label: String,
     },
@@ -181,6 +190,21 @@ pub struct TrayModel {
     pub items: Vec<TrayItem>,
 }
 
+/// A release newer than this build, which `host.checkUpdate` answers with; none is null.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(Deserialize), serde(deny_unknown_fields))]
+pub struct Release {
+    pub version: String,
+}
+
+/// Installs the release main offered, by its version: one the feed has since moved past is refused.
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
+#[serde(deny_unknown_fields)]
+pub struct InstallUpdate {
+    pub version: String,
+}
+
 fn parsed<T: for<'de> Deserialize<'de>>(method: &str, params: Value) -> Result<T, String> {
     serde_json::from_value(params).map_err(|error| format!("{method}: {error}"))
 }
@@ -192,11 +216,20 @@ pub enum Ask {
     CopyText(CopyText),
     Open(Opening),
     LoginItem(LoginItem),
+    CheckUpdate,
+    InstallUpdate(InstallUpdate),
 }
 
 impl Ask {
     /// Every method `read` reads.
-    pub const METHODS: [&str; 4] = [MESSAGE_BOX, COPY_TEXT, OPEN, LOGIN_ITEM];
+    pub const METHODS: [&str; 6] = [
+        MESSAGE_BOX,
+        COPY_TEXT,
+        OPEN,
+        LOGIN_ITEM,
+        CHECK_UPDATE,
+        INSTALL_UPDATE,
+    ];
 
     /// The request main sent, or why the shell cannot answer it.
     pub fn read(method: &str, params: Value) -> Result<Self, String> {
@@ -205,6 +238,8 @@ impl Ask {
             COPY_TEXT => parsed(method, params).map(Self::CopyText),
             OPEN => parsed(method, params).map(Self::Open),
             LOGIN_ITEM => parsed(method, params).map(Self::LoginItem),
+            CHECK_UPDATE => parsed::<()>(method, params).map(|()| Self::CheckUpdate),
+            INSTALL_UPDATE => parsed(method, params).map(Self::InstallUpdate),
             _ => Err(format!(
                 "the shell answers no {method}, only {}",
                 Self::METHODS.join(", ")
@@ -255,7 +290,7 @@ mod tests {
 
     /// Every request the shell makes of main, and every notification it sends it.
     const ASKED: [&str; 3] = [HELLO, HANDOFF, QUIT];
-    const TOLD: [&str; 2] = [WINDOW, TRAY_CLICK];
+    const TOLD: [&str; 3] = [WINDOW, TRAY_CLICK, UPDATE_CLICK];
 
     #[derive(PartialEq, Eq, Deserialize)]
     #[serde(rename_all = "lowercase")]
@@ -339,6 +374,7 @@ mod tests {
             )?;
             match method {
                 LOGIN_ITEM => reads::<LaunchAtLogin>(method, sample.result.as_ref())?,
+                CHECK_UPDATE => reads::<Option<Release>>(method, sample.result.as_ref())?,
                 _ => reads::<()>(method, sample.result.as_ref())?,
             }
         }
@@ -382,6 +418,7 @@ mod tests {
                 }
                 WINDOW => reads::<WindowChange>(method, Some(params))?,
                 TRAY_CLICK => reads::<TrayClick>(method, Some(params))?,
+                UPDATE_CLICK => reads::<()>(method, Some(params))?,
                 _ => return Err(format!("the shell sends no {method}").into()),
             }
         }
@@ -393,7 +430,7 @@ mod tests {
         assert_eq!(
             Ask::read("host.beep", Value::Null).err().as_deref(),
             Some(
-                "the shell answers no host.beep, only host.messageBox, host.copyText, host.open, host.loginItem"
+                "the shell answers no host.beep, only host.messageBox, host.copyText, host.open, host.loginItem, host.checkUpdate, host.installUpdate"
             )
         );
         assert!(Ask::read(COPY_TEXT, json!({ "text": "x", "html": "<b>x</b>" })).is_err());
@@ -411,5 +448,7 @@ mod tests {
         });
         assert!(Tell::read(TRAY, tray).is_err());
         assert!(Tell::read(RELAUNCH, json!({})).is_err());
+        assert!(Ask::read(CHECK_UPDATE, json!({})).is_err());
+        assert!(Ask::read(INSTALL_UPDATE, json!({ "version": "1.0.0", "notes": "" })).is_err());
     }
 }

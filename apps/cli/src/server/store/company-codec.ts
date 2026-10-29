@@ -97,7 +97,7 @@ export const companyToDoc = (co: Company): z.input<typeof CompanyDocSchema> => {
 };
 
 /** The format a COMPANY.md is stamped with; null when it carries none. */
-export const formatOf = (doc: FrontmatterDoc): number | null => {
+const formatOf = (doc: FrontmatterDoc): number | null => {
   const stamp = z.number().safeParse(doc.metadata.format);
   return stamp.success ? stamp.data : null;
 };

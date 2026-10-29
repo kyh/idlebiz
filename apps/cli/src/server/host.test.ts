@@ -6,6 +6,7 @@ import {
   RELAY_METHODS,
   copyTextSchema,
   handoffSchema,
+  installUpdateSchema,
   keepAwakeSchema,
   launchAtLoginSchema,
   launchSchema,
@@ -13,6 +14,7 @@ import {
   messageBoxSchema,
   noteSchema,
   openingSchema,
+  releaseSchema,
   trayClickSchema,
   trayModelSchema,
   windowSchema,
@@ -43,7 +45,9 @@ interface Message {
 const MESSAGES = {
   handoff: { from: "shell", params: z.null(), result: handoffSchema },
   hello: { from: "shell", params: launchSchema, result: z.null() },
+  "host.checkUpdate": { from: "main", params: z.null(), result: releaseSchema.nullable() },
   "host.copyText": { from: "main", params: copyTextSchema, result: z.null() },
+  "host.installUpdate": { from: "main", params: installUpdateSchema, result: z.null() },
   "host.keepAwake": { from: "main", params: keepAwakeSchema },
   "host.loginItem": { from: "main", params: loginItemSchema, result: launchAtLoginSchema },
   "host.messageBox": { from: "main", params: messageBoxSchema, result: z.null() },
@@ -53,6 +57,7 @@ const MESSAGES = {
   "host.tray": { from: "main", params: trayModelSchema },
   quit: { from: "shell", params: z.null(), result: z.null() },
   tray: { from: "shell", params: trayClickSchema },
+  update: { from: "shell", params: z.null() },
   window: { from: "shell", params: windowSchema },
 } satisfies Record<RelayMethod, Message>;
 

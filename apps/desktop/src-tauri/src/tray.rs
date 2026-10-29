@@ -1,7 +1,8 @@
 //! The menu-bar icon: a template image the system colours, beside the title, tooltip and menu main
 //! decides (`apps/cli/src/server/tray.ts`). It is drawn on main's first model and redrawn on each
 //! one after. A click the shell can answer itself (Open, Quit) is answered here. A click on the
-//! autopilot item goes to main with the state its label promised.
+//! autopilot item goes to main with the state its label promised, and one on the update item goes
+//! to main, which installs the release it offers.
 
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -12,14 +13,16 @@ use crate::protocol::{self, TrayClick, TrayItem, TrayModel};
 use crate::{shell, window};
 
 const TRAY_ID: &str = "office";
-/// 32 px, the 2x the menu bar draws at 16 pt: the system scales it to the bar's height.
-const ICON: &[u8] = include_bytes!("../icons/tray.png");
+/// 32 px, the 2x the menu bar draws at 16 pt: the system scales it to the bar's height. Decoded
+/// as the shell compiles, so a file that is no PNG fails the build, not the first draw.
+const ICON: Image<'static> = tauri::include_image!("icons/tray.png");
 
 const OPEN: &str = "open";
 const STATUS: &str = "status";
 const AUTOPILOT_ON: &str = "autopilot-on";
 const AUTOPILOT_OFF: &str = "autopilot-off";
 const QUIT: &str = "quit";
+const UPDATE: &str = "update";
 
 fn menu<R: Runtime>(app: &AppHandle<R>, items: &[TrayItem]) -> tauri::Result<Menu<R>> {
     let menu = Menu::new(app)?;
@@ -36,6 +39,9 @@ fn menu<R: Runtime>(app: &AppHandle<R>, items: &[TrayItem]) -> tauri::Result<Men
                 menu.append(&MenuItem::with_id(app, id, label, *enabled, None::<&str>)?)?;
             }
             TrayItem::Separator {} => menu.append(&PredefinedMenuItem::separator(app)?)?,
+            TrayItem::Update { label } => {
+                menu.append(&MenuItem::with_id(app, UPDATE, label, true, None::<&str>)?)?;
+            }
             TrayItem::Quit { label } => {
                 menu.append(&MenuItem::with_id(app, QUIT, label, true, None::<&str>)?)?;
             }
@@ -49,6 +55,7 @@ fn clicked<R: Runtime>(app: &AppHandle<R>, event: &MenuEvent) {
         OPEN => window::show(app),
         AUTOPILOT_ON => shell::tell_main(app, protocol::TRAY_CLICK, &TrayClick { on: true }),
         AUTOPILOT_OFF => shell::tell_main(app, protocol::TRAY_CLICK, &TrayClick { on: false }),
+        UPDATE => shell::tell_main(app, protocol::UPDATE_CLICK, &()),
         QUIT => app.exit(0),
         _ => {}
     }
@@ -63,7 +70,7 @@ fn redraw<R: Runtime>(app: &AppHandle<R>, model: &TrayModel) -> tauri::Result<()
         return Ok(());
     }
     TrayIconBuilder::with_id(TRAY_ID)
-        .icon(Image::from_bytes(ICON)?)
+        .icon(ICON)
         .icon_as_template(true)
         .menu(&menu)
         .tooltip(&model.tooltip)
@@ -75,6 +82,6 @@ fn redraw<R: Runtime>(app: &AppHandle<R>, model: &TrayModel) -> tauri::Result<()
 
 pub fn draw<R: Runtime>(app: &AppHandle<R>, model: &TrayModel) {
     if let Err(error) = redraw(app, model) {
-        eprintln!("[shell] could not draw the menu-bar icon: {error}");
+        log::warn!("could not draw the menu-bar icon: {error}");
     }
 }

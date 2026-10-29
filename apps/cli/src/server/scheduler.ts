@@ -24,6 +24,7 @@ import {
   isLead,
   isOutOfBudget,
   isRoutineDue,
+  taskIn,
 } from "@repo/domain/domain";
 import type { Company, Employee, RunOrigin, Task, TaskStatus } from "@repo/domain/domain";
 
@@ -84,9 +85,7 @@ const onAgentEvent = (runId: string, task: Task, emp: Employee, ev: AgentEvent):
       }
       break;
     }
-    default: {
-      break;
-    }
+    // no default
   }
 };
 
@@ -104,10 +103,7 @@ const heartbeatBrief = (
     employee: emp,
     employees,
     nameOf: empName,
-    problems: store
-      .listOpenTasks()
-      .filter((t) => t.state.kind === "dead")
-      .slice(0, 5),
+    problems: store.listOpenTasks().filter(taskIn("dead")).slice(0, 5),
     products: store.listProducts(),
     room: store.recentTeamMessages(12),
     ships: store.recentShips(),

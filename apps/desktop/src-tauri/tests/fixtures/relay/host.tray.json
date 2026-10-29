@@ -23,6 +23,10 @@
         "kind": "separator"
       },
       {
+        "kind": "update",
+        "label": "Update to IdleBiz 0.4.0…"
+      },
+      {
         "kind": "quit",
         "label": "Quit IdleBiz"
       }

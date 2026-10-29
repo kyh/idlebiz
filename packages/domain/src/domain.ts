@@ -108,17 +108,13 @@ export const resolveMentions = (
 export const OPEN_TASK_STATUSES = ["todo", "queued", "running", "blocked", "dead"] as const;
 export type OpenTaskStatus = (typeof OPEN_TASK_STATUSES)[number];
 /**
- * The open ones plus history, shelved in shipped/. superseded: an ask the founder answered.
- * settled: an order card the founder closed. dropped: work the steering loop took away — its
- * bet stopped taking work, its product was retired, or its assignee was released.
+ * History, shelved in shipped/. superseded: an ask the founder answered. settled: an order card
+ * the founder closed. dropped: work the steering loop took away — its bet stopped taking work,
+ * its product was retired, or its assignee was released.
  */
-export const TASK_STATUSES = [
-  ...OPEN_TASK_STATUSES,
-  "done",
-  "superseded",
-  "settled",
-  "dropped",
-] as const;
+export const HISTORY_TASK_STATUSES = ["done", "superseded", "settled", "dropped"] as const;
+/** The open ones plus history. */
+export const TASK_STATUSES = [...OPEN_TASK_STATUSES, ...HISTORY_TASK_STATUSES] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
@@ -534,6 +530,7 @@ export interface LoadSkip {
     | "link"
     | "order"
     | "bet"
+    | "approvals"
     | "secrets"
     | "seal";
   path: string;
@@ -551,7 +548,28 @@ export interface LoadReport {
  * Whether macOS opens IdleBiz at login. `requires-approval` is the founder switching it off in
  * System Settings, which only they can undo there; `unavailable` is a dev build.
  */
-export type LaunchAtLogin = "on" | "off" | "requires-approval" | "not-found" | "unavailable";
+export const LAUNCH_AT_LOGIN = [
+  "on",
+  "off",
+  "requires-approval",
+  "not-found",
+  "unavailable",
+] as const;
+export type LaunchAtLogin = (typeof LAUNCH_AT_LOGIN)[number];
+
+/**
+ * IdleBiz's own updates, as main last heard from the release feed: `off` in a build that takes
+ * none, and `installing` once the shell has the release, when the app is about to start again on it.
+ */
+export const UpdateStatusSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("off"), why: z.string() }),
+  z.object({ kind: z.literal("checking") }),
+  z.object({ kind: z.literal("current") }),
+  z.object({ kind: z.literal("available"), version: z.string() }),
+  z.object({ kind: z.literal("installing"), version: z.string() }),
+  z.object({ kind: z.literal("failed"), reason: z.string() }),
+]);
+export type UpdateStatus = z.infer<typeof UpdateStatusSchema>;
 
 /** One thing the founder can ask an employee from the battle box: the label shown, the brief sent. */
 export interface ChatOption {

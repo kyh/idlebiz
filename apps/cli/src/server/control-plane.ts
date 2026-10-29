@@ -5,6 +5,7 @@ import { rmSync } from "node:fs";
 import { chmod, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { listening } from "./lib/listening";
 import { rootDir } from "./paths";
 import { RefusalError } from "./refusal";
 import { MAX_REQUEST_BYTES, toolAt } from "./tool-specs";
@@ -16,7 +17,7 @@ import type { JsonValue } from "@repo/domain/json";
 // Each run's own line back to the company: an HTTP server on a unix socket only that run's seal
 // lets it connect to (`apiSocket` in agents/seal.ts). What the tools are and do lives in
 // tool-specs.ts and tools/; this only carries the call. Why the socket, not the bearer, names the
-// caller: AGENTS.md, "A run's seal".
+// caller: docs/seal.md, "A run's seal".
 
 /** Answers one call of the tool `name`: how it ended, in prose the agent reads. */
 export type ToolCaller = (name: ToolName, raw: JsonValue) => Promise<ToolOutcome>;
@@ -118,14 +119,6 @@ const authenticate = (run: Run, req: IncomingMessage): ToolCaller | null => {
   return matches ? run.caller : null;
 };
 
-const listen = async (server: Server, socket: string): Promise<void> => {
-  // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(socket, resolve);
-  });
-};
-
 /** Answers one call on `run`'s socket: its tools, while it lives and the call carries its token. */
 const handle = async (run: Run, req: IncomingMessage, res: ServerResponse): Promise<void> => {
   try {
@@ -201,7 +194,9 @@ export class ControlPlane {
     const server = createServer((req, res) => {
       void handle(run, req, res);
     });
-    await listen(server, socket);
+    await listening(server, `a run's socket ${socket}`, () => {
+      server.listen(socket);
+    });
     // the folder is the founder's alone, so nobody connects before this narrows the socket
     await chmod(socket, 0o600);
     this.servers.set(socket, { run, server });

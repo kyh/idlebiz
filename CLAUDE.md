@@ -1,10 +1,10 @@
 # IdleBiz
 
 Tauri game where AI employees — real `claude` / `codex` CLI sessions — operate a business. This
-file holds the premises and the decisions, each in a line or two with its reason. The workflow,
-the map and how each mechanic works are `AGENTS.md`'s, imported at the end, each described there
-once: change a mechanic there, and a decision here. The READMEs orient a reader and link into
-`AGENTS.md`, never telling a mechanic again.
+file holds the premises and the decisions, each in a line or two with its reason. The workflow and
+the map are `AGENTS.md`'s, imported at the end, and how each mechanic works is `docs/`'s, one file
+an area, each described there once: change a mechanic there, and a decision here. The READMEs
+orient a reader and link into them, never telling a mechanic again.
 
 ## Premises
 
@@ -65,6 +65,10 @@ once: change a mechanic there, and a decision here. The READMEs orient a reader 
   user: the Seatbelt seal decides what it reads, writes and reaches on this machine, and custody
   keeps IdleBiz's keys in main and runs every step that spends them there, once the founder signs
   off.
+- **The seal allows by default and denies by name**: a run hosts Chrome, claude, codex and node
+  toolchains, whose system needs move with each macOS, and a profile that denied by default would
+  break runs an update later. So each rule that closes something is held by a test: its line in
+  `seal.test.ts`, a canary a Mac runs, or both.
 - **The command policy is a tripwire, not a third boundary**: what a script runs goes unseen.
 - **No run starts unsealed**: the seal is one boundary, and also what makes a run's socket its own.
 - **Who calls the company is the socket, not a secret**: any run can read a teammate's env, token
@@ -76,8 +80,11 @@ once: change a mechanic there, and a decision here. The READMEs orient a reader 
   are what a run could write for the next to load.
 - **Nothing pushes code.** The founder pushes by hand from a fresh clone: git inside a workspace
   obeys what a run left there, unsealed, as the founder.
-- **What the boundaries leave open is listed**, on purpose or for want of a rule, in AGENTS.md's
-  "What stays open".
+- **The updater's key is a login**: `~/.tauri/idlebiz.key` signs every update the installed app
+  takes, so whoever holds it ships code to every install. The seal keeps it from every run, as it
+  keeps the notary key, and it never sits in the checkout.
+- **What the boundaries leave open is listed**, on purpose or for want of a rule, in
+  `docs/seal.md`'s "What stays open".
 
 ## Code
 
@@ -88,6 +95,9 @@ once: change a mechanic there, and a decision here. The READMEs orient a reader 
   comment states why.
 - **The store is one synchronous object.** Don't split it by entity or make it async: its
   synchronous check-and-set is what makes the task lock correct.
+- **Every write is whole; few are durable.** No reader sees half a file, but only one whose loss
+  blocks the office or loses what the founder gave is flushed before its rename: on the Mac the
+  flush is a full one, which the synchronous store waits on.
 - **A refusal is a sentence.** The store refuses with a `RefusalError` worded as what the agent
   should read; anything else thrown is a fault, reported to main's log.
 - **A codec skips, never defaults.** A package its strict schema refuses is named in the load
@@ -136,8 +146,9 @@ once: change a mechanic there, and a decision here. The READMEs orient a reader 
   `renderer/ui/choice-menu.tsx` are the patterns). Its composites learn their items a render after
   mount, so focus them from a deferred effect and mark the default tab stop with
   `data-composite-item-active`, not `autoFocus`.
-- **Size and colour belong in px-kit as a class, never per-component**: the kit is unlayered, so it
-  beats any Tailwind utility on the same element.
+- **Size and colour belong in px-kit as a class, never per-component**: the kit is Tailwind's
+  components layer, as Tailwind documents, so a utility beside a kit class would override it, and
+  `px-kit-overrides.test.ts` refuses one.
 - **Some icons deliberately use OS fonts.** VG5000 lacks recognizable equivalents for ⚙ settings,
   💼 company and ☕ idle; ❗ attention and ⚠ warnings keep their colour cues. Keep the vendored font
   unchanged.
@@ -150,16 +161,26 @@ once: change a mechanic there, and a decision here. The READMEs orient a reader 
   own are off, and a codex-acp upgrade must carry the app's patch.
 - **One main per save**: boot claims the save before it reads it, so a second main refuses rather
   than run each task twice.
-- **The shell is copied between sibling repos, never shared.** Its log, origin-pin and runtime
-  modules (`main_log.rs`, `navigation.rs`, `window.rs`, `runtime.rs` in `src-tauri/src/`) and the
-  pack's scripts (`apps/desktop/scripts`) are copied between kyh/init, this repo and
-  kyh/inteligir, and the two-program layout and main's page server and its sign-in
-  (`server/page-server.ts`, `server/page-session.ts`) between this repo and kyh/inteligir. They
-  diverge on purpose. No package holds them: each shell supervises its own server and each server
-  drives its own ACP runtime, and two public repos would need a third to publish one from. A fix
-  in one is ported to the others by hand. The node pin (`VERSION` and its sha-256 in
-  `apps/desktop/scripts/fetch-node.ts`) and `apps/desktop/rust-toolchain.toml` move together
-  across all three. inteligir's pin allows `about:srcdoc` and this one refuses it, on purpose: the
-  office draws no frame.
+- **An update lands between runs**: it replaces the server main loads as it goes and the launcher
+  the runs call, so the shell downloads it and checks its signature while the office works, stops
+  main as Quit does, and only then installs it and starts the app again.
+- **The shell is copied between sibling repos, never shared.** kyh/inteligir shares the most: the
+  shell's log, origin-pin and runtime modules in `src-tauri/src/` (`main_log.rs`, which it names
+  `server_log.rs`, and `navigation.rs`, `window.rs` and `runtime.rs`), the pack's scripts
+  (`apps/desktop/scripts`), the two-program layout, and main's page server and its sign-in
+  (`server/page-server.ts` and `server/page-session.ts`, there `server/app.ts`'s browser routes and
+  `server/browser-session.ts`). kyh/init shares only the origin pin (`navigation.rs`, `window.rs`)
+  and the toolchain: its shell is one window over a deployed web app, with no server to supervise,
+  log or find. They diverge on purpose. No package holds them: each shell supervises its own
+  server, or none, and each server drives its own ACP runtime, and public repos would need another
+  to publish one from. A fix in one is ported to the others by hand. This repo's `window.rs` logs
+  through the `log` facade `shell_log.rs` installs, which neither sibling has, so a port of it
+  brings a logger or its lines go nowhere. The node pin (`VERSION` and its sha-256 in
+  `apps/desktop/scripts/fetch-node.ts`) moves with inteligir's alone, since init bundles no node,
+  and `apps/desktop/rust-toolchain.toml` with both. inteligir's pin allows `about:srcdoc` and this
+  one refuses it, on purpose: the office draws no frame.
+- **AGENTS.md stays under 32 KiB**: codex reads AGENTS.md only that far (`project_doc_max_bytes`'s
+  default) and Claude loads it, with this file, into every session. So it holds the workflow, the
+  map and the traps, and each mechanic is a `docs/` file read by whoever changes it.
 
 @AGENTS.md

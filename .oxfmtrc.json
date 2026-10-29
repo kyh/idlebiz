@@ -1,14 +1,5 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": [
-    "dist",
-    "target",
-    "node_modules",
-    "pnpm-lock.yaml",
-    "*.tsbuildinfo",
-    ".next",
-    ".output",
-    ".claude"
-  ],
+  "ignorePatterns": ["target", "pnpm-lock.yaml", ".claude"],
   "experimentalSortPackageJson": {}
 }

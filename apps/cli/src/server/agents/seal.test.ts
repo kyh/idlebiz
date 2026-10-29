@@ -16,7 +16,7 @@ const SEAL: Seal = {
   writable: [],
 };
 
-const WORKSPACE = "/Users/me/.idlebiz/acme/workspace";
+const WORKSPACE = "/Users/me/.idlebiz/company/products/ledger/workspace";
 
 describe("sealedCommand", () => {
   it("runs argv under sandbox-exec with the profile inline", () => {
@@ -84,6 +84,14 @@ describe("sealedCommand", () => {
     expect(`${claude}${codex}`).not.toContain("/usr/bin/security");
   });
 
+  it("closes the pasteboard, where the founder pastes a key, to every run whichever program asks, and leaves it to a sign-in", () => {
+    const pasteboard = '(deny mach-lookup (global-name "com.apple.pasteboard.1"))';
+    for (const runner of ["claude", "codex"] as const) {
+      expect(readBack(sealedCommand(SEAL, runner, [])).lines).toContain(pasteboard);
+      expect(readBack(signInCommand(SEAL, runner, [])).lines).not.toContain(pasteboard);
+    }
+  });
+
   it("closes the save, reopens the run's own folders, then holds every later rule inside them", () => {
     const seal: Seal = {
       ...SEAL,
@@ -124,6 +132,24 @@ describe("sealedCommand", () => {
     for (const runner of ["claude", "codex"] as const) {
       expect(readBack(sealedCommand(SEAL, runner, [])).lines).toContain(opensNothing);
       expect(readBack(signInCommand(SEAL, runner, [])).lines).not.toContain(opensNothing);
+    }
+  });
+
+  it("lets no run mount, have launchd start a job or have cfprefsd write a preference, each outside the seal", () => {
+    const doneForIt = [
+      "(deny file-mount file-unmount)",
+      "(deny job-creation)",
+      "(deny user-preference-write)",
+    ];
+    for (const runner of ["claude", "codex"] as const) {
+      const { lines } = readBack(sealedCommand(SEAL, runner, []));
+      // whole operations, and no later rule names one, so none reopens inside a folder
+      expect(lines.filter((line) => /file-mount|job-creation|user-preference/u.test(line))).toEqual(
+        doneForIt,
+      );
+      expect(readBack(signInCommand(SEAL, runner, [])).profile).not.toMatch(
+        /file-mount|job-creation|user-preference/u,
+      );
     }
   });
 
@@ -198,11 +224,15 @@ describe("sealedCommand", () => {
       unreadable: [],
     };
     const { lines } = readBack(sealedCommand(bare, "claude", []));
-    // each on purpose: lsopen whole, since an app LaunchServices starts runs unsealed; writes
-    // whole, since a run writes only where a later rule allows it
+    // each on purpose: lsopen whole, since an app LaunchServices starts runs unsealed; mounts,
+    // launchd's jobs and cfprefsd's writes whole, since each lands outside the seal whichever
+    // program asks; writes whole, since a run writes only where a later rule allows it
     expect(lines.filter((line) => /^\((?:allow|deny) [\w* -]+\)$/u.test(line))).toEqual([
       "(allow default)",
       "(deny lsopen)",
+      "(deny file-mount file-unmount)",
+      "(deny job-creation)",
+      "(deny user-preference-write)",
       "(deny file-write*)",
     ]);
   });

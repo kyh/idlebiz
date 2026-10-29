@@ -4,8 +4,8 @@ import path from "node:path";
 import { compile } from "tailwindcss";
 import { expect, it } from "vitest";
 
-// The kit's classes are unlayered, so they beat any Tailwind utility on the same element:
-// a utility that sets a property its kit class also sets does nothing.
+// Size and colour are the kit's, never a component's. The kit's classes are Tailwind's components
+// layer, so a utility that sets a property its kit class also sets overrides it on that element.
 
 const require = createRequire(import.meta.url);
 const tailwindRoot = path.dirname(require.resolve("tailwindcss/package.json"));
@@ -86,23 +86,34 @@ it("puts no Tailwind utility beside a kit class that sets the same property", as
         uses.push({
           file,
           kitClasses,
-          // A variant applies the same property, so it loses the same way; an important one wins.
+          // A variant sets the same property in its state, so it overrides the kit there too.
           utilities: tokens
-            .filter((token) => !kit.has(token) && !token.startsWith("!") && !token.endsWith("!"))
+            .filter((token) => !kit.has(token))
             .map((token) => token.split(":").at(-1) ?? token),
         });
       }
     }
   }
   const utilities = await utilityProps(uses.flatMap((use) => use.utilities));
-  const beaten = uses.flatMap(({ file, kitClasses, utilities: used }) =>
+  const overridden = uses.flatMap(({ file, kitClasses, utilities: used }) =>
     kitClasses.flatMap((kitClass) =>
       used.flatMap((utility) =>
         (utilities.get(utility) ?? [])
           .filter((prop) => (kit.get(kitClass) ?? []).some((kitProp) => overrides(kitProp, prop)))
-          .map((prop) => `${file}: .${kitClass} beats ${utility} on ${prop}`),
+          .map((prop) => `${file}: ${utility} overrides .${kitClass} on ${prop}`),
       ),
     ),
   );
-  expect(beaten).toEqual([]);
+  expect(overridden).toEqual([]);
+});
+
+it("colours the page from the kit's palette, never a hex of a component's own", () => {
+  const own = readdirSync(renderer, { encoding: "utf-8", recursive: true })
+    .filter((file) => file.endsWith(".tsx"))
+    .flatMap((file) =>
+      [...readFileSync(path.join(renderer, file), "utf-8").matchAll(/-\[#[\da-f]+\]/giu)].map(
+        ([hex]) => `${file}: ${hex}`,
+      ),
+    );
+  expect(own).toEqual([]);
 });

@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { ActivityEventSchema } from "@repo/domain/activity";
-import { AuthFlowEventSchema } from "@repo/domain/domain";
+import { AuthFlowEventSchema, UpdateStatusSchema } from "@repo/domain/domain";
 
 export const PageEventSchema = z.discriminatedUnion("name", [
   /** A step of the company's activity: a run, a task, a bet, a line in the room. */
   z.object({ data: ActivityEventSchema, name: z.literal("activity") }),
   /** A step of a CLI's sign-in the founder started (`agents.startLogin`). */
   z.object({ data: AuthFlowEventSchema, name: z.literal("auth") }),
+  /** IdleBiz's own update status, each time it moves: a check's answer, an install begun or refused. */
+  z.object({ data: UpdateStatusSchema, name: z.literal("update") }),
 ]);
 
 export type PageEvent = z.infer<typeof PageEventSchema>;

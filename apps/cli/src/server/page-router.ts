@@ -2,7 +2,7 @@ import { implement } from "@orpc/server";
 import { contract } from "@repo/contract/contract";
 import { isOutOfBudget, spriteSeedFor } from "@repo/domain/domain";
 import { runnerPool } from "./agents/runner-pool";
-import { generateCandidates, startLogin } from "./agents/onboarding";
+import { cancelLogin, generateCandidates, startLogin } from "./agents/onboarding";
 import { notingSeal } from "./agents/seal-check";
 import {
   haltForBudget,
@@ -15,12 +15,15 @@ import type { FounderActions } from "./founder-actions";
 import { host } from "./host";
 import { answerOf } from "./lib/answers";
 import { broadcast, pageEvents } from "./lib/broadcast";
+import { report } from "./lib/report";
 import { launchAtLogin, setLaunchAtLogin } from "./login-item";
+import { installUpdate, updateStatus } from "./updates";
 import { metricsPulse } from "./metrics-pulse";
 import { rootDir } from "./paths";
 import { printfulTokenStatus, removePrintfulToken, savePrintfulToken } from "./printful-token";
 import { openProduct, openWorkspacePath, productStatus } from "./product";
 import { chatOptions } from "./prompts/chat-options";
+import { RefusalError } from "./refusal";
 import * as store from "./store/store";
 import { removeStripeKey, saveStripeKey, stripeKeyStatus } from "./stripe-key";
 import {
@@ -53,6 +56,11 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
   };
   return os.router({
     agents: {
+      cancelLogin: os.agents.cancelLogin.handler(() => {
+        cancelLogin((e) => {
+          broadcast("auth", e);
+        });
+      }),
       hasAuth: os.agents.hasAuth.handler(async () => ({
         ok: await runnerPool.hasAnyRunner(),
         signedOut: await runnerPool.signedOut(),
@@ -70,8 +78,14 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       copyText: os.app.copyText.handler(async ({ input }) => {
         await host().copyText(input.text);
       }),
+      // a release build's window has no console: what the page raised is kept with main's own
+      fault: os.app.fault.handler(({ input: { message, stack, where } }) => {
+        report(`page:${where}`, stack === undefined ? message : `${message}\n${stack}`);
+      }),
+      installUpdate: os.app.installUpdate.handler(() => installUpdate()),
       launchAtLogin: os.app.launchAtLogin.handler(() => launchAtLogin()),
       setLaunchAtLogin: os.app.setLaunchAtLogin.handler(({ input }) => setLaunchAtLogin(input.on)),
+      update: os.app.update.handler(() => updateStatus()),
     },
     bets: {
       kill: os.bets.kill.handler(({ input }) => killBet(input.betId, input.reason)),
@@ -102,7 +116,7 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       options: os.employees.options.handler(({ input }) => {
         const emp = store.getEmployee(input.employeeId);
         if (!emp) {
-          throw new Error(`no employee ${input.employeeId}`);
+          throw new RefusalError(`no employee ${input.employeeId}`);
         }
         return chatOptions(emp, store.openTasksFor(input.employeeId));
       }),
@@ -140,9 +154,7 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
         retireProduct(input.productId, input.reason, null),
       ),
       list: os.products.list.handler(() => store.listProducts()),
-      open: os.products.open.handler(async ({ input }) => ({
-        opened: await openProduct(input.productId),
-      })),
+      open: os.products.open.handler(({ input }) => openProduct(input.productId)),
       status: os.products.status.handler(({ input }) => productStatus(input.productId)),
     },
     save: {

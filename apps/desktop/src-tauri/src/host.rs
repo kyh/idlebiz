@@ -13,7 +13,7 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::protocol::{Ask, BoxKind, OpeningKind, Tell};
-use crate::{keep_awake, login_item, tray};
+use crate::{keep_awake, login_item, tray, updater};
 
 pub fn answer<R: Runtime>(
     app: &AppHandle<R>,
@@ -61,6 +61,13 @@ pub fn answer<R: Runtime>(
             };
             serde_json::to_value(status).map_err(|error| error.to_string())
         }
+        Ask::CheckUpdate => {
+            serde_json::to_value(updater::check(app)?).map_err(|error| error.to_string())
+        }
+        Ask::InstallUpdate(request) => {
+            updater::install(app, &request.version)?;
+            Ok(Value::Null)
+        }
     }
 }
 
@@ -77,7 +84,7 @@ pub fn hear<R: Runtime>(app: &AppHandle<R>, method: &str, params: Value) {
                 .body(note.body)
                 .show()
             {
-                eprintln!("[shell] could not post a notification: {error}");
+                log::warn!("could not post a notification: {error}");
             }
         }
         // the save is gone and main has stopped its runs: the app starts again on a new one,
@@ -94,7 +101,7 @@ static UNHEARD: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 /// answer, never hears of it. A development build says so in a box, once a method: main sends its
 /// tray model many times a minute.
 fn unheard<R: Runtime>(app: &AppHandle<R>, method: &str, reason: &str) {
-    eprintln!("[shell] {reason}");
+    log::error!("{reason}");
     if !tauri::is_dev() {
         return;
     }

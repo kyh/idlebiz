@@ -10,7 +10,9 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import type { ActivityEvent } from "@repo/domain/activity";
 import { UNNAMED_PRODUCT_DESCRIPTION } from "@repo/domain/domain";
+import { activityEvents, publishActivity } from "../activity";
 import { RefusalError } from "../refusal";
 import { parseDoc, serializeDoc } from "./frontmatter";
 import { taskToDoc } from "./task-codec";
@@ -18,11 +20,13 @@ import * as store from "./store";
 import { createScheduler } from "../scheduler";
 import { runnerPool } from "../agents/runner-pool";
 import {
+  approvalsFile,
   companyDir,
   companyFile,
   productsDir,
   sharedDir,
   shippedDir,
+  sinceLastLookFile,
   tasksDir,
   employeeAgentDir,
   productWorkspace,
@@ -382,41 +386,6 @@ describe("the one company a root holds", () => {
     },
   );
 
-  it.each([
-    { metadata: { format: 11 }, stamped: "an older format" },
-    { metadata: {}, stamped: "no format" },
-  ])(
-    "refuses a save from before company/ stamped with $stamped, and founds none beside it",
-    ({ metadata }) => {
-      const stray = path.join(root, "pocket-ledger");
-      mkdirSync(stray, { recursive: true });
-      writeFileSync(
-        path.join(stray, "COMPANY.md"),
-        serializeDoc({
-          body: "",
-          fields: { name: "Pocket Ledger", slug: "pocket-ledger" },
-          metadata,
-        }),
-      );
-      const before = saveSnapshot(stray);
-
-      const report = store.initStore();
-
-      expect(report.skipped).toEqual([
-        expect.objectContaining({
-          kind: "company",
-          newerBuild: false,
-          path: path.join(stray, "COMPANY.md"),
-        }),
-      ]);
-      expect(report.skipped[0]?.error).toContain("pre-release IdleBiz");
-      expect(store.getCompany()).toBeNull();
-      expect(() => foundAcme()).toThrow("loaded or repaired");
-      expect(existsSync(companyDir())).toBe(false);
-      expect(saveSnapshot(stray)).toEqual(before);
-    },
-  );
-
   it("founds beside a save of this build's format moved out of company/", () => {
     foundAcme();
     renameSync(companyDir(), path.join(root, "old-acme"));
@@ -483,6 +452,32 @@ describe("the digest", () => {
     store.logActivity({ ...inRun, createdAt: 2000, kind: "ship", message: "while closed" }, true);
     store.initStore();
     expect(store.takeDigest()).toMatchObject({ ships: ["while closed"], since: 1234 });
+  });
+
+  it("still counts, and the event still goes out, when its file cannot be written", () => {
+    foundAcme();
+    store.markSeen(1);
+    rmSync(sinceLastLookFile());
+    mkdirSync(sinceLastLookFile());
+    const heard: ActivityEvent["kind"][] = [];
+    const listen = (event: ActivityEvent): void => {
+      heard.push(event.kind);
+    };
+    activityEvents.on("activity", listen);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      publishActivity({
+        ...inRun,
+        kind: "run.end",
+        payload: { costUsd: 0.25, outcome: { kind: "done" }, settled: "done", summary: "done" },
+      });
+      expect(store.takeDigest()).toMatchObject({ runs: 1, since: 1, spentUsd: 0.25 });
+      expect(logged).toHaveBeenCalledWith("[save the digest]", expect.any(Error));
+    } finally {
+      activityEvents.off("activity", listen);
+      logged.mockRestore();
+    }
+    expect(heard).toEqual(["run.end"]);
   });
 });
 
@@ -779,6 +774,22 @@ describe("founder approvals", () => {
     expect(store.consumeApproval(t.id, "git push origin main")).toBe(false);
     expect(store.consumeApproval(waiting.id, "vercel deploy --prod")).toBe(true);
   });
+
+  it("name a file that does not read at boot, and never write over it", () => {
+    foundAcme();
+    const edited = '[{"key": "git push", "taskId": ';
+    writeFileSync(approvalsFile(), edited);
+
+    const report = store.initStore();
+    expect(report.skipped).toEqual([
+      expect.objectContaining({ kind: "approvals", path: approvalsFile() }),
+    ]);
+    expect(store.holdsApproval("continue-deploy")).toBe(false);
+    expect(() => store.grantApproval("continue-deploy", "vercel deploy --prod")).toThrow(
+      "it will not be overwritten",
+    );
+    expect(readFileSync(approvalsFile(), "utf-8")).toBe(edited);
+  });
 });
 
 describe("the save format", () => {
@@ -837,7 +848,7 @@ describe("the save format", () => {
     expect(store.listRoutines().map((r) => r.id)).not.toContain("foreign");
   });
 
-  it("seeds no routine over, or beside, the only one it could not read", () => {
+  it("skips a routine it could not read, and leaves it as the founder wrote it", () => {
     foundAcme([], { businessType: "ecommerce", mission: "sell" });
     const dir = path.join(companyDir(), "routines");
     expect(readdirSync(dir)).toEqual(["store-audit"]);

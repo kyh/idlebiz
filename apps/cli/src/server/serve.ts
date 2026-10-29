@@ -1,4 +1,4 @@
-// Main, the server `idlebiz serve` runs, as AGENTS.md's "The page, the shell and main" describes.
+// Main, the server `idlebiz serve` runs, as docs/app.md's "The page, the shell and main" describes.
 // Importing this module boots it, so commands/serve.ts loads it for `serve` alone.
 
 import { existsSync } from "node:fs";
@@ -49,6 +49,7 @@ import {
 } from "./stripe-links";
 import type { Integrations } from "./tools/define";
 import { appTray } from "./tray";
+import { installFromMenu, startUpdateChecks, updateStatus } from "./updates";
 import { productionHosts, validateToken } from "./vercel";
 import { setVercelEnv } from "./vercel-env";
 
@@ -70,17 +71,10 @@ const integrations: Integrations = {
   setEnv: setVercelEnv,
 };
 
-// the shell's power assertion: one at a time, since keepAwake starts at most one
 const scheduler = createScheduler(
   runnerPool,
-  keepAwake({
-    start: () => {
-      host().keepAwake(true);
-      return 1;
-    },
-    stop: () => {
-      host().keepAwake(false);
-    },
+  keepAwake((on) => {
+    host().keepAwake(on);
   }),
   integrations,
 );
@@ -266,6 +260,10 @@ const boot = async (launch: Launch): Promise<void> => {
   if (openedAtLogin()) {
     appTray.startWindowless();
   }
+  startUpdateChecks(() => {
+    appTray.refresh();
+    broadcast("update", updateStatus());
+  });
 
   // the queue waits on the seal's check: drain it the moment that settles, not a tick later
   void (async () => {
@@ -309,4 +307,9 @@ peer.on("tray", trayClickSchema, ({ on }) => {
   if (store.getCompany()) {
     guarded("tray autopilot", () => setAutopilot(on));
   }
+});
+
+// the menu's update item installs the release main offers, as Settings' button does
+peer.on("update", z.null(), () => {
+  void installFromMenu();
 });
