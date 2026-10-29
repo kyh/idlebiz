@@ -12,6 +12,7 @@ import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promi
 import { homedir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import { FEED_NAME, archiveName, releaseAssets, releaseFeed } from "./release-feed.ts";
 import { writeRustNotices } from "./rust-notices.ts";
 import { signResources } from "./sign-resources.ts";
 import { stageServer } from "./stage-server.ts";
@@ -27,10 +28,8 @@ const { version } = z
 const DMG_NAME = `IdleBiz-${version}-arm64.dmg`;
 // node 24's own floor (its binary's LC_BUILD_VERSION): below it the sidecar cannot start
 const MINIMUM_MACOS = "13.5";
-// what the installed app updates from, beside the dmg in each release: the archive it installs,
-// and the feed (src-tauri/tauri.conf.json's plugins.updater) naming it and its signature
-const ARCHIVE_NAME = `IdleBiz-${version}-arm64.app.tar.gz`;
-const FEED_NAME = "latest.json";
+// the archive the installed app updates from, beside the dmg in each release (release-feed.ts)
+const ARCHIVE_NAME = archiveName(version);
 // the key that signs each release's archive, made once with
 // `pnpm -F @repo/desktop tauri signer generate -w ~/.tauri/idlebiz.key`: under HOME, where the seal
 // keeps it from every run (`LOGINS` in apps/cli/src/server/agents/machine-seal.ts), never in the
@@ -148,19 +147,6 @@ const {
   })
   .parse(JSON.parse(readFileSync(path.join(packageRoot, "src-tauri", "tauri.conf.json"), "utf-8")));
 
-// where this release's assets download from: the feed is the latest release's `latest.json`
-const releaseAssets = (): string => {
-  const [feed] = updater.endpoints;
-  const assets = feed.replace(
-    /\/releases\/latest\/download\/latest\.json$/u,
-    `/releases/download/v${version}`,
-  );
-  if (assets === feed) {
-    throw new Error(`the updater's feed, ${feed}, is no GitHub release's latest.json`);
-  }
-  return assets;
-};
-
 // the key's password, from apps/desktop/.env: empty for a key made without one
 const updaterPassword = (): string => {
   const file = path.join(packageRoot, ".env");
@@ -187,7 +173,8 @@ const updaterSigning = (): Record<string, string> | null => {
   if (!existsSync(UPDATER_KEY)) {
     throw new Error(`a release signs its update with ${UPDATER_KEY}, which is missing`);
   }
-  releaseAssets();
+  // a feed this release could not be found from stops it before the build, not after
+  releaseAssets(updater.endpoints[0], version);
   return {
     TAURI_SIGNING_PRIVATE_KEY: UPDATER_KEY,
     TAURI_SIGNING_PRIVATE_KEY_PASSWORD: updaterPassword(),
@@ -286,16 +273,12 @@ if (signing !== null) {
   const archive = await findOne(path.join(bundleDir, "macos"), ".app.tar.gz");
   await copyFile(archive, path.join(outDir, ARCHIVE_NAME));
   const signature = await readFile(`${archive}.sig`, "utf-8");
-  const feed = {
-    platforms: {
-      "darwin-aarch64": {
-        signature: signature.trim(),
-        url: `${releaseAssets()}/${ARCHIVE_NAME}`,
-      },
-    },
-    pub_date: new Date().toISOString(),
+  const feed = releaseFeed({
+    feed: updater.endpoints[0],
+    publishedAt: new Date(),
+    signature,
     version,
-  };
+  });
   await writeFile(path.join(outDir, FEED_NAME), `${JSON.stringify(feed, null, 2)}\n`);
   log(`${ARCHIVE_NAME} and ${FEED_NAME}, for the installed app's updater`);
 }

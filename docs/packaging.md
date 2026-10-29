@@ -47,8 +47,11 @@ A release is also one the installed app can update from ("Updates" in
 one, is `.env`'s `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and whose public half is tauri.conf.json's
 `plugins.updater.pubkey`: a release stops while that is empty or the key is missing, and no other
 pack signs anything. The seal keeps `~/.tauri` from every run, as it keeps the notary key: whoever
-holds the key ships code to every install. The pack writes `latest.json`, the feed, naming the
-archive's URL in the release and its signature, and the release publishes the dmg, the archive and
+holds the key ships code to every install. Keep an offline copy of the key and its password: lose
+either and no installed app takes another update, since a new key reaches an install only by the
+founder downloading the app again. The pack writes `latest.json`, the feed, naming the
+archive's URL in the release and its signature (`scripts/release-feed.ts`, held by its test to the
+endpoint and to what publishing uploads), and the release publishes the dmg, the archive and
 the feed, becoming the latest only once all three are up.
 
 `pnpm smoke:desktop` packs, then boots the .app on a scratch `IDLEBIZ_ROOT_DIR`
