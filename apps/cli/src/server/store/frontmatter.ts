@@ -24,8 +24,11 @@ interface WrittenDoc {
   body: string;
 }
 
-/** A line of the head, past its indent: a key, its colon, then its value after a space, if any. */
-const LINE = /^(?<key>[\w-]+)[ \t]*:(?:[ \t]+(?<value>.*?))?\s*$/u;
+/**
+ * A line of the head, past its indent: a key, its colon, then its value after a space, if any. A
+ * line or paragraph separator is no line break here, as in JSON, so the value runs on past one.
+ */
+const LINE = /^(?<key>[\w-]+)[ \t]*:(?:[ \t]+(?<value>.*?))?\s*$/su;
 /** A comment, which YAML reads as no part of the value. */
 const COMMENT = /(?:^|[ \t])#/u;
 /** A first character YAML reads as more than text: a block, anchor, alias, tag, flow or reserved sign. */
@@ -86,10 +89,16 @@ const readValue = (t: string): { value: Scalar } | { refused: string } => {
   return { value: Number.isNaN(Number(t)) ? t : Number(t) };
 };
 
+/** A value as JSON, a line or paragraph separator escaped too: JSON leaves both raw, and an editor breaks the line there. */
+const jsonValue = (v: Scalar): string =>
+  JSON.stringify(v)
+    .replaceAll("\u2028", String.raw`\u2028`)
+    .replaceAll("\u2029", String.raw`\u2029`);
+
 /** A block's lines, each indented by `indent`: a key left undefined gets none. */
 const blockLines = (block: WrittenDoc["fields"], indent: string): string[] =>
   Object.entries(block).flatMap(([k, v]) =>
-    v === undefined ? [] : [`${indent}${k}: ${JSON.stringify(v)}`],
+    v === undefined ? [] : [`${indent}${k}: ${jsonValue(v)}`],
   );
 
 export const serializeDoc = (doc: WrittenDoc): string => {

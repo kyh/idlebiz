@@ -14,6 +14,8 @@ describe("frontmatter as the app writes it", () => {
     "key: no key",
     'a "quote" and a \\ backslash',
     "two\nlines",
+    "a line\u2028separator",
+    "a paragraph\u2029separator",
     "ünïcödé ✓",
     "42",
     "true",
@@ -29,6 +31,15 @@ describe("frontmatter as the app writes it", () => {
     const doc = { body: "Body.\n", fields: { name: value }, metadata: { note: value } };
 
     expect(parseDoc(serializeDoc(doc))).toEqual(doc);
+  });
+
+  it("writes a line or paragraph separator escaped, and reads one an older write left raw", () => {
+    const value = "a\u2028b\u2029c";
+
+    expect(serializeDoc({ body: "", fields: { name: value }, metadata: {} })).toContain(
+      String.raw`name: "a\u2028b\u2029c"`,
+    );
+    expect(parseDoc(file(`name: ${JSON.stringify(value)}`)).fields).toEqual({ name: value });
   });
 });
 
