@@ -23,7 +23,8 @@ IDLEBIZ_PACK_UNSIGNED=1 pnpm smoke:desktop  # an ad-hoc pack, booted on a scratc
 4. writes the licences of the Rust crates the shell links (`scripts/rust-notices.ts`) to
    `Contents/Resources/notices`;
 5. runs `tauri build` with a config of its own (the resources, the sidecar, the signing identity,
-   macOS 13.5 as the floor, node 24's) and copies the dmg to `.output/bin`.
+   macOS 13.5 as the floor, node 24's, which the page's build targets as Safari 16.6) and copies
+   the dmg to `.output/bin`.
 
 So `apps/cli` `dependencies` is exactly what the server ships: everything Vite bundles — zod,
 oRPC, citty, the ACP sdk, `@repo/*` — goes in `devDependencies`, or the app ships it for nothing,

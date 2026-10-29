@@ -145,6 +145,10 @@ export default defineConfig(({ mode }) => ({
   build: {
     emptyOutDir: true,
     outDir: path.resolve(configDir, "dist"),
+    // the system WebKit at the macOS floor (MINIMUM_MACOS in scripts/package.ts), the one
+    // tsconfig.page.json caps the stdlib to, and the CSS's target too: Vite's own default moves with
+    // each major
+    target: "safari16.6",
   },
   clearScreen: false,
   plugins: [tailwindcss(), react(), devContentSecurityPolicy(), devServer(mode)],

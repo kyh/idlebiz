@@ -26,7 +26,9 @@ const { version } = z
 
 // the release's one asset the site's download link finds, by its `.dmg`
 const DMG_NAME = `IdleBiz-${version}-arm64.dmg`;
-// node 24's own floor (its binary's LC_BUILD_VERSION): below it the sidecar cannot start
+// node 24's own floor (its binary's LC_BUILD_VERSION): below it the sidecar cannot start. Its
+// WebKit, Safari 16.6's, is the page's: vite.config.ts builds for it and tsconfig.page.json caps
+// the stdlib at it, so the three move together
 const MINIMUM_MACOS = "13.5";
 // the archive the installed app updates from, beside the dmg in each release (release-feed.ts)
 const ARCHIVE_NAME = archiveName(version);
