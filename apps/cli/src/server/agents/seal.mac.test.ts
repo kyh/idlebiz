@@ -221,6 +221,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     ".pypirc",
     ".cargo/credentials.toml",
     ".gem/credentials",
+    ".local/share/gem/credentials",
     ".m2/settings.xml",
     ".m2/settings-security.xml",
     ".gradle/gradle.properties",
