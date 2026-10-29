@@ -115,8 +115,9 @@ which only that run's seal reaches, and what it does is the run's.
   faults land there too, as `[page:<where>]`, since a release build's window has no console: a
   crash the window shows, what nothing caught, an event it could not apply and an office that
   could not boot, each sent through `app.fault` (`renderer/report-fault.ts`), five a minute at
-  most, as its message and stack alone, clipped, never what a call was asked. Neither a fault main
-  made in answering, which main logs, nor a stream that dropped, as main went away, is sent.
+  most, as its message and stack alone, clipped, never what a call was asked. No answer of main's
+  is sent, a refusal being no fault and main logging its own as it answers, nor a stream that
+  dropped, as main went away.
 
 ## The renderer's state
 

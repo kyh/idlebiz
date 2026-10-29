@@ -1,5 +1,6 @@
 import { setImmediate as settle } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ORPCError } from "@orpc/client";
 import { implement } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import { contract } from "@repo/contract/contract";
@@ -112,6 +113,18 @@ describe("reportFault", () => {
     reportFault("window", new Error("a minute on"));
     await settle();
     expect(faults.at(-1)?.message).toBe("a minute on");
+  });
+
+  it("sends none of main's answers, which main logged if they were faults", async () => {
+    const { api, faults } = fakeMain();
+    const reportFault = await freshReporter(api);
+    reportFault("office-boot", new ORPCError("INTERNAL_SERVER_ERROR", { message: "no company" }));
+    reportFault("rejection", new ORPCError("CONFLICT", { message: "That task is taken." }));
+    reportFault("office-boot", new TypeError("Load failed"));
+    await settle();
+    expect(faults.map(({ message, where }) => ({ message, where }))).toEqual([
+      { message: "Load failed", where: "office-boot" },
+    ]);
   });
 
   it("drops a report main cannot take, never leaving it unhandled", async () => {

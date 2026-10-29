@@ -2,6 +2,7 @@
 // is what the founder can send. Only what the page raised comes here: main logs a fault of its own
 // as it answers it, a refusal is no fault, and a stream that drops means main went away.
 
+import { ORPCError } from "@orpc/client";
 import { FAULT_LIMITS } from "@repo/contract/app-contract";
 import { errorMessage } from "@repo/domain/errors";
 import { api } from "@/renderer/api";
@@ -31,6 +32,10 @@ const send = async (where: string, message: string, stack: string): Promise<void
  */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
 export const reportFault = (where: string, fault: unknown, context?: string): void => {
+  // main's answer: a refusal is no fault, and main logged a fault of its own as it answered it
+  if (fault instanceof ORPCError) {
+    return;
+  }
   const now = Date.now();
   sent = sent.filter((at) => now - at < MINUTE_MS);
   if (sent.length >= PER_MINUTE) {
