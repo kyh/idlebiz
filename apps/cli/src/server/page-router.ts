@@ -15,6 +15,7 @@ import type { FounderActions } from "./founder-actions";
 import { host } from "./host";
 import { answerOf } from "./lib/answers";
 import { broadcast, pageEvents } from "./lib/broadcast";
+import { report } from "./lib/report";
 import { launchAtLogin, setLaunchAtLogin } from "./login-item";
 import { installUpdate, updateStatus } from "./updates";
 import { metricsPulse } from "./metrics-pulse";
@@ -76,6 +77,10 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       // the window is refused every permission, the clipboard's included: the shell writes it
       copyText: os.app.copyText.handler(async ({ input }) => {
         await host().copyText(input.text);
+      }),
+      // a release build's window has no console: what the page raised is kept with main's own
+      fault: os.app.fault.handler(({ input: { message, stack, where } }) => {
+        report(`page:${where}`, stack === undefined ? message : `${message}\n${stack}`);
       }),
       installUpdate: os.app.installUpdate.handler(() => installUpdate()),
       launchAtLogin: os.app.launchAtLogin.handler(() => launchAtLogin()),

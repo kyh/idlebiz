@@ -21,8 +21,14 @@ which only that run's seal reaches, and what it does is the run's.
   `@repo/contract/events` declares: `server/lib/broadcast.ts` parses each as it publishes it, and
   logs and drops one that fails, which would otherwise end every page's stream at the contract's
   own check. The page hears them through `listen()` (`renderer/page-events.ts`), which reopens a
-  stream that drops a second later, and asks main for everything again as each one opens, since
-  what main sent meanwhile is lost.
+  stream that drops a second later and, once it is open, asks main for everything again, since
+  what main sent meanwhile is lost: open first, so main hears the page before it answers. The
+  office takes who is in and what they do from events alone, so it is then told to set itself
+  right by the roster and the tasks read again (`resynced`; `game/office-resync.ts` decides who
+  comes in, who leaves and who is set). The first stream opens beside the window's first reads
+  and asks for none of them again, so a boot asks main once for each answer: a change main makes
+  between serving one and hearing the page waits for the next event that moves it, a window of
+  milliseconds that is accepted.
 - **The window** is main's own page, served on loopback (`server/page-server.ts`). The shell asks
   main for a `handoff` each time it makes the window, waiting ten seconds, and opens it there: a
   one-time link, spent at its first use and dead unspent after five minutes, whose answer sets the
@@ -103,7 +109,12 @@ which only that run's seal reaches, and what it does is the run's.
   facade Tauri logs with (`src-tauri/src/shell_log.rs`: the shell's own down to info, other
   crates' warnings), and on stderr for a terminal launch. Runs read the file, so a line names a
   page by its origin alone. A catch that carries on past an unexpected error calls `report`
-  (`server/lib/report.ts`); a boot that throws says where the log is and exits.
+  (`server/lib/report.ts`); a boot that throws says where the log is and exits. The page's own
+  faults land there too, as `[page:<where>]`, since a release build's window has no console: a
+  crash the window shows, what nothing caught, an event it could not apply and an office that
+  could not boot, each sent through `app.fault` (`renderer/report-fault.ts`), five a minute at
+  most, as its message and stack alone, clipped, never what a call was asked. Neither a fault main
+  made in answering, which main logs, nor a stream that dropped, as main went away, is sent.
 
 ## The renderer's state
 
@@ -114,7 +125,9 @@ event as cancelQueries, setQueryData, then invalidateQueries. `useSubmission` is
 `useActionState`: the control is busy while main works and a refusal lands beside it as a
 `<Failure>`. The office scene reads the cache through `read` and `watch` in `queries.ts`, and a
 founding reads the company, its team and their work again before the scene restarts
-(`companyFounded`).
+(`companyFounded`). The scene boots on the window's own reads, so it fails with them when the
+window shows main unreachable, and restarts once main answers, by a Retry or a resync
+(`bootShown`, which Page calls with each change of what the window shows).
 
 ## The budget
 

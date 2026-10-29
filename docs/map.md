@@ -16,7 +16,7 @@ is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
   `office-layout-schema.ts` the shape of office-design.json, `office-grid.ts` walking as pure
   math), main's answers in one tanstack-query cache (`state/queries.ts`), the window's own state
   and main's events applied to that cache in `state/store.ts`, and main reached through `api.ts`,
-  its events through `page-events.ts`.
+  its events through `page-events.ts`, its log through `report-fault.ts`.
 - `apps/desktop/scripts` — the pack: node fetched (`fetch-node.ts`), the server staged
   (`stage-server.ts`, as Resources/server), everything signed (`sign-resources.ts`), the crates'
   notices (`rust-notices.ts`), the bundle and notarization (`package.ts`), the updater's feed

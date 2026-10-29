@@ -5,10 +5,12 @@ import type { AuthFlowEvent, Budget, Company, Employee, Task } from "@repo/domai
 import type { Digest } from "@repo/domain/digest";
 import { api, orpc } from "@/renderer/api";
 import { hearMain, listen } from "@/renderer/page-events";
+import { reportFault } from "@/renderer/report-fault";
 import { hear, tell } from "@/renderer/game/office-port";
 import type { Office } from "@/renderer/game/office-port";
 import { EVERYTHING, joinFeed, reduceActivity, roomLines } from "@/renderer/state/activity-reducer";
 import type { FeedLine } from "@/renderer/state/activity-reducer";
+import type { Boot } from "@/renderer/state/boot";
 import {
   BOOT_QUERIES,
   authQuery,
@@ -123,6 +125,28 @@ export const companyFounded = async (): Promise<void> => {
     read({ ...openTasksQuery, staleTime: 0 }),
   ]);
   await read({ ...companyQuery, staleTime: 0 });
+  if (state.game) {
+    tell(state.game, "company-ready", null);
+  }
+};
+
+/** The window showed main unreachable since the office last booted on main's answers. */
+let unreached = false;
+
+/**
+ * Where the window's boot got to, as it shows it. Once main answers after the window could not
+ * reach it, by a retry or by a resync, the office boots again on those answers: its own reads
+ * failed with the window's, or never ran, and nothing else starts it again.
+ */
+export const bootShown = (kind: Boot["kind"]): void => {
+  if (kind === "unreachable") {
+    unreached = true;
+    return;
+  }
+  if (kind === "loading" || !unreached) {
+    return;
+  }
+  unreached = false;
   if (state.game) {
     tell(state.game, "company-ready", null);
   }
@@ -272,6 +296,7 @@ const onActivityInBackground = async (e: ActivityEvent): Promise<void> => {
     await onActivity(e);
   } catch (error) {
     console.error("Could not apply an activity event", error);
+    reportFault("activity", error);
   }
 };
 
@@ -286,9 +311,33 @@ const signedIn = async (): Promise<void> => {
 
 // ---- lifecycle -------------------------------------------------------------
 
-/** Everything an event could have moved, asked for again: the page may have missed any of them. */
-const resync = (): void => {
-  void refetch(EVERYTHING);
+/**
+ * Everything an event could have moved, asked for again: the page may have missed any of them.
+ * The office took who is in and what they do from those events alone, so once the roster and the
+ * tasks are read again it is told to set itself right by them.
+ */
+const resync = async (): Promise<void> => {
+  await refetch(EVERYTHING);
+  if (!held(companyQuery)) {
+    return;
+  }
+  try {
+    await Promise.all([read(employeesQuery), read(openTasksQuery)]);
+  } catch {
+    // main went away again: the next stream's resync reads them
+    return;
+  }
+  // the office may have been torn down while main answered
+  const { game } = state;
+  if (!game) {
+    return;
+  }
+  try {
+    tell(game, "resynced", null);
+  } catch (error) {
+    console.error("Could not set the office right", error);
+    reportFault("resync", error);
+  }
 };
 
 let initialized = false;
@@ -310,5 +359,7 @@ export const initStore = (): void => {
   listen("update", (status) => {
     void setAnswer(updateQuery.queryKey, status);
   });
-  hearMain(resync);
+  hearMain(() => {
+    void resync();
+  });
 };
