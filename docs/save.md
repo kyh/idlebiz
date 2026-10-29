@@ -35,11 +35,15 @@ COMPANY.md carries `format` (`SAVE_FORMAT`, `store/company-codec.ts`), and a sav
 other blocks loading and founding (`SaveFormatError`). Each codec reads its kind through one
 strict zod schema, the one its encoder writes to: a package it refuses (a hand edit, a field
 missing) is skipped and named in the load report, never read with a default, and so is an
-`approvals.json` that does not parse, which no sign-off then writes over. A frontmatter key the
-app does not know is still dropped on the next write of that file. Boot alone repairs what a
-hand edit or a release with no lead leaves (`initStore`): a run that names no lock is queued
-again, and queued or running work nobody holds is to do. No repair stands in for a package it
-skipped: a lead whose AGENTS.md did not read stays lead, and a teammate's open work stays theirs.
+`approvals.json` that does not parse, which no sign-off then writes over. Frontmatter is read as
+YAML reads it or not at all (`store/frontmatter.ts`): a value is null, a boolean, a number, one
+JSON string or plain text, and a line beyond that (single quotes, a block, a trailing comment, an
+indented line outside `metadata:`) refuses its package, naming the line, rather than load a value
+nobody wrote. A frontmatter key the app does not know is still dropped on the next write of that
+file. Boot alone repairs what a hand edit or a release with no lead leaves (`initStore`): a run
+that names no lock is queued again, and queued or running work nobody holds is to do. No repair
+stands in for a package it skipped: a lead whose AGENTS.md did not read stays lead, and a
+teammate's open work stays theirs.
 
 Only closed work is history. `done` tasks move to `shipped/` and load on demand; so does an ask
 the founder answered, `superseded` by its continuation, an order card the founder `settled`, and
