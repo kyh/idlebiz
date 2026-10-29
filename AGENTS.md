@@ -97,9 +97,9 @@ pinned there, signed in to nothing, and fails before the tests if one does not a
 pack ([Packaging and release](docs/packaging.md)).
 
 **The compiler's strictness is `tsconfig.base.json`** (`strict`, `noUncheckedIndexedAccess`,
-`exactOptionalPropertyTypes`, `noImplicitReturns`, `noImplicitOverride`, unused locals and
-parameters). Every workspace's tsconfig extends it and adds only what is its own (`lib`, `types`,
-`include`, `paths`, `jsx`, and `apps/web`'s Next plugin). The code the page
+`exactOptionalPropertyTypes`, `noImplicitReturns`, `noImplicitOverride`, `erasableSyntaxOnly`,
+unused locals and parameters). Every workspace's tsconfig extends it and adds only what is its own
+(`lib`, `types`, `include`, `paths`, `jsx`, and `apps/web`'s Next plugin). The code the page
 runs (the renderer, `@repo/domain`, `@repo/contract`) extends `tsconfig.page.json`, the ES2023
 ceiling of the window's WebKit; the renderer adds the DOM in `renderer/env.d.ts`.
 

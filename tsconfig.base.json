@@ -13,9 +13,15 @@
     // Stronger than isolatedModules: a value-import of a type-only symbol fails typecheck instead
     // of pulling runtime code into the page's bundle.
     "verbatimModuleSyntax": true,
+    // No enum, namespace or parameter property: node's type stripping cannot run one, and a
+    // vocabulary is an `as const` tuple.
+    "erasableSyntaxOnly": true,
     "skipLibCheck": true,
     "noEmit": true,
-    // the scripts node runs by stripping types (apps/desktop/scripts) must name `.ts`
+    // The scripts node runs by stripping types (apps/cli/scripts, apps/desktop/scripts,
+    // apps/web/scripts) must name `.ts`, and so must every module they import, a workspace one
+    // reached through `@repo/*` included: bundler resolution passes an import without it, which
+    // node then refuses.
     "allowImportingTsExtensions": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
