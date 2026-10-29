@@ -25,6 +25,12 @@ it exists, and one boot cannot read (its COMPANY.md missing or refused) blocks t
 save of another format. A reset deletes the whole root, `secrets.json` included; to start over
 otherwise, move `company/` out.
 
+Every file main writes lands whole, a tmp file renamed over it (`lib/fs.ts`), so no reader sees
+half of one. COMPANY.md, `approvals.json`, `secrets.json` and every file founding stages are also
+on the disk before the rename (`durable`), so an OS crash or a power cut leaves the old file or
+the new one, never an empty one; any other file a crash empties is a package the load report
+names, or state its next write replaces.
+
 COMPANY.md carries `format` (`SAVE_FORMAT`, `store/company-codec.ts`), and a save stamped at any
 other blocks loading and founding (`SaveFormatError`). Each codec reads its kind through one
 strict zod schema, the one its encoder writes to: a package it refuses (a hand edit, a field

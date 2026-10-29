@@ -91,6 +91,9 @@ orient a reader and link into them, never telling a mechanic again.
   comment states why.
 - **The store is one synchronous object.** Don't split it by entity or make it async: its
   synchronous check-and-set is what makes the task lock correct.
+- **Every write is whole; few are durable.** No reader sees half a file, but only one whose loss
+  blocks the office or loses what the founder gave is flushed before its rename: on the Mac the
+  flush is a full one, which the synchronous store waits on.
 - **A refusal is a sentence.** The store refuses with a `RefusalError` worded as what the agent
   should read; anything else thrown is a fault, reported to main's log.
 - **A codec skips, never defaults.** A package its strict schema refuses is named in the load

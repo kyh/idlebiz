@@ -155,7 +155,8 @@ const writeSecretsFile = ({ keys, rest }: Secrets): void => {
     ...rest,
     ...Object.fromEntries([...keys].map(([name, held]) => [name, stored(name, held)])),
   };
-  writeJsonFile(secretsPath(), file, { mode: 0o600 });
+  // durable: a key lost to an OS crash is one the founder has to find and paste again
+  writeJsonFile(secretsPath(), file, { durable: true, mode: 0o600 });
 };
 
 /** Seal what the founder pasted by hand; only a file that parsed gets here, so none is lost. */

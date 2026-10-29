@@ -328,8 +328,9 @@ const readTextIfPresent = (file: string): string | null => {
   }
 };
 
+/** Durable: a COMPANY.md that does not read blocks the office. */
 const saveCompany = (co: Company): void => {
-  atomicWrite(companyFile(), serializeDoc(companyToDoc(co)));
+  atomicWrite(companyFile(), serializeDoc(companyToDoc(co)), { durable: true });
 };
 
 const saveEmployee = (e: Employee, opts: { onlyIfChanged?: boolean } = {}): void => {
@@ -444,7 +445,8 @@ const writeGrants = (grants: Grant[]): void => {
   const active = current();
   // a file that does not read is the founder's to fix: rewriting it would lose the sign-offs in it
   readJsonFileForUpdate(approvalsFile(), GrantsSchema);
-  writeJsonFile(approvalsFile(), grants);
+  // durable: each is a sign-off the founder gave
+  writeJsonFile(approvalsFile(), grants, { durable: true });
   active.grants = grants;
 };
 
@@ -1885,25 +1887,26 @@ export const foundCompany = (input: {
   const staging = mkdtempSync(path.join(rootDir(), ".founding-"));
   // Only disk destinations change; persisted workspace paths refer to the final company.
   const staged = (file: string): string => path.join(staging, path.relative(companyDir(), file));
+  // durable, so the company/ one rename publishes never holds an empty file after an OS crash
+  const stage = (file: string, text: string): void => {
+    atomicWrite(staged(file), text, { durable: true });
+  };
   try {
     mkdirSync(staged(sharedDir()), { recursive: true });
     mkdirSync(staged(tasksDir()), { recursive: true });
     mkdirSync(staged(agentsDir()), { recursive: true });
     for (const product of active.products) {
       mkdirSync(staged(product.workspaceDir), { recursive: true });
-      atomicWrite(staged(productFile(product.id)), serializeDoc(productToDoc(product)));
+      stage(productFile(product.id), serializeDoc(productToDoc(product)));
     }
     for (const employee of active.employees) {
       mkdirSync(staged(employeeMemoryDir(employee.id)), { recursive: true });
-      atomicWrite(
-        staged(employeeFile(employee.id)),
-        serializeDoc(employeeToDoc(employee, co, active.products)),
-      );
+      stage(employeeFile(employee.id), serializeDoc(employeeToDoc(employee, co, active.products)));
     }
     for (const routine of active.routines) {
-      atomicWrite(staged(routineFile(routine.id)), serializeDoc(routineToDoc(routine)));
+      stage(routineFile(routine.id), serializeDoc(routineToDoc(routine)));
     }
-    atomicWrite(staged(companyFile()), serializeDoc(companyToDoc(co)));
+    stage(companyFile(), serializeDoc(companyToDoc(co)));
     moveDir(staging, companyDir());
   } catch (error) {
     rmSync(staging, { force: true, recursive: true });
