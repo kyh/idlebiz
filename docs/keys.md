@@ -28,7 +28,8 @@ so a misspelt name fails typecheck rather than reading as no key.
   On the real save (no `IDLEBIZ_ROOT_DIR`) dev seals nothing, so it strands none: the packaged
   app's keys read as absent there and one entered there is written plain for the app to seal. Use
   `IDLEBIZ_ROOT_DIR`.
-- Those keys never reach a run by the founder's hand either: an action's reply, a question's
+- Those keys never reach a run by the founder's hand either: no run reaches the pasteboard a key
+  is pasted through ([A run's seal](seal.md#a-runs-seal)), and an action's reply, a question's
   answer, a room message and an order card's note holding one are refused (`refuseHeldKey` in
   `server/company-actions.ts`; an order card's also refuses anything shaped like a Stripe key),
   and so is `set_env` given one. Both also refuse any Stripe secret key (`sk_`,

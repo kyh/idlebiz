@@ -16,20 +16,27 @@ import { secretsPath } from "../secrets";
 import { inside } from "./seal";
 import type { Reach, RunnerHome, Seal } from "./seal";
 
-/** The founder's logins under HOME, which no run reads or writes. */
+/**
+ * The founder's logins under HOME, which no run reads or writes. Each is a file or folder that
+ * holds a login: what a toolchain also reads on every build (`~/.yarnrc.yml`, the rest of
+ * `~/.gradle`) and its caches and plugins (`~/.m2/repository`, `~/.pulumi/plugins`) stay readable.
+ */
 const LOGINS = [
   ".ssh",
   ".config/gh",
+  ".config/hub",
   ".npmrc",
   ".netrc",
   ".git-credentials",
   ".config/git/credentials",
   ".aws",
   ".azure",
+  ".oci",
   ".kube",
   ".docker",
   ".gnupg",
   ".config/gcloud",
+  "Library/Application Support/doctl",
   ".config/stripe",
   ".wrangler",
   ".config/.wrangler",
@@ -44,9 +51,22 @@ const LOGINS = [
   ".railway",
   ".supabase",
   ".terraform.d",
+  ".terraformrc",
+  ".pulumi/credentials.json",
+  ".vault-token",
+  ".pgpass",
+  ".my.cnf",
+  ".mylogin.cnf",
   ".pypirc",
   ".cargo/credentials",
   ".cargo/credentials.toml",
+  ".gem/credentials",
+  ".m2/settings.xml",
+  ".m2/settings-security.xml",
+  ".gradle/gradle.properties",
+  ".cache/huggingface/token",
+  ".cache/huggingface/stored_tokens",
+  ".sentryclirc",
   ".config/configstore",
   ".config/op",
   ".config/github-copilot",

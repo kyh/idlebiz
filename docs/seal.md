@@ -11,8 +11,10 @@ run, every path a `-D` parameter. Each run resolves its own (`machineSeal`,
 leads from the next run on.
 
 - _Reads_ are open but for the founder's logins (`LOGINS`: ssh, gh, npm, netrc, git credentials,
-  cloud and deploy CLIs, App Store Connect's notary keys, the updater's signing key, browser and
-  chat-app profiles, agent-browser's saved logins), `secrets.json` with every name that starts with
+  cloud, infrastructure and deploy CLIs, database clients' saved passwords, package registries'
+  and model hubs' publish logins, App Store Connect's notary keys, the updater's signing key,
+  browser and chat-app profiles, agent-browser's saved logins; a toolchain's config read on every
+  build and its caches stay readable beside them), `secrets.json` with every name that starts with
   it, the other runner's home, and, for a codex run, what of the founder's own it would load
   (`personal` in `RUNNER_HOMES`): their skills (`$CODEX_HOME/skills`, codex's own `.system` ones in
   it, and `~/.agents/skills`), since codex loads every skill it can read and no setting leaves them
@@ -76,10 +78,14 @@ leads from the next run on.
   31100 are closed, and so is the port main serves the window's page on (`pagePorts`), which holds
   the founder's approve button: Chrome's DevTools port, node's inspector, and the dev server, which
   reads any file of the checkout to whoever asks and under `pnpm dev:browser` signs a browser in to
-  main's page. LaunchServices opens nothing; the Apple Event CLIs (`osascript`, `osacompile`,
-  `automator`, `shortcuts`) and git's Keychain helper do not run; no setuid program runs but
-  `/bin/ps`, which fnm needs; a codex run reaches no Keychain (a `mach-lookup` deny of securityd,
-  which holds against a copied binary too).
+  main's page. LaunchServices opens nothing, launchd starts no job (`job-creation`, which launchd
+  checks of its caller), nothing is mounted or unmounted (`file-mount`, which diskarbitrationd
+  checks too, so no `hdiutil attach`), and cfprefsd writes no preference (`user-preference-write`:
+  it writes for a caller allowed that or the plist's own write): each would run or land outside
+  the seal, as the founder. The Apple Event CLIs (`osascript`, `osacompile`, `automator`,
+  `shortcuts`) and git's Keychain helper do not run; no setuid program runs but `/bin/ps`, which
+  fnm needs; no run reaches the pasteboard, where a key the founder pastes sits, and a codex run
+  no Keychain (each a `mach-lookup` deny of its service, which holds against a copied binary too).
 - _Who calls the company is the socket, not a secret._ Each run reaches its tools over its own
   unix socket, an HTTP server main opens for that run alone (`controlPlane.registerRun`) at
   `<save>/.run/<id>`, mode 0600 in a 0700 folder (`~/.idlebiz-run/<save digest>/` when that path
@@ -155,6 +161,9 @@ its runs find no rules there ([A run's seal](#a-runs-seal)).
 On purpose or for want of a rule:
 
 - the network: a run can send what it reads anywhere;
+- every other service a run reaches over mach: the profile allows what it does not deny by name,
+  so a service that acts for its caller without checking the caller's seal acts for a run as the
+  founder, until it is found and denied as the Keychain's and the pasteboard's are;
 - reads across HOME outside the login stores (another project's `.env`, transcripts), this
   checkout's `apps/desktop/.env` included: it names the notary key by id and issuer, which sign
   nothing without the `.p8` the seal keeps in `~/.appstoreconnect/private_keys`, and holds the

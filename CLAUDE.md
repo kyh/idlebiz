@@ -65,6 +65,10 @@ orient a reader and link into them, never telling a mechanic again.
   user: the Seatbelt seal decides what it reads, writes and reaches on this machine, and custody
   keeps IdleBiz's keys in main and runs every step that spends them there, once the founder signs
   off.
+- **The seal allows by default and denies by name**: a run hosts Chrome, claude, codex and node
+  toolchains, whose system needs move with each macOS, and a profile that denied by default would
+  break runs an update later. What it leaves open is listed instead, and each thing it closes has
+  a canary a Mac runs.
 - **The command policy is a tripwire, not a third boundary**: what a script runs goes unseen.
 - **No run starts unsealed**: the seal is one boundary, and also what makes a run's socket its own.
 - **Who calls the company is the socket, not a secret**: any run can read a teammate's env, token

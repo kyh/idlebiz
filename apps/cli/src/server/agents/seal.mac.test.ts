@@ -6,13 +6,14 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  rmdirSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { once } from "node:events";
 import { createServer } from "node:net";
 import type { Server } from "node:net";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -38,6 +39,15 @@ const exitOf = (argv: readonly string[]): number | null => {
   const [bin = "", ...args] = argv;
   return spawnSync(bin, args, { encoding: "utf-8" }).status;
 };
+
+/** What `argv` printed, run as it stands with `input` on stdin; given up on after 20s, a hang too. */
+const outputOf = (argv: readonly string[], input = ""): string => {
+  const [bin = "", ...args] = argv;
+  return spawnSync(bin, args, { encoding: "utf-8", input, timeout: 20_000 }).stdout;
+};
+
+// pbpaste answers only in a session with a window server, which CI's macOS runner has
+const pasteboardAnswers = onMac && spawnSync("/usr/bin/pbpaste").status === 0;
 
 /** A real probe of the checked command, its profile swapped for `profile`. */
 const under =
@@ -162,16 +172,19 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   const LOGINS = [
     ".ssh/id_ed25519",
     ".config/gh/hosts.yml",
+    ".config/hub",
     ".npmrc",
     ".netrc",
     ".git-credentials",
     ".config/git/credentials",
     ".aws/credentials",
     ".azure/msal_token_cache.json",
+    ".oci/config",
     ".kube/config",
     ".docker/config.json",
     ".gnupg/private-keys-v1.d/key",
     ".config/gcloud/credentials.db",
+    "Library/Application Support/doctl/config.yaml",
     ".config/stripe/config.toml",
     ".wrangler/config/default.toml",
     ".config/.wrangler/config/default.toml",
@@ -186,8 +199,21 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     ".railway/config.json",
     ".supabase/access-token",
     ".terraform.d/credentials.tfrc.json",
+    ".terraformrc",
+    ".pulumi/credentials.json",
+    ".vault-token",
+    ".pgpass",
+    ".my.cnf",
+    ".mylogin.cnf",
     ".pypirc",
     ".cargo/credentials.toml",
+    ".gem/credentials",
+    ".m2/settings.xml",
+    ".m2/settings-security.xml",
+    ".gradle/gradle.properties",
+    ".cache/huggingface/token",
+    ".cache/huggingface/stored_tokens",
+    ".sentryclirc",
     ".config/configstore/firebase-tools.json",
     ".config/op/config",
     ".config/github-copilot/apps.json",
@@ -229,6 +255,11 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       ".cache/node/corepack/pnpm/9.0.0/bin/pnpm.cjs",
       "Library/Caches/ms-playwright/chromium/chrome",
       ".agent-browser/config.json",
+      // what a toolchain reads on every build, beside the logins sealed in its folder
+      ".yarnrc.yml",
+      ".m2/repository/org/a/a.jar",
+      ".gradle/caches/modules-2/a.bin",
+      ".pulumi/plugins/resource-aws/pulumi-resource-aws",
     ].map(plant);
     const fresh = [at("Documents/new.md"), at(".zlogin"), at("Library/LaunchAgents/new.plist")];
     expect(await tryAs("codex", { reads: files })).toEqual(all(files, "read"));
@@ -855,6 +886,124 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     spawnSync("chmod", ["+x", helper]);
     for (const runner of ["claude", "codex"] as const) {
       expect(await tryAs(runner, { runs: [helper] })).toEqual({ [helper]: "EPERM" });
+    }
+  });
+
+  it.skipIf(!pasteboardAnswers)(
+    "keeps a run from the pasteboard, where a key the founder pastes sits, which a sign-in may still read",
+    async () => {
+      const sealed = await seal();
+      const paste = ["/usr/bin/pbpaste"];
+      const held = outputOf(paste);
+      const canary = `idlebiz-seal-canary-${process.pid}-${Date.now()}`;
+      outputOf(["/usr/bin/pbcopy"], canary);
+      try {
+        for (const runner of ["claude", "codex"] as const) {
+          expect(outputOf(sealedCommand(sealed, runner, paste))).not.toContain(canary);
+          // nor does it put its own in place of what the founder copied
+          outputOf(sealedCommand(sealed, runner, ["/usr/bin/pbcopy"]), "planted");
+        }
+        expect(outputOf(paste)).toBe(canary);
+        // the control: the same read from a sign-in does reach it
+        expect(outputOf(signInCommand(sealed, "claude", paste))).toBe(canary);
+      } finally {
+        outputOf(["/usr/bin/pbcopy"], held);
+      }
+    },
+  );
+
+  it("keeps a run from having launchd start a job, which runs unsealed, as a sign-in still could", async () => {
+    const sealed = await seal();
+    const label = `io.idlebiz.seal-canary.${process.pid}.${Date.now()}`;
+    const submitted = at("tmp/submitted");
+    const bootstrapped = at("tmp/bootstrapped");
+    const plist = at("tmp/canary.plist");
+    writeFileSync(
+      plist,
+      `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>Label</key><string>${label}.boot</string>
+<key>ProgramArguments</key><array><string>/usr/bin/touch</string><string>${bootstrapped}</string></array>
+<key>RunAtLoad</key><true/>
+</dict></plist>
+`,
+    );
+    const domain = `gui/${userInfo().uid}`;
+    const submit = ["/bin/launchctl", "submit", "-l", label, "--", "/usr/bin/touch", submitted];
+    try {
+      outputOf(sealedCommand(sealed, "claude", submit));
+      outputOf(sealedCommand(sealed, "codex", ["/bin/launchctl", "bootstrap", domain, plist]));
+      await sleep(1500);
+      expect(existsSync(submitted)).toBe(false);
+      expect(existsSync(bootstrapped)).toBe(false);
+      // the control: the same submit from a sign-in, sealed but for this, does start it
+      outputOf(signInCommand(sealed, "claude", submit));
+      for (let waited = 0; waited < 200 && !existsSync(submitted); waited += 1) {
+        await sleep(100);
+      }
+      expect(existsSync(submitted)).toBe(true);
+    } finally {
+      spawnSync("/bin/launchctl", ["remove", label]);
+      spawnSync("/bin/launchctl", ["bootout", `${domain}/${label}.boot`]);
+    }
+  });
+
+  it("keeps a run from mounting devfs, whose files carry no provenance for LaunchServices to check", async () => {
+    const sealed = await seal();
+    const mountpoint = realpathSync(mkdtempSync(path.join(tmpdir(), "idlebiz-mount-")));
+    const mount = ["/sbin/mount", "-t", "devfs", "-o", "noowners", "devfs", mountpoint];
+    try {
+      for (const runner of ["claude", "codex"] as const) {
+        outputOf(sealedCommand(sealed, runner, mount));
+        expect(existsSync(path.join(mountpoint, "null"))).toBe(false);
+      }
+    } finally {
+      spawnSync("/sbin/umount", [mountpoint]);
+      // never recursive: through a mount the seal missed it would remove device nodes
+      rmdirSync(mountpoint);
+    }
+  });
+
+  it("keeps a run from laying an image it made over a folder the founder runs programs from", async () => {
+    const sealed = await seal();
+    const bin = at(".local/bin");
+    mkdirSync(bin, { recursive: true });
+    plant("image/claude");
+    const image = at("tmp/canary.dmg");
+    spawnSync("/usr/bin/hdiutil", ["create", "-quiet", "-srcfolder", at("image"), image]);
+    expect(existsSync(image)).toBe(true);
+    const attached: string[] = [];
+    try {
+      const attach = ["/usr/bin/hdiutil", "attach", "-nobrowse", "-mountpoint", bin, image];
+      for (const runner of ["claude", "codex"] as const) {
+        // diskarbitrationd mounts it, checking the run's seal as it does
+        const printed = outputOf(sealedCommand(sealed, runner, attach));
+        attached.push(...Array.from(printed.matchAll(/\/dev\/disk\d+/gu), ([disk]) => disk));
+        expect(existsSync(path.join(bin, "claude"))).toBe(false);
+      }
+    } finally {
+      for (const disk of new Set([bin, ...attached])) {
+        spawnSync("/usr/bin/hdiutil", ["detach", "-force", disk]);
+      }
+    }
+  });
+
+  it("keeps a run from having cfprefsd write a preference, as a sign-in still could", async () => {
+    const sealed = await seal();
+    const domain = `io.idlebiz.seal-canary.${process.pid}.${Date.now()}`;
+    const write = ["/usr/bin/defaults", "write", domain, "canary", "-string", "landed"];
+    const read = () => outputOf(["/usr/bin/defaults", "read", domain, "canary"]).trim();
+    try {
+      for (const runner of ["claude", "codex"] as const) {
+        outputOf(sealedCommand(sealed, runner, write));
+      }
+      expect(read()).toBe("");
+      // the control: cfprefsd writes for a caller allowed this or the plist's own write, and a
+      // sign-in is denied only the second
+      outputOf(signInCommand(sealed, "claude", write));
+      expect(read()).toBe("landed");
+    } finally {
+      spawnSync("/usr/bin/defaults", ["delete", domain]);
     }
   });
 
