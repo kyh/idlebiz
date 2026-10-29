@@ -80,8 +80,9 @@ leads from the next run on.
   the founder's approve button: Chrome's DevTools port, node's inspector, and the dev server, which
   reads any file of the checkout to whoever asks and under `pnpm dev:browser` signs a browser in to
   main's page. LaunchServices opens nothing, launchd starts no job (`job-creation`, which launchd
-  checks of its caller), and cfprefsd writes no preference (`user-preference-write`: it writes for
-  a caller allowed that or the plist's own write). No run mounts or unmounts a filesystem itself
+  checks of its caller, though it already refuses any sandboxed caller's, a sign-in's too), and
+  cfprefsd writes no preference (`user-preference-write`: it writes for a caller allowed that or
+  the plist's own write). No run mounts or unmounts a filesystem itself
   (`file-mount`, `file-unmount`, which the kernel checks; a remount, `file-mount-update`, is not
   denied, since no list before macOS 15 names it and the profile must compile on the floor),
   nor has diskarbitrationd mount one over a folder the run names, the one mount it checks against

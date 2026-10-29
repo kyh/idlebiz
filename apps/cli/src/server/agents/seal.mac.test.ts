@@ -925,9 +925,12 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     },
   );
 
-  it("keeps a run from having launchd start a job, which runs unsealed, as a sign-in still could", async () => {
+  // launchd refuses a job from any sandboxed caller, a sign-in's too, so the control is unsealed:
+  // it shows this session starts jobs at all, without which the canary proves nothing
+  it("keeps a run from having launchd start a job, which runs unsealed", async ({ skip }) => {
     const sealed = await seal();
     const label = `io.idlebiz.seal-canary.${process.pid}.${Date.now()}`;
+    const control = at("tmp/control");
     const submitted = at("tmp/submitted");
     const bootstrapped = at("tmp/bootstrapped");
     const plist = at("tmp/canary.plist");
@@ -944,6 +947,20 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     const domain = `gui/${userInfo().uid}`;
     const submit = ["/bin/launchctl", "submit", "-l", label, "--", "/usr/bin/touch", submitted];
     try {
+      spawnSync("/bin/launchctl", [
+        "submit",
+        "-l",
+        `${label}.control`,
+        "--",
+        "/usr/bin/touch",
+        control,
+      ]);
+      for (let waited = 0; waited < 200 && !existsSync(control); waited += 1) {
+        await sleep(100);
+      }
+      if (!existsSync(control)) {
+        skip();
+      }
       expect(startsUnder(sealed, "claude")).toBe(true);
       expect(startsUnder(sealed, "codex")).toBe(true);
       outputOf(sealedCommand(sealed, "claude", submit));
@@ -951,13 +968,8 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       await sleep(1500);
       expect(existsSync(submitted)).toBe(false);
       expect(existsSync(bootstrapped)).toBe(false);
-      // the control: the same submit from a sign-in, sealed but for this, does start it
-      outputOf(signInCommand(sealed, "claude", submit));
-      for (let waited = 0; waited < 200 && !existsSync(submitted); waited += 1) {
-        await sleep(100);
-      }
-      expect(existsSync(submitted)).toBe(true);
     } finally {
+      spawnSync("/bin/launchctl", ["remove", `${label}.control`]);
       spawnSync("/bin/launchctl", ["remove", label]);
       spawnSync("/bin/launchctl", ["bootout", `${domain}/${label}.boot`]);
     }
