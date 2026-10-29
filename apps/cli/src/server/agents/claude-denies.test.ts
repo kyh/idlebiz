@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -64,17 +64,36 @@ describe("refuseDeniedTools", () => {
 
   it("refuses a run whose managed settings deny the command every company tool is called with", async () => {
     settle(managed, ["Read(./.env)", "Bash(idlebiz:*)"]);
-    const refused = refuseDeniedTools(managed);
+    const refused = refuseDeniedTools(base);
     await expect(refused).rejects.toBeInstanceOf(RefusalError);
     await expect(refused).rejects.toThrow(`Bash(idlebiz:*)`);
     await expect(refused).rejects.toThrow(managed);
   });
 
+  it("reads the drop-ins beside the file as the same source, as claude merges them", async () => {
+    const dropIns = path.join(base, "managed-settings.d");
+    mkdirSync(dropIns);
+    settle(managed, ["Bash(rm:*)"]);
+    settle(path.join(dropIns, "10-telemetry.json"), ["WebFetch"]);
+    settle(path.join(dropIns, ".20-hidden.json"), ["Bash"]);
+    settle(path.join(dropIns, "30-draft.json.bak"), ["Bash"]);
+    await expect(refuseDeniedTools(base)).resolves.toBeUndefined();
+
+    const security = path.join(dropIns, "20-security.json");
+    settle(security, ["Bash(idlebiz *)"]);
+    const refused = refuseDeniedTools(base);
+    await expect(refused).rejects.toBeInstanceOf(RefusalError);
+    await expect(refused).rejects.toThrow(`Bash(idlebiz *) (${security})`);
+
+    rmSync(managed);
+    await expect(refuseDeniedTools(base)).rejects.toThrow(security);
+  });
+
   it("lets a run start past rules that leave the command alone, and settings it cannot read", async () => {
     settle(managed, ["Bash(rm:*)", "Bash(curl:*)", "WebFetch"]);
-    await expect(refuseDeniedTools(managed)).resolves.toBeUndefined();
+    await expect(refuseDeniedTools(base)).resolves.toBeUndefined();
     writeFileSync(managed, JSON.stringify({ permissions: { deny: "Bash" } }));
-    await expect(refuseDeniedTools(managed)).resolves.toBeUndefined();
-    await expect(refuseDeniedTools(path.join(base, "none.json"))).resolves.toBeUndefined();
+    await expect(refuseDeniedTools(base)).resolves.toBeUndefined();
+    await expect(refuseDeniedTools(path.join(base, "none"))).resolves.toBeUndefined();
   });
 });

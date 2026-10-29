@@ -182,6 +182,11 @@ On purpose or for want of a rule:
 - to claude runs, which share the founder's login, the Keychain: claude reads its login there, so
   a token the founder's `gh` or git keeps there is guarded only by the tripwire's
   `read-credentials` and `git-push` holds;
+- to claude runs, a deny rule of managed policy outside the managed settings files: main reads
+  none in the MDM profile, in server-managed settings (claude.ai's or a gateway's, which claude
+  caches) or in a `policyHelper`'s output, so a run under one starts, and each company tool's
+  `idlebiz` command is refused before IdleBiz is asked, the turn ending as done
+  ([A run's env, login and notes](runs.md#a-runs-env-login-and-notes));
 - each runner's state, which the founder's own sessions read as data: claude's prompt history,
   session registry, todos and file backups (which a rewind restores), codex's session logs and
   databases (its memory pass reads them into what later sessions load);

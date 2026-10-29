@@ -35,8 +35,12 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
   otherwise run its default, and claude-agent-acp, which reads their user settings, sets a model
   only when it thinks claude picked another. A deny rule in managed settings outranks the flag
   tier's ask rules and would refuse a company tool's `idlebiz` command before IdleBiz is asked, the
-  turn still ending as done, so a claude run under one does not start, and says which rule
-  (`refuseDeniedTools` in `server/agents/claude-denies.ts`).
+  turn still ending as done, so a claude run under one in the managed settings files does not
+  start, and says which rule and file (`refuseDeniedTools` in `server/agents/claude-denies.ts`):
+  `managed-settings.json` and the drop-ins of `managed-settings.d/`, which claude merges into one
+  source, their deny lists unioned. The other sources of managed policy go unread
+  ([What stays open](seal.md#what-stays-open)), and since claude applies only the highest source
+  that sets anything, a rule in the files refuses a run even where one of those shadows it.
 - **A codex session** loads the founder's codex config with every MCP server turned off by the
   name `codex mcp list` gives it, and apps, plugins and memories whole (`codexSessionEnv` in
   `server/agents/session.ts`): turning plugins off is also what keeps their plugins' skills out.
