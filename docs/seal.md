@@ -157,7 +157,8 @@ On purpose or for want of a rule:
 - the network: a run can send what it reads anywhere;
 - reads across HOME outside the login stores (another project's `.env`, transcripts), this
   checkout's `apps/desktop/.env` included: it names the notary key by id and issuer, which sign
-  nothing without the `.p8` the seal keeps in `~/.appstoreconnect/private_keys`;
+  nothing without the `.p8` the seal keeps in `~/.appstoreconnect/private_keys`, and holds the
+  updater key's password, which signs nothing without `~/.tauri/idlebiz.key`, sealed as well;
 - to claude runs, which share the founder's login, the Keychain: claude reads its login there, so
   a token the founder's `gh` or git keeps there is guarded only by the tripwire's
   `read-credentials` and `git-push` holds;

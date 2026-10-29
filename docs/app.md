@@ -57,8 +57,9 @@ which only that run's seal reaches, and what it does is the run's.
   method, `src-tauri/tests/fixtures/relay/<method>.json`: `server/host.test.ts` parses each with
   main's schema, `cargo test` reads each into the shell's types and writes it back unchanged, and
   each checks its own methods are the samples'. Both ends refuse a field they do not know. A
-  notification the shell cannot read goes to its stderr, and under `tauri dev` to a box too, once a
-  method: main waits on no answer, so would never hear of it.
+  notification the shell cannot read is logged as an error, as every line of the shell's is ("Main's
+  log" below), and under `tauri dev` shown in a box too, once a method: main waits on no answer, so
+  would never hear of it.
 - **Main's lifetime.** Main boots on the hello; one that fails says where the log is, in a box, and
   the app quits, as does one not booted within a minute, killed with its process group first, since
   its quit would wait the stuck boot out. A quit asks main to stop its runs (`quit`) and waits up to
@@ -92,9 +93,8 @@ which only that run's seal reaches, and what it does is the run's.
   shell's own lines go there too, since a Finder launch's stderr goes nowhere: through the `log`
   facade Tauri logs with (`src-tauri/src/shell_log.rs`: the shell's own down to info, other
   crates' warnings), and on stderr for a terminal launch. Runs read the file, so a line names a
-  page by its origin alone. A catch
-  that carries on past an unexpected error calls `report` (`server/lib/report.ts`); a boot that
-  throws says where the log is and exits.
+  page by its origin alone. A catch that carries on past an unexpected error calls `report`
+  (`server/lib/report.ts`); a boot that throws says where the log is and exits.
 
 ## The renderer's state
 
