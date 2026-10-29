@@ -56,6 +56,8 @@ pub fn run() {
     }
     let built = builder
         .plugin(tauri_plugin_clipboard_manager::init())
+        // shown from Rust alone, yet each puts its script in the page, as every plugin does: there
+        // `alert`, `confirm` and `Notification` ask for commands no page is granted (docs/app.md)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         // checked and installed from Rust alone (updater.rs), when main asks

@@ -33,13 +33,21 @@ which only that run's seal reaches, and what it does is the run's.
   onto loopback; its calls and events need the session and the page's own origin (`Sec-Fetch-Site`,
   else `Origin`), since another loopback port is the same site and carries the cookie; and the
   page's content security policy is main's (`@repo/contract/page-policy`). No capability grants the
-  page a command of the shell's, and `removeUnusedCommands` leaves none in the binary. The window is
-  pinned to main's origin, compared by its parts: a link to any other page opens in the browser,
-  `window.open` makes no second window, and every device permission is refused
-  (`src-tauri/src/window.rs`). Closing it hides it and the dock icon: the office keeps working in
-  the menu bar, and Open brings the same page back, or makes it on a fresh handoff when a launch at
-  login never did. Each boot binds a port of its own, so nothing of the page is kept between boots
-  (`no-store`), and the page keeps nothing in the browser's storage.
+  page a command of the shell's, and `removeUnusedCommands` leaves none in the binary. The dialog
+  and notification plugins, which only Rust calls (`src-tauri/src/host.rs`, `shell.rs`,
+  `updater.rs`), still put their scripts in the page, as Tauri does every plugin's: there `alert`
+  and `confirm` ask for a command no page is granted, so neither shows anything and `confirm`
+  answers a Promise, true in an `if`, and a `Notification` shows nothing. The `no-alert` lint keeps
+  the renderer off the first two. The notification script also asks as the page loads, so each load
+  logs, all of it expected, the `ipc://` request the page's policy blocks, Tauri's warning that it
+  falls back to postMessage, and an unhandled rejection of
+  `plugin:notification|is_permission_granted`. The window is pinned to main's origin, compared by
+  its parts: a link to any other page opens in the browser, `window.open` makes no second window,
+  and every device permission is refused (`src-tauri/src/window.rs`). Closing it hides it and the
+  dock icon: the office keeps working in the menu bar, and Open brings the same page back, or makes
+  it on a fresh handoff when a launch at login never did. Each boot binds a port of its own, so
+  nothing of the page is kept between boots (`no-store`), and the page keeps nothing in the
+  browser's storage.
 - **The relay.** The shell starts main on node (`src-tauri/src/main_process.rs`): `node
   <server>/dist/index.js serve`, where `<server>` is `Contents/Resources/server` in the .app and
   `apps/cli` in a checkout (`src-tauri/src/runtime.rs`). It reaches no part of the page's API: it
