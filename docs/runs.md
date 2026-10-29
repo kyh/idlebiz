@@ -86,7 +86,9 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
     could not load) neither signs it out nor spends the session, since signing in again cannot
     repair it, but rests it on the same backoff, so a credential blip clears and a standing
     refusal is not hammered, and #team tells the founder what the provider said.
-  - `context` spends the session.
+  - `context` spends the session. A turn stopped at the output cap (claude's `max_tokens` stop
+    reason, as its `max_output_tokens` errorKind) is one, never a finished turn: its work is cut
+    off.
 
   A rest never shortens one holding, and is kept in `state/runner-rest.json`, so a restart does
   not spawn each parked task once to be refused; it is not critical: lost, that is all it costs.

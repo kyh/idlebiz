@@ -475,13 +475,19 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         settle(result(tail ? { ...failure, error: `${failure.error}\n${tail}` } : failure));
         return;
       }
-      if (stopReason === "end_turn" || stopReason === "max_tokens") {
+      if (stopReason === "end_turn") {
         settle(result({ kind: "completed" }));
         return;
       }
       const tail = agentStderr.text();
+      const error = tail ? `agent stopped: ${stopReason}\n${tail}` : `agent stopped: ${stopReason}`;
+      // a turn cut off at the output cap is unfinished, and its session's failure, as claude's
+      // `max_output_tokens` errorKind is. claude-agent-acp reports one as this stop reason, ahead
+      // of any error its result carries: recheck that whenever the adapter is bumped.
       settle(
-        failed(tail ? `agent stopped: ${stopReason}\n${tail}` : `agent stopped: ${stopReason}`),
+        stopReason === "max_tokens"
+          ? result({ class: "context", error, kind: "failed" })
+          : failed(error),
       );
     };
     void (async () => {

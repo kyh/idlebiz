@@ -198,6 +198,12 @@ describe("how a turn ends", () => {
       kind: "failed",
     });
   });
+
+  it("fails on the session's context, never completing, when the agent stops at the output cap", async () => {
+    const stopped = JSON.stringify({ result: { stopReason: "max_tokens" } });
+    const { end } = await turn(scriptedAgent(stopped));
+    expect(end).toEqual({ class: "context", error: "agent stopped: max_tokens", kind: "failed" });
+  });
 });
 
 describe("a turn whose runner's login was refused", () => {
