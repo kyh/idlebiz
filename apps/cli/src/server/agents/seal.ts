@@ -148,13 +148,14 @@ const KEYCHAIN = String.raw`(deny mach-lookup (global-name "com.apple.SecuritySe
 const PASTEBOARD = String.raw`(deny mach-lookup (global-name "com.apple.pasteboard.1"))`;
 
 // What the system does for a run outside the seal, as the founder: a filesystem mounted over a
-// folder the founder runs programs from (the kernel checks a run's own mount, remount and
-// unmount; diskarbitrationd checks only a mount at a folder its caller names, as
-// `hdiutil attach -mountpoint` asks, and who owns the disk for the rest), a job launchd starts,
-// and a preference cfprefsd writes, which it does for a caller allowed either this or a write to
-// the plist itself.
+// folder the founder runs programs from (the kernel checks a run's own mount and unmount;
+// diskarbitrationd checks only a mount at a folder its caller names, as `hdiutil attach
+// -mountpoint` asks, and who owns the disk for the rest), a job launchd starts, and a preference
+// cfprefsd writes, which it does for a caller allowed either this or a write to the plist itself.
 const DONE_FOR_IT = [
-  "(deny file-mount file-mount-update file-unmount)",
+  // no file-mount-update: no list before macOS 15 names it, and a name the floor's sandbox does not
+  // know fails the whole profile, which would refuse every run there
+  "(deny file-mount file-unmount)",
   "(deny job-creation)",
   "(deny user-preference-write)",
 ];

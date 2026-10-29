@@ -137,7 +137,7 @@ describe("sealedCommand", () => {
 
   it("lets no run mount, have launchd start a job or have cfprefsd write a preference, each outside the seal", () => {
     const doneForIt = [
-      "(deny file-mount file-mount-update file-unmount)",
+      "(deny file-mount file-unmount)",
       "(deny job-creation)",
       "(deny user-preference-write)",
     ];
@@ -230,7 +230,7 @@ describe("sealedCommand", () => {
     expect(lines.filter((line) => /^\((?:allow|deny) [\w* -]+\)$/u.test(line))).toEqual([
       "(allow default)",
       "(deny lsopen)",
-      "(deny file-mount file-mount-update file-unmount)",
+      "(deny file-mount file-unmount)",
       "(deny job-creation)",
       "(deny user-preference-write)",
       "(deny file-write*)",

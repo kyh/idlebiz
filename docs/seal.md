@@ -81,8 +81,9 @@ leads from the next run on.
   reads any file of the checkout to whoever asks and under `pnpm dev:browser` signs a browser in to
   main's page. LaunchServices opens nothing, launchd starts no job (`job-creation`, which launchd
   checks of its caller), and cfprefsd writes no preference (`user-preference-write`: it writes for
-  a caller allowed that or the plist's own write). No run mounts, remounts or unmounts a
-  filesystem itself (`file-mount`, `file-mount-update`, `file-unmount`, which the kernel checks),
+  a caller allowed that or the plist's own write). No run mounts or unmounts a filesystem itself
+  (`file-mount`, `file-unmount`, which the kernel checks; a remount, `file-mount-update`, is not
+  denied, since no list before macOS 15 names it and the profile must compile on the floor),
   nor has diskarbitrationd mount one over a folder the run names, the one mount it checks against
   its caller's seal (`file-mount`): no `hdiutil attach -mountpoint`, so no `.dmg` a run would pack
   through a mount at a folder of its own either. Each would run or land outside the seal, as the
