@@ -290,13 +290,36 @@ const onActivity = async (e: ActivityEvent): Promise<void> => {
   }
 };
 
+// Events heard and not yet applied to the window's answers, and who waits until none are: the
+// office acts on an event the moment it is heard, the window's answers only once its patch lands.
+let applying = 0;
+let onApplied: (() => void)[] = [];
+
+const allApplied = (): Promise<void> =>
+  applying === 0
+    ? Promise.resolve()
+    : // oxlint-disable-next-line promise/avoid-new -- settled by the last event still being applied
+      new Promise((resolve) => {
+        onApplied.push(resolve);
+      });
+
 /** For main's event stream, which awaits nothing: a failure is logged, and the next event or refetch catches up. */
 const onActivityInBackground = async (e: ActivityEvent): Promise<void> => {
+  applying += 1;
   try {
     await onActivity(e);
   } catch (error) {
     console.error("Could not apply an activity event", error);
     reportFault("activity", error);
+  } finally {
+    applying -= 1;
+    if (applying === 0) {
+      const waiting = onApplied;
+      onApplied = [];
+      for (const resolve of waiting) {
+        resolve();
+      }
+    }
   }
 };
 
@@ -327,6 +350,9 @@ const resync = async (): Promise<void> => {
     // main went away again: the next stream's resync reads them
     return;
   }
+  // an event the reopened stream brought may have moved the office already: it is set right by
+  // answers that hold that event too, never by ones its patch has yet to reach
+  await allApplied();
   // the office may have been torn down while main answered
   const { game } = state;
   if (!game) {

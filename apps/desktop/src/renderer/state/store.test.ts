@@ -735,4 +735,36 @@ describe("store", () => {
       vi.useRealTimers();
     }
   });
+
+  it("sets the office right only once the events its stream brought meanwhile are applied", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { answerAll, api, drop, emit, main } = fakeMain(["employees.list"]);
+      const { queries, shown, store } = await freshStore(api);
+      shown(queries.companyQuery);
+      shown(queries.employeesQuery);
+      shown(queries.openTasksQuery);
+      await answerAll("employees.list");
+      const told: string[] = [];
+      const { game } = fakeOffice((message) => {
+        if (message === "spawn-employee" || message === "resynced") {
+          told.push(`${message} ${rosterOf(queries.held(queries.employeesQuery))}`);
+        }
+      });
+      store.setGame(game);
+      await drop();
+      main.employees = [employee("lead"), employee("mae")];
+      // the stream opens again, and its resync reads the roster while main hires someone
+      await vi.advanceTimersByTimeAsync(1000);
+      await emit(hired("mae"));
+      await answerAll("employees.list");
+      await settle();
+      // the hire walks in before the office is set right, by answers that hold the hire
+      expect(told).toEqual(["spawn-employee lead:idle mae:idle", "resynced lead:idle mae:idle"]);
+    } finally {
+      logged.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 });

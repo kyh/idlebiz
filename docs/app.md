@@ -25,10 +25,12 @@ which only that run's seal reaches, and what it does is the run's.
   what main sent meanwhile is lost: open first, so main hears the page before it answers. The
   office takes who is in and what they do from events alone, so it is then told to set itself
   right by the roster and the tasks read again (`resynced`; `game/office-resync.ts` decides who
-  comes in, who leaves and who is set). The first stream opens beside the window's first reads
-  and asks for none of them again, so a boot asks main once for each answer: a change main makes
-  between serving one and hearing the page waits for the next event that moves it, a window of
-  milliseconds that is accepted.
+  comes in, who leaves and who is set), once every event the new stream brought meanwhile is
+  applied to those answers: the office acts on an event as it is heard, the answers only once its
+  patch lands, and a resync between the two would undo it. The first stream opens beside the
+  window's first reads and asks for none of them again, so a boot asks main once for each answer:
+  a change main makes between serving one and hearing the page waits for the next event that
+  moves it, a window of milliseconds that is accepted.
 - **The window** is main's own page, served on loopback (`server/page-server.ts`). The shell asks
   main for a `handoff` each time it makes the window, waiting ten seconds, and opens it there: a
   one-time link, spent at its first use and dead unspent after five minutes, whose answer sets the
