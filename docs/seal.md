@@ -174,6 +174,9 @@ On purpose or for want of a rule:
   caller's seal only there, and who owns the disk otherwise, so an image a run attaches mounts
   under `/Volumes`, and a run can unmount or eject the founder's own volumes (`diskutil unmount`
   or `eject`, `hdiutil detach`);
+- a remount of a filesystem the founder's user mounted (`mount -u`, `file-mount-update`): no
+  operation list before macOS 15 names it, and a name the floor's sandbox does not know fails the
+  whole profile, so it waits on the floor;
 - the environment launchd hands the apps the founder opens later, which no rule of the seal's
   names (`launchctl setenv`: a `NODE_OPTIONS` there would load a run's file into their node);
 - reads across HOME outside the login stores (another project's `.env`, transcripts, a clipboard
