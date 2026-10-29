@@ -14,10 +14,6 @@ body,
   user-select: none;
 }
 
-html {
-  scrollbar-gutter: stable;
-}
-
 /* the window reads as an app, so text is selectable only where the founder copies from:
    what they type, code and drafts, refusals, and agent prose (`select-text` where it renders) */
 input,
