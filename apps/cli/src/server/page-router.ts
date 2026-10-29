@@ -2,7 +2,7 @@ import { implement } from "@orpc/server";
 import { contract } from "@repo/contract/contract";
 import { isOutOfBudget, spriteSeedFor } from "@repo/domain/domain";
 import { runnerPool } from "./agents/runner-pool";
-import { generateCandidates, startLogin } from "./agents/onboarding";
+import { cancelLogin, generateCandidates, startLogin } from "./agents/onboarding";
 import { notingSeal } from "./agents/seal-check";
 import {
   haltForBudget,
@@ -55,6 +55,11 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
   };
   return os.router({
     agents: {
+      cancelLogin: os.agents.cancelLogin.handler(() => {
+        cancelLogin((e) => {
+          broadcast("auth", e);
+        });
+      }),
       hasAuth: os.agents.hasAuth.handler(async () => ({
         ok: await runnerPool.hasAnyRunner(),
         signedOut: await runnerPool.signedOut(),

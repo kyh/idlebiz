@@ -3,6 +3,7 @@ import { linesOf, useAuthFlow } from "@/renderer/hooks/use-auth-flow";
 import { useNow } from "@/renderer/hooks/use-now";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import type { Submission } from "@/renderer/hooks/use-submission";
+import { CancelLogin } from "@/renderer/ui/auth-step";
 import { Bust } from "@/renderer/ui/bust";
 import {
   useAuth,
@@ -246,7 +247,8 @@ const SignedOutRunners = ({ company, employees }: { company: Company; employees:
           {lines.join("\n")}
         </div>
       ) : null}
-      <div className="mt-2 flex justify-end">
+      <div className="mt-2 flex items-center justify-end gap-3">
+        {auth.phase === "logging-in" ? <CancelLogin /> : null}
         <button
           type="button"
           onClick={login}

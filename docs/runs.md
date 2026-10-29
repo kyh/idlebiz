@@ -72,7 +72,13 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
   again, however often its probe, which reads only the login stored, says signed in: the sign-in
   runs its login for it anyway. With no CLI left the gate asks for that sign-in; with another
   still signed in the HUD names each signed-out runner someone works on and who waits on it, the
-  lead's steering included, beside a Sign in button.
+  lead's steering included, beside a Sign in button. The sign-in is main's to stop: each command
+  it runs (the installer, a login) leads a process group of its own, which is asked to stop, then
+  killed 2s later, when the founder cancels it (`agents.cancelLogin`, the cancel beside the busy
+  button), when a login is not finished in the browser within 5 minutes, or when a retry starts the
+  setup again and takes over from the one under way, which then says nothing more; main's exit
+  kills it outright (`startLogin` in `server/agents/onboarding.ts`). A cancel or a deadline ends
+  the setup in an error, so the page offers it again.
 - **Failures and rests.** A failed turn is classed by what its adapter says before its prose
   (`packages/agent-driver/src/rate-limit.ts`: claude's `errorKind`, codex's typed failure's
   category and actions; claude's kinds mirror claude-agent-acp's `providerFailureCategory`). The
