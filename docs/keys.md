@@ -28,14 +28,15 @@ so a misspelt name fails typecheck rather than reading as no key.
   On the real save (no `IDLEBIZ_ROOT_DIR`) dev seals nothing, so it strands none: the packaged
   app's keys read as absent there and one entered there is written plain for the app to seal. Use
   `IDLEBIZ_ROOT_DIR`.
-- Those keys never reach a run by the founder's hand either: no run reaches the pasteboard a key
-  is pasted through ([A run's seal](seal.md#a-runs-seal)), and an action's reply, a question's
+- Those keys never reach a run by the founder's hand either: no run reaches the pasteboard a key is
+  pasted through ([A run's seal](seal.md#a-runs-seal); a clipboard manager's history on disk is read
+  as any file is, [What stays open](seal.md#what-stays-open)), and an action's reply, a question's
   answer, a room message and an order card's note holding one are refused (`refuseHeldKey` in
-  `server/company-actions.ts`; an order card's also refuses anything shaped like a Stripe key),
-  and so is `set_env` given one. Both also refuse any Stripe secret key (`sk_`,
-  `holdsStripeSecretKey`), IdleBiz's or not: it charges, refunds and pays out on the whole account
-  with no sign-off, so a Stripe key the team asks for is a restricted one. What a restricted key
-  was granted no API reads, so an `rk_` passes on the founder's word.
+  `server/company-actions.ts`; an order card's also refuses anything shaped like a Stripe key), and
+  so is `set_env` given one. Both also refuse any Stripe secret key (`sk_`, `holdsStripeSecretKey`),
+  IdleBiz's or not: it charges, refunds and pays out on the whole account with no sign-off, so a
+  Stripe key the team asks for is a restricted one. What a restricted key was granted no API reads,
+  so an `rk_` passes on the founder's word.
 
 **Signed tools.** An outward step that needs a key is a signed tool main runs: `deploy`,
 `create_payment_link` and `sell_print`. Each runs once the founder signs off on the action it

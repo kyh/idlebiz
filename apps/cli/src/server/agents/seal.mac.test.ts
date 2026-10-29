@@ -6,7 +6,6 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
-  rmdirSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -19,6 +18,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
+import type { RunnerId } from "@repo/domain/runners";
 import { browserNamespace, machineSeal, sealFor } from "./machine-seal";
 import { sealedCommand, signInCommand } from "./seal";
 import type { Seal } from "./seal";
@@ -46,8 +46,21 @@ const outputOf = (argv: readonly string[], input = ""): string => {
   return spawnSync(bin, args, { encoding: "utf-8", input, timeout: 20_000 }).stdout;
 };
 
+/**
+ * Whether a `runner` run under `sealed` starts a program at all: until it does, a canary that finds
+ * nothing landed would pass on a profile that never compiled.
+ */
+const startsUnder = (sealed: Seal, runner: RunnerId): boolean =>
+  exitOf(sealedCommand(sealed, runner, ["/usr/bin/true"])) === 0;
+
+// the find pasteboard, which pboard serves over the one service as it does the general one, so the
+// canary leaves what the founder copied alone
+const PASTE = ["/usr/bin/pbpaste", "-pboard", "find"];
+const COPY = ["/usr/bin/pbcopy", "-pboard", "find"];
+
 // pbpaste answers only in a session with a window server, which CI's macOS runner has
-const pasteboardAnswers = onMac && spawnSync("/usr/bin/pbpaste").status === 0;
+const pasteboardAnswers =
+  onMac && spawnSync(PASTE[0] ?? "", PASTE.slice(1), { timeout: 20_000 }).status === 0;
 
 /** A real probe of the checked command, its profile swapped for `profile`. */
 const under =
@@ -893,21 +906,21 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     "keeps a run from the pasteboard, where a key the founder pastes sits, which a sign-in may still read",
     async () => {
       const sealed = await seal();
-      const paste = ["/usr/bin/pbpaste"];
-      const held = outputOf(paste);
+      const held = outputOf(PASTE);
       const canary = `idlebiz-seal-canary-${process.pid}-${Date.now()}`;
-      outputOf(["/usr/bin/pbcopy"], canary);
+      outputOf(COPY, canary);
       try {
         for (const runner of ["claude", "codex"] as const) {
-          expect(outputOf(sealedCommand(sealed, runner, paste))).not.toContain(canary);
+          expect(startsUnder(sealed, runner)).toBe(true);
+          expect(outputOf(sealedCommand(sealed, runner, PASTE))).not.toContain(canary);
           // nor does it put its own in place of what the founder copied
-          outputOf(sealedCommand(sealed, runner, ["/usr/bin/pbcopy"]), "planted");
+          outputOf(sealedCommand(sealed, runner, COPY), "planted");
         }
-        expect(outputOf(paste)).toBe(canary);
+        expect(outputOf(PASTE)).toBe(canary);
         // the control: the same read from a sign-in does reach it
-        expect(outputOf(signInCommand(sealed, "claude", paste))).toBe(canary);
+        expect(outputOf(signInCommand(sealed, "claude", PASTE))).toBe(canary);
       } finally {
-        outputOf(["/usr/bin/pbcopy"], held);
+        outputOf(COPY, held);
       }
     },
   );
@@ -931,6 +944,8 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     const domain = `gui/${userInfo().uid}`;
     const submit = ["/bin/launchctl", "submit", "-l", label, "--", "/usr/bin/touch", submitted];
     try {
+      expect(startsUnder(sealed, "claude")).toBe(true);
+      expect(startsUnder(sealed, "codex")).toBe(true);
       outputOf(sealedCommand(sealed, "claude", submit));
       outputOf(sealedCommand(sealed, "codex", ["/bin/launchctl", "bootstrap", domain, plist]));
       await sleep(1500);
@@ -954,13 +969,15 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     const mount = ["/sbin/mount", "-t", "devfs", "-o", "noowners", "devfs", mountpoint];
     try {
       for (const runner of ["claude", "codex"] as const) {
+        expect(startsUnder(sealed, runner)).toBe(true);
         outputOf(sealedCommand(sealed, runner, mount));
         expect(existsSync(path.join(mountpoint, "null"))).toBe(false);
       }
     } finally {
       spawnSync("/sbin/umount", [mountpoint]);
-      // never recursive: through a mount the seal missed it would remove device nodes
-      rmdirSync(mountpoint);
+      // never recursive: through a mount the seal missed it would remove device nodes; and a
+      // folder still mounted over is left, never thrown over the failure that explains it
+      spawnSync("/bin/rmdir", [mountpoint]);
     }
   });
 
@@ -976,7 +993,8 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     try {
       const attach = ["/usr/bin/hdiutil", "attach", "-nobrowse", "-mountpoint", bin, image];
       for (const runner of ["claude", "codex"] as const) {
-        // diskarbitrationd mounts it, checking the run's seal as it does
+        expect(startsUnder(sealed, runner)).toBe(true);
+        // diskarbitrationd mounts it, and checks its caller's seal for a folder the caller names
         const printed = outputOf(sealedCommand(sealed, runner, attach));
         attached.push(...Array.from(printed.matchAll(/\/dev\/disk\d+/gu), ([disk]) => disk));
         expect(existsSync(path.join(bin, "claude"))).toBe(false);
@@ -995,6 +1013,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     const read = () => outputOf(["/usr/bin/defaults", "read", domain, "canary"]).trim();
     try {
       for (const runner of ["claude", "codex"] as const) {
+        expect(startsUnder(sealed, runner)).toBe(true);
         outputOf(sealedCommand(sealed, runner, write));
       }
       expect(read()).toBe("");

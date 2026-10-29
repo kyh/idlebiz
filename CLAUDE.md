@@ -67,8 +67,8 @@ orient a reader and link into them, never telling a mechanic again.
   off.
 - **The seal allows by default and denies by name**: a run hosts Chrome, claude, codex and node
   toolchains, whose system needs move with each macOS, and a profile that denied by default would
-  break runs an update later. What it leaves open is listed instead, and each thing it closes has
-  a canary a Mac runs.
+  break runs an update later. So each rule that closes something is held by a test: its line in
+  `seal.test.ts`, a canary a Mac runs, or both.
 - **The command policy is a tripwire, not a third boundary**: what a script runs goes unseen.
 - **No run starts unsealed**: the seal is one boundary, and also what makes a run's socket its own.
 - **Who calls the company is the socket, not a secret**: any run can read a teammate's env, token

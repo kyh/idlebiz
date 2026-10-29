@@ -7,8 +7,8 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
 - **Env.** A run starts from the founder's (main's) env less every credential-shaped name —
   `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `PASS`, `PASSPHRASE`, `KEY`, `APIKEY`, `PAT`, `DSN`,
   `WEBHOOK`, `CREDENTIALS`, `AUTH` as whole `_` segments, so `SSH_AUTH_SOCK` too, a segment ending
-  in `SECRET` or `PASSWORD` (`PGPASSWORD`), and `MYSQL_PWD`, `BW_SESSION` and `OP_SESSION_*` by
-  name — and every URL with a login in it but a `*_PROXY`, except its runner's own login
+  in `SECRET` or `PASSWORD` (`PGPASSWORD`), and a name that starts `MYSQL_PWD`, `BW_SESSION` or
+  `OP_SESSION_` — and every URL with a login in it but a `*_PROXY`, except its runner's own login
   (`providerEnv` in `packages/agent-driver/src/registry.ts`; `runEnv` in
   `server/agents/run-env.ts`). AWS access keys sign for the whole account, so neither runner keeps
   them, and the seal hides `~/.aws` (`LOGINS` in `machine-seal.ts`), so no AWS profile loads

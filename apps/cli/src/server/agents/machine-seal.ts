@@ -17,9 +17,11 @@ import { inside } from "./seal";
 import type { Reach, RunnerHome, Seal } from "./seal";
 
 /**
- * The founder's logins under HOME, which no run reads or writes. Each is a file or folder that
- * holds a login: what a toolchain also reads on every build (`~/.yarnrc.yml`, the rest of
- * `~/.gradle`) and its caches and plugins (`~/.m2/repository`, `~/.pulumi/plugins`) stay readable.
+ * The founder's logins under HOME, which no run reads or writes. A file that holds a login is
+ * sealed whole, even where a toolchain reads it on every build (`.npmrc`, `.m2/settings.xml`,
+ * `.gradle/gradle.properties`); the caches and plugins beside it (`~/.m2/repository`,
+ * `~/.pulumi/plugins`, the rest of `~/.gradle`) stay readable. So does `~/.yarnrc.yml`, yarn's
+ * settings, where `yarn npm login` adds a token (docs/seal.md's "What stays open").
  */
 const LOGINS = [
   ".ssh",
