@@ -160,17 +160,21 @@ orient a reader and link into them, never telling a mechanic again.
 - **An update lands between runs**: it replaces the server main loads as it goes and the launcher
   the runs call, so the shell downloads it and checks its signature while the office works, stops
   main as Quit does, and only then installs it and starts the app again.
-- **The shell is copied between sibling repos, never shared.** Its log, origin-pin and runtime
-  modules (`main_log.rs`, `navigation.rs`, `window.rs`, `runtime.rs` in `src-tauri/src/`) and the
-  pack's scripts (`apps/desktop/scripts`) are copied between kyh/init, this repo and
-  kyh/inteligir, and the two-program layout and main's page server and its sign-in
-  (`server/page-server.ts`, `server/page-session.ts`) between this repo and kyh/inteligir. They
-  diverge on purpose. No package holds them: each shell supervises its own server and each server
-  drives its own ACP runtime, and two public repos would need a third to publish one from. A fix
-  in one is ported to the others by hand. The node pin (`VERSION` and its sha-256 in
-  `apps/desktop/scripts/fetch-node.ts`) and `apps/desktop/rust-toolchain.toml` move together
-  across all three. inteligir's pin allows `about:srcdoc` and this one refuses it, on purpose: the
-  office draws no frame.
+- **The shell is copied between sibling repos, never shared.** kyh/inteligir shares the most: the
+  shell's log, origin-pin and runtime modules in `src-tauri/src/` (`main_log.rs`, which it names
+  `server_log.rs`, and `navigation.rs`, `window.rs` and `runtime.rs`), the pack's scripts
+  (`apps/desktop/scripts`), the two-program layout, and main's page server and its sign-in
+  (`server/page-server.ts` and `server/page-session.ts`, there `server/app.ts`'s browser routes and
+  `server/browser-session.ts`). kyh/init shares only the origin pin (`navigation.rs`, `window.rs`)
+  and the toolchain: its shell is one window over a deployed web app, with no server to supervise,
+  log or find. They diverge on purpose. No package holds them: each shell supervises its own
+  server, or none, and each server drives its own ACP runtime, and public repos would need another
+  to publish one from. A fix in one is ported to the others by hand. This repo's `window.rs` logs
+  through the `log` facade `shell_log.rs` installs, which neither sibling has, so a port of it
+  brings a logger or its lines go nowhere. The node pin (`VERSION` and its sha-256 in
+  `apps/desktop/scripts/fetch-node.ts`) moves with inteligir's alone, since init bundles no node,
+  and `apps/desktop/rust-toolchain.toml` with both. inteligir's pin allows `about:srcdoc` and this
+  one refuses it, on purpose: the office draws no frame.
 - **AGENTS.md stays under 32 KiB**: codex reads AGENTS.md only that far (`project_doc_max_bytes`'s
   default) and Claude loads it, with this file, into every session. So it holds the workflow, the
   map and the traps, and each mechanic is a `docs/` file read by whoever changes it.
