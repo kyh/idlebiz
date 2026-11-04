@@ -20,10 +20,10 @@ packages, laid out file by file at the top of `server/paths.ts`. Beyond the layo
 A root holds one save or none: `company/`, a fixed folder founding publishes with one rename and
 boot reads alone (`server/paths.ts`), so no record carries a company id and no path names one.
 Its paths are read when asked for, never at import, and refused until a save is open: serve opens
-its launch's (`IDLEBIZ_ROOT_DIR`, or `~/.idlebiz`) first, a test its own. Founding refuses while
-it exists, and one boot cannot read (its COMPANY.md missing or refused) blocks the office like a
-save of another format. A reset deletes the whole root, `secrets.json` included; to start over
-otherwise, move `company/` out.
+its launch's (`IDLEBIZ_ROOT_DIR`, which the packaged app takes from its `--root=` argument alone,
+or `~/.idlebiz`) first, a test its own. Founding refuses while it exists, and one boot cannot read
+(its COMPANY.md missing or refused) blocks the office like a save of another format. A reset
+deletes the whole root, `secrets.json` included; to start over otherwise, move `company/` out.
 
 Every file main rewrites lands whole, a tmp file renamed over it (`lib/fs.ts`), so no reader sees
 half of one; the activity log and the room are appended to, a line at a time. COMPANY.md,

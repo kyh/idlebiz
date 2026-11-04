@@ -76,6 +76,21 @@ which only that run's seal reaches, and what it does is the run's.
   notification the shell cannot read is logged as an error, as every line of the shell's is ("Main's
   log" below), and under `tauri dev` shown in a box too, once a method: main waits on no answer, so
   would never hear of it.
+- **Main's env.** The shell starts main on its own env less what node loads before main runs,
+  every `NODE_*` and `OPENSSL_*` (`main_env`, `src-tauri/src/runtime.rs`; the dev host drops the
+  same, `mainEnv`). A development shell's env is its terminal's, and main keeps the rest of it. A
+  packaged launch's is launchd's, which `launchctl setenv` from any process of the founder's sets
+  for every app opened after it. So the packaged shell gives main the account's HOME, SHELL, USER
+  and LOGNAME (the user database), macOS's TMPDIR (`getconf DARWIN_USER_TEMP_DIR`) and the system
+  PATH, and drops what only launchd could have set there: the save (`IDLEBIZ_ROOT_DIR`: the
+  packaged app takes it from its `--root=` argument alone, which launchd cannot set), a
+  developer's switches (`CLAUDE_BIN`, `CODEX_BIN`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+  `IDLEBIZ_COUNT_TEST_MONEY`), a runner's model address (a `*_BASE_URL` under a runner's prefix:
+  the founder's own route is claude's settings `env` or codex's `config.toml`), a CA to trust
+  (`SSL_CERT_*`, `*CA_BUNDLE*`, `*CA_CERT*`), `TMP` and `TEMP`. Every `homedir()` and `tmpdir()`
+  of main's reads these, its seal's and its save's among them, and the runs inherit them. When
+  the system cannot say who the founder is the app does not start, and a packaged main whose HOME
+  or SHELL is not the account's refuses to boot (`identityRefusal`, `server/lib/founder-env.ts`).
 - **Main's lifetime.** Main boots on the hello; one that fails says where the log is, in a box, and
   the app quits, as does one not booted within a minute, killed with its process group first, since
   its quit would wait the stuck boot out. A quit asks main to stop its runs (`quit`) and waits up to
@@ -104,20 +119,20 @@ which only that run's seal reaches, and what it does is the run's.
   fails leaves main running and has it ask the feed again, which may offer a newer release or none;
   an install that fails says so in a box and starts the app again on the version it has.
 - **Main's log.** Main's console is its stderr, which the shell appends, stamped, to `main.log`
-  (`src-tauri/src/main_log.rs`; `~/Library/Logs/IdleBiz/`; dev: `logs/` in the `IdleBiz (dev)`
-  data folder, or in `roots/<id>/` beneath it for an isolated `IDLEBIZ_ROOT_DIR`), never under the
-  save root, which a reset deletes; `server/lib/log.ts` sends uncaught errors there too. The
-  shell's own lines go there too, since a Finder launch's stderr goes nowhere: through the `log`
-  facade Tauri logs with (`src-tauri/src/shell_log.rs`: the shell's own down to info, other
-  crates' warnings), and on stderr for a terminal launch. Runs read the file, so a line names a
-  page by its origin alone. A catch that carries on past an unexpected error calls `report`
-  (`server/lib/report.ts`); a boot that throws says where the log is and exits. The page's own
-  faults land there too, as `[page:<where>]`, since a release build's window has no console: a
-  crash the window shows, what nothing caught, an event it could not apply and an office that
-  could not boot, each sent through `app.fault` (`renderer/report-fault.ts`), five a minute at
-  most, as its message and stack alone, clipped, never what a call was asked. No answer of main's
-  is sent, a refusal being no fault and main logging its own as it answers, nor a stream that
-  dropped, as main went away.
+  (`src-tauri/src/main_log.rs`; the account's `~/Library/Logs/IdleBiz/`, never under a HOME from
+  launchd; dev: `logs/` in the `IdleBiz (dev)` data folder, or in `roots/<id>/` beneath it for an
+  isolated `IDLEBIZ_ROOT_DIR`), never under the save root, which a reset deletes;
+  `server/lib/log.ts` sends uncaught errors there too. The shell's own lines go there too, since a
+  Finder launch's stderr goes nowhere: through the `log` facade Tauri logs with
+  (`src-tauri/src/shell_log.rs`: the shell's own down to info, other crates' warnings), and on
+  stderr for a terminal launch. Runs read the file, so a line names a page by its origin alone. A
+  catch that carries on past an unexpected error calls `report` (`server/lib/report.ts`); a boot
+  that throws says where the log is and exits. The page's own faults land there too, as
+  `[page:<where>]`, since a release build's window has no console: a crash the window shows, what
+  nothing caught, an event it could not apply and an office that could not boot, each sent through
+  `app.fault` (`renderer/report-fault.ts`), five a minute at most, as its message and stack alone,
+  clipped, never what a call was asked. No answer of main's is sent, a refusal being no fault and
+  main logging its own as it answers, nor a stream that dropped, as main went away.
 
 ## What the siblings share
 
@@ -137,6 +152,9 @@ A port minds where the copies part:
 
 - This repo's `window.rs` logs through the `log` facade `shell_log.rs` installs, which neither
   sibling has, so a port of it brings a logger or its lines go nowhere.
+- This repo's `runtime.rs` gives a packaged main the account's identity and the save `--root=`
+  names (`main_env`, "Main's env" above), reading the user database through nix's `user` feature:
+  a port of it brings that feature and trims the names it drops to what the sibling's server reads.
 - The node pin (`VERSION` and its sha-256 in `apps/desktop/scripts/fetch-node.ts`) moves with
   inteligir's alone, since init bundles no node, and `apps/desktop/rust-toolchain.toml` with both.
 - inteligir's origin pin allows `about:srcdoc` and this one refuses it, on purpose: the office

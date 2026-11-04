@@ -114,10 +114,18 @@ leads from the next run on.
   listed in Settings beside what boot skipped, and a CLI sign-in retry checks again. Main starts a
   runner's CLI itself only sealed as that runner: its version and login probes, `codex mcp list`,
   and the sign-in (`sealedSignIn`, the only one that may open the browser or write claude's
-  account file). The installer runs in `/bin/bash -c`, never a login shell. The login-shell PATH
-  probe (`adoptShellPath`, the packaged app's alone: a dev launch keeps its terminal's PATH) runs
-  unsealed: no run writes the founder's shell startup files. The seal's check waits on it, never
-  boot, so no run starts on a PATH short of the shell's.
+  account file). Of what main starts outside a seal, three programs would run what their env
+  names, so each starts on an env of its own, never main's (`unsealedEnv`,
+  `server/lib/founder-env.ts`): the account's HOME, USER, LOGNAME, SHELL and TMPDIR, the locale,
+  and a PATH it is given. They are the login-shell PATH probe (`adoptShellPath`, the packaged
+  app's alone: a dev launch keeps its terminal's PATH), the account's shell on the fallback PATH;
+  the installer, `/usr/bin/curl … | /bin/bash` on the system PATH and never a login shell, with
+  the founder's proxies but no CA or `.curlrc` folder; and a workspace's `git init`, on the system
+  PATH. The sign-in, whose profile lets it open the browser, starts from the same names with
+  main's PATH, the proxies and its runner's provider settings (`signInEnv`). So no `ZDOTDIR`,
+  `BASH_ENV`, exported function, `GIT_TEMPLATE_DIR` or `DEVELOPER_DIR` steers them, and no run
+  writes the startup files or git config under the account's home that they still read. The
+  seal's check waits on the probe, never boot, so no run starts on a PATH short of the shell's.
 - Main's own writes: `atomicWrite` makes each `.tmp` anew (`wx`), so nothing main writes lands
   through a planted link. Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks
   every session but the first out.
@@ -177,8 +185,33 @@ On purpose or for want of a rule:
 - a remount of a filesystem the founder's user mounted (`mount -u`, `file-mount-update`): no
   operation list before macOS 15 names it, and a name the floor's sandbox does not know fails the
   whole profile, so it waits on the floor;
-- the environment launchd hands the apps the founder opens later, which no rule of the seal's
-  names (`launchctl setenv`: a `NODE_OPTIONS` there would load a run's file into their node);
+- the environment launchd hands the apps the founder opens later (`launchctl setenv`, which no
+  rule of the seal's names): a `NODE_OPTIONS` there loads a file into their node, a `ZDOTDIR` runs
+  one in their next terminal's shell, and a `CODEX_HOME` points their own codex at another home.
+  A canary holds that launchd takes no setenv from a run (`seal.mac.test.ts`), so it is code a run
+  leaves for the founder to run, a workspace's script, that could set one. IdleBiz's packaged app
+  takes from it neither who the founder is nor its save, its runners' CLIs, homes or model
+  addresses ([Main's env](app.md#the-page-the-shell-and-main)), and none of the programs it starts
+  outside a seal that would run what an env names takes it ([A run's seal](#a-runs-seal)). It
+  still takes the rest: proxies (a proxy sees hostnames and can withhold traffic, but cannot read
+  TLS), a runner's other settings (`ANTHROPIC_API_KEY`, a Bedrock switch: another account billed,
+  inside the seal) and `SSH_AUTH_SOCK`, whose path no run may then write (one in a workspace
+  denies its team writes there). A development launch takes its terminal's whole, which is
+  launchd's when the terminal app started after the setenv;
+- the shell's own env, which is launchd's: the updater runs `touch` on launchd's PATH (an update
+  is refused while that finds any but `/usr/bin/touch`), stages in launchd's TMPDIR and may keep
+  a failed install's backup under launchd's HOME, and whether a `CFFIXED_USER_HOME` there moves
+  where the Keychain looks, and with it the sealing key, is unverified;
+- an update while it is staged: the updater unpacks the new app into a folder under the shell's
+  TMPDIR, the per-user temp folder every run writes, before it moves it over the installed app,
+  so a process a run left behind could alter it in between (whether macOS's checks of a
+  notarized bundle catch that is unverified), until the updater stages it in a folder of its own;
+- the single-instance socket, `/tmp/com_idlebiz_desktop_si.sock`, in a folder every run writes: a
+  process a run left behind that listens there first makes the next launch hand over to it and
+  quit;
+- a login store a variable moves (`GH_CONFIG_DIR`, `AWS_SHARED_CREDENTIALS_FILE`, `GNUPGHOME`,
+  `DOCKER_CONFIG`, `KUBECONFIG`, `XDG_CONFIG_HOME`…): `LOGINS` seals each where it is by default,
+  so one the founder, or launchd's env, moved is read where it went;
 - reads across HOME outside the login stores (another project's `.env`, transcripts, a clipboard
   manager's history, `~/.yarnrc.yml`, yarn's settings, where `yarn npm login` adds a token), this
   checkout's `apps/desktop/.env` included: it names the notary key by id and issuer, which sign

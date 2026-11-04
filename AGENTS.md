@@ -252,20 +252,23 @@ rather than crashing boot.
 
 - IdleBiz's keys live in `~/.idlebiz/secrets.json`, not a `.env`, and are entered in the app
   ([Keys and what spends them](docs/keys.md)).
-- The shell's env reaches main, but for every `NODE_*` variable, which the shell and the dev host
-  both drop (`scrubbed_env`, `mainEnv`): none loads code into main, and no `NODE_ENV` of a
-  terminal's or vitest's reaches the runs, which inherit main's env less its credential-shaped
-  names, as in a terminal launch
-  ([A run's env, login and notes](docs/runs.md#a-runs-env-login-and-notes)).
-- `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths, for main and the gate suites alike
-  (`packages/agent-driver/src/detect.ts`).
-- `IDLEBIZ_COUNT_TEST_MONEY=1` counts test-mode Stripe charges toward revenue and bets, for
-  an end-to-end run of a revenue bet on a test key. Without it only live-mode money counts:
-  a test-mode key reads as "Stripe is in test mode — no charge counts" in the brief and
-  `measure_bet` refuses a revenue bet on it (`server/metrics.ts`).
-- `IDLEBIZ_ROOT_DIR` overrides the save and secrets directory for isolated runs
-  (`server/paths.ts`). Defaults to `~/.idlebiz`; use a fresh temporary directory for desktop
-  verification.
+- The shell's env reaches main, but for every `NODE_*` and `OPENSSL_*` variable, which the shell
+  and the dev host both drop (`main_env`, `mainEnv`): none loads code into main, and no `NODE_ENV`
+  of a terminal's or vitest's reaches the runs, which inherit main's env less its
+  credential-shaped names, as in a terminal launch
+  ([A run's env, login and notes](docs/runs.md#a-runs-env-login-and-notes)). A packaged launch
+  takes HOME, SHELL, USER, LOGNAME, TMPDIR and PATH from the system and drops the switches below
+  ([Main's env](docs/app.md#the-page-the-shell-and-main)).
+- `CLAUDE_BIN` / `CODEX_BIN` override the CLI paths, for a development main and the gate suites
+  (`packages/agent-driver/src/detect.ts`); the packaged app drops them, as it does
+  `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
+- `IDLEBIZ_COUNT_TEST_MONEY=1`, a development launch's, counts test-mode Stripe charges toward
+  revenue and bets, for an end-to-end run of a revenue bet on a test key. Without it only
+  live-mode money counts: a test-mode key reads as "Stripe is in test mode — no charge counts" in
+  the brief and `measure_bet` refuses a revenue bet on it (`server/metrics.ts`).
+- `IDLEBIZ_ROOT_DIR` overrides the save and secrets directory for a development main's isolated
+  runs (`server/paths.ts`); the packaged app takes `--root=<dir>` instead (`pnpm smoke:desktop`).
+  Defaults to `~/.idlebiz`; use a fresh temporary directory for desktop verification.
 - `apps/desktop/.env` (see `.env.example`) is release-only
   ([Packaging and release](docs/packaging.md)).
 

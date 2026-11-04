@@ -75,6 +75,11 @@ orient a reader and link into them, never telling a mechanic again.
   included, but never reach its socket, so no teammate calls lead-only tools as the lead.
 - **Keys stay in main; what spends them runs there.** No key reaches a run's env; a step that needs
   one is a tool main runs once the founder signs off on the action it names.
+- **Who the founder is comes from the system, never launchd's env**: `launchctl setenv` from any
+  process of the founder's sets the env of every app opened after it, so the packaged shell gives
+  main the account's HOME, SHELL and user, macOS's TMPDIR and the system PATH, its save only from
+  `--root=` and none of a developer's switches, and the login shell, the installer and `git init`
+  main starts outside a seal take none of main's env.
 - **A run signs in as the founder's CLI, on the model they picked, and loads nothing else of
   theirs**: their MCP servers and connectors act signed in as the founder, and a project's settings
   are what a run could write for the next to load.

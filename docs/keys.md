@@ -127,10 +127,11 @@ buyer and the URL is where paying buyers land, so a changed one is signed anew.
 - With no key it leaves the founder a Stripe card that opens the Budget panel, whose charging-key
   row saves a key only once Stripe has taken it (`server/stripe-key.ts`) and resumes the work that
   waited on it: every Stripe card is one `stripe` ask, a key to charge with or to count revenue
-  with alike, and none resumes on a test-mode key, which counts no money unless
-  `IDLEBIZ_COUNT_TEST_MONEY=1`. A new key is pasted over the saved one, never after removing it: a
-  pulse between the two finds no key and hands each retiring link to the founder to switch off by
-  hand.
+  with alike, and none resumes on a test-mode key, which counts no money unless a development
+  launch sets `IDLEBIZ_COUNT_TEST_MONEY=1` (the packaged app drops it,
+  [Main's env](app.md#the-page-the-shell-and-main)). A new key is pasted over the saved one, never
+  after removing it: a pulse between the two finds no key and hands each retiring link to the
+  founder to switch off by hand.
 - A restricted key needs Write on Payment Links, Prices and Products to charge, Read on Charges
   for the revenue read and for each paid print, whose payment the order pump reads before Printful
   is paid, Read on Checkout Sessions for the order pump and a link's `delivery`, and Write on

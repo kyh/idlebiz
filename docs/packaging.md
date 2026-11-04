@@ -60,15 +60,23 @@ signature (`scripts/release-feed.ts`, held by its test to the endpoint and to wh
 uploads), and the release publishes the dmg, the archive and the feed, becoming the latest only once
 all three are up.
 
-`pnpm smoke:desktop` packs, then boots the .app on a scratch `IDLEBIZ_ROOT_DIR`
-(`apps/desktop/scripts/smoke-packaged.ts`; `pnpm -F @repo/desktop smoke <path/to/IdleBiz.app>`
-boots another, a release's from its dmg): the pack carries every file the server ships under
-`resources/` (the skills, which main reads only once a company hires and runs) and the licences,
-hello boots main on the pack's node, the window loads main's page (the shell prints
+`pnpm smoke:desktop` packs, then boots the .app on a scratch save it names with `--root=` (the
+packaged app takes no `IDLEBIZ_ROOT_DIR`), under an env poisoned as `launchctl setenv` could
+poison launchd's (`apps/desktop/scripts/smoke-packaged.ts`;
+`pnpm -F @repo/desktop smoke <path/to/IdleBiz.app>` boots another, a release's from its dmg): the
+pack carries every file the server ships under `resources/` (the skills, which main reads only
+once a company hires and runs) and the licences, hello boots main on the pack's node, main starts
+on the account's HOME, SHELL, USER, LOGNAME and TMPDIR, the system PATH and the save `--root=`
+names, with none of what the shell drops (its starting env, read with `ps -E`), the shell writes
+the account's `main.log`, the window loads main's page (the shell prints
 `[shell] window loaded`), main answers that page on loopback signed out to anything without a
 handoff, a second launch hands over to the first, and a SIGTERM quits as Quit does, leaving
-nothing main started running. It refuses where an IdleBiz is running or the Keychain holds
-IdleBiz's key, which an ad-hoc pack would wait on a prompt to read, so on a Mac that runs IdleBiz
-it stops before it launches anything. A launch where the Keychain holds none makes one, as a first
-launch does, and the smoke deletes it as it ends, since kept it would stop the next smoke and
-prompt the first IdleBiz installed after. CI's `test-macos` job runs it on an ad-hoc pack.
+nothing main started running, and nothing the poisoned env named was run or made. That env names
+a decoy save, another TMPDIR, a `ZDOTDIR`, a runner's home and model address, a CA, test money
+counted and an `OPENSSL_CONF`, and a shell, a CLI and a PATH whose programs leave a mark when run,
+as the `ZDOTDIR`'s startup file does; it leaves HOME alone, since the shell's own Keychain read
+may follow it. It refuses where an IdleBiz is running or the Keychain holds IdleBiz's key, which
+an ad-hoc pack would wait on a prompt to read, so on a Mac that runs IdleBiz it stops before it
+launches anything. A launch where the Keychain holds none makes one, as a first launch does, and
+the smoke deletes it as it ends, since kept it would stop the next smoke and prompt the first
+IdleBiz installed after. CI's `test-macos` job runs it on an ad-hoc pack.

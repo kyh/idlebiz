@@ -36,8 +36,9 @@ floor, `MIN_BET_TARGET` (10 whole users, $5), which `open_bet`'s body refuses be
   in OData; path filters are free, utm ones are a paid add-on — which is why the mark is a path.
 - **Revenue.** Per-product revenue reads the same charges over the account's whole history, tagged
   `metadata[product]`, while bets read only charges since the oldest live revenue bet opened;
-  untagged money counts for the company only. Test-mode money counts nowhere unless
-  `IDLEBIZ_COUNT_TEST_MONEY=1` ([Configuration](../AGENTS.md#configuration)); without it a test-mode
+  untagged money counts for the company only. Test-mode money counts nowhere unless a development
+  launch sets `IDLEBIZ_COUNT_TEST_MONEY=1` ([Configuration](../AGENTS.md#configuration); the
+  packaged app drops it, [Main's env](app.md#the-page-the-shell-and-main)); without it a test-mode
   key gives a bet no reading, not a zero, so a bet only it could read closes unmeasured, never as a
   loss.
 - **Where a run goes.** `allocate` decides everything about it, and the scheduler only carries
