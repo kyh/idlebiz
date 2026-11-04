@@ -54,16 +54,17 @@ active queue until their bet stops or their product retires, because the Inbox c
 employees use them to identify unresolved problems. `listOpenTasks` answers open work only; the
 one reader of history is `shippingLog`, which sends each ship as a line without its brief.
 
-One main holds a save at a time. Boot claims it before it reads it (`server/save-claim.ts`: a
-socket main listens on in `<save>/.main/` while it runs, which a second main on that save finds
-answering), so a main on a save another holds (`pnpm dev:desktop` while the installed app has
-`~/.idlebiz` open) refuses to boot and says so, rather than run each task twice; one a crash left
-holds nothing. Each main's socket has a name of its own that appears only once it answers, so a
-file there that answers nothing never will and any main clears it, and mains claiming at once
-each step back a random while and try again, so one holds and never two. A
-second launch of the packaged app hands over to the first, which shows its window
-(`tauri-plugin-single-instance`, `src-tauri/src/lib.rs`); a development shell skips it, since it
-keys on the bundle id machine-wide and would hand over to an installed IdleBiz.
+One main holds a save at a time. Boot claims it before it reads it (`server/save-claim.ts`: a socket
+main listens on in `<save>/.main/` (`~/.idlebiz-run/<save digest>.main/` when that path passes the
+103 bytes macOS allows a socket; past both boot refuses, `claimDir`) while it runs, which a second
+main on that save finds answering), so a main on a save another holds (`pnpm dev:desktop` while the
+installed app has `~/.idlebiz` open) refuses to boot and says so, rather than run each task twice;
+one a crash left holds nothing. Each main's socket has a name of its own that appears only once it
+answers, so a file there that answers nothing never will and any main clears it, and mains claiming
+at once each step back a random while and try again, so one holds and never two. A second launch of
+the packaged app hands over to the first, which shows its window (`tauri-plugin-single-instance`,
+`src-tauri/src/lib.rs`); a development shell skips it, since it keys on the bundle id machine-wide
+and would hand over to an installed IdleBiz.
 
 ## Activity and running state
 
