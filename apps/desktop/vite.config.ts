@@ -89,11 +89,17 @@ const devServer = (mode: string): Plugin => ({
     });
     server.httpServer?.once("close", () => {
       void (async () => {
-        const stopped = await Promise.allSettled([watching.close(), host?.stop()]);
-        for (const result of stopped) {
-          if (result.status === "rejected") {
-            server.config.logger.error(`[host] could not stop: ${errorMessage(result.reason)}`);
-          }
+        const [watchStopped, hostStopped] = await Promise.allSettled([
+          watching.close(),
+          host?.stop(),
+        ]);
+        if (watchStopped.status === "rejected") {
+          server.config.logger.error(
+            `[build] main's watch build could not stop: ${errorMessage(watchStopped.reason)}`,
+          );
+        }
+        if (hostStopped.status === "rejected") {
+          server.config.logger.error(`[host] could not stop: ${errorMessage(hostStopped.reason)}`);
         }
       })();
     });
