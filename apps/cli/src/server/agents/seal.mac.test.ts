@@ -1036,7 +1036,8 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         spawnSync("/usr/bin/hdiutil", ["detach", "-force", disk]);
       }
     }
-  });
+    // each attach takes diskarbitrationd seconds, refused or not, and the control mounts and detaches
+  }, 90_000);
 
   it("keeps a run from having cfprefsd write a preference, as a sign-in still could", async () => {
     const sealed = await seal();
