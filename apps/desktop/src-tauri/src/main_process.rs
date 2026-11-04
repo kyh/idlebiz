@@ -283,18 +283,25 @@ impl MainProcess {
     }
 
     /// Main stops its runs and answers, then its stdin closes and it exits; one that does not is
-    /// killed. Blocks: a quit has no later step to wait in.
+    /// killed. A stop asked while another is under way waits for that one to end main. Blocks: a
+    /// quit has no later step to wait in.
     pub fn stop(&self) {
         self.stop_within(QUIT_TIMEOUT);
     }
 
     fn stop_within(&self, quit_timeout: Duration) {
-        {
+        let under_way = {
             let mut state = lock(&self.exit.state);
-            if state.exited || state.stopping {
+            if state.exited {
                 return;
             }
-            state.stopping = true;
+            std::mem::replace(&mut state.stopping, true)
+        };
+        // another stop has main, as an update's has when a quit comes during it: this one waits for
+        // it to end main, as long as a stop can take
+        if under_way {
+            self.wait_exit(quit_timeout + EXIT_GRACE * 2);
+            return;
         }
         if self
             .request(protocol::QUIT, &Value::Null, quit_timeout)
@@ -364,13 +371,14 @@ mod tests {
 
     /// A main that speaks the relay and nothing else: it answers `echo` and `refuse`, asks the shell
     /// for `host.ping` when told to `ask` and says what it heard back as `pong`, stops reading its
-    /// stdin when told to `wedge`, and exits when told to `die` or when its stdin closes. Its boot,
-    /// on `hello`, never ends, and a quit waits it out, as main's does: from then on it answers no
-    /// quit and outlives its stdin.
+    /// stdin when told to `wedge`, takes a second to answer a quit once told to `linger`, and exits
+    /// when told to `die` or when its stdin closes. Its boot, on `hello`, never ends, and a quit
+    /// waits it out, as main's does: from then on it answers no quit and outlives its stdin.
     const FAKE_MAIN: &str = r#"
 const readline = require("node:readline");
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
 let booting = false;
+let lingering = false;
 console.error("main is up");
 process.stdout.write("not a message\n");
 readline
@@ -383,7 +391,12 @@ readline
     else if (message.method === "die") process.exit(3);
     else if (message.method === "wedge") { process.stdin.pause(); setInterval(() => {}, 1000); }
     else if (message.method === "hello") { booting = true; setInterval(() => {}, 1000); }
-    else if (message.method === "quit") { if (!booting) send({ id: message.id, result: null }); }
+    else if (message.method === "linger") lingering = true;
+    else if (message.method === "quit") {
+      const answer = () => send({ id: message.id, result: null });
+      if (lingering) setTimeout(answer, 1000);
+      else if (!booting) answer();
+    }
     else if (message.id === 900) send({ method: "pong", params: message.result ?? message.error });
   })
   .on("close", () => { if (!booting) process.exit(0); });
@@ -593,6 +606,34 @@ send({ method: "hi", params: { n: 1 } });
             Err(RequestError::Gone)
         );
         assert!(asked.elapsed() < Duration::from_millis(200) + quit + EXIT_GRACE * 2);
+        Ok(())
+    }
+
+    #[test]
+    fn a_stop_while_another_is_under_way_waits_for_main_to_exit()
+    -> Result<(), Box<dyn std::error::Error>> {
+        if !has_node() {
+            return Ok(());
+        }
+        let started = start(tempfile::tempdir()?)?;
+        started.heard.recv_timeout(WAIT)?;
+        // main takes a while to stop its runs, as it does with agents to end
+        started.main.notify("linger", &Value::Null);
+        let first = Arc::clone(&started.main);
+        let stopping = thread::spawn(move || first.stop());
+        let asked = Instant::now();
+        while !lock(&started.main.exit.state).stopping {
+            if asked.elapsed() > WAIT {
+                return Err("the first stop never began".into());
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        // a quit during an update's stop: the app ends only once main has
+        started.main.stop();
+        assert!(lock(&started.main.exit.state).exited);
+        stopping
+            .join()
+            .map_err(|_| "the first stop's thread panicked")?;
         Ok(())
     }
 }

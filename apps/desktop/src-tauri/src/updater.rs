@@ -74,7 +74,10 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, version: &str) -> Result<(), Stri
     })?;
     let app = app.clone();
     std::thread::spawn(move || {
-        shell::stop(&app);
+        // main stays the shell's as it stops, so a quit meanwhile waits on this same stop
+        if let Some(main) = shell::main(&app) {
+            main.stop();
+        }
         if let Err(error) = update.install(&bytes) {
             log::error!("could not install IdleBiz {}: {error}", update.version);
             app.dialog()
