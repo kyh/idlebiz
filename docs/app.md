@@ -119,6 +119,29 @@ which only that run's seal reaches, and what it does is the run's.
   is sent, a refusal being no fault and main logging its own as it answers, nor a stream that
   dropped, as main went away.
 
+## What the siblings share
+
+The shell is copied between this repo and two siblings, never shared, and a fix in one is ported
+to the others by hand (`CLAUDE.md` holds why):
+
+- **kyh/inteligir** shares the most: the shell's log, origin-pin and runtime modules in
+  `src-tauri/src/` (`main_log.rs`, which it names `server_log.rs`, and `navigation.rs`,
+  `window.rs` and `runtime.rs`), the pack's scripts (`apps/desktop/scripts`), the two-program
+  layout, and main's page server and its sign-in (`server/page-server.ts` and
+  `server/page-session.ts`, there `server/app.ts`'s browser routes and
+  `server/browser-session.ts`).
+- **kyh/init** shares only the origin pin (`navigation.rs`, `window.rs`) and the toolchain: its
+  shell is one window over a deployed web app, with no server to supervise, log or find.
+
+A port minds where the copies part:
+
+- This repo's `window.rs` logs through the `log` facade `shell_log.rs` installs, which neither
+  sibling has, so a port of it brings a logger or its lines go nowhere.
+- The node pin (`VERSION` and its sha-256 in `apps/desktop/scripts/fetch-node.ts`) moves with
+  inteligir's alone, since init bundles no node, and `apps/desktop/rust-toolchain.toml` with both.
+- inteligir's origin pin allows `about:srcdoc` and this one refuses it, on purpose: the office
+  draws no frame.
+
 ## The renderer's state
 
 Main's answers live in one tanstack-query cache (`renderer/state/queries.ts`, keyed by

@@ -312,7 +312,8 @@ Each mechanic is described once, in its file under `docs/`, and read before it i
   command policy, what stays open.
 - [Keys and what spends them](docs/keys.md): IdleBiz's keys, the signed tools, Vercel, Stripe,
   Printful, the order pump, retiring a product, a reset.
-- [The app](docs/app.md): the page, the shell and main, the renderer's state, the budget.
+- [The app](docs/app.md): the page, the shell and main, what the siblings share, the renderer's
+  state, the budget.
 - [Packaging and release](docs/packaging.md): the pack, signing and notarizing, the release, the
   smoke.
 - [Map](docs/map.md): what each folder holds, file by file.
