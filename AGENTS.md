@@ -341,9 +341,9 @@ Each mechanic is described once, in its file under `docs/`, and read before it i
   `renderer/px-kit-overrides.test.ts` fails on one in any class string of the desktop renderer
   that names a kit class; a class built at runtime goes unread, and there the utility wins
   unnoticed. A variant is a kit modifier (`.px-hint-danger`, `.px-inset-hover`), never a utility,
-  and a colour is one of the kit's tokens (`text-fg-mid`, `bg-veil/90`), never a hex of a
-  component's own, which the same test refuses. Cursors are the apps': no kit class sets one,
-  each app does by element. Icons are font glyphs, so "icon size" is font-size: use `.px-icon`.
+  and a colour in a class string is one of the kit's tokens (`text-fg-mid`, `bg-veil/90`), never
+  a hex of a component's own, which the same test refuses. Cursors are the apps': no kit class sets
+  one, each app does by element. Icons are font glyphs, so "icon size" is font-size: use `.px-icon`.
 - **The office's art and its collision don't know about each other.**
   `renderer/game/office-design.json` is the one office: placed sprites, each naming its PNG under
   `public/`, over a 16px collision grid, with the seats, points of interest, door and spawn.

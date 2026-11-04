@@ -107,7 +107,7 @@ it("puts no Tailwind utility beside a kit class that sets the same property", as
   expect(overridden).toEqual([]);
 });
 
-it("colours the page from the kit's palette, never a hex of a component's own", () => {
+it("puts no hex in a renderer class string: a colour there is one of the kit's tokens", () => {
   const own = readdirSync(renderer, { encoding: "utf-8", recursive: true })
     .filter((file) => file.endsWith(".tsx"))
     .flatMap((file) =>
