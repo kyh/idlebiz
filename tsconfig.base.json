@@ -19,9 +19,10 @@
     "skipLibCheck": true,
     "noEmit": true,
     // The scripts node runs by stripping types (apps/cli/scripts, apps/desktop/scripts,
-    // apps/web/scripts) must name `.ts`, and so must every module they import, a workspace one
-    // reached through `@repo/*` included: bundler resolution passes an import without it, which
-    // node then refuses.
+    // apps/web/scripts) must name `.ts` on each relative import, and so must every module they
+    // import, a workspace one reached through `@repo/*` included (whose own specifier stays bare:
+    // its exports map adds the `.ts`): bundler resolution passes a relative import without it,
+    // which node then refuses.
     "allowImportingTsExtensions": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
