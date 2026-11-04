@@ -108,13 +108,15 @@ const goneIn = async (file: string): Promise<void> => {
 };
 
 describe("Claude Code's installer", () => {
-  it("names each program it runs by its path, none looked up on PATH", () => {
-    const [shell, flag, pipeline = ""] = CLAUDE_INSTALLER;
+  it("names each program it runs by its path, reads no .curlrc, and fails with its download", () => {
+    const [shell, flag, script = ""] = CLAUDE_INSTALLER;
     expect([shell, flag]).toEqual(["/bin/bash", "-c"]);
-    expect(pipeline.split("|").map((command) => command.trim().split(" ")[0])).toEqual([
-      "/usr/bin/curl",
-      "/bin/bash",
-    ]);
+    const [options, pipeline = ""] = script.split(";");
+    expect(options).toBe("set -o pipefail");
+    const commands = pipeline.split("|").map((command) => command.trim().split(" "));
+    expect(commands.map(([program]) => program)).toEqual(["/usr/bin/curl", "/bin/bash"]);
+    // curl reads a .curlrc unless -q comes first
+    expect(commands[0]?.[1]).toBe("-q");
   });
 });
 

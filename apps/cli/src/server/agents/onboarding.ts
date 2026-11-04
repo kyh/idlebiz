@@ -36,7 +36,7 @@ let underWay: AbortController | null = null;
 export const CLAUDE_INSTALLER: Argv = [
   "/bin/bash",
   "-c",
-  "/usr/bin/curl -fsSL https://claude.ai/install.sh | /bin/bash",
+  "set -o pipefail; /usr/bin/curl -q -fsSL https://claude.ai/install.sh | /bin/bash",
 ];
 
 const reportLine =

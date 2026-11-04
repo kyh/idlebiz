@@ -118,17 +118,18 @@ leads from the next run on.
   names, so each starts on an env of its own, never main's whole (`unsealedEnv`,
   `server/lib/founder-env.ts`): the account's HOME, USER, LOGNAME, SHELL and TMPDIR, the locale,
   and a PATH it is given. They are the login-shell PATH probe (`adoptShellPath`, the packaged
-  app's alone: a dev launch keeps its terminal's PATH), the account's shell on the fallback PATH
-  with launchd's own ssh agent, as a terminal's shell starts (`SSH_AUTH_SOCK` only where launchd
-  puts it, a folder no run makes or writes: an rc file that starts an agent when it finds none
-  would leave one running after every probe, and its `ssh-add` would hand keys to any other);
-  the installer, `/usr/bin/curl … | /bin/bash` on the system PATH and never a login shell, with
-  the founder's proxies but no CA or `.curlrc` folder; and a workspace's `git init`, on the system
-  PATH. The sign-in, whose profile lets it open the browser, starts from the same names with
-  main's PATH, the proxies and its runner's provider settings (`signInEnv`). So no `ZDOTDIR`,
-  `BASH_ENV`, exported function, `GIT_TEMPLATE_DIR` or `DEVELOPER_DIR` steers them, and no run
-  writes the startup files or git config under the account's home that they still read. The
-  seal's check waits on the probe, never boot, so no run starts on a PATH short of the shell's.
+  app's alone: a dev launch keeps its terminal's PATH), which starts the account's shell on the
+  fallback PATH with launchd's own ssh agent, as a terminal's shell starts (`SSH_AUTH_SOCK` only
+  where launchd puts it, a folder no run makes or writes: an rc file that starts an agent when it
+  finds none would leave one running after every probe, and its `ssh-add` would hand keys to any
+  other); the installer, `/usr/bin/curl -q … | /bin/bash` on the system PATH and never a login
+  shell, with the founder's proxies but no CA and no `.curlrc`, failing with its download
+  (`pipefail`); and a workspace's `git init`, on the system PATH. The sign-in, whose profile lets
+  it open the browser, starts from the same names with main's PATH, the proxies and its runner's
+  provider settings (`signInEnv`). So no `ZDOTDIR`, `BASH_ENV`, exported function,
+  `GIT_TEMPLATE_DIR` or `DEVELOPER_DIR` steers them, and no run writes the startup files or git
+  config under the account's home that they still read. The seal's check waits on the probe,
+  never boot, so no run starts on a PATH short of the shell's.
 - Main's own writes: `atomicWrite` makes each `.tmp` anew (`wx`), so nothing main writes lands
   through a planted link. Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks
   every session but the first out.
