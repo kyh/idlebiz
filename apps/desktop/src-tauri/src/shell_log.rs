@@ -45,10 +45,12 @@ impl Log for ShellLog {
         if !self.enabled(record.metadata()) {
             return;
         }
+        // every line tagged: an untagged one in main's log reads as main's own
+        let text = record.args().to_string().replace('\n', "\n[shell] ");
         let line = if is_own(record.target()) {
-            format!("[shell] {}", record.args())
+            format!("[shell] {text}")
         } else {
-            format!("[shell] {}: {}", record.target(), record.args())
+            format!("[shell] {}: {text}", record.target())
         };
         eprintln!("{line}");
         if let Some(file) = self.file.get() {
@@ -108,6 +110,12 @@ mod tests {
             "idlebiz_desktop::window",
             "window loaded",
         );
+        record(
+            &log,
+            Level::Error,
+            "idlebiz_desktop::shell",
+            "stopped\n\nsee the log",
+        );
         record(&log, Level::Debug, "idlebiz_desktop::window", "too fine");
         record(&log, Level::Info, "tao::platform_impl", "chatter");
         record(&log, Level::Warn, "wry::wkwebview", "content process gone");
@@ -121,6 +129,9 @@ mod tests {
             lines,
             [
                 "[shell] window loaded",
+                "[shell] stopped",
+                "[shell] ",
+                "[shell] see the log",
                 "[shell] wry::wkwebview: content process gone",
                 "[shell] idlebiz_desktop_other: not the shell",
             ]
