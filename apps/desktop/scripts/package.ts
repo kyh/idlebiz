@@ -149,7 +149,9 @@ const {
   })
   .parse(JSON.parse(readFileSync(path.join(packageRoot, "src-tauri", "tauri.conf.json"), "utf-8")));
 
-// the key's password, from apps/desktop/.env: empty for a key made without one
+// the key's password, from apps/desktop/.env: empty for a key made without one. A release stops
+// before the build while the line is absent: tauri takes no password as an empty one, and a key
+// that has one would fail to open only once the build and its notarization are done
 const updaterPassword = (): string => {
   const file = path.join(packageRoot, ".env");
   const name = "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=";
@@ -159,7 +161,12 @@ const updaterPassword = (): string => {
         .map((each) => each.trim())
         .find((each) => each.startsWith(name))
     : undefined;
-  return line?.slice(name.length) ?? "";
+  if (line === undefined) {
+    throw new Error(
+      `a release signs its update with ${UPDATER_KEY}, whose password apps/desktop/.env's ${name} line holds: add the line, empty for a key made without one (see .env.example)`,
+    );
+  }
+  return line.slice(name.length);
 };
 
 // a release is one the installed app can update from, so it signs its archive; no other pack does
