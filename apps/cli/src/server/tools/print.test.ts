@@ -204,7 +204,7 @@ describe("sell_print", () => {
     const answer = await answerText(ctx, "sell_print", { ...PRINT, bet: bet.id });
 
     expect(answer).toBe(
-      `Listed "Launch tee" on Acme at $28.00 plus $7.99 shipping, US addresses only: ${LISTED_URL}\nPrintful charges up to $18.20 to print and ship each one to the US addresses IdleBiz priced it for; a buyer where tax runs higher costs more, and an order that would cost Printful more than it took waits on the founder. Each paid order goes to Printful on its own; read_orders shows them. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing outside a developer's end-to-end run.`,
+      `Listed "Launch tee" on Acme at $28.00 plus $7.99 shipping, US addresses only: ${LISTED_URL}\nPrintful charges up to $18.20 to print and ship each one to the US addresses IdleBiz priced it for; a buyer where tax runs higher costs more, and an order that would cost Printful more than it took waits on the founder. Each paid order goes to Printful on its own; read_orders shows them. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless a developer's launch opts in to count test money.`,
     );
     const tags = { bet: bet.id, listing: "launch-tee", product: "acme" };
     const stripe = outward(sent).filter((s) => s.host === "api.stripe.com");

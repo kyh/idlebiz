@@ -96,7 +96,7 @@ pub fn install<R: Runtime>(app: &AppHandle<R>, version: &str) -> Result<(), Stri
     if first_on_path("touch", std::env::var_os("PATH").as_deref()).as_deref()
         != Some(Path::new(MACOS_TOUCH))
     {
-        return Err("IdleBiz won't install an update while the PATH apps start with runs a `touch` other than macOS's: something set it with `launchctl setenv PATH`. Undo it (`launchctl unsetenv PATH`) and open IdleBiz again.".to_owned());
+        return Err("IdleBiz won't install this update: the PATH apps start with finds a `touch` other than macOS's /usr/bin/touch first, which an update would run, so something set it with `launchctl setenv PATH`. Undo it (`launchctl unsetenv PATH`) and open IdleBiz again.".to_owned());
     }
     if INSTALLING.swap(true, Ordering::SeqCst) {
         return Err("IdleBiz is already updating".to_owned());
