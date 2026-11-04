@@ -26,8 +26,9 @@ export const revenueBetRefusal = (bet: string, product: Product): string | null 
     : `"${bet}" is not a revenue bet on ${product.id} that is open or measuring — read_bets lists every live bet, what it counts and its product.`;
 };
 
+// an agent reads it, so it names no switch: counting test money is a development launch's alone
 export const TEST_MODE =
-  " Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.";
+  " Stripe is in test mode: the link takes no real money, and what it takes counts for nothing outside a developer's end-to-end run.";
 
 export const UNRECORDED_LINK =
   "Stripe may have made the payment link: it took the create but answered in a shape IdleBiz does not read, so IdleBiz recorded no link and would never switch one off. Ask the founder to look under Payment Links in their Stripe Dashboard and switch off any it made, rather than sign off again: for a day Stripe answers the same request the same way.";
