@@ -12,6 +12,7 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use crate::main_log::{self, MAIN_LOG_MAX_BYTES, MainLog};
 use crate::main_process::{Host, MainProcess, MainSpec, RequestError, describe};
 use crate::protocol::Hello;
+use crate::runtime::Packaged;
 use crate::{host, keychain, runtime, shell_log, window};
 
 /// How long main has to boot once it is said hello to: it opens the save, the control plane and
@@ -72,17 +73,42 @@ fn fail<R: Runtime>(app: &AppHandle<R>, title: &str, reason: &str) {
     app.exit(1);
 }
 
-fn logs_dir<R: Runtime>(app: &AppHandle<R>, bundled: bool) -> Result<PathBuf, String> {
-    let paths = app.path();
-    let home = paths.home_dir().map_err(|error| error.to_string())?;
-    let data = paths.data_dir().map_err(|error| error.to_string())?;
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-    let override_dir = std::env::var_os("IDLEBIZ_ROOT_DIR").map(PathBuf::from);
-    let root = runtime::root_dir(&home, override_dir.as_deref(), &cwd);
-    Ok(runtime::logs_dir(bundled, &home, &data, &root))
+/// Who the packaged app's main runs as, from the system, and the save its `--root=` names; a
+/// development shell's main keeps its terminal's env (`runtime::main_env`).
+fn packaged_launch(bundled: bool) -> Result<Option<Packaged>, String> {
+    if !bundled {
+        return Ok(None);
+    }
+    Ok(Some(Packaged {
+        account: runtime::account()?,
+        root: runtime::root_arg(std::env::args_os().skip(1)),
+    }))
 }
 
-fn spawn_main<R: Runtime>(app: &AppHandle<R>, log_path: &Path) -> Result<Arc<MainProcess>, String> {
+/// The packaged app's log goes in the account's home, never in one launchd's env names.
+fn logs_dir<R: Runtime>(
+    app: &AppHandle<R>,
+    packaged: Option<&Packaged>,
+) -> Result<PathBuf, String> {
+    let paths = app.path();
+    let data = paths.data_dir().map_err(|error| error.to_string())?;
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
+    let (home, override_dir) = match packaged {
+        Some(packaged) => (packaged.account.home.clone(), packaged.root.clone()),
+        None => (
+            paths.home_dir().map_err(|error| error.to_string())?,
+            std::env::var_os("IDLEBIZ_ROOT_DIR").map(PathBuf::from),
+        ),
+    };
+    let root = runtime::root_dir(&home, override_dir.as_deref(), &cwd);
+    Ok(runtime::logs_dir(packaged.is_some(), &home, &data, &root))
+}
+
+fn spawn_main<R: Runtime>(
+    app: &AppHandle<R>,
+    log_path: &Path,
+    packaged: Option<&Packaged>,
+) -> Result<Arc<MainProcess>, String> {
     let exe = std::env::current_exe().map_err(|error| error.to_string())?;
     let resources = app
         .path()
@@ -98,7 +124,7 @@ fn spawn_main<R: Runtime>(app: &AppHandle<R>, log_path: &Path) -> Result<Arc<Mai
         node: resolved.node.clone(),
         entry: resolved.serve_entry(),
         args: runtime::SERVE_ARGS.map(str::to_owned).to_vec(),
-        env: runtime::scrubbed_env(std::env::vars_os()),
+        env: runtime::main_env(std::env::vars_os(), packaged),
         log,
     };
     let answering = app.clone();
@@ -126,11 +152,16 @@ fn spawn_main<R: Runtime>(app: &AppHandle<R>, log_path: &Path) -> Result<Arc<Mai
 pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
     let shell = app.state::<Shell>();
     let bundled = shell.bundled;
-    let log_path = match logs_dir(app, bundled) {
+    // a system that cannot say who the founder is starts no main, rather than one on launchd's word
+    let packaged = match packaged_launch(bundled) {
+        Ok(packaged) => packaged,
+        Err(reason) => return fail(app, "IdleBiz couldn't start", &reason),
+    };
+    let log_path = match logs_dir(app, packaged.as_ref()) {
         Ok(dir) => main_log::main_log_path(&dir),
         Err(reason) => return fail(app, "IdleBiz couldn't start", &reason),
     };
-    let process = match spawn_main(app, &log_path) {
+    let process = match spawn_main(app, &log_path, packaged.as_ref()) {
         Ok(started) => started,
         Err(reason) => return fail(app, "IdleBiz couldn't start", &reason),
     };

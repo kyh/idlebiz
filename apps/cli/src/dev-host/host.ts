@@ -90,11 +90,18 @@ interface Main {
   peer: Peer<RelayMethod>;
 }
 
-/** Main's environment as the shell gives it: no `NODE_*` (a loader, an inspector, a mode). */
+// what node loads before main runs, as the shell drops it (src-tauri/src/runtime.rs)
+const NODE_LOADERS = ["NODE_", "OPENSSL_"] as const;
+
+/**
+ * Main's environment as a development shell gives it, its terminal's: no `NODE_*` (a loader, an
+ * inspector, a mode) and no `OPENSSL_*` (a config node reads as it starts). Main is told it is not
+ * packaged, so the packaged app's account and PATH resets are not the dev host's to make.
+ */
 const mainEnv = (options: DevHostOptions): NodeJS.ProcessEnv => {
   const env: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(process.env)) {
-    if (!name.startsWith("NODE_")) {
+    if (!NODE_LOADERS.some((prefix) => name.startsWith(prefix))) {
       env[name] = value;
     }
   }

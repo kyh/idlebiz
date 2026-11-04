@@ -6,10 +6,10 @@
 import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcess, ChildProcessByStdio } from "node:child_process";
 import { once } from "node:events";
-import { accessSync, constants, existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { accessSync, constants, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createConnection } from "node:net";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
@@ -62,6 +62,13 @@ const HANDOVER_TIMEOUT_MS = 30_000;
 // a login probe main was still waiting on when it quit outlives it, and ends on its own within the
 // 15s main gives one (packages/agent-driver/src/detect.ts)
 const PROBE_GRACE_MS = 15_000;
+
+// what the packaged shell gives main in place of launchd's (src-tauri/src/runtime.rs `main_env`)
+const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
+// the account's, wherever launchd's HOME points (src-tauri/src/shell.rs `logs_dir`)
+const MAIN_LOG = path.join(userInfo().homedir, "Library", "Logs", "IdleBiz", "main.log");
+// the names main's login-shell probe, its runners and its git would look up on a PATH
+const PATH_CANARIES = ["bash", "claude", "codex", "git", "zsh"];
 
 type Shell = ChildProcessByStdio<null, Readable, Readable>;
 
@@ -173,9 +180,13 @@ const answers = async (socket: string): Promise<boolean> => {
   }
 };
 
-const launch = (env: NodeJS.ProcessEnv): Launched => {
+const launch = (args: readonly string[], env: NodeJS.ProcessEnv): Launched => {
   // a process group of its own, so a failed smoke takes the shell down whole
-  const shell = spawn(shellBinary, [], { detached: true, env, stdio: ["ignore", "pipe", "pipe"] });
+  const shell = spawn(shellBinary, args, {
+    detached: true,
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   let output = "";
   const record = (chunk: Buffer): void => {
     output += chunk.toString();
@@ -221,6 +232,55 @@ const mainOf = (shell: Shell): Process => {
     );
   }
   return main;
+};
+
+// a name opening an entry of `ps -E`'s env, which follows the command line, space-separated
+const ENV_ENTRY = / (?=[A-Za-z_][A-Za-z0-9_]*=)/u;
+// where main's command line ends: its bundle, asked to serve (src-tauri/src/runtime.rs)
+const SERVE_COMMAND_END = "/dist/index.js serve ";
+
+/** The env main started with, as `ps -E` shows it: each value runs to the next ` NAME=`. */
+const startingEnvOf = (main: Process): Map<string, string> => {
+  const listed = spawnSync("ps", ["-E", "-ww", "-o", "command=", "-p", String(main.pid)], {
+    encoding: "utf-8",
+  });
+  if (listed.status !== 0) {
+    throw new Error(`ps -E exited ${listed.status ?? listed.signal}: ${listed.stderr}`);
+  }
+  const line = listed.stdout.replace(/\n$/u, "");
+  const end = line.indexOf(SERVE_COMMAND_END);
+  if (end === -1) {
+    throw new Error(`ps -E shows main as something other than its serve: ${line}`);
+  }
+  const env = new Map<string, string>();
+  for (const entry of line.slice(end + SERVE_COMMAND_END.length).split(ENV_ENTRY)) {
+    const at = entry.indexOf("=");
+    const name = entry.slice(0, at);
+    if (at > 0 && !env.has(name)) {
+      env.set(name, entry.slice(at + 1));
+    }
+  }
+  return env;
+};
+
+/**
+ * Main started on who the founder is and the save the launch named, whatever the env the app was
+ * opened with said, and on none of what only launchd could have set there.
+ */
+const proveEnv = (main: Process, expected: Record<string, string>, dropped: string[]): void => {
+  const env = startingEnvOf(main);
+  const wrong = Object.entries(expected).flatMap(([name, value]) =>
+    env.get(name) === value ? [] : [`${name}=${env.get(name) ?? "(unset)"}, not ${value}`],
+  );
+  const kept = [...env.keys()].filter(
+    (name) => dropped.includes(name) || name.startsWith("NODE_") || name.startsWith("OPENSSL_"),
+  );
+  if (wrong.length > 0 || kept.length > 0) {
+    throw new Error(
+      `main started on launchd's word:\n  ${[...wrong, ...kept.map((name) => `${name} kept`)].join("\n  ")}`,
+    );
+  }
+  log(`main started as the account, on the save its --root= named, without launchd's switches`);
 };
 
 /** The loopback port main answers the window's page on. */
@@ -326,22 +386,87 @@ if (keyHeld) {
 const scratch = await mkdtemp(path.join(tmpdir(), "idlebiz-desktop-smoke-"));
 const save = path.join(scratch, "save");
 await mkdir(save);
-const env = { ...process.env, IDLEBIZ_ROOT_DIR: save };
+// the packaged app takes its save from this argument alone (src-tauri/src/runtime.rs `root_arg`)
+const args = [`--root=${save}`];
+
+// each a script that leaves a file of its name here when anything runs it
+const canaries = path.join(scratch, "canaries");
+await mkdir(canaries);
+const canary = async (file: string): Promise<void> => {
+  await writeFile(file, `#!/bin/sh\n: > '${path.join(canaries, path.basename(file))}'\n`, {
+    mode: 0o755,
+  });
+};
+const decoy = path.join(scratch, "decoy");
+const bin = path.join(scratch, "bin");
+const zdot = path.join(scratch, "zdot");
+await mkdir(bin);
+await mkdir(zdot);
+await mkdir(path.join(scratch, "fake-tmp"));
+for (const name of [...PATH_CANARIES, "fake-shell", "fake-claude"]) {
+  await canary(name.startsWith("fake-") ? path.join(scratch, name) : path.join(bin, name));
+}
+await writeFile(path.join(zdot, ".zshenv"), `: > '${path.join(canaries, "zshenv")}'\n`);
+// a config node fails to start on, were it read
+await writeFile(path.join(scratch, "x.cnf"), "openssl_conf = missing\n[missing\n");
+await writeFile(path.join(scratch, "ca.pem"), "not a certificate\n");
+
+// what a run's `launchctl setenv` could hand every app opened after it: another save, shell, temp
+// folder, PATH and runner, a loader, test money counted, and startup files for main's login-shell
+// probe. HOME is left alone, for the shell's own Keychain read may follow it; main's is the
+// account's either way, which the env check below holds
+const dropped = {
+  ANTHROPIC_BASE_URL: "http://127.0.0.1:9",
+  CLAUDE_BIN: path.join(scratch, "fake-claude"),
+  CODEX_HOME: path.join(scratch, "codex"),
+  IDLEBIZ_COUNT_TEST_MONEY: "1",
+  OPENSSL_CONF: path.join(scratch, "x.cnf"),
+  SSL_CERT_FILE: path.join(scratch, "ca.pem"),
+};
+const env = {
+  ...process.env,
+  ...dropped,
+  IDLEBIZ_ROOT_DIR: decoy,
+  PATH: `${bin}:${process.env.PATH ?? SYSTEM_PATH}`,
+  SHELL: path.join(scratch, "fake-shell"),
+  TMPDIR: path.join(scratch, "fake-tmp"),
+  ZDOTDIR: zdot,
+};
+const account = userInfo();
+const userTemp = spawnSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], { encoding: "utf-8" });
+if (userTemp.status !== 0) {
+  throw new Error(`getconf exited ${userTemp.status ?? userTemp.signal}: ${userTemp.stderr}`);
+}
+const expected = {
+  HOME: account.homedir,
+  IDLEBIZ_ROOT_DIR: save,
+  LOGNAME: account.username,
+  PATH: SYSTEM_PATH,
+  SHELL: account.shell ?? "",
+  TMPDIR: userTemp.stdout.trim(),
+  USER: account.username,
+};
+
 const launched: Launched[] = [];
 let main: Process | null = null;
 
 try {
-  log(`launching ${appDir} on ${save}`);
-  const first = launch(env);
+  log(`launching ${appDir} on ${save}, under an env a run could have set`);
+  const launchedAt = Date.now();
+  const first = launch(args, env);
   launched.push(first);
   // the shell makes the window only once main answered hello, on the handoff main then mints
   await waitForLine(first, WINDOW_LOADED);
   main = mainOf(first.shell);
   log(`hello booted main (pid ${main.pid}) on the pack's node, and the window loaded its page`);
+  proveEnv(main, expected, Object.keys(dropped));
+  if (!existsSync(MAIN_LOG) || statSync(MAIN_LOG).mtimeMs < launchedAt) {
+    throw new Error(`the shell wrote no main.log under the account's home, ${MAIN_LOG}`);
+  }
   await provePage(await pagePortOf(main));
 
   // the plugin hands a second launch's arguments to the first, which shows its window, and exits
-  const second = launch(env);
+  const second = launch(args, env);
   launched.push(second);
   if (!(await exitsWithin(second.shell, HANDOVER_TIMEOUT_MS))) {
     throw new Error(`a second launch was still running after ${HANDOVER_TIMEOUT_MS}ms`);
@@ -384,6 +509,15 @@ try {
     );
   }
   log("the quit stopped main cleanly, the app exited 0, and nothing main started is left");
+
+  // all main started has ended, its login-shell probe among it
+  const followed = [...readdirSync(canaries), ...(existsSync(decoy) ? ["the decoy save"] : [])];
+  if (followed.length > 0) {
+    throw new Error(`the launch followed what launchd's env named: ${followed.join(", ")}`);
+  }
+  log(
+    "nothing ran the env's shell, startup files, CLIs or PATH, and the decoy save was never made",
+  );
   log("PASS (the window's rendering is not checked)");
 } finally {
   for (const { shell } of launched) {
