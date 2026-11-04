@@ -8,8 +8,10 @@
       "inputs": ["$TURBO_DEFAULT$", "!src-tauri/**", "!rust-toolchain.toml"],
       "outputs": ["dist/**"]
     },
+    // The suite reads the shell's tauri.conf.json (scripts/release-feed.test.ts), so the shell's
+    // files stay its inputs.
     "test": {
-      "inputs": ["$TURBO_DEFAULT$", "!src-tauri/**", "!rust-toolchain.toml"]
+      "inputs": ["$TURBO_DEFAULT$", "!rust-toolchain.toml"]
     },
     "test:rust": {
       // Named inputs drop turbo's .gitignore filter, so what cargo and tauri-build write
