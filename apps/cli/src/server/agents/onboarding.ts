@@ -21,8 +21,8 @@ const SIGN_IN_DEADLINE_MS = 5 * 60_000;
 const STOP_GRACE_MS = 2000;
 
 /**
- * The setup under way: aborting it stops the step it is on and the command that step waits on.
- * A cancel, and a retry that takes over, reach it here.
+ * The setup under way: aborting it ends the setup at the step it is on, and stops the command that
+ * step runs. A cancel, and a retry that takes over, reach it here.
  */
 let underWay: AbortController | null = null;
 
@@ -142,11 +142,22 @@ export const startLogin = async (
       emit(e);
     }
   };
-  /** What `step` answers, unless the setup was stopped while it ran. */
+  /**
+   * What `step` answers, unless the setup is stopped first, which then ends without waiting for
+   * it. The step runs on: the pool's probe and seal check are every caller's, not this setup's.
+   */
   const unlessStopped = async <T>(step: Promise<T>): Promise<T> => {
-    const answer = await step;
     signal.throwIfAborted();
-    return answer;
+    const stopped = Promise.withResolvers<never>();
+    const stop = (): void => {
+      stopped.reject(signal.reason);
+    };
+    signal.addEventListener("abort", stop, { once: true });
+    try {
+      return await Promise.race([step, stopped.promise]);
+    } finally {
+      signal.removeEventListener("abort", stop);
+    }
   };
   try {
     let probes = await unlessStopped(runners.refresh());

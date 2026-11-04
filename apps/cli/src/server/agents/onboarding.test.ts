@@ -107,6 +107,20 @@ describe("a CLI's sign-in", () => {
     expect(after).toEqual([{ message: "No setup was under way.", type: "error" }]);
   }, 10_000);
 
+  it("ends at once when cancelled while it is still looking for the CLIs", async () => {
+    const heard: AuthFlowEvent[] = [];
+    const stillLooking = {
+      ...signedOutClaude([process.execPath, "-e", ""]),
+      refresh: (): Promise<RunnerProbe[]> => Promise.withResolvers<RunnerProbe[]>().promise,
+    };
+    const settled = startLogin(stillLooking, (e) => heard.push(e));
+
+    cancelLogin((e) => heard.push(e));
+    await settled;
+
+    expect(heard).toEqual([CANCELLED]);
+  }, 1000);
+
   it("is stopped with what it started once its time is up, and says so", async () => {
     const pids = path.join(base, "pids");
     const heard: AuthFlowEvent[] = [];
