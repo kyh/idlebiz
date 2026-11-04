@@ -86,7 +86,9 @@ const readValue = (t: string): { value: Scalar } | { refused: string } => {
         "holds a colon YAML reads as the start of another key: put it in double quotes, as JSON",
     };
   }
-  return { value: Number.isNaN(Number(t)) ? t : Number(t) };
+  // Number reads `Infinity` too, which YAML reads as text.
+  const n = Number(t);
+  return { value: Number.isFinite(n) ? n : t };
 };
 
 /** A value as JSON, a line or paragraph separator escaped too: JSON leaves both raw, and an editor breaks the line there. */
