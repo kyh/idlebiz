@@ -138,7 +138,7 @@ describe("what the site claims the app does", () => {
     expect(markdown).toMatch(/asks GitHub for the latest IdleBiz release[^.]*every six hours/u);
     expect(markdown).toMatch(/requests shows GitHub your IP address/u);
     expect(markdown).toMatch(/GitHub also answers the desktop app's update checks/u);
-    expect(markdown).not.toMatch(/update[^.]*nothing about you\b/iu);
+    expect(markdown).not.toMatch(/\bupdate[^.]*\bnothing\b|\bnothing\b[^.]*\bupdate/iu);
   });
 });
 
