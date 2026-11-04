@@ -13,6 +13,7 @@ import type { BlockedAsk } from "@repo/domain/domain";
 import { isLeased } from "@repo/domain/hold-rules";
 import { parseJson } from "@repo/domain/json";
 import type { RunnerId } from "@repo/domain/runners";
+import { SYSTEM_PATH, namedWith, proxiesOf, unsealedEnv } from "../lib/founder-env";
 import { holdFor } from "../policy";
 import type { BrowserCli, Confinement, LivePage } from "../policy/browser";
 import { teamNotesPrompt } from "../prompts/team-notes";
@@ -33,6 +34,20 @@ const fromPackage = createRequire(import.meta.url);
 /** What of main's env a runner's CLI gets, for a run or a probe of its login alike. */
 export const runnerEnv = (runner: RunnerId): Record<string, string> =>
   runEnv(process.env, RUNNERS[runner].providerEnv);
+
+/**
+ * What of main's env a runner's CLI gets to sign in: the account's names, main's PATH and the
+ * founder's proxies, and the runner's own settings, never the rest of main's, which is launchd's in
+ * the app. Its seal lets it open the browser and lacks the denies a run's has, so no variable a CLI
+ * reads to run something on the way there (BROWSER) reaches it.
+ */
+export const signInEnv = (runner: RunnerId) => ({
+  ...unsealedEnv(process.env, {
+    PATH: process.env.PATH ?? SYSTEM_PATH,
+    ...proxiesOf(process.env),
+  }),
+  ...namedWith(process.env, RUNNERS[runner].providerEnv),
+});
 
 /**
  * Chrome's own sandbox is one more that cannot start inside the seal. No AGENT_BROWSER_PROFILE:

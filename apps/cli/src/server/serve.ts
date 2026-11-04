@@ -3,7 +3,7 @@
 
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import path from "node:path";
 import { BodyLimitPlugin, RPCHandler } from "@orpc/server/node";
 import { z } from "zod";
@@ -22,6 +22,7 @@ import { host, hostOver, launchSchema, setHost, trayClickSchema, windowSchema } 
 import type { Handoff, Launch, WindowChange } from "./host";
 import { keepAwake } from "./keep-awake";
 import { broadcast } from "./lib/broadcast";
+import { identityRefusal } from "./lib/founder-env";
 import { suspendWrites } from "./lib/fs";
 import { initLog } from "./lib/log";
 import { guarded, report } from "./lib/report";
@@ -223,6 +224,15 @@ const pageSourceOf = (launch: Launch): PageSource => {
 
 const boot = async (launch: Launch): Promise<void> => {
   setHost(hostOver(peer), launch);
+  // the packaged shell starts main as the account the user database names, whatever launchd's env
+  // says; main checks it before it writes anything, since the save, the seal and the sockets all
+  // come from HOME, and the PATH the runs find their CLIs on from SHELL
+  if (launch.packaged) {
+    const refused = identityRefusal(homedir(), process.env.SHELL, userInfo());
+    if (refused !== null) {
+      throw new Error(refused);
+    }
+  }
   claim = await claimSave(rootDir(), homedir());
   sealSecrets(launch);
   store.initStore();

@@ -2,10 +2,13 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { z } from "zod";
 import { RUNNERS } from "@repo/agent-driver/registry";
+import type { Argv } from "@repo/agent-driver/registry";
 import { isReady } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { runnerPool } from "./runner-pool";
 import type { RunnerPool } from "./runner-pool";
+import { signInEnv } from "./session";
+import { SYSTEM_PATH, proxiesOf, unsealedEnv } from "../lib/founder-env";
 import { foundingTeamPrompt } from "../prompts/onboarding";
 import { errorMessage } from "@repo/domain/errors";
 import { RUNNER_NAMES } from "@repo/domain/runners";
@@ -26,7 +29,15 @@ const STOP_GRACE_MS = 2000;
  */
 let underWay: AbortController | null = null;
 
-const CLAUDE_INSTALL_CMD = "curl -fsSL https://claude.ai/install.sh | bash";
+/**
+ * Claude Code's installer, each program by its path: not a login shell, since whatever its startup
+ * files source a run could have written, and no name looked up on a PATH main was handed.
+ */
+export const CLAUDE_INSTALLER: Argv = [
+  "/bin/bash",
+  "-c",
+  "/usr/bin/curl -fsSL https://claude.ai/install.sh | /bin/bash",
+];
 
 const reportLine =
   (emit: (e: AuthFlowEvent) => void) =>
@@ -52,14 +63,15 @@ const signalGroup = (pid: number, signal: NodeJS.Signals): void => {
 };
 
 /**
- * Spawn a command, streaming its output lines as progress (URLs get their own event), until it
- * exits or `signal` aborts. It leads a process group of its own, so an abort stops what it started
- * too (a login's browser opener): the group is asked to stop, so a login can let go of its
- * callback port, then killed. Main's exit kills it outright, with no time left to ask.
+ * Spawn a command on `env` alone, streaming its output lines as progress (URLs get their own
+ * event), until it exits or `signal` aborts. It leads a process group of its own, so an abort stops
+ * what it started too (a login's browser opener): the group is asked to stop, so a login can let go
+ * of its callback port, then killed. Main's exit kills it outright, with no time left to ask.
  */
 const streamCommand = (
   cmd: string,
   args: string[],
+  env: Readonly<Record<string, string>>,
   emit: (e: AuthFlowEvent) => void,
   signal: AbortSignal,
 ): Promise<number | null> =>
@@ -69,7 +81,7 @@ const streamCommand = (
       resolve(null);
       return;
     }
-    const child = spawn(cmd, args, { detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cmd, args, { detached: true, env, stdio: ["ignore", "pipe", "pipe"] });
     const onLine = reportLine(emit);
     const reading = [child.stdout, child.stderr].map((input) =>
       createInterface({ input }).on("line", onLine),
@@ -113,7 +125,10 @@ const CODEX_FILE_LOGIN =
 type SignIn = Pick<
   RunnerPool,
   "needsSignIn" | "refresh" | "sealRefusal" | "sealedSignIn" | "signedInAgain"
->;
+> & {
+  /** What installs a CLI where none is found: `CLAUDE_INSTALLER` unless named. */
+  readonly installer?: Argv;
+};
 
 const signInState = (runners: SignIn, p: Extract<RunnerProbe, { installed: true }>): string => {
   if (!p.authed) {
@@ -181,9 +196,15 @@ export const startLogin = async (
 
     if (probes.every((p) => !p.installed)) {
       say({ message: "No coding CLI found — installing Claude Code…", type: "progress" });
-      // not a login shell: whatever its startup files source, a run could have written
+      const [installer, ...installerArgs] = runners.installer ?? CLAUDE_INSTALLER;
+      // the founder's proxies may route the download, but no CA, .curlrc or bash startup file of
+      // main's env answers for claude.ai or runs on the way
+      const installerEnv = unsealedEnv(process.env, {
+        PATH: SYSTEM_PATH,
+        ...proxiesOf(process.env),
+      });
       const code = await unlessStopped(
-        streamCommand("/bin/bash", ["-c", CLAUDE_INSTALL_CMD], say, signal),
+        streamCommand(installer, installerArgs, installerEnv, say, signal),
       );
       if (code !== 0) {
         say({
@@ -206,7 +227,7 @@ export const startLogin = async (
       );
       const deadline = AbortSignal.timeout(deadlineMs);
       const code = await unlessStopped(
-        streamCommand(cmd, args, say, AbortSignal.any([signal, deadline])),
+        streamCommand(cmd, args, signInEnv(p.id), say, AbortSignal.any([signal, deadline])),
       );
       if (code === null && deadline.aborted) {
         throw new Error(`The sign-in to ${label(p)} timed out — sign in again.`);

@@ -1,11 +1,12 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
 import type { Argv } from "@repo/agent-driver/registry";
 import type { AuthFlowEvent } from "@repo/domain/domain";
-import { cancelLogin, startLogin } from "./onboarding";
+import { SYSTEM_PATH } from "../lib/founder-env";
+import { CLAUDE_INSTALLER, cancelLogin, startLogin } from "./onboarding";
 
 const LOGIN_URL = { type: "url", url: "https://claude.test/oauth/authorize" } as const;
 const CANCELLED = { message: "Setup cancelled.", type: "error" } as const;
@@ -46,6 +47,45 @@ const signedOutClaude = (argv: Argv) => {
 const neverFinishing = (pids: string) =>
   signedOutClaude([process.execPath, "-e", NEVER_FINISHES, pids]);
 
+/** No CLI installed, nor made by `installer`, which installs nothing. */
+const noneInstalled = (installer: Argv) => ({
+  ...signedOutClaude([process.execPath, "-e", ""]),
+  installer,
+  refresh: (): Promise<RunnerProbe[]> =>
+    Promise.resolve([{ bin: "claude", id: "claude", installed: false }]),
+});
+
+// A command that prints each name in its env on a line of its own, and its PATH.
+const PRINTS_ITS_ENV: Argv = [
+  process.execPath,
+  "-e",
+  'for (const name of Object.keys(process.env)) console.log("env " + name); console.log("PATH is " + (process.env.PATH ?? ""));',
+];
+
+/** What a command that `PRINTS_ITS_ENV` printed, as the setup heard it. */
+const printed = (heard: readonly AuthFlowEvent[]): string[] =>
+  heard.flatMap((e) => (e.type === "progress" ? [e.message] : []));
+
+/** The names of the env a command that `PRINTS_ITS_ENV` was started on. */
+const namesIn = (heard: readonly AuthFlowEvent[]): string[] =>
+  printed(heard).flatMap((line) => (line.startsWith("env ") ? [line.slice("env ".length)] : []));
+
+// what a run's `launchctl setenv` could have left in main's env, which is launchd's in the app
+const LAUNCHD_SET = [
+  "BASH_ENV",
+  "BASH_FUNC_curl%%",
+  "BROWSER",
+  "CURL_CA_BUNDLE",
+  "CURL_HOME",
+  "GH_TOKEN",
+] as const;
+
+const setByLaunchd = (base: string): void => {
+  for (const name of LAUNCHD_SET) {
+    vi.stubEnv(name, path.join(base, "planted"));
+  }
+};
+
 const pidsIn = (file: string): number[] => readFileSync(file, "utf-8").split(" ").map(Number);
 
 const alive = (pid: number): boolean => {
@@ -66,6 +106,17 @@ const goneIn = async (file: string): Promise<void> => {
     { interval: 100, timeout: 5000 },
   );
 };
+
+describe("Claude Code's installer", () => {
+  it("names each program it runs by its path, none looked up on PATH", () => {
+    const [shell, flag, pipeline = ""] = CLAUDE_INSTALLER;
+    expect([shell, flag]).toEqual(["/bin/bash", "-c"]);
+    expect(pipeline.split("|").map((command) => command.trim().split(" ")[0])).toEqual([
+      "/usr/bin/curl",
+      "/bin/bash",
+    ]);
+  });
+});
 
 describe("a CLI's sign-in", () => {
   let base = "";
@@ -123,15 +174,9 @@ describe("a CLI's sign-in", () => {
   }, 1000);
 
   it("says it was cancelled when cancelled while it installs a CLI", async () => {
-    // the installer's download never ends, on a PATH whose curl is a stand-in
-    writeFileSync(path.join(base, "curl"), "#!/bin/sh\nexec sleep 600\n", { mode: 0o755 });
-    vi.stubEnv("PATH", `${base}:/usr/bin:/bin`);
     const heard: AuthFlowEvent[] = [];
-    const installing = {
-      ...signedOutClaude([process.execPath, "-e", ""]),
-      refresh: (): Promise<RunnerProbe[]> =>
-        Promise.resolve([{ bin: "claude", id: "claude", installed: false }]),
-    };
+    // an installer whose download never ends
+    const installing = noneInstalled([process.execPath, "-e", "setInterval(() => {}, 1000)"]);
     const settled = startLogin(installing, (e) => heard.push(e));
     await vi.waitFor(() => {
       expect(heard).toContainEqual({
@@ -145,6 +190,46 @@ describe("a CLI's sign-in", () => {
 
     expect(heard.at(-1)).toEqual(CANCELLED);
   }, 10_000);
+
+  it("installs a CLI on the account's names, the system's PATH and the founder's proxies alone", async () => {
+    setByLaunchd(base);
+    vi.stubEnv("HOME", base);
+    vi.stubEnv("HTTPS_PROXY", "http://proxy.test:3128");
+    vi.stubEnv("PATH", `${path.join(base, "bin")}:${SYSTEM_PATH}`);
+    const heard: AuthFlowEvent[] = [];
+
+    await startLogin(noneInstalled(PRINTS_ITS_ENV), (e) => heard.push(e));
+
+    expect(namesIn(heard)).toEqual(expect.arrayContaining(["HOME", "HTTPS_PROXY", "PATH"]));
+    expect(namesIn(heard).filter((name) => LAUNCHD_SET.some((set) => set === name))).toEqual([]);
+    expect(printed(heard)).toContain(`PATH is ${SYSTEM_PATH}`);
+  });
+
+  it("signs a CLI in on the account's names, main's PATH, the proxies and its runner's own settings alone", async () => {
+    setByLaunchd(base);
+    vi.stubEnv("HOME", base);
+    vi.stubEnv("HTTPS_PROXY", "http://proxy.test:3128");
+    vi.stubEnv("PATH", `${path.join(base, "bin")}:${SYSTEM_PATH}`);
+    vi.stubEnv("CLAUDE_CONFIG_DIR", path.join(base, "claude"));
+    vi.stubEnv("ANTHROPIC_MODEL", "opus");
+    vi.stubEnv("CODEX_HOME", path.join(base, "codex"));
+    const heard: AuthFlowEvent[] = [];
+
+    await startLogin(signedOutClaude(PRINTS_ITS_ENV), (e) => heard.push(e));
+
+    expect(namesIn(heard)).toEqual(
+      expect.arrayContaining([
+        "ANTHROPIC_MODEL",
+        "CLAUDE_CONFIG_DIR",
+        "HOME",
+        "HTTPS_PROXY",
+        "PATH",
+      ]),
+    );
+    expect(namesIn(heard)).not.toContain("CODEX_HOME");
+    expect(namesIn(heard).filter((name) => LAUNCHD_SET.some((set) => set === name))).toEqual([]);
+    expect(printed(heard)).toContain(`PATH is ${path.join(base, "bin")}:${SYSTEM_PATH}`);
+  });
 
   it("is stopped with what it started once its time is up, and says so", async () => {
     const pids = path.join(base, "pids");

@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { SYSTEM_PATH, unsealedEnv } from "./founder-env";
 import { report } from "./report";
 
 // Finder's PATH omits CLI install locations. The packaged app prefers the login shell's PATH,
@@ -55,23 +56,19 @@ const killGroup = (pid: number | undefined): void => {
 };
 
 /**
- * What `shell` printed, once it printed the second marker or exited; it and whatever it started
- * are killed then, at `timeoutMs`, or as main exits. Detached: its own process group, and no
- * terminal an interactive shell could take. Its stdin is empty, so an rc file that reads it reads
- * nothing, and a daemon an rc file starts can hold stdout open after the shell is gone, which is
- * why the marker, not stdout's close, ends the wait.
+ * What `shell` printed, started on `env` alone, once it printed the second marker or exited; it
+ * and whatever it started are killed then, at `timeoutMs`, or as main exits. Detached: its own
+ * process group, and no terminal an interactive shell could take. Its stdin is empty, so an rc
+ * file that reads it reads nothing, and a daemon an rc file starts can hold stdout open after the
+ * shell is gone, which is why the marker, not stdout's close, ends the wait.
  */
 export const runShell = async (
   shell: string,
   args: readonly string[],
   timeoutMs: number,
+  env: Readonly<Record<string, string>>,
 ): Promise<string> => {
-  const child = spawn(shell, args, {
-    detached: true,
-    // oh-my-zsh otherwise checks for its own update over the network inside the budget
-    env: { ...process.env, DISABLE_AUTO_UPDATE: "true" },
-    stdio: ["ignore", "pipe", "ignore"],
-  });
+  const child = spawn(shell, args, { detached: true, env, stdio: ["ignore", "pipe", "ignore"] });
   const stop = (): void => {
     child.stdout.destroy();
     killGroup(child.pid);
@@ -109,8 +106,15 @@ const loginShell = (): string => {
 
 const loginShellPath = async (): Promise<string | null> => {
   const shell = loginShell();
+  // the account's names and the fallback PATH, as a terminal's login starts it: a ZDOTDIR, an
+  // exported function or a BASH_ENV in main's env would have it run what they name
+  const env = unsealedEnv(process.env, {
+    // oh-my-zsh otherwise checks for its own update over the network inside the budget
+    DISABLE_AUTO_UPDATE: "true",
+    PATH: process.env.PATH ?? SYSTEM_PATH,
+  });
   try {
-    const printed = markedPath(await runShell(shell, ["-ilc", PRINT_PATH], SHELL_TIMEOUT_MS));
+    const printed = markedPath(await runShell(shell, ["-ilc", PRINT_PATH], SHELL_TIMEOUT_MS, env));
     if (printed === null) {
       report("shell path", `${shell} printed no PATH`);
     }
