@@ -53,6 +53,10 @@ const outputOf = (argv: readonly string[], input = ""): string => {
 const startsUnder = (sealed: Seal, runner: RunnerId): boolean =>
   exitOf(sealedCommand(sealed, runner, ["/usr/bin/true"])) === 0;
 
+/** Every disk an `hdiutil attach` printed, for a cleanup to detach. */
+const disksIn = (printed: string): string[] =>
+  Array.from(printed.matchAll(/\/dev\/disk\d+/gu), ([disk]) => disk);
+
 // the find pasteboard, which pboard serves over the one service as it does the general one, so the
 // canary leaves what the founder copied alone
 const PASTE = ["/usr/bin/pbpaste", "-pboard", "find"];
@@ -976,7 +980,9 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     }
   });
 
-  it("keeps a run from mounting devfs, whose files carry no provenance for LaunchServices to check", async () => {
+  it("keeps a run from mounting devfs, whose files carry no provenance for LaunchServices to check", async ({
+    skip,
+  }) => {
     const sealed = await seal();
     const mountpoint = realpathSync(mkdtempSync(path.join(tmpdir(), "idlebiz-mount-")));
     const mount = ["/sbin/mount", "-t", "devfs", "-o", "noowners", "devfs", mountpoint];
@@ -986,6 +992,12 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         outputOf(sealedCommand(sealed, runner, mount));
         expect(existsSync(path.join(mountpoint, "null"))).toBe(false);
       }
+      // the control: the same mount from a sign-in, whose seal denies no file-mount, does land; a
+      // session whose user mounts no devfs skips, since there the canary proves nothing
+      outputOf(signInCommand(sealed, "claude", mount));
+      if (!existsSync(path.join(mountpoint, "null"))) {
+        skip();
+      }
     } finally {
       spawnSync("/sbin/umount", [mountpoint]);
       // never recursive: through a mount the seal missed it would remove device nodes; and a
@@ -994,7 +1006,9 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     }
   });
 
-  it("keeps a run from laying an image it made over a folder the founder runs programs from", async () => {
+  it("keeps a run from laying an image it made over a folder the founder runs programs from", async ({
+    skip,
+  }) => {
     const sealed = await seal();
     const bin = at(".local/bin");
     mkdirSync(bin, { recursive: true });
@@ -1008,9 +1022,14 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       for (const runner of ["claude", "codex"] as const) {
         expect(startsUnder(sealed, runner)).toBe(true);
         // diskarbitrationd mounts it, and checks its caller's seal for a folder the caller names
-        const printed = outputOf(sealedCommand(sealed, runner, attach));
-        attached.push(...Array.from(printed.matchAll(/\/dev\/disk\d+/gu), ([disk]) => disk));
+        attached.push(...disksIn(outputOf(sealedCommand(sealed, runner, attach))));
         expect(existsSync(path.join(bin, "claude"))).toBe(false);
+      }
+      // the control is unsealed, whatever diskarbitrationd makes of a sandboxed caller: it shows
+      // this session lays an image over a folder at all, without which the canary proves nothing
+      attached.push(...disksIn(outputOf(attach)));
+      if (!existsSync(path.join(bin, "claude"))) {
+        skip();
       }
     } finally {
       for (const disk of new Set([bin, ...attached])) {
