@@ -206,7 +206,8 @@ fn root_of(arg: &OsStr) -> Option<PathBuf> {
 }
 
 /// What only launchd could have set in a packaged launch's env: a developer's switch, a runner's
-/// model address, a CA to trust, or a temp folder.
+/// model address, a CA to trust under the names tools share, or a temp folder. Each tool's own
+/// trust switches and registries pass, as `docs/seal.md`'s "What stays open" lists.
 fn launchd_only(name: &str) -> bool {
     DEVELOPER_ONLY.contains(&name)
         || (name.ends_with("BASE_URL")

@@ -196,11 +196,15 @@ On purpose or for want of a rule:
   takes from it neither who the founder is nor its save, its runners' CLIs, homes or model
   addresses ([Main's env](app.md#the-page-the-shell-and-main)), and none of the programs it starts
   outside a seal that would run what an env names takes it ([A run's seal](#a-runs-seal)). It
-  still takes the rest: proxies (a proxy sees hostnames and can withhold traffic, but cannot read
-  TLS), a runner's other settings (`ANTHROPIC_API_KEY`, a Bedrock switch: another account billed,
-  inside the seal) and `SSH_AUTH_SOCK`, whose path no run may then write (one in a workspace
-  denies its team writes there). A development launch takes its terminal's whole, which is
-  launchd's when the terminal app started after the setenv;
+  still takes the rest, and its runs with it: proxies, which alone see hostnames and can withhold
+  traffic but cannot read TLS; what a run's own tools read to pick a registry or whom to trust
+  (`npm_config_registry`, `npm_config_strict_ssl`, `npm_config_cafile`, `GIT_SSL_NO_VERIFY`,
+  `GIT_SSL_CAINFO`, `PIP_CERT`, `CARGO_HTTP_CAINFO`, `CURL_HOME`…), with which a proxy or
+  registry set there reads and rewrites a run's package and git traffic, and so what a product
+  ships; a runner's other settings (`ANTHROPIC_API_KEY`, a Bedrock switch: another account
+  billed, inside the seal); and `SSH_AUTH_SOCK`, whose path no run may then write (one in a
+  workspace denies its team writes there). A development launch takes its terminal's whole,
+  which is launchd's when the terminal app started after the setenv;
 - the shell's own env, which is launchd's: the updater runs `touch` on launchd's PATH (an update
   is refused while that finds any but `/usr/bin/touch`), stages in launchd's TMPDIR and may keep
   a failed install's backup under launchd's HOME, and whether a `CFFIXED_USER_HOME` there moves
