@@ -70,7 +70,7 @@ const printed = (heard: readonly AuthFlowEvent[]): string[] =>
 const namesIn = (heard: readonly AuthFlowEvent[]): string[] =>
   printed(heard).flatMap((line) => (line.startsWith("env ") ? [line.slice("env ".length)] : []));
 
-// what a run's `launchctl setenv` could have left in main's env, which is launchd's in the app
+// what a `launchctl setenv` could have left in main's env, which is launchd's in the app
 const LAUNCHD_SET = [
   "BASH_ENV",
   "BASH_FUNC_curl%%",

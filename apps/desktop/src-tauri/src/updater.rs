@@ -24,7 +24,7 @@ static INSTALLING: AtomicBool = AtomicBool::new(false);
 
 /// The `touch` the plugin runs by its bare name once it has moved the new app in
 /// (tauri-plugin-updater's `install`), on the shell's own PATH. That PATH is launchd's, which any
-/// process of the founder's, a run's included, sets for every app opened after it.
+/// process of the founder's sets for every app opened after it (`launchctl setenv`).
 const MACOS_TOUCH: &str = "/usr/bin/touch";
 
 /// The file `execvp` would run for `name` on `path`: the first one there with an execute bit.

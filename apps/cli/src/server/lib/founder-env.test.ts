@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { identityRefusal, namedWith, proxiesOf, unsealedEnv } from "./founder-env";
 
-// what a run's `launchctl setenv` could have left in main's env, beside the account's own
+// what a `launchctl setenv` could have left in main's env, beside the account's own
 const LAUNCHD = {
   BASH_ENV: "/private/tmp/run/env.sh",
   "BASH_FUNC_echo%%": "() { /usr/bin/touch /private/tmp/run/m; }",

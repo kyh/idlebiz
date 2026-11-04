@@ -1,6 +1,6 @@
 // Who the founder is, and the env main hands what it starts outside a run's seal. Main's own env is
-// launchd's in the packaged app, which any process of the founder's, a run's included, sets for
-// every app opened after it (`launchctl setenv`).
+// launchd's in the packaged app, which any process of the founder's sets for every app opened after
+// it (`launchctl setenv`).
 
 /** macOS's own PATH, as launchd sets it by default: folders SIP keeps and no run writes. */
 export const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";

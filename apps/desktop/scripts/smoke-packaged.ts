@@ -411,7 +411,7 @@ await writeFile(path.join(zdot, ".zshenv"), `: > '${path.join(canaries, "zshenv"
 await writeFile(path.join(scratch, "x.cnf"), "openssl_conf = missing\n[missing\n");
 await writeFile(path.join(scratch, "ca.pem"), "not a certificate\n");
 
-// what a run's `launchctl setenv` could hand every app opened after it: another save, shell, temp
+// what a `launchctl setenv` could hand every app opened after it: another save, shell, temp
 // folder, PATH and runner, a loader, test money counted, and startup files for main's login-shell
 // probe. HOME is left alone, for the shell's own Keychain read may follow it; main's is the
 // account's either way, which the env check below holds

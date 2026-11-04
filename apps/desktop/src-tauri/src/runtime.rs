@@ -9,10 +9,10 @@
 //! an `open --env` could set would run another program inside a process the OS counts as this app.
 //!
 //! Nor, in the packaged app, can it say who main runs as or which save main opens. That env is
-//! launchd's, which `launchctl setenv`, from any process of the founder's, a run's included, sets
-//! for every app opened after it: so main takes the founder's home, shell and name from the user
-//! database, their temp folder from macOS, the system's PATH, and its save from the shell's own
-//! `--root=` argument alone, a door launchd cannot set.
+//! launchd's, which `launchctl setenv` from any process of the founder's sets for every app opened
+//! after it: so main takes the founder's home, shell and name from the user database, their temp
+//! folder from macOS, the system's PATH, and its save from the shell's own `--root=` argument
+//! alone, a door launchd cannot set.
 
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -335,7 +335,7 @@ mod tests {
         }
     }
 
-    // what a run's `launchctl setenv` could hand the packaged app, each set to "x"
+    // what a `launchctl setenv` could hand the packaged app, each set to "x"
     const LAUNCHD_SET: [&str; 15] = [
         "IDLEBIZ_ROOT_DIR",
         "IDLEBIZ_COUNT_TEST_MONEY",
