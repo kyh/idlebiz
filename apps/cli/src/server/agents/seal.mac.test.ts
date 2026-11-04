@@ -980,6 +980,34 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     }
   });
 
+  // launchd hands what `launchctl setenv` sets to every app opened after it: IdleBiz's own shell,
+  // the founder's terminal. No rule of the seal's names a setenv, so this measures what launchd does
+  // with one from a sealed caller. The control is unsealed: it shows this session's launchd takes a
+  // setenv at all, without which the canary proves nothing. Unset either way, since the steps after
+  // this suite share the domain.
+  it("keeps a run from setting the env launchd hands the apps opened after it", async ({
+    skip,
+  }) => {
+    const sealed = await seal();
+    const name = `IDLEBIZ_SEAL_CANARY_${process.pid}_${Date.now()}`;
+    const canary = (verb: string, ...value: string[]): string =>
+      outputOf(["/bin/launchctl", verb, name, ...value]).trim();
+    try {
+      canary("setenv", "control");
+      if (canary("getenv") !== "control") {
+        skip();
+      }
+      canary("unsetenv");
+      for (const runner of ["claude", "codex"] as const) {
+        expect(startsUnder(sealed, runner)).toBe(true);
+        outputOf(sealedCommand(sealed, runner, ["/bin/launchctl", "setenv", name, runner]));
+        expect(canary("getenv")).toBe("");
+      }
+    } finally {
+      canary("unsetenv");
+    }
+  });
+
   it("keeps a run from mounting devfs, whose files carry no provenance for LaunchServices to check", async ({
     skip,
   }) => {
