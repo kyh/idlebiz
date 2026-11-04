@@ -118,7 +118,9 @@
   .px-inset-hover:hover {
     background: var(--face-hi);
   }
-  /* an inset that warns or refuses, by its edge: the inset's border beats a border utility */
+  /* an inset that warns or refuses, by its edge: a kit modifier, never a border utility, which
+   * would beat it from the utilities layer (px-kit-overrides.test.ts refuses one beside a kit
+   * class) */
   .px-inset-warn {
     border-color: var(--warn);
   }
