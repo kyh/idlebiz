@@ -79,7 +79,8 @@ orient a reader and link into them, never telling a mechanic again.
   process of the founder's sets the env of every app opened after it, so the packaged shell gives
   main the account's HOME, SHELL and user, macOS's TMPDIR and the system PATH, its save only from
   `--root=` and none of a developer's switches, and the login shell, the installer and `git init`
-  main starts outside a seal take none of main's env.
+  main starts outside a seal start on the account's names, the locale and what each is handed
+  (`unsealedEnv`), never main's env whole.
 - **A run signs in as the founder's CLI, on the model they picked, and loads nothing else of
   theirs**: their MCP servers and connectors act signed in as the founder, and a project's settings
   are what a run could write for the next to load.
