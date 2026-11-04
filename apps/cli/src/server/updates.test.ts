@@ -97,10 +97,14 @@ describe("IdleBiz's own updates", () => {
   });
 
   it("show a check that fails as its reason, until the next one", async () => {
-    const updates = await load(
-      true,
-      shellOf(() => Promise.reject(new Error("the release feed did not answer"))).host,
+    vi.useFakeTimers();
+    let answers = false;
+    const shell = shellOf(() =>
+      answers
+        ? Promise.resolve(null)
+        : Promise.reject(new Error("the release feed did not answer")),
     );
+    const updates = await load(true, shell.host);
     updates.startUpdateChecks(() => {});
     await vi.waitFor(() => {
       expect(updates.updateStatus()).toEqual({
@@ -108,6 +112,10 @@ describe("IdleBiz's own updates", () => {
         reason: "the release feed did not answer",
       });
     });
+
+    answers = true;
+    await vi.advanceTimersByTimeAsync(SIX_HOURS);
+    expect(updates.updateStatus()).toEqual({ kind: "current" });
   });
 
   it("keep a release on offer through a check that fails, since the founder was told of it", async () => {
