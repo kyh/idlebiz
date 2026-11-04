@@ -144,7 +144,8 @@ export const startLogin = async (
   };
   /**
    * What `step` answers, unless the setup is stopped first, which then ends without waiting for
-   * it. The step runs on: the pool's probe and seal check are every caller's, not this setup's.
+   * it. The step runs on: the pool's probe and seal check are every caller's, not this setup's. A
+   * command the stop ends answers first, so the stop is checked again once either has.
    */
   const unlessStopped = async <T>(step: Promise<T>): Promise<T> => {
     signal.throwIfAborted();
@@ -154,7 +155,9 @@ export const startLogin = async (
     };
     signal.addEventListener("abort", stop, { once: true });
     try {
-      return await Promise.race([step, stopped.promise]);
+      const answer = await Promise.race([step, stopped.promise]);
+      signal.throwIfAborted();
+      return answer;
     } finally {
       signal.removeEventListener("abort", stop);
     }

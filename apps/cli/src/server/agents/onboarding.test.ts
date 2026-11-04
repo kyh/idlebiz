@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -76,6 +76,7 @@ describe("a CLI's sign-in", () => {
 
   afterEach(() => {
     cancelLogin(() => {});
+    vi.unstubAllEnvs();
     rmSync(base, { force: true, recursive: true });
   });
 
@@ -120,6 +121,30 @@ describe("a CLI's sign-in", () => {
 
     expect(heard).toEqual([CANCELLED]);
   }, 1000);
+
+  it("says it was cancelled when cancelled while it installs a CLI", async () => {
+    // the installer's download never ends, on a PATH whose curl is a stand-in
+    writeFileSync(path.join(base, "curl"), "#!/bin/sh\nexec sleep 600\n", { mode: 0o755 });
+    vi.stubEnv("PATH", `${base}:/usr/bin:/bin`);
+    const heard: AuthFlowEvent[] = [];
+    const installing = {
+      ...signedOutClaude([process.execPath, "-e", ""]),
+      refresh: (): Promise<RunnerProbe[]> =>
+        Promise.resolve([{ bin: "claude", id: "claude", installed: false }]),
+    };
+    const settled = startLogin(installing, (e) => heard.push(e));
+    await vi.waitFor(() => {
+      expect(heard).toContainEqual({
+        message: "No coding CLI found — installing Claude Code…",
+        type: "progress",
+      });
+    });
+
+    cancelLogin((e) => heard.push(e));
+    await settled;
+
+    expect(heard.at(-1)).toEqual(CANCELLED);
+  }, 10_000);
 
   it("is stopped with what it started once its time is up, and says so", async () => {
     const pids = path.join(base, "pids");
