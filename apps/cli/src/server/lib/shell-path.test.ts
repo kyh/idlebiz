@@ -165,6 +165,42 @@ describe.skipIf(!existsSync("/bin/bash"))("adoptShellPath's login shell", () => 
     expect(existsSync(exported)).toBe(false);
     expect(existsSync(traced)).toBe(false);
   });
+
+  // an rc file that starts an ssh agent when it finds none, and notes the one it found
+  const agentProfile = () => {
+    const seen = path.join(box, "agent-seen");
+    const started = path.join(box, "agent-started");
+    writeFileSync(
+      path.join(box, "home/.bash_profile"),
+      `if [ -z "$SSH_AUTH_SOCK" ]; then /usr/bin/touch ${started}; fi\nprintf %s "$SSH_AUTH_SOCK" > ${seen}\nexport PATH="$HOME/bin:$PATH"\n`,
+    );
+    return { seen, started };
+  };
+
+  it("starts with launchd's ssh agent, as a terminal does, so an rc file starts none", async () => {
+    const { seen, started } = agentProfile();
+    const launchd = "/private/tmp/com.apple.launchd.ib/Listeners";
+    vi.stubEnv("SSH_AUTH_SOCK", launchd);
+
+    await adoptShellPath(true);
+
+    expect(readFileSync(seen, "utf-8")).toBe(launchd);
+    expect(existsSync(started)).toBe(false);
+  });
+
+  it("starts with no ssh agent but launchd's, so an rc file's keys go to no socket a run made", async () => {
+    const { seen } = agentProfile();
+    for (const planted of [
+      path.join(box, "ssh-x/agent.1"),
+      "/private/tmp/com.apple.launchd.ib/Listeners/../../ib/agent",
+    ]) {
+      vi.stubEnv("SSH_AUTH_SOCK", planted);
+
+      await adoptShellPath(true);
+
+      expect(readFileSync(seen, "utf-8")).toBe("");
+    }
+  });
 });
 
 describe("runShell", () => {

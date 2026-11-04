@@ -115,10 +115,13 @@ leads from the next run on.
   runner's CLI itself only sealed as that runner: its version and login probes, `codex mcp list`,
   and the sign-in (`sealedSignIn`, the only one that may open the browser or write claude's
   account file). Of what main starts outside a seal, three programs would run what their env
-  names, so each starts on an env of its own, never main's (`unsealedEnv`,
+  names, so each starts on an env of its own, never main's whole (`unsealedEnv`,
   `server/lib/founder-env.ts`): the account's HOME, USER, LOGNAME, SHELL and TMPDIR, the locale,
   and a PATH it is given. They are the login-shell PATH probe (`adoptShellPath`, the packaged
-  app's alone: a dev launch keeps its terminal's PATH), the account's shell on the fallback PATH;
+  app's alone: a dev launch keeps its terminal's PATH), the account's shell on the fallback PATH
+  with launchd's own ssh agent, as a terminal's shell starts (`SSH_AUTH_SOCK` only where launchd
+  puts it, a folder no run makes or writes: an rc file that starts an agent when it finds none
+  would leave one running after every probe, and its `ssh-add` would hand keys to any other);
   the installer, `/usr/bin/curl … | /bin/bash` on the system PATH and never a login shell, with
   the founder's proxies but no CA or `.curlrc` folder; and a workspace's `git init`, on the system
   PATH. The sign-in, whose profile lets it open the browser, starts from the same names with

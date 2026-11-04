@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { identityRefusal, namedWith, proxiesOf, unsealedEnv } from "./founder-env";
+import { identityRefusal, launchdAgentOf, namedWith, proxiesOf, unsealedEnv } from "./founder-env";
 
 // what a `launchctl setenv` could have left in main's env, beside the account's own
 const LAUNCHD = {
@@ -62,6 +62,26 @@ describe("proxiesOf", () => {
     expect(
       proxiesOf({ ...proxies, ...LAUNCHD, CURL_CA_BUNDLE: "/private/tmp/run/ca.pem" }),
     ).toEqual(proxies);
+  });
+});
+
+describe("launchdAgentOf", () => {
+  it("keeps launchd's own ssh agent", () => {
+    const agent = { SSH_AUTH_SOCK: "/private/tmp/com.apple.launchd.AbC123/Listeners" };
+
+    expect(launchdAgentOf({ ...LAUNCHD, ...agent })).toEqual(agent);
+  });
+
+  it("leaves out any other, and none", () => {
+    for (const planted of [
+      "/private/tmp/run/ssh-x/agent.1",
+      "/private/tmp/com.apple.launchd.AbC123/Listeners/../../run/agent",
+      "/private/tmp/com.apple.launchd.AbC123/Listeners2",
+      "",
+    ]) {
+      expect(launchdAgentOf({ SSH_AUTH_SOCK: planted })).toEqual({});
+    }
+    expect(launchdAgentOf({ SSH_AUTH_SOCK: undefined })).toEqual({});
   });
 });
 

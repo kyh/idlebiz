@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { SYSTEM_PATH, unsealedEnv } from "./founder-env";
+import { launchdAgentOf, SYSTEM_PATH, unsealedEnv } from "./founder-env";
 import { report } from "./report";
 
 // Finder's PATH omits CLI install locations. The packaged app prefers the login shell's PATH,
@@ -106,12 +106,13 @@ const loginShell = (): string => {
 
 const loginShellPath = async (): Promise<string | null> => {
   const shell = loginShell();
-  // the account's names and the fallback PATH, as a terminal's login starts it: a ZDOTDIR, an
-  // exported function or a BASH_ENV in main's env would have it run what they name
+  // the account's names, the fallback PATH and launchd's ssh agent, as a terminal's login starts
+  // it: it would run what a ZDOTDIR, an exported function or a BASH_ENV in main's env names
   const env = unsealedEnv(process.env, {
     // oh-my-zsh otherwise checks for its own update over the network inside the budget
     DISABLE_AUTO_UPDATE: "true",
     PATH: process.env.PATH ?? SYSTEM_PATH,
+    ...launchdAgentOf(process.env),
   });
   try {
     const printed = markedPath(await runShell(shell, ["-ilc", PRINT_PATH], SHELL_TIMEOUT_MS, env));

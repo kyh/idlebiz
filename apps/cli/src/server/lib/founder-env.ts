@@ -45,6 +45,20 @@ export const unsealedEnv = (env: Env, extra: Readonly<Record<string, string>>) =
 export const proxiesOf = (env: Env): Record<string, string> =>
   picked(env, (name) => PROXY.test(name));
 
+// launchd's own ssh agent, in a folder the seal keeps every run from making or writing
+// (`AGENT_SOCKET_WRITES`, seal.ts)
+const LAUNCHD_AGENT = /^\/private\/tmp\/com\.apple\.launchd\.[^/]+\/Listeners$/u;
+
+/**
+ * Main's `SSH_AUTH_SOCK` when it is launchd's own agent, which a terminal's shell starts with: an
+ * rc file that starts an agent when it finds none would leave one running after every login-shell
+ * probe. Any other is left out, so an rc file's `ssh-add` never hands keys to a socket a run made.
+ */
+export const launchdAgentOf = (env: Env): Record<string, string> => {
+  const agent = env.SSH_AUTH_SOCK;
+  return agent !== undefined && LAUNCHD_AGENT.test(agent) ? { SSH_AUTH_SOCK: agent } : {};
+};
+
 /** What of `env` is named with one of `prefixes`: a runner's provider settings. */
 export const namedWith = (env: Env, prefixes: readonly string[]): Record<string, string> =>
   picked(env, (name) => prefixes.some((prefix) => name.startsWith(prefix)));
