@@ -34,6 +34,20 @@ export const activityOf = (status: EmployeeStatus, waiting: boolean): State => {
 };
 
 /**
+ * What hearing again who main says waits on the founder sets someone to, or null when they
+ * already agree: whoever is not working is as `activityOf` puts them, at their desk with an ask,
+ * else free. Both ways, so the office ends where boot and a resync would, whichever read lands
+ * last: one made before a run's ask can land after the run ended blocked.
+ */
+export const onWaitingHeard = (activity: State, waiting: boolean): State | null => {
+  if (activity === "working") {
+    return null;
+  }
+  const state = waiting ? "blocked" : "idle";
+  return state === activity ? null : state;
+};
+
+/**
  * Who comes in, who leaves and who is set doing something else, for the office to agree with
  * main's roster and with who main says waits on the founder. Setting someone resets their pose
  * and their wander, so only who disagrees is set; someone already on their way out is left to go.

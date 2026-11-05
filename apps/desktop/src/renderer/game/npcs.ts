@@ -19,7 +19,7 @@ import type { Activity } from "@/renderer/game/npc-look";
 import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 import { planSeats } from "@/renderer/game/office-placement";
 import type { SeatPlan } from "@/renderer/game/office-placement";
-import { Arrivals, activityOf, resyncOf } from "@/renderer/game/office-resync";
+import { Arrivals, activityOf, onWaitingHeard, resyncOf } from "@/renderer/game/office-resync";
 import { DEFAULT_WORK_POSE } from "@/renderer/game/office-poses";
 import type { WorkPose } from "@/renderer/game/office-poses";
 import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y } from "@repo/domain/character-frame";
@@ -301,10 +301,11 @@ export class NpcManager {
     this.waiting = waiting;
     for (const [id, npc] of this.npcs) {
       npc.waiting = waiting.has(id);
-      if (!npc.waiting && npc.activity.kind === "blocked") {
-        this.setState(id, "idle");
-      } else {
+      const state = onWaitingHeard(npc.activity.kind, npc.waiting);
+      if (state === null) {
         applyLook(npc);
+      } else {
+        this.setState(id, state);
       }
     }
   }

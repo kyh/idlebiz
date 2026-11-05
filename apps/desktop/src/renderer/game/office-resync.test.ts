@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Employee } from "@repo/domain/domain";
-import { Arrivals, activityOf, resyncOf } from "./office-resync";
+import { Arrivals, activityOf, onWaitingHeard, resyncOf } from "./office-resync";
 import type { InOffice } from "./office-resync";
 
 const employee = (id: string, status: Employee["status"] = "idle"): Employee => ({
@@ -27,6 +27,28 @@ const settled = (id: string, activity: InOffice["activity"] = "idle"): InOffice 
 });
 
 const nobody: ReadonlySet<string> = new Set();
+
+describe("onWaitingHeard", () => {
+  it("brings to their desk whoever an ask waits on, though a read from before it said otherwise", () => {
+    // the run ended blocked, then a read made before the ask landed and set them free
+    expect(onWaitingHeard("idle", true)).toBe("blocked");
+  });
+
+  it("frees whoever no ask waits on any more, and leaves a run and who already agrees alone", () => {
+    expect(onWaitingHeard("blocked", false)).toBe("idle");
+    expect(onWaitingHeard("working", true)).toBeNull();
+    expect(onWaitingHeard("working", false)).toBeNull();
+    expect(onWaitingHeard("blocked", true)).toBeNull();
+    expect(onWaitingHeard("idle", false)).toBeNull();
+  });
+
+  it("puts whoever it sets where activityOf would, as boot and a resync do", () => {
+    for (const waiting of [true, false]) {
+      expect(onWaitingHeard("idle", waiting) ?? "idle").toBe(activityOf("idle", waiting));
+      expect(onWaitingHeard("blocked", waiting) ?? "blocked").toBe(activityOf("idle", waiting));
+    }
+  });
+});
 
 describe("resyncOf", () => {
   it("walks in who main has and the office lacks, and out who main released", () => {
