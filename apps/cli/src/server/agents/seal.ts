@@ -51,7 +51,8 @@ export interface RunnerHome {
   /**
    * The folder where it is named and where it resolves, and, when the founder moved it, the one in
    * HOME with the account file beside it, which their own CLI still keeps: the other runner's runs
-   * read none of it, and this runner's write none of it but its state.
+   * read none of it, and this runner's write none of it but its state and, claude's, the run's own
+   * project folder; its sign-in writes the account file too.
    */
   home: readonly Reach[];
   state: readonly Reach[];

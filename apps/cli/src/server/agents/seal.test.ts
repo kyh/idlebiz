@@ -302,9 +302,30 @@ describe("a runner's home moved out of HOME", () => {
     expect(readBack(sealedCommand(seal, "claude", [])).denied("file-read* file-write*")).toEqual(
       expect.arrayContaining([moved, path.join(home, ".codex")]),
     );
+    // moved to its own folder, claude keeps its account file there, so the one beside it is theirs
     expect(seal.runners.claude.home).toEqual([
       { match: "subpath", path: path.join(home, ".claude") },
+      { match: "prefix", path: path.join(home, ".claude.json") },
     ]);
+  });
+
+  it("keeps the account file in HOME theirs when the home is moved to where a link in HOME leads", async () => {
+    const dotfiles = path.join(box, "dotfiles/claude");
+    mkdirSync(dotfiles, { recursive: true });
+    symlinkSync(dotfiles, path.join(home, ".claude"));
+    const seal = await sealMoving({ CLAUDE_CONFIG_DIR: dotfiles });
+    const theirs = path.join(home, ".claude.json");
+    expect(seal.runners.claude.home).toEqual([
+      { match: "subpath", path: dotfiles },
+      { match: "prefix", path: theirs },
+    ]);
+    expect(seal.runners.claude.account).toEqual([
+      { match: "prefix", path: path.join(dotfiles, ".claude.json") },
+    ]);
+    expect(readBack(sealedCommand(seal, "codex", [])).denied("file-read* file-write*")).toContain(
+      theirs,
+    );
+    expect(readBack(sealedCommand(seal, "claude", [])).denied("file-write*")).toContain(theirs);
   });
 });
 

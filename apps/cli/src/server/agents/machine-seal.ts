@@ -344,16 +344,17 @@ const runnerHomeOf = async (
   const inHome = moved === undefined || moved === "";
   const usual = path.join(home, dir);
   const folder = inHome ? usual : path.resolve(moved);
-  const leftBehind =
-    (await realPathOf(folder)) === (await realPathOf(usual))
-      ? []
-      : [
-          ...(await reachOf(usual)),
-          ...(await reachesOf(
-            account.map((name) => path.join(home, name)),
-            "prefix",
-          )),
-        ];
+  // the account file in HOME is the founder's whenever the home is moved, even to where the one in
+  // HOME leads: the runner then keeps its own in the moved folder, and `accounts` names only that
+  const leftBehind = inHome
+    ? []
+    : [
+        ...((await realPathOf(folder)) === (await realPathOf(usual)) ? [] : await reachOf(usual)),
+        ...(await reachesOf(
+          account.map((name) => path.join(home, name)),
+          "prefix",
+        )),
+      ];
   const states = await Promise.all(
     state.map((name) =>
       name.endsWith("/")

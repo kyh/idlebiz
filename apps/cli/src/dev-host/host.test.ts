@@ -9,7 +9,7 @@ const quiet = (): void => {
 };
 
 describe("main's env under the dev host", () => {
-  it("drops what node loads as it starts, whatever main is told", () => {
+  it("drops the terminal's variables node loads code by as it starts", () => {
     vi.stubEnv("NODE_OPTIONS", "--require /tmp/x.js");
     vi.stubEnv("OPENSSL_CONF", "/tmp/openssl.cnf");
     vi.stubEnv("IDLEBIZ_DEV_HOST_KEPT", "kept");
