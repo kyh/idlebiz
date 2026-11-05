@@ -122,6 +122,8 @@ test("an action card hands the founder its draft and carries their answer back",
 
 // `npcs`, `player` and `facing` are private to the scene; the string reaches them at runtime.
 const SCENE = `window.__game.scene.getScene("office")`;
+// running, the office has claimed the keys or given them up; before it runs, `enabled` is only Phaser's default
+const OFFICE_HAS_KEYS = `window.__game?.scene.isActive("office") === true && ${SCENE}.input.keyboard.enabled`;
 const NPC_PLACED = (employeeId: string): string =>
   `window.__game?.scene.getScene("office")?.npcs?.positionOf(${JSON.stringify(employeeId)}) != null`;
 
@@ -418,14 +420,17 @@ test("#team keeps the keys after a message is sent", async ({ launch }) => {
   await founding.close();
 
   const { page } = await launch();
+  // #team shows before the office has run: until then the keys are Phaser's default, bound to nothing
+  await expect.poll(() => page.evaluate(OFFICE_HAS_KEYS)).toBe(true);
   const field = page.locator(".px-window").filter({ hasText: "# team" }).getByRole("textbox");
   await field.click();
+  await expect.poll(() => page.evaluate(OFFICE_HAS_KEYS)).toBe(false);
   await page.keyboard.type("first");
   await page.keyboard.press("Enter");
   await expect(page.getByText("first", { exact: true })).toBeVisible();
   await expect(field).toHaveValue("");
   await expect(field).toBeFocused();
-  expect(await page.evaluate(`${SCENE}.input.keyboard.enabled`)).toBe(false);
+  expect(await page.evaluate(OFFICE_HAS_KEYS)).toBe(false);
   await page.keyboard.type("second");
   await expect(field).toHaveValue("second");
 });
