@@ -48,7 +48,11 @@ export interface Reach {
 export interface RunnerHome {
   /** The home's folder, where it resolves. */
   folder: string;
-  /** The folder where it is named and where it resolves: the other runner's runs read none of it. */
+  /**
+   * The folder where it is named and where it resolves, and, when the founder moved it, the one in
+   * HOME with the account file beside it, which their own CLI still keeps: the other runner's runs
+   * read none of it, and this runner's write none of it but its state.
+   */
   home: readonly Reach[];
   state: readonly Reach[];
   account: readonly Reach[];

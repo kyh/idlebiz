@@ -15,7 +15,9 @@ leads from the next run on.
   and model hubs' publish logins, App Store Connect's notary keys, the updater's signing key,
   browser and chat-app profiles, agent-browser's saved logins; a file that holds one is sealed
   whole, even where a toolchain reads it on every build, and the caches and plugins beside it
-  stay readable), `secrets.json` with every name that starts with it, the other runner's home,
+  stay readable), `secrets.json` with every name that starts with it, the other runner's home
+  (and, where `CLAUDE_CONFIG_DIR` or `CODEX_HOME` moved it, as the e2e suite's stand-ins do, the
+  one in HOME with claude's account file beside it, which the founder's own CLI still keeps),
   and, for a codex run, what of the founder's own it would load
   (`personal` in `RUNNER_HOMES`): their skills (`$CODEX_HOME/skills`, codex's own `.system` ones in
   it, and `~/.agents/skills`), since codex loads every skill it can read and no setting leaves them

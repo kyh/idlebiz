@@ -327,6 +327,21 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     });
   });
 
+  it("keeps the founder's own home from the other runner's runs while a runner's is moved, as the stand-in's are", async () => {
+    const claudeHome = plant(".claude/canary");
+    const claudeAccount = plant(".claude.json");
+    const codexLogin = plant(".codex/auth.json");
+    const moved = seal({
+      env: { CLAUDE_CONFIG_DIR: at("stand-in/claude"), CODEX_HOME: at("stand-in/codex") },
+    });
+    expect(await tryAs("codex", { reads: [claudeHome, claudeAccount] }, moved)).toEqual(
+      all([claudeHome, claudeAccount], "EPERM"),
+    );
+    expect(await tryAs("claude", { reads: [codexLogin], writes: [claudeAccount] }, moved)).toEqual(
+      all([codexLogin, claudeAccount], "EPERM"),
+    );
+  });
+
   it("keeps the founder's skills from a codex run, which loads every one it can read, one linked in from elsewhere too", async () => {
     const inHome = plant(".codex/skills/review/SKILL.md");
     const system = plant(".codex/skills/.system/imagegen/SKILL.md");
@@ -1391,11 +1406,14 @@ describe.skipIf(!onMac)("sealRuns", () => {
     expect(after.closedPorts).toEqual([9222, 9229, 31_100]);
   });
 
-  it("finds a runner's home where the founder moved it", async () => {
+  it("finds a runner's home where the founder moved it, and keeps the one in HOME theirs", async () => {
     const moved = path.join(box, "codex-home");
     process.env.CODEX_HOME = moved;
     const seal = await machineSeal([]);
-    expect(seal.runners.codex.home).toEqual([{ match: "subpath", path: moved }]);
+    expect(seal.runners.codex.home).toEqual([
+      { match: "subpath", path: moved },
+      { match: "subpath", path: path.join(box, "home", ".codex") },
+    ]);
     expect(seal.runners.codex.state).toContainEqual({
       match: "prefix",
       path: path.join(moved, "auth.json"),

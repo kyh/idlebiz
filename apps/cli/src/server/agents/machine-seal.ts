@@ -330,7 +330,9 @@ const ownFolders = async (save: string, folders: readonly string[]): Promise<Rea
 /**
  * A runner's home, and the state in it its runs write, each where it is named and where it leads:
  * a dotfile manager may link any of it in from elsewhere. Moved by `override`, the account file
- * sits only in it, else beside it in HOME too.
+ * sits only in it, else beside it in HOME too. A moved home leaves the one in HOME the founder's
+ * own CLI keeps, account file and all, still theirs: it stays in `home`, which the other runner's
+ * runs read none of and this runner's write none of.
  */
 const runnerHomeOf = async (
   home: string,
@@ -340,7 +342,18 @@ const runnerHomeOf = async (
   const { absent, account, dir, override, personal, state } = RUNNER_HOMES[runner];
   const moved = env[override];
   const inHome = moved === undefined || moved === "";
-  const folder = inHome ? path.join(home, dir) : path.resolve(moved);
+  const usual = path.join(home, dir);
+  const folder = inHome ? usual : path.resolve(moved);
+  const leftBehind =
+    (await realPathOf(folder)) === (await realPathOf(usual))
+      ? []
+      : [
+          ...(await reachOf(usual)),
+          ...(await reachesOf(
+            account.map((name) => path.join(home, name)),
+            "prefix",
+          )),
+        ];
   const states = await Promise.all(
     state.map((name) =>
       name.endsWith("/")
@@ -356,7 +369,7 @@ const runnerHomeOf = async (
     absent: await reachesOf(absent.map((name) => path.join(folder, name))),
     account: await reachesOf(accounts, "prefix"),
     folder: await realPathOf(folder),
-    home: await reachOf(folder),
+    home: [...(await reachOf(folder)), ...leftBehind],
     personal: await reachesOf([
       ...personal.home.map((name) => path.join(folder, name)),
       ...personal.user.map((name) => path.join(home, name)),
