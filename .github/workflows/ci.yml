@@ -143,21 +143,21 @@ jobs:
       - name: Test
         run: pnpm test
 
-      # what the seal refused while the gates ran, which a run's own output may not say: Seatbelt
-      # logs each deny to the system log by process, operation and path, and these are the ones
-      # under the runner's home or TMPDIR
-      - name: Seal denials
-        if: ${{ failure() }}
-        run: |
-          sudo log show --last 30m --style compact --predicate 'sender == "Sandbox"' \
-            | grep -E 'deny\(' | grep -E '/(private/)?var/folders/|/Users/runner/' \
-            | tail -n 400 || true
-
       - name: Smoke the packaged app
         env:
           # ad-hoc: the runner's keychain holds no Developer ID
           IDLEBIZ_PACK_UNSIGNED: 1
         run: pnpm smoke:desktop
+
+      # what the seal refused while the gates or the smoke ran, which a run's own output may not
+      # say: Seatbelt logs each deny to the system log by process, operation and path, and these
+      # are the ones under the runner's home or TMPDIR
+      - name: Seal denials
+        if: ${{ failure() }}
+        run: |
+          sudo log show --last 40m --style compact --predicate 'sender == "Sandbox"' \
+            | grep -E 'deny\(' | grep -E '/(private/)?var/folders/|/Users/runner/' \
+            | tail -n 400 || true
 
   # The office end to end on a Mac, the one platform that seals a run: each launch signs the CLIs
   # the adapters bundle in to a stand-in model on loopback, so nothing signs in or bills, and a test
