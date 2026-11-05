@@ -175,6 +175,9 @@ orient a reader and link into them, never telling a mechanic again.
   supervises its own server, or none, and each server drives its own ACP runtime, and public repos
   would need another to publish one from. A fix in one is ported to the others by hand, to what
   `docs/app.md`'s "What the siblings share" lists.
+- **An agent verifies the app with no login and no bill**: the suites drive the CLIs the adapters
+  bundle, sealed, against a stand-in model on loopback; only the model is replaced, its every
+  switch is one the packaged shell drops, and on a Mac a test that would skip fails.
 - **AGENTS.md stays under 32 KiB**: codex reads AGENTS.md only that far (`project_doc_max_bytes`'s
   default) and Claude loads it, with this file, into every session. So it holds the workflow, the
   map and the traps, and each mechanic is a `docs/` file read by whoever changes it.

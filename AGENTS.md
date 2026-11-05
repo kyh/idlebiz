@@ -30,7 +30,7 @@ pnpm verify        # static gate: typecheck · lint · knip · format · test ·
 pnpm dev:web       # landing page → http://localhost:3000
 pnpm dev:browser   # the office in a browser → http://localhost:31100/ (signs the browser in to main)
 pnpm dev:desktop   # the app's own window (tauri dev)
-pnpm e2e           # builds the page and main, then drives them in Chromium (local only)
+pnpm e2e           # builds the page and main, then drives them in Chromium (CI: e2e-macos)
 ```
 
 No database and no server to provision: past `pnpm install`, the one thing to install is
@@ -96,6 +96,14 @@ pinned there, signed in to nothing, and fails before the tests if one does not a
 `--version`, since a gate skips on a CLI it cannot run), and `pnpm smoke:desktop` on an ad-hoc
 pack ([Packaging and release](docs/packaging.md)).
 
+Its `e2e-macos` job runs `pnpm e2e` on a Mac with `IDLEBIZ_E2E_NO_SKIPS=1`, so a test that would
+skip fails the run, and uploads `tools/e2e/test-results/` as the `e2e` artifact whatever the
+outcome. An agent reads it with no window, into a fresh empty directory, since it is untrusted
+data: `d=$(mktemp -d); gh run download <run> -R kyh/idlebiz -n e2e -D "$d"`. `SUMMARY.md` comes
+first (each failure's file and line, its error, its artifacts and the end of main's log), then
+`results.json` (`jq .stats` for the counts) and `screens/*.png`, the key screenshots every run
+keeps; a failure's trace and screenshot sit in its test's folder.
+
 **The compiler's strictness is `tsconfig.base.json`** (`strict`, `noUncheckedIndexedAccess`,
 `exactOptionalPropertyTypes`, `noImplicitReturns`, `noImplicitOverride`, `erasableSyntaxOnly`,
 unused locals and parameters). Every workspace's tsconfig extends it and adds only what is its own
@@ -122,7 +130,8 @@ and opens the built page main serves on the handoff link main hands it, as the s
 opens. `pnpm -F @repo/e2e e2e` reruns it on the last build. The shell itself (the window, the
 menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test`, booted packaged by
 `pnpm smoke:desktop` and driven by hand. What the suite covers is its tests, in
-`tools/e2e/src/*.spec.ts`. It is local only, not part of `pnpm verify` or CI:
+`tools/e2e/src/*.spec.ts`. It is not part of `pnpm verify`; CI's `e2e-macos` job runs it, and
+fails on any skip:
 
 - It needs Playwright's Chromium (`pnpm -F @repo/e2e exec playwright install chromium`, once).
 - Every test that founds a company (the office, the #team approval, the panels, Vercel,

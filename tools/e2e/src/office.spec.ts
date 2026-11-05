@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { apiOf, expect, foundCompany, test } from "./harness";
+import { apiOf, expect, foundCompany, keyShot, test } from "./harness";
 import type { Locator, Page } from "@playwright/test";
 import type { BlockedAsk, Task } from "@repo/domain/domain";
 import { serializeTask } from "idlebiz/task-file";
@@ -9,6 +9,9 @@ import type { Founded } from "./harness";
 
 // `npcs` is private to the scene and the manager; the string reaches them at runtime.
 const NPCS_IN_OFFICE = `window.__game?.scene.getScene("office")?.npcs?.npcs.size ?? -1`;
+
+// one frame drawn now, as AGENTS.md steps a canvas headless automation leaves blank
+const STEP_OFFICE = `window.__game?.loop.step(performance.now())`;
 
 const HELD_COMMAND = "deploy tip-jar to production";
 
@@ -23,6 +26,8 @@ test("a founded company boots into the office", async ({ launch }) => {
   }
   await expect(page.getByText("# team")).toBeVisible();
   await expect.poll(() => page.evaluate(NPCS_IN_OFFICE)).toBe(employees.length);
+  await page.evaluate(STEP_OFFICE);
+  await keyShot(page, "office");
 });
 
 const INBOX_BUTTON = "Questions, steps only you can take and stuck tasks waiting on you";
@@ -73,6 +78,7 @@ test("a held command waits in #team and the inbox until the founder denies it", 
   await expect(inbox.getByText(HELD_COMMAND)).toBeVisible();
   await expect(inbox.getByRole("button", { name: "Deny" })).toBeVisible();
   await expect(inbox.getByRole("button", { name: "Approve" })).toBeVisible();
+  await keyShot(page, "inbox-held-command");
   await inbox.getByRole("button", { exact: true, name: "Done" }).click();
 
   await expect(page.getByText(HELD_COMMAND)).toBeVisible();

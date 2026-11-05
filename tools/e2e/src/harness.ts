@@ -244,6 +244,17 @@ export const test = base.extend<Fixtures & Options>({
 export { expect } from "@playwright/test";
 
 /**
+ * A screenshot every run keeps, green or red, for whoever reads the run after it with no window:
+ * `test-results/screens/<name>.png`, attached to its test as well.
+ */
+export const keyShot = async (page: Page, name: string): Promise<void> => {
+  const info = test.info();
+  const file = path.join(info.project.outputDir, "screens", `${name}.png`);
+  await page.screenshot({ animations: "disabled", caret: "hide", path: file });
+  await info.attach(name, { contentType: "image/png", path: file });
+};
+
+/**
  * The page's API to the server, called from the test with what main asks of every call: the
  * cookie the page's handoff set, from the page's own origin.
  */

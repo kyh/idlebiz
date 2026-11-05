@@ -84,8 +84,9 @@ jobs:
         run: pnpm build
 
   # The app ships only as a macOS arm64 .app, and only a Mac compiles the shell's own code (the
-  # Keychain, the login item, keeping awake), runs the seal and the gate suites, and boots the pack.
-  # Typecheck, lint, knip, format and build read no platform, so the ci job alone runs them.
+  # Keychain, the login item, keeping awake), runs the seal and the gate suites, boots the pack and
+  # founds a company end to end (e2e-macos). Typecheck, lint, knip, format and build read no
+  # platform, so the ci job alone runs them.
   test-macos:
     runs-on: macos-latest
     # a backstop: the shell's release build for the pack is minutes of it cold
@@ -147,3 +148,70 @@ jobs:
           # ad-hoc: the runner's keychain holds no Developer ID
           IDLEBIZ_PACK_UNSIGNED: 1
         run: pnpm smoke:desktop
+
+  # The office end to end on a Mac, the one platform that seals a run: each launch signs the CLIs
+  # the adapters bundle in to a stand-in model on loopback, so nothing signs in or bills, and a test
+  # that would skip fails instead. A runner of its own beside test-macos: it needs no Rust, and
+  # stays clear of the smoke's single-instance socket and Keychain checks.
+  e2e-macos:
+    runs-on: macos-latest
+    # a backstop over the suite's own step
+    timeout-minutes: 30
+    steps:
+      # as the ci job's: no later step reaches the remote
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
+        with:
+          runtime: node@24
+          cache: true
+
+      # a key of its own, so it never races test-macos to save one, restored from either's last
+      - name: Turbo cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo
+          key: turbo-e2e-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-e2e-${{ runner.os }}-
+            turbo-${{ runner.os }}-
+
+      # the Chromium the suite drives, cached under the Playwright version the lockfile holds: a
+      # bump fetches the new build, nothing else does. Only the headless shell, all CI runs
+      - name: E2E browser version
+        id: playwright
+        working-directory: tools/e2e
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: E2E browser cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: >-
+            playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+
+      - name: E2E browser
+        run: pnpm -F @repo/e2e exec playwright install --only-shell chromium
+
+      # Playwright's own global timeout is 12 minutes, so the reporters still write before this one
+      - name: E2E
+        timeout-minutes: 15
+        env:
+          # a skipped test fails the run, as a gate CLI that does not answer fails test-macos: here
+          # every founding test can run, and one that skips would pass unseen
+          IDLEBIZ_E2E_NO_SKIPS: 1
+        run: pnpm e2e
+
+      # every run's SUMMARY.md, results.json and key screenshots, and a failure's trace and
+      # screenshot; .last-run.json feeds --last-failed. Public, as the repo is: no test types a key
+      - name: E2E report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e
+          path: tools/e2e/test-results/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
