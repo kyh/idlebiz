@@ -126,8 +126,11 @@ menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test`, bo
 
 - It needs Playwright's Chromium (`pnpm -F @repo/e2e exec playwright install chromium`, once).
 - Every test that founds a company (the office, the #team approval, the panels, Vercel,
-  Stripe and Printful key entry, sealing) needs a signed-in `claude` or `codex` CLI under the
-  macOS seal and skips without one, so off a Mac only the title screen and the newer save run.
+  Stripe and Printful key entry, sealing) needs no login: every launch signs the `claude` and
+  `codex` the adapters bundle in to a stand-in model on loopback (`idlebiz/stand-in-model`,
+  `idlebiz/stand-in-runners`), and main inherits none of the terminal's provider env. Founding
+  still needs the macOS seal, so off a Mac each skips on the seal's own refusal and only the title
+  screen and the newer save run; on a Mac a CLI that does not sign in fails the test.
 - It needs no network and no real account. Every launch starts main with
   `tools/e2e/src/stub-services.ts` preloaded, which answers Stripe, Vercel and Printful from
   canned JSON: an account that takes any key, or, under `launch({ keys: "refused" })`, a Stripe
@@ -140,7 +143,8 @@ menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test`, bo
   called from the test with the page's cookie and origin (`apiOf`), with a hand-written team (no
   casting run), a $0 cap and autopilot off; the scheduler checks the budget before it spawns
   anything, so no run can start. It directs nobody, and every test ends by asserting its save
-  logged no `run.start`.
+  logged exactly the runs it scripts (`test.use({ runs })`, none by default), each one ended, and
+  the stand-in saw no login but its own.
 
 Runtime, web — headless with [agent-browser](https://github.com/vercel-labs/agent-browser):
 
@@ -191,11 +195,14 @@ Don't stop at `pnpm verify` — for anything the player can see, drive it and lo
 | `apps/web` landing                     | `pnpm dev:web`                        | no          |
 | Onboarding modal (first screen)        | boot with an empty `IDLEBIZ_ROOT_DIR` | no          |
 | Office, HUD, dialogue, teams, products | finish onboarding                     | **yes**     |
+| The office and its panels, in e2e      | `pnpm e2e` on a Mac (stand-in model)  | no          |
 
-The last row is a hard gate, not a convenience: `renderer/ui/onboarding.tsx` calls
+The third row is a hard gate, not a convenience: `renderer/ui/onboarding.tsx` calls
 `onboarding.hires`, which dispatches a real agent run (`server/agents/onboarding.ts`), and its
-flow (`renderer/ui/onboarding-flow.ts`) founds nothing when no hires come back. Use `IDLEBIZ_ROOT_DIR` for fixtures; there is no
-bundled seeded save. Employee runs still use the signed-in CLI.
+flow (`renderer/ui/onboarding-flow.ts`) founds nothing when no hires come back. The last is the
+e2e suite's, which founds through the page's API with no login, on the stand-in model ([Verify a
+change end-to-end](#verify-a-change-end-to-end)). Use `IDLEBIZ_ROOT_DIR` for fixtures; there is
+no bundled seeded save. Employee runs started by hand still use the signed-in CLI.
 
 ## Platform matrix
 

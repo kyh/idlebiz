@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { probeRunners } from "@repo/agent-driver/detect";
 import type { RunnerProbe } from "@repo/agent-driver/detect";
-import { RUNNERS } from "@repo/agent-driver/registry";
 import type { Argv } from "@repo/agent-driver/registry";
 import { RUNNER_IDS } from "@repo/domain/runners";
 import type { RunnerId } from "@repo/domain/runners";
@@ -15,7 +14,7 @@ import { runnerEnv } from "../agents/session";
 import { tempSave } from "./save";
 import { startStandInModel } from "./stand-in-model";
 import type { StandInModel } from "./stand-in-model";
-import { bundledCli, standInRunnerEnv } from "./stand-in-runners";
+import { bundledCli, isProviderEnv, standInRunnerEnv } from "./stand-in-runners";
 
 // The CLIs the adapters bundle, signed in to the stand-in model, as main's own probe finds them at
 // boot: as they are everywhere, and on a Mac under each runner's seal too, as boot starts them. The
@@ -25,16 +24,13 @@ import { bundledCli, standInRunnerEnv } from "./stand-in-runners";
 // the seal reads where the save is
 tempSave();
 
-/** Every name a runner signs in or is configured with, the stand-in's or this machine's. */
-const PROVIDER_ENV = [...new Set(RUNNER_IDS.flatMap((runner) => RUNNERS[runner].providerEnv))];
-
 /**
  * Main's env holding `env`, with HOME at `home` and none of this machine's own provider env, so
  * the stand-in's login is the only one a CLI could find.
  */
 const asMainWith = (env: Readonly<Record<string, string>>, home: string): void => {
   for (const name of Object.keys(process.env)) {
-    if (PROVIDER_ENV.some((prefix) => name.startsWith(prefix)) && !(name in env)) {
+    if (isProviderEnv(name) && !(name in env)) {
       // oxlint-disable-next-line unicorn/no-useless-undefined -- vi.stubEnv unsets a name only when handed undefined
       vi.stubEnv(name, undefined);
     }

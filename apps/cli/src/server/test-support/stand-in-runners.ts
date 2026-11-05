@@ -93,6 +93,15 @@ const bundledCodex = (): string => {
 export const bundledCli = (runner: RunnerId): string =>
   runner === "claude" ? bundledClaude() : bundledCodex();
 
+const PROVIDER_ENV = RUNNER_IDS.flatMap((runner) => RUNNERS[runner].providerEnv);
+
+/**
+ * Whether `name` is one a runner's CLI signs in or is configured with: a terminal's own, handed to
+ * main, could route a run on the stand-in to a real provider, and bill it.
+ */
+export const isProviderEnv = (name: string): boolean =>
+  PROVIDER_ENV.some((prefix) => name.startsWith(prefix));
+
 const execFileAsync = promisify(execFile);
 
 /**
