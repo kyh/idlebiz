@@ -34,6 +34,13 @@ import type { Launched, Process } from "./packaged-app.ts";
 const packageRoot = path.resolve(import.meta.dirname, "..");
 const cliRoot = path.resolve(packageRoot, "..", "cli");
 const [named] = process.argv.slice(2);
+// a test pack leaves its .app in its spec's folder and never rebuilds the release target's, which
+// the smoke would then boot stale
+if (named === undefined && process.env.IDLEBIZ_PACK_UPDATE_TEST !== undefined) {
+  throw new Error(
+    "IDLEBIZ_PACK_UPDATE_TEST is set, so the pack before this smoke was a test pack, which leaves src-tauri/target/release's .app as it was: unset it, or name the .app to smoke",
+  );
+}
 const appDir =
   named === undefined
     ? path.join(packageRoot, "src-tauri", "target", "release", "bundle", "macos", "IdleBiz.app")
