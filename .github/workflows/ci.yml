@@ -155,7 +155,7 @@ jobs:
       - name: Seal denials
         if: ${{ failure() }}
         run: |
-          sudo log show --last 40m --style compact --predicate 'sender == "Sandbox"' \
+          sudo log show --last 60m --style compact --predicate 'sender == "Sandbox"' \
             | grep -E 'deny\(' | grep -E '/(private/)?var/folders/|/Users/runner/' \
             | tail -n 400 || true
 
