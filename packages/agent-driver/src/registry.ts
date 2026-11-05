@@ -184,7 +184,7 @@ export const RUNNERS = {
   },
   codex: {
     acpEntry: "@agentclientprotocol/codex-acp/dist/index.js",
-    // `codex login status` exits 0 either way and says how you're logged in
+    // `codex login status` says how codex is signed in, and exits 1 when it is not
     authProbe: { args: ["login", "status"], loggedIn: (out) => !/not logged in/iu.test(out) },
     binEnvVar: "CODEX_PATH",
     cli: { command: "codex", override: "CODEX_BIN" },
