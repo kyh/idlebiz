@@ -60,6 +60,17 @@ signature (`scripts/release-feed.ts`, held by its test to the endpoint and to wh
 uploads), and the release publishes the dmg, the archive and the feed, becoming the latest only once
 all three are up.
 
+A test pack (`IDLEBIZ_PACK_UPDATE_TEST=<spec.json>`, `scripts/update-test-pack.ts`) is one an update
+is tested on: its spec names a version, a feed at `http://127.0.0.1:<port>/latest.json` and a
+throwaway key made in scratch, which `package.ts` writes into that pack's config alone. It builds in
+`src-tauri/target/update-test`, apart from every other pack, and leaves its .app, and with `archive`
+its signed archive and feed, in the spec's `outDir`. It is refused as a release, as a signed pack,
+on a feed off loopback, with a key beside `~/.tauri/idlebiz.key` or in the checkout, with
+tauri.conf.json's pubkey, or with `.output/bin` as its folder: its feed is plain http and its key
+has no password, so either in a release would let whoever answers that port or holds that key ship
+code to every install. The feed and key go in at pack time and never at runtime, since a switch the
+installed app read could be set by `launchctl setenv` and re-point the founder's updates.
+
 `pnpm smoke:desktop` packs, then boots the .app on a scratch save it names with `--root=` (the
 packaged app takes no `IDLEBIZ_ROOT_DIR`), under an env poisoned as `launchctl setenv` could
 poison launchd's (`apps/desktop/scripts/smoke-packaged.ts`;

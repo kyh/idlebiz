@@ -1,6 +1,10 @@
 // The Mac app's dmg, in .output/bin. The release material is read here, in the one process that
 // packs, rather than from the shell's environment.
 //
+// Under IDLEBIZ_PACK_UPDATE_TEST=<spec.json> it packs a test pack instead (update-test-pack.ts):
+// an ad-hoc .app on a loopback feed and a throwaway key, built apart from every other pack and left
+// in the spec's own folder, which a release refuses.
+//
 // `bundle.resources` and `externalBin` live in the config this writes, never in tauri.conf.json:
 // tauri-build copies both on every cargo build, so a clippy run would copy main's 600 MB, and a
 // checkout that never packaged would fail its typecheck for want of them.
@@ -16,10 +20,21 @@ import { FEED_NAME, archiveName, releaseAssets, releaseFeed } from "./release-fe
 import { writeRustNotices } from "./rust-notices.ts";
 import { signResources } from "./sign-resources.ts";
 import { stageServer } from "./stage-server.ts";
+import {
+  loopbackFeed,
+  realPathOf,
+  refuseUpdateTest,
+  updateTestConfig,
+  updateTestSpecSchema,
+} from "./update-test-pack.ts";
 
 const packageRoot = path.resolve(import.meta.dirname, "..");
+const checkout = path.resolve(packageRoot, "..", "..");
 const outDir = path.join(packageRoot, ".output", "bin");
-const bundleDir = path.join(packageRoot, "src-tauri", "target", "release", "bundle");
+const targetDir = path.join(packageRoot, "src-tauri", "target");
+// a test pack's: its shell has a test feed and key compiled in, so it shares no artifact with
+// another pack's
+const testTargetDir = path.join(targetDir, "update-test");
 const { version } = z
   .object({ version: z.string() })
   .parse(JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf-8")));
@@ -205,6 +220,28 @@ if (process.platform !== "darwin") {
 }
 
 const identity = signingIdentity();
+// refused before anything is built while it could reach a release or another Mac
+const specFile = process.env.IDLEBIZ_PACK_UPDATE_TEST;
+const spec =
+  specFile === undefined
+    ? null
+    : updateTestSpecSchema.parse(JSON.parse(readFileSync(specFile, "utf-8")));
+if (spec !== null) {
+  refuseUpdateTest(spec, {
+    checkout,
+    identity,
+    pubkey: updater.pubkey,
+    real: realPathOf,
+    release: process.env.IDLEBIZ_RELEASE === "1",
+    releaseOut: outDir,
+    updaterKey: UPDATER_KEY,
+  });
+  if (spec.archive && !existsSync(spec.key)) {
+    throw new Error(`a test pack signs its archive with ${spec.key}, which is missing`);
+  }
+  log(`a test pack of ${spec.version}, asking ${spec.feed}, left in ${spec.outDir}`);
+}
+const bundleDir = path.join(spec === null ? targetDir : testTargetDir, "release", "bundle");
 const signed = identity !== "-";
 const notary = signed ? notaryEnv() : null;
 if (process.env.IDLEBIZ_RELEASE === "1" && notary === null) {
@@ -218,15 +255,29 @@ log(
     ? "apps/desktop/.env names no notary key — not notarized"
     : `notarizing with ${notary.APPLE_API_KEY_PATH}`,
 );
-const signing = updaterSigning();
+// a test pack that is the update signs it with its throwaway key, made without a password
+const signingKey = spec?.archive === true ? spec.key : UPDATER_KEY;
+const signing =
+  spec?.archive === true
+    ? { TAURI_SIGNING_PRIVATE_KEY: spec.key, TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "" }
+    : updaterSigning();
 log(
-  signing === null ? "no update archive: not a release" : `signing the update with ${UPDATER_KEY}`,
+  signing === null ? "no update archive: not a release" : `signing the update with ${signingKey}`,
 );
 
 // the page first, then the server, which stages it beside its bundle
 run("pnpm", ["run", "build"], { cwd: packageRoot });
 run("pnpm", ["--filter", "idlebiz", "run", "build"], { cwd: packageRoot });
 const staged = await stageServer(path.join(packageRoot, ".output", "staged-server"));
+if (spec !== null) {
+  // the server names the version its package.json does (apps/cli/src/paths.ts), so a test pack's
+  // names its shell's
+  const manifest = path.join(staged, "package.json");
+  const fields = z
+    .looseObject({ version: z.string() })
+    .parse(JSON.parse(await readFile(manifest, "utf-8")));
+  await writeFile(manifest, `${JSON.stringify({ ...fields, version: spec.version }, null, 2)}\n`);
+}
 const resourceCount = await signResources([staged], identity, signed);
 log(`signed ${resourceCount} binaries the server's dependencies carry`);
 const crateCount = await writeRustNotices(
@@ -237,7 +288,8 @@ log(`noted the licences of the ${crateCount} Rust crates the shell links`);
 
 const config = {
   bundle: {
-    // the signed archive the updater installs, beside the app: a release's alone
+    // the signed archive the updater installs, beside the app: a release's, or the update a test
+    // pack is
     createUpdaterArtifacts: signing !== null,
     externalBin: ["binaries/node"],
     macOS: {
@@ -255,8 +307,11 @@ const config = {
       // the sidecar is already a file named `node`, and a folder of that name fails the build
       "../resources/node/": "notices/node/",
     },
-    targets: ["app", "dmg"],
+    // a test pack is installed from its .app, never a dmg
+    targets: spec === null ? ["app", "dmg"] : ["app"],
   },
+  // a test pack's version, feed and pubkey; nothing without one
+  ...updateTestConfig(spec),
 };
 const configFile = path.join(packageRoot, ".output", "tauri.package.conf.json");
 await writeFile(configFile, `${JSON.stringify(config, null, 2)}\n`);
@@ -267,27 +322,54 @@ const inherited = Object.fromEntries(
     ([name]) => !NOTARY_VARIABLES.has(name) && !SIGNING_VARIABLES.has(name),
   ),
 );
+const buildEnv: NodeJS.ProcessEnv = { ...inherited, ...notary, ...signing };
+if (spec !== null) {
+  buildEnv.CARGO_TARGET_DIR = testTargetDir;
+}
 run("pnpm", ["exec", "tauri", "build", "--config", configFile], {
   cwd: packageRoot,
-  env: { ...inherited, ...notary, ...signing },
+  env: buildEnv,
 });
 
-await rm(outDir, { force: true, recursive: true });
-await mkdir(outDir, { recursive: true });
-await copyFile(await findOne(path.join(bundleDir, "dmg"), ".dmg"), path.join(outDir, DMG_NAME));
-log(
-  `${path.join("src-tauri", "target", "release", "bundle", "macos", "IdleBiz.app")} and ${DMG_NAME}`,
-);
-if (signing !== null) {
-  const archive = await findOne(path.join(bundleDir, "macos"), ".app.tar.gz");
-  await copyFile(archive, path.join(outDir, ARCHIVE_NAME));
-  const signature = await readFile(`${archive}.sig`, "utf-8");
-  const feed = releaseFeed({
-    feed: updater.endpoints[0],
-    publishedAt: new Date(),
-    signature,
-    version,
-  });
-  await writeFile(path.join(outDir, FEED_NAME), `${JSON.stringify(feed, null, 2)}\n`);
-  log(`${ARCHIVE_NAME} and ${FEED_NAME}, for the installed app's updater`);
+if (spec === null) {
+  await rm(outDir, { force: true, recursive: true });
+  await mkdir(outDir, { recursive: true });
+  await copyFile(await findOne(path.join(bundleDir, "dmg"), ".dmg"), path.join(outDir, DMG_NAME));
+  log(
+    `${path.join("src-tauri", "target", "release", "bundle", "macos", "IdleBiz.app")} and ${DMG_NAME}`,
+  );
+  if (signing !== null) {
+    const archive = await findOne(path.join(bundleDir, "macos"), ".app.tar.gz");
+    await copyFile(archive, path.join(outDir, ARCHIVE_NAME));
+    const signature = await readFile(`${archive}.sig`, "utf-8");
+    const feed = releaseFeed({
+      feed: updater.endpoints[0],
+      publishedAt: new Date(),
+      signature,
+      version,
+    });
+    await writeFile(path.join(outDir, FEED_NAME), `${JSON.stringify(feed, null, 2)}\n`);
+    log(`${ARCHIVE_NAME} and ${FEED_NAME}, for the installed app's updater`);
+  }
+} else {
+  // the spec's folder, never .output/bin (refuseUpdateTest), and nothing else in it removed
+  await mkdir(spec.outDir, { recursive: true });
+  const app = path.join(spec.outDir, "IdleBiz.app");
+  // ditto merges into a folder already there, which would leave files the signature never named
+  await rm(app, { force: true, recursive: true });
+  run("ditto", [path.join(bundleDir, "macos", "IdleBiz.app"), app]);
+  log(`${app}, IdleBiz ${spec.version} asking ${spec.feed}`);
+  if (signing !== null) {
+    const archive = await findOne(path.join(bundleDir, "macos"), ".app.tar.gz");
+    await copyFile(archive, path.join(spec.outDir, archiveName(spec.version)));
+    const signature = await readFile(`${archive}.sig`, "utf-8");
+    const feed = loopbackFeed({
+      feed: spec.feed,
+      publishedAt: new Date(),
+      signature,
+      version: spec.version,
+    });
+    await writeFile(path.join(spec.outDir, FEED_NAME), `${JSON.stringify(feed, null, 2)}\n`);
+    log(`${archiveName(spec.version)} and ${FEED_NAME}, for ${spec.feed} to serve`);
+  }
 }

@@ -3,17 +3,33 @@
 //
 // `pnpm -F @repo/desktop smoke <path/to/IdleBiz.app>` smokes another .app, a release's from its dmg.
 
-import { spawn, spawnSync } from "node:child_process";
-import type { ChildProcess, ChildProcessByStdio } from "node:child_process";
-import { once } from "node:events";
+import { spawnSync } from "node:child_process";
 import { accessSync, constants, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { createConnection } from "node:net";
 import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
-import type { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import { HANDOFF_PARAM } from "@repo/contract/routes";
+import {
+  BOOT_TIMEOUT_MS,
+  MAIN_EXITED_CLEANLY,
+  SINGLE_INSTANCE_SOCKET,
+  WINDOW_LOADED,
+  answers,
+  ended,
+  exitsWithin,
+  how,
+  killGroup,
+  launch,
+  loopbackPorts,
+  mainOf,
+  packagedApp,
+  processes,
+  runsBundledNode,
+  startingEnvOf,
+  waitForLine,
+} from "./packaged-app.ts";
+import type { Launched, Process } from "./packaged-app.ts";
 
 const packageRoot = path.resolve(import.meta.dirname, "..");
 const cliRoot = path.resolve(packageRoot, "..", "cli");
@@ -22,27 +38,11 @@ const appDir =
   named === undefined
     ? path.join(packageRoot, "src-tauri", "target", "release", "bundle", "macos", "IdleBiz.app")
     : path.resolve(named);
-const shellBinary = path.join(appDir, "Contents", "MacOS", "IdleBiz");
-// where src-tauri/src/runtime.rs finds them: node beside the shell, the server a resource
-const bundledNode = path.join(appDir, "Contents", "MacOS", "node");
-const serverDir = path.join(appDir, "Contents", "Resources", "server");
-const noticesDir = path.join(appDir, "Contents", "Resources", "notices");
+const app = packagedApp(appDir);
+const { shellBinary, bundledNode, serverDir, noticesDir } = app;
 // what scripts/package.ts maps there: the Rust crates' licences, and node's with its source
 const NOTICES = ["rust-crates.txt", "node/LICENSE", "node/SOURCE"];
 
-// the shell's lines (src-tauri/src): the window's first load (window.rs), a launch it gave up on
-// (lib.rs, shell.rs), and main's end (main_process.rs)
-const WINDOW_LOADED = "[shell] window loaded";
-const GAVE_UP = [
-  "[shell] IdleBiz failed to start",
-  "[shell] IdleBiz couldn't start",
-  "[shell] IdleBiz stopped",
-];
-const MAIN_EXITED_CLEANLY = "main exited (code 0)";
-
-// tauri-plugin-single-instance's machine-wide socket (`/tmp/<identifier>_si.sock`): an IdleBiz that
-// answers on it would take this launch over, and the smoke would watch the wrong app
-const SINGLE_INSTANCE_SOCKET = "/tmp/com_idlebiz_desktop_si.sock";
 // the item the shell reads the key that seals secrets.json from, or makes on a first launch
 // (src-tauri/src/keychain.rs)
 const KEYCHAIN_SERVICE = "IdleBiz";
@@ -53,9 +53,6 @@ const NO_SUCH_ITEM = 44;
 // a delete the Keychain holds on a prompt nobody answers
 const KEYCHAIN_TIMEOUT_MS = 10_000;
 
-// a cold WebKit, main's boot (its save claim, store, control plane and page server) and the
-// handoff, on a CI runner
-const BOOT_TIMEOUT_MS = 120_000;
 // past a quit's 45s and main's 5s to exit once its stdin closes (main_process.rs)
 const EXIT_TIMEOUT_MS = 60_000;
 const HANDOVER_TIMEOUT_MS = 30_000;
@@ -70,82 +67,8 @@ const MAIN_LOG = path.join(userInfo().homedir, "Library", "Logs", "IdleBiz", "ma
 // the names main's login-shell probe, its runners and its git would look up on a PATH
 const PATH_CANARIES = ["bash", "claude", "codex", "git", "zsh"];
 
-type Shell = ChildProcessByStdio<null, Readable, Readable>;
-
-interface Launched {
-  shell: Shell;
-  /** Everything the shell has printed so far, main's stderr among it. */
-  output: () => string;
-}
-
-interface Process {
-  pid: number;
-  pgid: number;
-  ppid: number;
-  args: string;
-}
-
 const log = (line: string): void => {
   process.stdout.write(`smoke: ${line}\n`);
-};
-
-const PS_LINE = /^\s*(?<pid>\d+)\s+(?<pgid>\d+)\s+(?<ppid>\d+)\s+(?<args>.*)$/u;
-
-const processes = (): Process[] => {
-  const listed = spawnSync("ps", ["-A", "-ww", "-o", "pid=,pgid=,ppid=,args="], {
-    encoding: "utf-8",
-  });
-  if (listed.status !== 0) {
-    throw new Error(`ps exited ${listed.status ?? listed.signal}: ${listed.stderr}`);
-  }
-  return listed.stdout.split("\n").flatMap((line) => {
-    const groups = PS_LINE.exec(line)?.groups;
-    const { pid, pgid, ppid, args } = { ...groups };
-    if (pid === undefined || pgid === undefined || ppid === undefined || args === undefined) {
-      return [];
-    }
-    return [{ args, pgid: Number(pgid), pid: Number(pid), ppid: Number(ppid) }];
-  });
-};
-
-// the shell names main's node beside the path its own binary was started by, which is this one
-const runsBundledNode = (running: Process): boolean => running.args.startsWith(`${bundledNode} `);
-
-const loopbackPorts = (pid: number): number[] => {
-  const listed = spawnSync(
-    "lsof",
-    ["-nP", "-a", "-p", String(pid), "-iTCP", "-sTCP:LISTEN", "-Fn"],
-    { encoding: "utf-8" },
-  );
-  return listed.stdout.split("\n").flatMap((line) => {
-    const port = /^n127\.0\.0\.1:(?<port>\d+)$/u.exec(line)?.groups?.port;
-    return port === undefined ? [] : [Number(port)];
-  });
-};
-
-const ended = (child: ChildProcess): boolean =>
-  child.exitCode !== null || child.signalCode !== null;
-
-/** Whether `child` exited within `ms`. */
-const exitsWithin = async (child: ChildProcess, ms: number): Promise<boolean> => {
-  if (ended(child)) {
-    return true;
-  }
-  return await Promise.race([
-    once(child, "exit").then(() => true),
-    delay(ms, false, { ref: false }),
-  ]);
-};
-
-const how = (child: ChildProcess): string =>
-  child.exitCode === null ? String(child.signalCode) : `code ${child.exitCode}`;
-
-const killGroup = (pgid: number): void => {
-  try {
-    process.kill(-pgid, "SIGKILL");
-  } catch {
-    // already gone
-  }
 };
 
 /**
@@ -166,101 +89,6 @@ const forgetKey = (): void => {
       `smoke: the Keychain kept the key the launch made (security exited ${deleted.status ?? deleted.signal}): delete "${KEYCHAIN_SERVICE}" in Keychain Access before the next smoke\n`,
     );
   }
-};
-
-const answers = async (socket: string): Promise<boolean> => {
-  const probe = createConnection(socket);
-  try {
-    await once(probe, "connect");
-    return true;
-  } catch {
-    return false;
-  } finally {
-    probe.destroy();
-  }
-};
-
-const launch = (args: readonly string[], env: NodeJS.ProcessEnv): Launched => {
-  // a process group of its own, so a failed smoke takes the shell down whole
-  const shell = spawn(shellBinary, args, {
-    detached: true,
-    env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let output = "";
-  const record = (chunk: Buffer): void => {
-    output += chunk.toString();
-    process.stdout.write(chunk);
-  };
-  shell.stdout.on("data", record);
-  shell.stderr.on("data", record);
-  return { output: () => output, shell };
-};
-
-/** Waits for the shell to print `line`, failing as soon as it gives up or exits. */
-const waitForLine = async (launched: Launched, line: string): Promise<void> => {
-  const deadline = Date.now() + BOOT_TIMEOUT_MS;
-  for (;;) {
-    const output = launched.output();
-    if (output.includes(line)) {
-      return;
-    }
-    const gaveUp = output.split("\n").find((said) => GAVE_UP.some((note) => said.includes(note)));
-    if (gaveUp !== undefined) {
-      throw new Error(`the shell gave up: ${gaveUp}`);
-    }
-    if (ended(launched.shell)) {
-      throw new Error(`the shell exited (${how(launched.shell)}) before it printed "${line}"`);
-    }
-    if (Date.now() > deadline) {
-      throw new Error(
-        `the shell had not printed "${line}" within ${BOOT_TIMEOUT_MS}ms: see its output above`,
-      );
-    }
-    await delay(250);
-  }
-};
-
-/** Main: the shell's one child on the node the pack carries. */
-const mainOf = (shell: Shell): Process => {
-  const children = processes().filter((running) => running.ppid === shell.pid);
-  const mains = children.filter(runsBundledNode);
-  const [main] = mains;
-  if (main === undefined || mains.length !== 1) {
-    throw new Error(
-      `the shell runs ${mains.length} children on the pack's node, not main alone:\n  ${children.map((running) => running.args).join("\n  ")}`,
-    );
-  }
-  return main;
-};
-
-// a name opening an entry of `ps -E`'s env, which follows the command line, space-separated
-const ENV_ENTRY = / (?=[A-Za-z_][A-Za-z0-9_]*=)/u;
-// where main's command line ends: its bundle, asked to serve (src-tauri/src/runtime.rs)
-const SERVE_COMMAND_END = "/dist/index.js serve ";
-
-/** The env main started with, as `ps -E` shows it: each value runs to the next ` NAME=`. */
-const startingEnvOf = (main: Process): Map<string, string> => {
-  const listed = spawnSync("ps", ["-E", "-ww", "-o", "command=", "-p", String(main.pid)], {
-    encoding: "utf-8",
-  });
-  if (listed.status !== 0) {
-    throw new Error(`ps -E exited ${listed.status ?? listed.signal}: ${listed.stderr}`);
-  }
-  const line = listed.stdout.replace(/\n$/u, "");
-  const end = line.indexOf(SERVE_COMMAND_END);
-  if (end === -1) {
-    throw new Error(`ps -E shows main as something other than its serve: ${line}`);
-  }
-  const env = new Map<string, string>();
-  for (const entry of line.slice(end + SERVE_COMMAND_END.length).split(ENV_ENTRY)) {
-    const at = entry.indexOf("=");
-    const name = entry.slice(0, at);
-    if (at > 0 && !env.has(name)) {
-      env.set(name, entry.slice(at + 1));
-    }
-  }
-  return env;
 };
 
 /**
@@ -453,11 +281,11 @@ let main: Process | null = null;
 try {
   log(`launching ${appDir} on ${save}, under an env a run could have set`);
   const launchedAt = Date.now();
-  const first = launch(args, env);
+  const first = launch(app, args, env);
   launched.push(first);
   // the shell makes the window only once main answered hello, on the handoff main then mints
   await waitForLine(first, WINDOW_LOADED);
-  main = mainOf(first.shell);
+  main = mainOf(app, first.shell);
   log(`hello booted main (pid ${main.pid}) on the pack's node, and the window loaded its page`);
   proveEnv(main, expected, Object.keys(dropped));
   if (!existsSync(MAIN_LOG) || statSync(MAIN_LOG).mtimeMs < launchedAt) {
@@ -466,7 +294,7 @@ try {
   await provePage(await pagePortOf(main));
 
   // the plugin hands a second launch's arguments to the first, which shows its window, and exits
-  const second = launch(args, env);
+  const second = launch(app, args, env);
   launched.push(second);
   if (!(await exitsWithin(second.shell, HANDOVER_TIMEOUT_MS))) {
     throw new Error(`a second launch was still running after ${HANDOVER_TIMEOUT_MS}ms`);
@@ -474,7 +302,7 @@ try {
   if (second.shell.exitCode !== 0) {
     throw new Error(`a second launch exited ${how(second.shell)}, not handing over`);
   }
-  const nodes = processes().filter(runsBundledNode);
+  const nodes = processes().filter((running) => runsBundledNode(app, running));
   if (ended(first.shell) || nodes.length !== 1 || nodes[0]?.pid !== main.pid) {
     throw new Error(`after a second launch ${nodes.length} mains run, not the first's alone`);
   }
@@ -496,7 +324,7 @@ try {
   }
   const { pgid } = main;
   const leftBehind = (): Process[] =>
-    processes().filter((running) => running.pgid === pgid || runsBundledNode(running));
+    processes().filter((running) => running.pgid === pgid || runsBundledNode(app, running));
   const graceEnds = Date.now() + PROBE_GRACE_MS;
   let left = leftBehind();
   while (left.length > 0 && Date.now() < graceEnds) {

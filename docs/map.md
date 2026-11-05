@@ -21,7 +21,8 @@ is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
   (`stage-server.ts`, as Resources/server), everything signed (`sign-resources.ts`), the crates'
   notices (`rust-notices.ts`), the bundle and notarization (`package.ts`), the updater's feed
   (`release-feed.ts`), a test pack's refusals and config (`update-test-pack.ts`), the release
-  (`publish-release.sh`), the smoke (`smoke-packaged.ts`), and `devkill.sh`.
+  (`publish-release.sh`), the smoke (`smoke-packaged.ts`, on `packaged-app.ts`, which launches
+  the .app and reads its processes), and `devkill.sh`.
 - `apps/cli/src` — the `idlebiz` binary: `index.ts` and `program.ts` (citty; help and version on
   stdout, every failure on stderr), `commands/serve.ts` (loads main), `commands/tools.ts` (one
   verb per company tool, a client of the control plane), `paths.ts` (the package's own files), and
