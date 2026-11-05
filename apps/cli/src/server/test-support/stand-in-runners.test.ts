@@ -8,8 +8,8 @@ import type { Argv } from "@repo/agent-driver/registry";
 import { RUNNER_IDS } from "@repo/domain/runners";
 import type { RunnerId } from "@repo/domain/runners";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { machineSeal } from "../agents/machine-seal";
-import { sealedCommand } from "../agents/seal";
+import { machineSeal, realPathOf, sealFor } from "../agents/machine-seal";
+import { inside, sealedCommand } from "../agents/seal";
 import { runnerEnv } from "../agents/session";
 import { tempSave } from "./save";
 import { startStandInModel } from "./stand-in-model";
@@ -113,10 +113,35 @@ describe("the CLIs the adapters bundle, on the stand-in", () => {
     },
   );
 
+  it("leaves the signed-in runner's home writable by its runs, though the seal keeps the absent CLI's folder", async () => {
+    const left = path.join(scratch, "claude-alone");
+    const env = await standInRunnerEnv({ model, runners: ["claude"], scratch: left });
+    const claudeHome = env.CLAUDE_CONFIG_DIR ?? "";
+    const seal = await sealFor({
+      clis: [env.CLAUDE_BIN ?? "", env.CODEX_BIN ?? ""],
+      closedPorts: [],
+      env,
+      home,
+      mainOnly: [],
+      pathDirs: [],
+      save: path.join(scratch, "save"),
+      // the homes sit in TMPDIR, which every run writes
+      scratch: [tmpdir()],
+      shims: [],
+      sshAgent: null,
+      writable: [],
+    });
+    const homes = [claudeHome, await realPathOf(claudeHome)];
+    const keptOverHome = seal.runsAsFounder.filter(({ path: kept }) =>
+      homes.some((at) => inside(kept, at)),
+    );
+    expect(keptOverHome).toEqual([]);
+  });
+
   it("points a runner it was not asked for at nothing, so no CLI of this machine's is looked for", async () => {
     const left = path.join(scratch, "claude-only");
     const env = await standInRunnerEnv({ model, runners: ["claude"], scratch: left });
-    expect(env.CODEX_BIN).toBe(path.join(left, "no-codex"));
+    expect(env.CODEX_BIN).toBe(path.join(left, "absent", "no-codex"));
     expect(env.CODEX_HOME).toBeUndefined();
     asMainWith(env, home);
     const probes = await probeRunners(runnerEnv, asItIs);

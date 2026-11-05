@@ -155,7 +155,9 @@ const signedIn = async (
 /**
  * Main's env for runs on the stand-in `model`: each of `runners` is the CLI its adapter bundles,
  * signed in to the stand-in under `scratch`, and every other runner's CLI is a path that is not
- * there, so no CLI of the developer's is ever looked for.
+ * there, so no CLI of the developer's is ever looked for. That path sits in a folder of its own:
+ * the seal keeps the folder of every CLI main names from every run, as one the founder runs
+ * programs from, and the one beside the homes would keep the runners from their own state.
  */
 export const standInRunnerEnv = async ({
   model,
@@ -170,7 +172,7 @@ export const standInRunnerEnv = async ({
     RUNNER_IDS.map(async (runner) =>
       runners.includes(runner)
         ? await signedIn(runner, model.url, scratch)
-        : { [RUNNERS[runner].cli.override]: path.join(scratch, `no-${runner}`) },
+        : { [RUNNERS[runner].cli.override]: path.join(scratch, "absent", `no-${runner}`) },
     ),
   );
   return Object.fromEntries(envs.flatMap((env) => Object.entries(env)));
