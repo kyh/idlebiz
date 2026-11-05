@@ -28,7 +28,12 @@ import { INBOX_BUTTON, NPCS_IN_OFFICE, NPC_ACTIVITY, STEP_OFFICE } from "./offic
 // the cap itself, so only the work it directs runs, and the root fixture holds it to the runs it
 // scripts: each ended, none failed, none signed in but the stand-in's.
 
-test.describe.configure({ mode: "parallel", timeout: 180_000 });
+/** How long a sealed CLI may take to start and reach a scripted step, or end, on a loaded Mac. */
+const A_RUN = 90_000;
+
+// a test waits on two runs one after the other at most, each up to A_RUN, beside a founding, two
+// launches and a quit: two minutes more covers those on a Mac running two tests at once
+test.describe.configure({ mode: "parallel", timeout: 2 * A_RUN + 120_000 });
 
 type Api = Awaited<ReturnType<typeof apiOf>>;
 type RunEnd = Extract<PersistedActivity, { kind: "run.end" }>;
@@ -38,9 +43,6 @@ const USAGE: Usage = { input: 10_000, output: 1000 };
 
 /** The cap a test raises founding's $0 to, so the work it directs can start. */
 const CAP_USD = 5;
-
-/** How long a sealed CLI may take to start and reach a scripted step, or end, on a loaded Mac. */
-const A_RUN = 90_000;
 
 const isRunEnd = (row: PersistedActivity): row is RunEnd => row.kind === "run.end";
 
