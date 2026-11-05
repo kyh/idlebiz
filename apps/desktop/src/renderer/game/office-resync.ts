@@ -59,3 +59,40 @@ export const resyncOf = (
     }),
   };
 };
+
+/**
+ * What is heard of hires the office has yet to show. A spawn waits on their sheet, and a run that
+ * starts or settles meanwhile would find nobody to set, so each comes in doing what was heard
+ * last, else what the roster that let them in says.
+ */
+export class Arrivals {
+  private readonly heard = new Map<string, State | null>();
+
+  /** Their spawn is queued. */
+  expect(id: string): void {
+    if (!this.heard.has(id)) {
+      this.heard.set(id, null);
+    }
+  }
+
+  /** Whether `id` is still on the way; if so, they come in showing `state`. */
+  hear(id: string, state: State): boolean {
+    if (!this.heard.has(id)) {
+      return false;
+    }
+    this.heard.set(id, state);
+    return true;
+  }
+
+  /** What they come in doing, given what the roster said; they are no longer on the way. */
+  arrived(id: string, fromRoster: State): State {
+    const state = this.heard.get(id) ?? fromRoster;
+    this.heard.delete(id);
+    return state;
+  }
+
+  /** Their spawn ended, whether they came in or not. */
+  forget(id: string): void {
+    this.heard.delete(id);
+  }
+}

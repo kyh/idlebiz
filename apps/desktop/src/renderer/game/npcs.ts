@@ -19,7 +19,7 @@ import type { Activity } from "@/renderer/game/npc-look";
 import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 import { planSeats } from "@/renderer/game/office-placement";
 import type { SeatPlan } from "@/renderer/game/office-placement";
-import { activityOf, resyncOf } from "@/renderer/game/office-resync";
+import { Arrivals, activityOf, resyncOf } from "@/renderer/game/office-resync";
 import { DEFAULT_WORK_POSE } from "@/renderer/game/office-poses";
 import type { WorkPose } from "@/renderer/game/office-poses";
 import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y } from "@repo/domain/character-frame";
@@ -57,6 +57,8 @@ export class NpcManager {
   private chain: Promise<void> = Promise.resolve();
   /** Released while their spawn was still queued in the chain: never let them in. */
   private readonly released = new Set<string>();
+  /** What a run did while their spawn was still queued: they come in showing it. */
+  private readonly arriving = new Arrivals();
   /** Who main says waits on the founder, as last heard: whoever comes in later shows it too. */
   private waiting: ReadonlySet<string> = new Set();
   // a restart reuses this scene: a spawn still queued must not land in the next one's office
@@ -88,6 +90,7 @@ export class NpcManager {
   }
 
   spawn(emp: Employee, passage: Passage): Promise<void> {
+    this.arriving.expect(emp.id);
     this.chain = this.spawnAfter(this.chain, emp, passage);
     return this.chain;
   }
@@ -102,6 +105,8 @@ export class NpcManager {
       await this.doSpawn(emp, passage);
     } catch {
       // a failed spawn must not hold up the hires queued behind it
+    } finally {
+      this.arriving.forget(emp.id);
     }
   }
 
@@ -146,7 +151,7 @@ export class NpcManager {
       sprite.setAlpha(0);
       this.arrivals.push(emp.id);
     }
-    this.setState(emp.id, activityOf(emp.status, npc.waiting));
+    this.setState(emp.id, this.arriving.arrived(emp.id, activityOf(emp.status, npc.waiting)));
     applyDepth(npc);
   }
 
@@ -257,6 +262,7 @@ export class NpcManager {
   setState(id: string, state: NpcState): void {
     const npc = this.npcs.get(id);
     if (!npc) {
+      this.arriving.hear(id, state);
       return;
     }
     npc.activity =

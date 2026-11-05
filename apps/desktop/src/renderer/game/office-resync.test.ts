@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Employee } from "@repo/domain/domain";
-import { activityOf, resyncOf } from "./office-resync";
+import { Arrivals, activityOf, resyncOf } from "./office-resync";
 import type { InOffice } from "./office-resync";
 
 const employee = (id: string, status: Employee["status"] = "idle"): Employee => ({
@@ -70,5 +70,33 @@ describe("activityOf", () => {
     expect(activityOf("working", true)).toBe("working");
     expect(activityOf("idle", true)).toBe("blocked");
     expect(activityOf("idle", false)).toBe("idle");
+  });
+});
+
+describe("someone on the way in", () => {
+  it("comes in doing what a run did while their sheet loaded, not what the roster said", () => {
+    const arrivals = new Arrivals();
+    arrivals.expect("mae");
+
+    expect(arrivals.hear("mae", "working")).toBe(true);
+    expect(arrivals.arrived("mae", "idle")).toBe("working");
+    // in the office now: the next run's news sets them there
+    expect(arrivals.hear("mae", "idle")).toBe(false);
+  });
+
+  it("comes in as the roster says when nothing was heard meanwhile", () => {
+    const arrivals = new Arrivals();
+    arrivals.expect("mae");
+
+    expect(arrivals.arrived("mae", "blocked")).toBe("blocked");
+  });
+
+  it("hears nothing of someone not on the way, or whose spawn ended without them", () => {
+    const arrivals = new Arrivals();
+    arrivals.expect("mae");
+    arrivals.forget("mae");
+
+    expect(arrivals.hear("mae", "working")).toBe(false);
+    expect(arrivals.hear("lead", "working")).toBe(false);
   });
 });
