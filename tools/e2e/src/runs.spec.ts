@@ -123,7 +123,11 @@ const turnPagesUntil = async (page: Page, shown: Locator): Promise<void> => {
   }).toPass({ timeout: A_RUN });
 };
 
-/** Picks `label` from the choice window under Chad's last page, skipping his pages to it. */
+/**
+ * Picks `label` from the choice window under Chad's last page, skipping his pages to it with Tab,
+ * the founder's key for `skip ▸`: on CI's Mac the link itself never held still long enough to be
+ * clicked.
+ */
 const choose = async (page: Page, label: string): Promise<void> => {
   const item = page
     .locator(".ob-menu .px-menu-item")
@@ -131,7 +135,7 @@ const choose = async (page: Page, label: string): Promise<void> => {
   const skip = page.getByRole("button", { name: "skip ▸" });
   await expect(async () => {
     if (await skip.isVisible()) {
-      await skip.click({ timeout: 1000 });
+      await page.keyboard.press("Tab");
     }
     await expect(item).toBeVisible({ timeout: 1000 });
   }).toPass({ timeout: A_RUN });
@@ -365,11 +369,12 @@ for (const runner of RUNNER_IDS) {
         await inbox.getByRole("button", { name: "Approve" }).click();
         await expect(inbox.getByText(PUSH)).toHaveCount(0);
 
-        // signed, the same push runs once: git's own answer, from a workspace with no remote
+        // signed, the same push runs once: git's own answer, from a workspace with no remote and,
+        // before the team's first commit, no `main` either
         const [, signed] = await runsEnded(root, 2);
         expect(signed?.payload).toMatchObject({ outcome: { kind: "done" }, settled: "done" });
-        expect(model.toolOutputs(marker).at(-1)).toContain(
-          "'origin' does not appear to be a git repository",
+        expect(model.toolOutputs(marker).at(-1)).toMatch(
+          /src refspec main does not match any|'origin' does not appear to be a git repository/u,
         );
         const git = await readFile(
           path.join(founded.product.workspaceDir, ".git", "config"),

@@ -130,7 +130,7 @@ jobs:
       - name: Gate CLIs
         run: |
           pnpm add -g --allow-build=@anthropic-ai/claude-code --allow-build=agent-browser \
-            @anthropic-ai/claude-code@2.1.292 @openai/codex@0.153.4 agent-browser@0.37.0
+            @anthropic-ai/claude-code@2.1.292 @openai/codex@0.154.0 agent-browser@0.37.0
           agent-browser install
 
       # each gate suite skips on a CLI that does not answer this, which would pass it unseen
@@ -142,6 +142,16 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # what the seal refused while the gates ran, which a run's own output may not say: Seatbelt
+      # logs each deny to the system log by process, operation and path, and these are the ones
+      # under the runner's home or TMPDIR
+      - name: Seal denials
+        if: ${{ failure() }}
+        run: |
+          sudo log show --last 30m --style compact --predicate 'sender == "Sandbox"' \
+            | grep -E 'deny\(' | grep -E '/(private/)?var/folders/|/Users/runner/' \
+            | tail -n 400 || true
 
       - name: Smoke the packaged app
         env:
@@ -205,6 +215,16 @@ jobs:
           # every founding test can run, and one that skips would pass unseen
           IDLEBIZ_E2E_NO_SKIPS: 1
         run: pnpm e2e
+
+      # what the seal refused while the suite ran, as test-macos's step reads it, into the artifact
+      - name: Seal denials
+        if: ${{ failure() }}
+        run: |
+          mkdir -p tools/e2e/test-results
+          sudo log show --last 45m --style compact --predicate 'sender == "Sandbox"' \
+            | grep -E 'deny\(' | grep -E '/(private/)?var/folders/|/Users/runner/' | tail -n 3000 \
+            > tools/e2e/test-results/seal-denials.log || true
+          tail -n 60 tools/e2e/test-results/seal-denials.log
 
       # every run's SUMMARY.md, results.json and key screenshots, and a failure's trace and
       # screenshot; .last-run.json feeds --last-failed. Public, as the repo is: every key a test

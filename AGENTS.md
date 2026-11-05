@@ -123,7 +123,9 @@ first (each failure's file and line, its error, its artifacts and the end of mai
 base64) and `screens/*.png`, the key screenshots every run keeps; a failure's trace and screenshot
 sit in its test's folder. Its `trace.zip` unzips to `test.trace` and `*-trace.trace`, which hold
 the test's steps and the page's actions as one JSON event a line, and `resources/*.jpeg`, which
-are the page's frames.
+are the page's frames. A failed run's artifact also holds `seal-denials.log`: what the seal
+refused while the suite ran, each deny Seatbelt logged by process, operation and path, which a
+run's own output may not say; `test-macos` prints the same in its log when it fails.
 
 **The compiler's strictness is `tsconfig.base.json`** (`strict`, `noUncheckedIndexedAccess`,
 `exactOptionalPropertyTypes`, `noImplicitReturns`, `noImplicitOverride`, `erasableSyntaxOnly`,
