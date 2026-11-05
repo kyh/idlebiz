@@ -7,11 +7,13 @@ import { errorMessage } from "@repo/domain/errors";
 import type { HireCandidate } from "@repo/domain/hire";
 import { parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
+import { foundingTeamPrompt } from "../prompts/onboarding";
 
-// `idlebiz/stand-in-model`, for the gate suites and the e2e suite: the model both CLIs call, on
-// loopback, so a real claude or codex, through the app's adapter and inside the seal, runs a turn
-// a test scripts, and nothing is billed. claude's Messages wire and codex's Responses wire are
-// described here once, so a CLI that changes either fails every suite that drives it together.
+// `idlebiz/stand-in-model`, for the gate suites, the e2e suite and `IDLEBIZ_STAND_IN=1 pnpm
+// dev:browser`: the model both CLIs call, on loopback, so a real claude or codex, through the app's
+// adapter and inside the seal, runs a turn a test scripts, and nothing is billed. claude's Messages
+// wire and codex's Responses wire are described here once, so a CLI that changes either fails
+// every suite that drives it together.
 
 /** The key each CLI signs in to the stand-in with: any other credential it sends is a leak. */
 export const STAND_IN_KEY = "stand-in";
@@ -74,8 +76,11 @@ export interface StandInModel {
    * answered `moves[step]`, and "done" past the last; each answer reports `usage`.
    */
   script: (marker: string, moves: readonly Move[], usage?: Usage) => void;
-  /** A request carrying `companyName` and no marker is answered with `list`, as casting asks. */
-  hires: (companyName: string, list: readonly HireCandidate[]) => void;
+  /**
+   * A request carrying `companyName` and no marker is answered with `list`, as casting asks; with
+   * null, any casting request is, whatever company it names, and a run's is still told "done".
+   */
+  hires: (companyName: string | null, list: readonly HireCandidate[]) => void;
   /** What each tool call `marker`'s script made gave back, in the order they ran. */
   toolOutputs: (marker: string) => string[];
   /** Lets every held answer go, and every later one, until `reset`. */
@@ -87,6 +92,12 @@ export interface StandInModel {
 
 /** What a turn says when nothing scripted it, so an unscripted run ends at once. */
 const DONE: Answer = { kind: "say", text: "done" };
+
+/**
+ * The line every casting prompt opens with, whichever company it names: what `hires(null, …)`
+ * knows a casting request by, since a run's names its company too.
+ */
+const CASTING = foundingTeamPrompt("", null, "custom").split("\n", 1).join("");
 
 const MARKER = /^[A-Za-z0-9-]+$/u;
 
@@ -481,7 +492,8 @@ export const startStandInModel = async ({
   const unexpected: string[] = [];
   const leaks: Leak[] = [];
   const scripts = new Map<string, { moves: readonly Move[]; usage: Usage }>();
-  const casts = new Map<string, readonly HireCandidate[]>();
+  // by the company each answers, or null for any
+  const casts = new Map<string | null, readonly HireCandidate[]>();
   // each call's output once, by its id, in the order it ran
   const outputs = new Map<string, { marker: string; output: string }>();
   let holding = Promise.withResolvers<null>();
@@ -507,7 +519,9 @@ export const startStandInModel = async ({
     const marker = answered?.marker ?? markerIn(read.last) ?? markerIn(body);
     const script = marker === null ? undefined : scripts.get(marker);
     if (marker === null || script === undefined) {
-      const cast = [...casts].find(([name]) => body.includes(JSON.stringify(name).slice(1, -1)));
+      const carries = (sought: string): boolean =>
+        body.includes(JSON.stringify(sought).slice(1, -1));
+      const cast = [...casts].find(([name]) => carries(name ?? CASTING));
       return cast === undefined
         ? unscripted
         : { ...unscripted, said: { kind: "say", text: JSON.stringify(cast[1]) } };

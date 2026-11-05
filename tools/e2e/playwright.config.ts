@@ -16,8 +16,8 @@ const anywhere: PlaywrightTestConfig = {
 const onCi: PlaywrightTestConfig = {
   failOnFlakyTests: true,
   forbidOnly: true,
-  // under the step's own 15 minutes, so the reporters still write what they hold
-  globalTimeout: 12 * 60_000,
+  // under the step's own 25 minutes, so the reporters still write what they hold
+  globalTimeout: 20 * 60_000,
   reporter: [
     ["list"],
     ["github"],

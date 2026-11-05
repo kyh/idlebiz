@@ -156,7 +156,7 @@ jobs:
   e2e-macos:
     runs-on: macos-latest
     # a backstop over the suite's own step
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       # as the ci job's: no later step reaches the remote
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -195,9 +195,11 @@ jobs:
       - name: E2E browser
         run: pnpm -F @repo/e2e exec playwright install --only-shell chromium
 
-      # Playwright's own global timeout is 12 minutes, so the reporters still write before this one
+      # Playwright's own global timeout is 20 minutes, so the reporters still write before this
+      # one. The run tests drive real CLIs, two at once on the runner's three cores, each for up to
+      # 3 minutes
       - name: E2E
-        timeout-minutes: 15
+        timeout-minutes: 25
         env:
           # a skipped test fails the run, as a gate CLI that does not answer fails test-macos: here
           # every founding test can run, and one that skips would pass unseen
@@ -205,7 +207,8 @@ jobs:
         run: pnpm e2e
 
       # every run's SUMMARY.md, results.json and key screenshots, and a failure's trace and
-      # screenshot; .last-run.json feeds --last-failed. Public, as the repo is: no test types a key
+      # screenshot; .last-run.json feeds --last-failed. Public, as the repo is: every key a test
+      # types is a fake one
       - name: E2E report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
+import { foundingTeamPrompt } from "../prompts/onboarding";
 import { STAND_IN_KEY, startStandInModel } from "./stand-in-model";
 import type { StandInModel } from "./stand-in-model";
 
@@ -406,5 +407,18 @@ describe("the stand-in model casting a team", () => {
     model.script("MARK-I", [{ kind: "say", text: "scripted" }]);
     const brief = await messages([prompt("MARK-I for E2E Stand-in Co")]);
     expect(claudeSaid(brief.text)).toEqual({ said: "scripted" });
+  });
+
+  it("answers casting for any company once told to, and a run of that company done", async () => {
+    const team = [
+      { blurb: "Ships.", name: "Ada", persona: "A calm builder.", role: "engineer", title: "Eng" },
+    ];
+    model.hires(null, team);
+    const cast = await responses([codexPrompt(foundingTeamPrompt("Any Co", null, "software"))]);
+    expect(codexSaid(cast.text)).toMatchObject({
+      content: [{ text: JSON.stringify(team), type: "output_text" }],
+    });
+    const run = await messages([prompt("You are operating autonomously to grow Any Co.")]);
+    expect(claudeSaid(run.text)).toEqual({ said: "done" });
   });
 });

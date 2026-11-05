@@ -12,10 +12,12 @@ import { SYSTEM_PATH } from "../lib/founder-env";
 import { STAND_IN_KEY } from "./stand-in-model";
 import type { StandInModel } from "./stand-in-model";
 
-// `idlebiz/stand-in-runners`, for the e2e suite and main's own tests: the claude and codex the
-// adapters bundle, lockfile-pinned through the adapter catalog, each signed in to the stand-in
-// model and to nothing else, in a home of its own. Every switch it sets is one the packaged shell
-// drops (src-tauri/src/runtime.rs), so none of it can reach an installed app.
+// `idlebiz/stand-in-runners`, for the e2e suite, main's own tests and `IDLEBIZ_STAND_IN=1 pnpm
+// dev:browser`: the claude and codex the adapters bundle, lockfile-pinned through the adapter
+// catalog, each signed in to the stand-in model and to nothing else, in a home of its own. Every
+// switch it sets that routes a runner (its binary, its home, its model's address) is one the
+// packaged shell drops (src-tauri/src/runtime.rs), and the rest (the stand-in's key, two that
+// quiet claude) route nothing, so none of it can send an installed app's runs anywhere.
 
 // the adapters are main's own dependencies, so what they bundle is found from here
 const fromCli = createRequire(import.meta.url);

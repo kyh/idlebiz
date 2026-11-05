@@ -10,6 +10,7 @@ import { startStandInModel } from "idlebiz/stand-in-model";
 import type { StandInModel } from "idlebiz/stand-in-model";
 import { isProviderEnv, standInRunnerEnv } from "idlebiz/stand-in-runners";
 import { PersistedActivitySchema } from "@repo/domain/activity";
+import type { PersistedActivity } from "@repo/domain/activity";
 import type { Company, Employee, Product } from "@repo/domain/domain";
 import type { HireProposal } from "@repo/domain/hire";
 import type { RunnerId } from "@repo/domain/runners";
@@ -44,8 +45,11 @@ interface Options {
    * a test says otherwise, and none keeps the signed-out path.
    */
   runners: readonly RunnerId[];
-  /** How many runs the test scripts, each of which must start and end: none unless it says so. */
-  runs: number;
+  /**
+   * How many runs the test scripts, each of which must start, end and not fail: none unless it
+   * says so. A test whose runs autopilot starts says "settled": any number, each ended so.
+   */
+  runs: number | "settled";
 }
 
 interface Fixtures {
@@ -62,19 +66,32 @@ interface Fixtures {
   launch: (options?: LaunchOptions) => Promise<Launched>;
 }
 
-/** Each run the company on `root` logged starting, and each it logged ending, by id. */
-const runsLogged = async (root: string): Promise<{ started: string[]; ended: string[] }> => {
+/**
+ * What the company on `root` logged, oldest first: nothing before it is founded. Only whole lines,
+ * so a read while main appends one never sees half of it.
+ */
+export const loggedActivity = async (root: string): Promise<PersistedActivity[]> => {
   const log = path.join(root, "company", "activity.jsonl");
   if (!existsSync(log)) {
-    return { ended: [], started: [] };
+    return [];
   }
-  const lines = await readFile(log, "utf-8");
-  const rows = lines
+  const text = await readFile(log, "utf-8");
+  return text
+    .slice(0, text.lastIndexOf("\n") + 1)
     .split("\n")
     .filter((line) => line.trim() !== "")
     .map((line) => PersistedActivitySchema.parse(parseJson(line)));
+};
+
+/** Each run the company on `root` logged starting, by id, and each it logged ending, with how. */
+const runsLogged = async (
+  root: string,
+): Promise<{ started: string[]; ended: { runId: string; outcome: string }[] }> => {
+  const rows = await loggedActivity(root);
   return {
-    ended: rows.flatMap((row) => (row.kind === "run.end" ? [row.runId] : [])),
+    ended: rows.flatMap((row) =>
+      row.kind === "run.end" ? [{ outcome: row.payload.outcome.kind, runId: row.runId }] : [],
+    ),
     started: rows.flatMap((row) => (row.kind === "run.start" ? [row.runId] : [])),
   };
 };
@@ -206,16 +223,26 @@ export const test = base.extend<Fixtures & Options>({
     }
   },
   // torn down after every launch, so each main has stopped its runs before the save is read
-  root: async ({ model, runs }, provide) => {
+  root: async ({ model, runs }, provide, testInfo) => {
     const root = await mkdtemp(path.join(tmpdir(), "idlebiz-e2e-"));
     try {
       await provide(root);
+      // one that skipped, on the seal's refusal, did so before it ran any of them
+      const scripted = testInfo.status === "skipped" ? 0 : runs;
       const { ended, started } = await runsLogged(root);
-      expect(started, `only the runs the test scripts start: ${runs}`).toHaveLength(runs);
-      expect(ended.toSorted(), "every run that started ended").toEqual(started.toSorted());
+      if (scripted !== "settled") {
+        expect(started, `only the runs the test scripts start: ${scripted}`).toHaveLength(scripted);
+      }
+      expect(ended.map(({ runId }) => runId).toSorted(), "every run that started ended").toEqual(
+        started.toSorted(),
+      );
+      expect(
+        ended.filter(({ outcome }) => outcome === "failed"),
+        "no run failed",
+      ).toEqual([]);
       expect(model.leaks, "no login but the stand-in's reached the model").toEqual([]);
       expect(model.unexpected, "the model was asked nothing it does not answer").toEqual([]);
-      if (runs === 0) {
+      if (scripted === 0) {
         const turns = model.requests.filter(
           ({ protocol }) => protocol === "messages" || protocol === "responses",
         );
@@ -300,14 +327,11 @@ const claudeManaged = (): boolean =>
   );
 
 /**
- * Found a company over the page's API with a hand-written team, on the CLIs the stand-in signs in
- * (founding picks each hire's CLI). Off a Mac no run is sealed, so no CLI is found and the test
- * skips on the seal's own refusal; on a Mac a CLI that does not sign in fails it. The $0 cap is
- * what keeps it free: the scheduler checks the budget before it spawns anything, so no run can
- * start even on a tick that lands before autopilot is off. The window that founded it never
- * learns of it: relaunch to see it.
+ * Skips a test that needs runs where none starts sealed: off a Mac, on the seal's own refusal, and
+ * on a Mac whose claude has managed settings. On a Mac a CLI the stand-in does not sign in fails
+ * it.
  */
-export const foundCompany = async (page: Page): Promise<Founded> => {
+export const sealedRunsOrSkip = async (page: Page): Promise<void> => {
   const api = await apiOf(page);
   // the first report waits on the seal's check, so a refusal is in it
   const report = await api.save.report();
@@ -322,6 +346,18 @@ export const foundCompany = async (page: Page): Promise<Founded> => {
     auth.ok,
     `the stand-in's CLIs did not sign in under the seal: hasAuth ${JSON.stringify(auth)}, the save's report ${JSON.stringify(report)}, and main's log is attached as "main"`,
   ).toBe(true);
+};
+
+/**
+ * Found a company over the page's API with a hand-written team, on the CLIs the stand-in signs in
+ * (founding picks each hire's CLI); it skips as `sealedRunsOrSkip` does. The $0 cap is what keeps
+ * it free: the scheduler checks the budget before it spawns anything, so no run can start even on
+ * a tick that lands before autopilot is off. The window that founded it never learns of it:
+ * relaunch to see it.
+ */
+export const foundCompany = async (page: Page): Promise<Founded> => {
+  await sealedRunsOrSkip(page);
+  const api = await apiOf(page);
   const company = await api.onboarding.found({
     budget: { capUsd: 0, mode: "capped" },
     businessType: "custom",

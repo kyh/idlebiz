@@ -85,14 +85,14 @@ which only that run's seal reaches, and what it does is the run's.
   PATH, and drops what only launchd could have set there: the save (`IDLEBIZ_ROOT_DIR`: the
   packaged app takes it from its `--root=` argument alone, which launchd cannot set), a
   developer's switches (`CLAUDE_BIN`, `CODEX_BIN`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
-  `IDLEBIZ_COUNT_TEST_MONEY`), a runner's model address (a `*_BASE_URL` under a runner's prefix:
-  the founder's own route is claude's settings `env` or codex's `config.toml`), a CA to trust
-  under the names tools share (`SSL_CERT_*`, `*CA_BUNDLE*`, `*CA_CERT*`; each tool's own trust
-  switches and registries still pass, [What stays open](seal.md#what-stays-open)), `TMP` and
-  `TEMP`. Every `homedir()` and `tmpdir()` of main's reads these, its seal's and its save's among
-  them, and the runs inherit them. When the system cannot say who the founder is the app does not
-  start, and a packaged main whose HOME or SHELL is not the account's refuses to boot
-  (`identityRefusal`, `server/lib/founder-env.ts`).
+  `IDLEBIZ_COUNT_TEST_MONEY`, `IDLEBIZ_STAND_IN`), a runner's model address (a `*_BASE_URL`
+  under a runner's prefix: the founder's own route is claude's settings `env` or codex's
+  `config.toml`), a CA to trust under the names tools share (`SSL_CERT_*`, `*CA_BUNDLE*`,
+  `*CA_CERT*`; each tool's own trust switches and registries still pass, [What stays
+  open](seal.md#what-stays-open)), `TMP` and `TEMP`. Every `homedir()` and `tmpdir()` of main's
+  reads these, its seal's and its save's among them, and the runs inherit them. When the system
+  cannot say who the founder is the app does not start, and a packaged main whose HOME or SHELL
+  is not the account's refuses to boot (`identityRefusal`, `server/lib/founder-env.ts`).
 - **Main's lifetime.** Main boots on the hello; one that fails says where the log is, in a box, and
   the app quits, as does one not booted within a minute, killed with its process group first, since
   its quit would wait the stuck boot out. A quit asks main to stop its runs (`quit`) and waits up to

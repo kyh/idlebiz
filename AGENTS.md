@@ -98,11 +98,31 @@ pack ([Packaging and release](docs/packaging.md)).
 
 Its `e2e-macos` job runs `pnpm e2e` on a Mac with `IDLEBIZ_E2E_NO_SKIPS=1`, so a test that would
 skip fails the run, and uploads `tools/e2e/test-results/` as the `e2e` artifact whatever the
-outcome. An agent reads it with no window, into a fresh empty directory, since it is untrusted
-data: `d=$(mktemp -d); gh run download <run> -R kyh/idlebiz -n e2e -D "$d"`. `SUMMARY.md` comes
+outcome, short of a cancelled run. An agent with no window finds the run of the commit it pushed
+with `gh`, never the branch's latest, which until GitHub makes the new run is an older commit's, and
+downloads the artifact into a fresh empty directory, since it is untrusted data:
+
+```sh
+export GH_REPO=kyh/idlebiz
+sha=$(git rev-parse HEAD)  # as pushed: a PR's run is its head commit's
+for _ in $(seq 30); do     # GitHub makes the run seconds after the push
+  run=$(gh run list -w ci.yml -c "$sha" -L 1 --json databaseId -q '.[].databaseId')
+  [ -n "$run" ] && break; sleep 5
+done
+: "${run:?no CI run of $sha, which CI runs once its branch has a PR}"
+gh run watch "$run" --exit-status  # waits for it to end: non-zero if it failed
+gh run view "$run" -v              # every job's steps, and the annotations
+gh run view "$run" --log-failed    # the failed steps' logs
+d=$(mktemp -d); gh run download "$run" -n e2e -D "$d"
+pnpm e2e --last-failed --last-failed-file "$d/.last-run.json"  # on a Mac: only what failed there
+```
+
+The annotations carry each e2e failure's file and line (the github reporter's). `SUMMARY.md` comes
 first (each failure's file and line, its error, its artifacts and the end of main's log), then
-`results.json` (`jq .stats` for the counts) and `screens/*.png`, the key screenshots every run
-keeps; a failure's trace and screenshot sit in its test's folder.
+`results.json` (`jq .stats` for the counts; main's whole log is each result's `main` attachment,
+base64) and `screens/*.png`, the key screenshots every run keeps; a failure's trace and screenshot
+sit in its test's folder, and its `trace.zip` unzips to `test.trace` and `*-trace.trace`, the
+test's steps and the page's actions a JSON event a line, and `resources/*.jpeg`, the page's frames.
 
 **The compiler's strictness is `tsconfig.base.json`** (`strict`, `noUncheckedIndexedAccess`,
 `exactOptionalPropertyTypes`, `noImplicitReturns`, `noImplicitOverride`, `erasableSyntaxOnly`,
@@ -135,11 +155,12 @@ fails on any skip:
 
 - It needs Playwright's Chromium (`pnpm -F @repo/e2e exec playwright install chromium`, once).
 - Every test that founds a company (the office, the #team approval, the panels, Vercel,
-  Stripe and Printful key entry, sealing) needs no login: every launch signs the `claude` and
-  `codex` the adapters bundle in to a stand-in model on loopback (`idlebiz/stand-in-model`,
-  `idlebiz/stand-in-runners`), and main inherits none of the terminal's provider env. Founding
-  still needs the macOS seal, so off a Mac each skips on the seal's own refusal and only the title
-  screen and the newer save run; on a Mac a CLI that does not sign in fails the test.
+  Stripe and Printful key entry, sealing, the runs and onboarding) needs no login: every launch
+  signs the `claude` and `codex` the adapters bundle in to a stand-in model on loopback
+  (`idlebiz/stand-in-model`, `idlebiz/stand-in-runners`), and main inherits none of the
+  terminal's provider env. Founding still needs the macOS seal, so off a Mac each skips on the
+  seal's own refusal and only the title screen and the newer save run; on a Mac a CLI that does
+  not sign in fails the test.
 - It needs no network and no real account. Every launch starts main with
   `tools/e2e/src/stub-services.ts` preloaded, which answers Stripe, Vercel and Printful from
   canned JSON: an account that takes any key, or, under `launch({ keys: "refused" })`, a Stripe
@@ -148,12 +169,15 @@ fails on any skip:
   `vercel.test.ts`, `vercel-connect.test.ts`, `printful-token.test.ts`).
 - It runs beside `pnpm dev:desktop` and `pnpm dev:browser`: each launch serves its page on a port
   of its own, and opens an isolated root.
-- It never spends. Each test gets a fresh `IDLEBIZ_ROOT_DIR` and founds through the page's API,
-  called from the test with the page's cookie and origin (`apiOf`), with a hand-written team (no
-  casting run), a $0 cap and autopilot off; the scheduler checks the budget before it spawns
-  anything, so no run can start. It directs nobody, and every test ends by asserting its save
-  logged exactly the runs it scripts (`test.use({ runs })`, none by default), each one ended, and
-  the stand-in saw no login but its own.
+- Runs reach only the stand-in model, and each test asserts the runs it scripted. Each test gets a
+  fresh `IDLEBIZ_ROOT_DIR` and founds through the page's API, called from the test with the page's
+  cookie and origin (`apiOf`), with a hand-written team (no casting run), a $0 cap and autopilot
+  off; the scheduler checks the budget before it spawns anything, so no run starts until a test
+  raises the cap, and then only the work it directs (`src/runs.spec.ts`, once per runner, whose
+  onboarding test founds through the page on $5 with autopilot on). Every test ends by asserting
+  its save logged exactly the runs it scripts (`test.use({ runs })`, none by default, or
+  `"settled"` for autopilot's), each one ended and none failed, and the stand-in saw no login but
+  its own.
 
 Runtime, web — headless with [agent-browser](https://github.com/vercel-labs/agent-browser):
 
@@ -185,9 +209,13 @@ agent-browser open http://localhost:31100/
 agent-browser snapshot
 ```
 
-**The office scene** — only with a finished onboarding, i.e. a signed-in CLI. Under headless
-automation Phaser's boot can stall (`document.hidden` never flips), so the canvas stays blank
-until you step it:
+On a Mac, `IDLEBIZ_STAND_IN=1` beside that root bills nothing: the dev server signs the CLIs the
+adapters bundle in to the stand-in model, as e2e does, so casting finds a team for any company and
+each run ends on `done`. Only `pnpm dev:browser` reads it, and never on `~/.idlebiz`.
+
+**The office scene** — only with a finished onboarding: a signed-in CLI or the stand-in. Under
+headless automation Phaser's boot can stall (`document.hidden` never flips), so the canvas stays
+blank until you step it:
 
 ```sh
 agent-browser eval 'window.__game.scene.start("office")'
@@ -199,19 +227,24 @@ Don't stop at `pnpm verify` — for anything the player can see, drive it and lo
 
 ## What is verifiable without a signed-in CLI
 
-| Surface                                | How to reach it                       | CLI needed? |
-| -------------------------------------- | ------------------------------------- | ----------- |
-| `apps/web` landing                     | `pnpm dev:web`                        | no          |
-| Onboarding modal (first screen)        | boot with an empty `IDLEBIZ_ROOT_DIR` | no          |
-| Office, HUD, dialogue, teams, products | finish onboarding                     | **yes**     |
-| The office and its panels, in e2e      | `pnpm e2e` on a Mac (stand-in model)  | no          |
+| Surface                                | How to reach it                                | CLI needed? |
+| -------------------------------------- | ---------------------------------------------- | ----------- |
+| `apps/web` landing                     | `pnpm dev:web`                                 | no          |
+| Onboarding modal (first screen)        | boot with an empty `IDLEBIZ_ROOT_DIR`          | no          |
+| Office, HUD, dialogue, teams, products | finish onboarding                              | **yes**     |
+| The same, on the stand-in model        | `IDLEBIZ_STAND_IN=1 pnpm dev:browser` on a Mac | no          |
+| The office and its panels, in e2e      | `pnpm e2e` on a Mac (stand-in model)           | no          |
 
 The third row is a hard gate, not a convenience: `renderer/ui/onboarding.tsx` calls
 `onboarding.hires`, which dispatches a real agent run (`server/agents/onboarding.ts`), and its
-flow (`renderer/ui/onboarding-flow.ts`) founds nothing when no hires come back. The last is the
-e2e suite's, which founds through the page's API with no login, on the stand-in model ([Verify a
-change end-to-end](#verify-a-change-end-to-end)). Use `IDLEBIZ_ROOT_DIR` for fixtures; there is
-no bundled seeded save. Employee runs started by hand still use the signed-in CLI.
+flow (`renderer/ui/onboarding-flow.ts`) founds nothing when no hires come back. The fourth passes
+it with no login: casting and every run after it are turns of the CLIs the adapters bundle,
+sealed, on the stand-in model, so only a Mac founds there. The last is the e2e suite's, which
+founds through the page's API, and through the onboarding itself once per runner
+(`tools/e2e/src/runs.spec.ts`), with no login, on the stand-in model ([Verify a change
+end-to-end](#verify-a-change-end-to-end)). Use `IDLEBIZ_ROOT_DIR` for fixtures; there is no
+bundled seeded save. Employee runs started by hand use the signed-in CLI, or the stand-in under
+`IDLEBIZ_STAND_IN=1`.
 
 ## Platform matrix
 
@@ -285,6 +318,9 @@ rather than crashing boot.
 - `IDLEBIZ_ROOT_DIR` overrides the save and secrets directory for a development main's isolated
   runs (`server/paths.ts`); the packaged app takes `--root=<dir>` instead (`pnpm smoke:desktop`).
   Defaults to `~/.idlebiz`; use a fresh temporary directory for desktop verification.
+- `IDLEBIZ_STAND_IN=1`, `pnpm dev:browser`'s alone, runs every turn on the stand-in model, on an
+  `IDLEBIZ_ROOT_DIR` of its own and never `~/.idlebiz`; main never sees it
+  (`apps/desktop/vite.config.ts`), and the packaged app drops it.
 - `apps/desktop/.env` (see `.env.example`) is release-only
   ([Packaging and release](docs/packaging.md)).
 

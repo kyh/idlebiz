@@ -92,10 +92,11 @@ pub fn resolve(exe: &Path, resource_dir: &Path) -> Result<Runtime, String> {
 const NODE_LOADERS: [&str; 2] = ["NODE_", "OPENSSL_"];
 
 /// A developer's switches, which only launchd could hand the packaged app: another save, test money
-/// counted, another binary or home for a runner.
-const DEVELOPER_ONLY: [&str; 6] = [
+/// counted, the stand-in model, another binary or home for a runner.
+const DEVELOPER_ONLY: [&str; 7] = [
     "IDLEBIZ_ROOT_DIR",
     "IDLEBIZ_COUNT_TEST_MONEY",
+    "IDLEBIZ_STAND_IN",
     "CLAUDE_BIN",
     "CODEX_BIN",
     "CLAUDE_CONFIG_DIR",
@@ -337,9 +338,10 @@ mod tests {
     }
 
     // what a `launchctl setenv` could hand the packaged app, each set to "x"
-    const LAUNCHD_SET: [&str; 15] = [
+    const LAUNCHD_SET: [&str; 16] = [
         "IDLEBIZ_ROOT_DIR",
         "IDLEBIZ_COUNT_TEST_MONEY",
+        "IDLEBIZ_STAND_IN",
         "CLAUDE_BIN",
         "CODEX_BIN",
         "CLAUDE_CONFIG_DIR",

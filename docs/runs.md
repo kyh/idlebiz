@@ -79,6 +79,12 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
   setup again and takes over from the one under way, which then says nothing more; main's exit
   kills it outright (`startLogin` in `server/agents/onboarding.ts`). A cancel or a deadline ends
   the setup in an error, so the page offers it again.
+- **The stand-in.** The gate suites and the e2e suite run real turns against a stand-in model on
+  loopback, which answers each with the moves a test scripts and bills nothing
+  (`server/test-support/stand-in-model.ts`), e2e on the CLIs the adapters bundle, signed in to it
+  alone (`stand-in-runners.ts` beside it). Every switch that points a run at it is one the packaged
+  shell drops: `CLAUDE_BIN`, `CODEX_BIN`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` (`DEVELOPER_ONLY` in
+  `src-tauri/src/runtime.rs`), and each runner's `*_BASE_URL`.
 - **Failures and rests.** A failed turn is classed by what its adapter says before its prose
   (`packages/agent-driver/src/rate-limit.ts`: claude's `errorKind`, codex's typed failure's
   category and actions; claude's kinds mirror claude-agent-acp's `providerFailureCategory`). The
