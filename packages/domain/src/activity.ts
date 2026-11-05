@@ -145,5 +145,10 @@ export const ActivityEventSchema = ActivityInputSchema.and(
 
 export type ActivityEvent = z.infer<typeof ActivityEventSchema>;
 
-/** A row of activity.jsonl: what was published, stamped. Written, never read back. */
-export type PersistedActivity = ActivityInput & { createdAt: number };
+/**
+ * A row of activity.jsonl: what was published, stamped. Main writes it and never reads it back;
+ * the e2e suite reads what a test's runs did from it.
+ */
+export const PersistedActivitySchema = ActivityInputSchema.and(z.object({ createdAt: z.number() }));
+
+export type PersistedActivity = z.infer<typeof PersistedActivitySchema>;

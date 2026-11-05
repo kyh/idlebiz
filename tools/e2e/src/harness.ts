@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test as base } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
 import { startDevHost } from "idlebiz/dev-host";
+import { PersistedActivitySchema } from "@repo/domain/activity";
 import type { Company, Employee, Product } from "@repo/domain/domain";
 import type { HireProposal } from "@repo/domain/hire";
 import { createORPCClient } from "@orpc/client";
@@ -53,7 +54,8 @@ const runsStarted = async (root: string): Promise<number> => {
   return lines
     .split("\n")
     .filter(
-      (line) => line.trim() !== "" && jsonRecordSchema.parse(parseJson(line)).kind === "run.start",
+      (line) =>
+        line.trim() !== "" && PersistedActivitySchema.parse(parseJson(line)).kind === "run.start",
     ).length;
 };
 
