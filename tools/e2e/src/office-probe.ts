@@ -9,6 +9,10 @@ export const SCENE = `window.__game.scene.getScene("office")`;
 /** How many employees the office shows, -1 before it runs. */
 export const NPCS_IN_OFFICE = `window.__game?.scene.getScene("office")?.npcs?.npcs.size ?? -1`;
 
+/** Whether `employeeId` stands in the office, false until they are in. */
+export const NPC_PLACED = (employeeId: string): string =>
+  `window.__game?.scene.getScene("office")?.npcs?.positionOf(${JSON.stringify(employeeId)}) != null`;
+
 /** What `employeeId` is doing in the office (idle, working or blocked), null until they are in. */
 export const NPC_ACTIVITY = (employeeId: string): string =>
   `window.__game?.scene.getScene("office")?.npcs?.npcs.get(${JSON.stringify(employeeId)})?.activity.kind ?? null`;

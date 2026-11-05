@@ -121,8 +121,9 @@ The annotations carry each e2e failure's file and line (the github reporter's). 
 first (each failure's file and line, its error, its artifacts and the end of main's log), then
 `results.json` (`jq .stats` for the counts; main's whole log is each result's `main` attachment,
 base64) and `screens/*.png`, the key screenshots every run keeps; a failure's trace and screenshot
-sit in its test's folder, and its `trace.zip` unzips to `test.trace` and `*-trace.trace`, the
-test's steps and the page's actions a JSON event a line, and `resources/*.jpeg`, the page's frames.
+sit in its test's folder. Its `trace.zip` unzips to `test.trace` and `*-trace.trace`, which hold
+the test's steps and the page's actions as one JSON event a line, and `resources/*.jpeg`, which
+are the page's frames.
 
 **The compiler's strictness is `tsconfig.base.json`** (`strict`, `noUncheckedIndexedAccess`,
 `exactOptionalPropertyTypes`, `noImplicitReturns`, `noImplicitOverride`, `erasableSyntaxOnly`,

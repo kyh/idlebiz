@@ -6,7 +6,14 @@ import type { BlockedAsk, Task } from "@repo/domain/domain";
 import { serializeTask } from "idlebiz/task-file";
 import { z } from "zod";
 import type { Founded } from "./harness";
-import { INBOX_BUTTON, NPCS_IN_OFFICE, OFFICE_HAS_KEYS, SCENE, STEP_OFFICE } from "./office-probe";
+import {
+  INBOX_BUTTON,
+  NPC_PLACED,
+  NPCS_IN_OFFICE,
+  OFFICE_HAS_KEYS,
+  SCENE,
+  STEP_OFFICE,
+} from "./office-probe";
 
 const HELD_COMMAND = "deploy tip-jar to production";
 
@@ -112,9 +119,6 @@ test("an action card hands the founder its draft and carries their answer back",
   const open = await api.tasks.list({});
   expect(open.map((t) => t.description ?? "").join("\n")).toContain(`Done. They sent back: ${url}`);
 });
-
-const NPC_PLACED = (employeeId: string): string =>
-  `window.__game?.scene.getScene("office")?.npcs?.positionOf(${JSON.stringify(employeeId)}) != null`;
 
 const pointSchema = z.object({ x: z.number(), y: z.number() });
 type Point = z.infer<typeof pointSchema>;

@@ -195,11 +195,11 @@ jobs:
       - name: E2E browser
         run: pnpm -F @repo/e2e exec playwright install --only-shell chromium
 
-      # Playwright's own global timeout is 20 minutes, so the reporters still write before this
-      # one. The run tests drive real CLIs, two at once on the runner's three cores, each for up to
-      # 3 minutes
+      # Playwright's own global timeout is 20 minutes, and the build ahead of it in this step a few
+      # more, so the reporters still write before this one. The run tests drive real CLIs, two at
+      # once on the runner's three cores, each for up to 5 minutes
       - name: E2E
-        timeout-minutes: 25
+        timeout-minutes: 30
         env:
           # a skipped test fails the run, as a gate CLI that does not answer fails test-macos: here
           # every founding test can run, and one that skips would pass unseen
