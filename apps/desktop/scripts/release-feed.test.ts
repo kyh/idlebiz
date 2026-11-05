@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
-import { FEED_NAME, archiveName, releaseAssets, releaseFeed } from "./release-feed.ts";
+import { FEED_NAME, archiveName, feedFor, releaseAssets, releaseFeed } from "./release-feed.ts";
 
 const desktop = path.resolve(import.meta.dirname, "..");
 
@@ -37,6 +37,21 @@ describe("the release feed", () => {
       pub_date: "2026-11-02T09:30:00.000Z",
       version: "0.4.0",
     });
+  });
+
+  it("is the one feed shape, on the release's own archive URL", () => {
+    const signed = {
+      publishedAt: new Date("2026-11-02T09:30:00Z"),
+      signature: "untrusted comment: signature from tauri secret key\nRWQ…\n",
+      version: "0.4.0",
+    };
+    expect(releaseFeed({ ...signed, feed: endpoint })).toEqual(
+      feedFor({
+        ...signed,
+        archiveUrl:
+          "https://github.com/kyh/idlebiz/releases/download/v0.4.0/IdleBiz-0.4.0-arm64.app.tar.gz",
+      }),
+    );
   });
 
   it("refuses a feed that is no GitHub release's latest.json", () => {

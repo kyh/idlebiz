@@ -8,8 +8,8 @@
       "inputs": ["$TURBO_DEFAULT$", "!src-tauri/**", "!rust-toolchain.toml"],
       "outputs": ["dist/**"]
     },
-    // The suite reads the shell's tauri.conf.json (scripts/release-feed.test.ts), so the shell's
-    // files stay its inputs.
+    // The suite reads the shell's tauri.conf.json (scripts/release-feed.test.ts and
+    // scripts/update-test-pack.test.ts), so the shell's files stay its inputs.
     "test": {
       "inputs": ["$TURBO_DEFAULT$", "!rust-toolchain.toml"]
     },

@@ -1,6 +1,7 @@
 // What the installed app updates from, beside the dmg in each release: the archive it installs, and
 // the feed (src-tauri/tauri.conf.json's plugins.updater) naming it and its signature, the static
-// JSON tauri-plugin-updater reads. Pure, so a test holds its shape without a release.
+// JSON tauri-plugin-updater reads. Pure, so a test holds its shape without a release. A test pack's
+// loopback feed takes the same shape (update-test-pack.ts).
 
 /** The archive the installed app installs, as each release names it. */
 export const archiveName = (version: string): string => `IdleBiz-${version}-arm64.app.tar.gz`;
@@ -19,23 +20,40 @@ export const releaseAssets = (feed: string, version: string): string => {
   return assets;
 };
 
-interface Release {
-  /** tauri.conf.json's one `plugins.updater` endpoint. */
-  feed: string;
+interface Signed {
   version: string;
   /** The archive's `.sig`, as `tauri build` writes it. */
   signature: string;
   publishedAt: Date;
 }
 
-/** The feed for one release: its Apple-silicon archive's URL in the release, and its signature. */
-export const releaseFeed = ({ feed, version, signature, publishedAt }: Release) => ({
+export interface Release extends Signed {
+  /** The feed's own URL: a release's is tauri.conf.json's one `plugins.updater` endpoint. */
+  feed: string;
+}
+
+/** A feed naming one Apple-silicon archive: where it downloads from, and its signature. */
+export const feedFor = ({
+  archiveUrl,
+  version,
+  signature,
+  publishedAt,
+}: Signed & { archiveUrl: string }) => ({
   platforms: {
     "darwin-aarch64": {
       signature: signature.trim(),
-      url: `${releaseAssets(feed, version)}/${archiveName(version)}`,
+      url: archiveUrl,
     },
   },
   pub_date: publishedAt.toISOString(),
   version,
 });
+
+/** The feed for one release: its Apple-silicon archive's URL in the release, and its signature. */
+export const releaseFeed = ({ feed, version, signature, publishedAt }: Release) =>
+  feedFor({
+    archiveUrl: `${releaseAssets(feed, version)}/${archiveName(version)}`,
+    publishedAt,
+    signature,
+    version,
+  });
