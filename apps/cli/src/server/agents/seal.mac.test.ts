@@ -327,6 +327,31 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     });
   });
 
+  it("lets a runner's runs make the state of a home moved into TMPDIR, as the stand-in's are", async () => {
+    // named through TMPDIR's own link (/var to /private/var), as main names the stand-in's homes
+    const away = mkdtempSync(path.join(tmpdir(), "idlebiz-stand-in-"));
+    try {
+      const codex = path.join(away, "codex");
+      const claude = path.join(away, "claude");
+      mkdirSync(codex);
+      mkdirSync(claude);
+      const moved = seal({
+        env: { CLAUDE_CONFIG_DIR: claude, CODEX_HOME: codex },
+        scratch: [tmpdir()],
+      });
+      const codexState = path.join(codex, "state_5.sqlite");
+      const claudeState = path.join(claude, "history.jsonl");
+      expect(await tryAs("codex", { writes: [codexState] }, moved)).toEqual({
+        [codexState]: "written",
+      });
+      expect(await tryAs("claude", { writes: [claudeState] }, moved)).toEqual({
+        [claudeState]: "written",
+      });
+    } finally {
+      rmSync(away, { force: true, recursive: true });
+    }
+  });
+
   it("keeps the founder's own home from the other runner's runs while a runner's is moved, as the stand-in's are", async () => {
     const claudeHome = plant(".claude/canary");
     const claudeAccount = plant(".claude.json");
