@@ -288,7 +288,10 @@ export class NpcManager {
 
   /** Work was queued for them: a blocked employee was answered, a working one carries on. */
   unblock(id: string): void {
-    if (this.npcs.get(id)?.activity.kind === "blocked") {
+    const npc = this.npcs.get(id);
+    if (!npc) {
+      this.arriving.unblock(id);
+    } else if (npc.activity.kind === "blocked") {
       this.setState(id, "idle");
     }
   }

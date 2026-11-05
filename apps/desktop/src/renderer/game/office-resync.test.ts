@@ -80,7 +80,8 @@ describe("someone on the way in", () => {
 
     expect(arrivals.hear("mae", "working")).toBe(true);
     expect(arrivals.arrived("mae", "idle")).toBe("working");
-    // in the office now: the next run's news sets them there
+    // in the office now, and their spawn over: the next run's news sets them there
+    arrivals.forget("mae");
     expect(arrivals.hear("mae", "idle")).toBe(false);
   });
 
@@ -89,6 +90,27 @@ describe("someone on the way in", () => {
     arrivals.expect("mae");
 
     expect(arrivals.arrived("mae", "blocked")).toBe("blocked");
+  });
+
+  it("stays on the way until every spawn of theirs ends, though the first fails", () => {
+    const arrivals = new Arrivals();
+    arrivals.expect("mae");
+    arrivals.expect("mae");
+    arrivals.forget("mae");
+
+    expect(arrivals.hear("mae", "working")).toBe(true);
+    expect(arrivals.arrived("mae", "idle")).toBe("working");
+    arrivals.forget("mae");
+    expect(arrivals.hear("mae", "idle")).toBe(false);
+  });
+
+  it("comes in idle when the ask they made on the way was answered", () => {
+    const arrivals = new Arrivals();
+    arrivals.expect("mae");
+    arrivals.hear("mae", "blocked");
+    arrivals.unblock("mae");
+
+    expect(arrivals.arrived("mae", "blocked")).toBe("idle");
   });
 
   it("hears nothing of someone not on the way, or whose spawn ended without them", () => {

@@ -63,36 +63,59 @@ export const resyncOf = (
 /**
  * What is heard of hires the office has yet to show. A spawn waits on their sheet, and a run that
  * starts or settles meanwhile would find nobody to set, so each comes in doing what was heard
- * last, else what the roster that let them in says.
+ * last, else what the roster that let them in says. Someone can be queued more than once (a
+ * resync again while their sheet loads), so they stay on the way until every spawn of theirs ends.
  */
 export class Arrivals {
-  private readonly heard = new Map<string, State | null>();
+  private readonly onTheWay = new Map<string, { spawns: number; heard: State | null }>();
 
-  /** Their spawn is queued. */
+  /** A spawn of theirs is queued. */
   expect(id: string): void {
-    if (!this.heard.has(id)) {
-      this.heard.set(id, null);
+    const arrival = this.onTheWay.get(id);
+    if (arrival) {
+      arrival.spawns += 1;
+    } else {
+      this.onTheWay.set(id, { heard: null, spawns: 1 });
     }
   }
 
   /** Whether `id` is still on the way; if so, they come in showing `state`. */
   hear(id: string, state: State): boolean {
-    if (!this.heard.has(id)) {
+    const arrival = this.onTheWay.get(id);
+    if (!arrival) {
       return false;
     }
-    this.heard.set(id, state);
+    arrival.heard = state;
     return true;
   }
 
-  /** What they come in doing, given what the roster said; they are no longer on the way. */
+  /** Their ask was answered while they were on the way: they come in idle, not asking. */
+  unblock(id: string): void {
+    const arrival = this.onTheWay.get(id);
+    if (arrival?.heard === "blocked") {
+      arrival.heard = "idle";
+    }
+  }
+
+  /** What they come in doing, given what the roster said: what was heard is spent. */
   arrived(id: string, fromRoster: State): State {
-    const state = this.heard.get(id) ?? fromRoster;
-    this.heard.delete(id);
+    const arrival = this.onTheWay.get(id);
+    const state = arrival?.heard ?? fromRoster;
+    if (arrival) {
+      arrival.heard = null;
+    }
     return state;
   }
 
-  /** Their spawn ended, whether they came in or not. */
+  /** A spawn of theirs ended, whether they came in or not. */
   forget(id: string): void {
-    this.heard.delete(id);
+    const arrival = this.onTheWay.get(id);
+    if (!arrival) {
+      return;
+    }
+    arrival.spawns -= 1;
+    if (arrival.spawns === 0) {
+      this.onTheWay.delete(id);
+    }
   }
 }
