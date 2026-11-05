@@ -34,10 +34,10 @@ export const activityOf = (status: EmployeeStatus, waiting: boolean): State => {
 };
 
 /**
- * What hearing again who main says waits on the founder sets someone to, or null when they
- * already agree: whoever is not working is as `activityOf` puts them, at their desk with an ask,
- * else free. Both ways, so the office ends where boot and a resync would, whichever read lands
- * last: one made before a run's ask can land after the run ended blocked.
+ * The state a fresh read of who waits on the founder puts someone in, or null when theirs already
+ * matches. Someone working stays working; anyone else is blocked with an ask and idle without
+ * one, as `activityOf` says. It applies both ways because a read made before a run's ask can
+ * land after the run ended blocked, and the next read must put them back.
  */
 export const onWaitingHeard = (activity: State, waiting: boolean): State | null => {
   if (activity === "working") {
