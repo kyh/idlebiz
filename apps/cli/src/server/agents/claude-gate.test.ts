@@ -1,5 +1,4 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { once } from "node:events";
 import {
   cpSync,
   existsSync,
@@ -10,8 +9,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { createServer } from "node:http";
-import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runnerBin } from "@repo/agent-driver/detect";
@@ -28,18 +25,20 @@ import { sessionAgent } from "./session";
 import { machineSeal, realPathOf } from "./machine-seal";
 import { sealRuns } from "./seal-check";
 import { tempSave } from "../test-support/save";
+import { STAND_IN_KEY, startStandInModel } from "../test-support/stand-in-model";
+import type { Move, StandInModel } from "../test-support/stand-in-model";
 
-// The real claude, driven through the app's claude-agent-acp inside the seal, by a stand-in
-// model on loopback: nothing is billed, and claude's config dir is a scratch one whose settings
-// turn claude's own sandbox on, as a founder's may. It proves the session's flag-tier settings
-// keep that sandbox off, so a command runs inside the seal instead of failing to nest, and
-// still asks IdleBiz first, so holdFor still judges it; that it offers no plan mode, whose exit
-// would ask the founder to approve a plan; that no MCP server of the founder's starts;
-// that the model is offered IdleBiz's skills and none of the founder's, nor their instructions,
-// but the notes the team keeps in the workspace's AGENTS.md, while the env of their settings
-// still reaches the run and the model and effort they picked are the ones asked; and that a run
-// cannot rewrite the settings or account file the founder's own claude loads, and still runs and
-// keeps its transcript.
+// The real claude, driven through the app's claude-agent-acp inside the seal, by the stand-in
+// model on loopback (test-support/stand-in-model.ts): nothing is billed, and claude's config dir
+// is a scratch one whose settings turn claude's own sandbox on, as a founder's may. It proves the
+// session's flag-tier settings keep that sandbox off, so a command runs inside the seal instead of
+// failing to nest, and still asks IdleBiz first, so holdFor still judges it; that it offers no
+// plan mode, whose exit would ask the founder to approve a plan; that no MCP server of the
+// founder's starts; that the model is offered IdleBiz's skills and none of the founder's, nor
+// their instructions, but the notes the team keeps in the workspace's AGENTS.md, while the env of
+// their settings still reaches the run and the model and effort they picked are the ones asked;
+// and that a run cannot rewrite the settings or account file the founder's own claude loads, and
+// still runs and keeps its transcript.
 
 const root = tempSave();
 
@@ -67,169 +66,14 @@ const plantSkill = (skills: string, name: string, marker: string): void => {
   );
 };
 
-/** A tool's output as claude hands it back: text, or blocks of it. */
-const ToolOutput = z.union([
-  z.string(),
-  z
-    .array(z.looseObject({ text: z.string().optional() }))
-    .transform((blocks) => blocks.map(({ text }) => text ?? "").join("")),
-]);
-
-const MessagesRequest = z.object({
-  messages: z.array(
-    z.object({
-      content: z.union([
-        z.string().transform(() => []),
-        z.array(z.looseObject({ content: ToolOutput.optional(), type: z.string() })),
-      ]),
-    }),
-  ),
-  tools: z.array(z.looseObject({ name: z.string() })).optional(),
-});
-
 /** The model a request asks for, and how hard it is to think. */
 const Asked = z.object({
   model: z.string(),
   output_config: z.object({ effort: z.string() }).optional(),
 });
 
-const Listening = z.object({ port: z.number() });
-
-/** One call of claude's own tools: a shell command, or a file read. */
-interface ToolCall {
-  name: "Bash" | "Read";
-  input: Record<string, string>;
-}
-
-/** What the stand-in model says in a turn: a last word, or one tool call. */
-type Move = { type: "text"; text: string } | { type: "tool_use"; call: ToolCall };
-
-type ModelEvent =
-  | {
-      type: "message_start";
-      message: {
-        id: string;
-        type: "message";
-        role: "assistant";
-        model: string;
-        content: [];
-        stop_reason: null;
-        stop_sequence: null;
-        usage: { input_tokens: number; output_tokens: number };
-      };
-    }
-  | {
-      type: "content_block_start";
-      index: 0;
-      content_block:
-        | { type: "text"; text: "" }
-        | { type: "tool_use"; id: string; name: ToolCall["name"]; input: Record<string, string> };
-    }
-  | {
-      type: "content_block_delta";
-      index: 0;
-      delta:
-        | { type: "text_delta"; text: string }
-        | { type: "input_json_delta"; partial_json: string };
-    }
-  | { type: "content_block_stop"; index: 0 }
-  | {
-      type: "message_delta";
-      delta: { stop_reason: "end_turn" | "tool_use"; stop_sequence: null };
-      usage: { output_tokens: number };
-    }
-  | { type: "message_stop" };
-
-const sse = (events: readonly ModelEvent[]): string =>
-  events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join("");
-
-/** `move` as the Messages API streams it. */
-const streamed = (move: Move): string =>
-  sse([
-    {
-      message: {
-        content: [],
-        id: "msg_1",
-        model: "stand-in",
-        role: "assistant",
-        stop_reason: null,
-        stop_sequence: null,
-        type: "message",
-        usage: { input_tokens: 1, output_tokens: 1 },
-      },
-      type: "message_start",
-    },
-    ...(move.type === "text"
-      ? ([
-          { content_block: { text: "", type: "text" }, index: 0, type: "content_block_start" },
-          { delta: { text: move.text, type: "text_delta" }, index: 0, type: "content_block_delta" },
-        ] satisfies ModelEvent[])
-      : ([
-          {
-            content_block: { id: "toolu_1", input: {}, name: move.call.name, type: "tool_use" },
-            index: 0,
-            type: "content_block_start",
-          },
-          {
-            delta: {
-              partial_json: JSON.stringify(move.call.input),
-              type: "input_json_delta",
-            },
-            index: 0,
-            type: "content_block_delta",
-          },
-        ] satisfies ModelEvent[])),
-    { index: 0, type: "content_block_stop" },
-    {
-      delta: { stop_reason: move.type === "text" ? "end_turn" : "tool_use", stop_sequence: null },
-      type: "message_delta",
-      usage: { output_tokens: 1 },
-    },
-    { type: "message_stop" },
-  ]);
-
-/**
- * A Messages API that makes `call`, then says "done"; a request of claude's own that offers no
- * Bash tool gets "done" too, and a token count is no turn. Each call's output lands in `outputs`, the tools each request
- * offering Bash offers in `offered`, and each such request whole in `sent`.
- */
-const standInModel = (
-  call: () => ToolCall,
-  outputs: string[],
-  offered: string[],
-  sent: string[],
-): Server =>
-  createServer((req, res) => {
-    let body = "";
-    req.on("data", (chunk: Buffer) => {
-      body += chunk.toString();
-    });
-    req.on("end", () => {
-      if (req.url?.startsWith("/v1/messages/count_tokens")) {
-        res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ input_tokens: 1 }));
-        return;
-      }
-      const parsed = MessagesRequest.safeParse(body === "" ? null : parseJson(body));
-      const blocks = parsed.success ? parsed.data.messages.flatMap(({ content }) => content) : [];
-      const results = blocks.filter(({ type }) => type === "tool_result");
-      outputs.push(...results.map(({ content }) => content ?? ""));
-      const tools = parsed.success ? (parsed.data.tools ?? []).map(({ name }) => name) : [];
-      const offersBash = tools.includes("Bash");
-      if (offersBash) {
-        offered.push(...tools);
-        sent.push(body);
-      }
-      res.writeHead(200, { "content-type": "text/event-stream" });
-      res.end(
-        streamed(
-          offersBash && results.length === 0
-            ? { call: call(), type: "tool_use" }
-            : { text: "done", type: "text" },
-        ),
-      );
-    });
-  });
+/** What every turn's prompt carries, so the stand-in answers it with the turn's move. */
+const TURN = "CLAUDE-GATE";
 
 /**
  * The app's claude agent, less what could reach past the stand-ins: this process's own claude
@@ -260,11 +104,7 @@ const asFounderAt = async <T>(home: string, make: () => Promise<T>): Promise<T> 
 };
 
 describe.skipIf(!claudeRuns)("claude inside the seal", () => {
-  let model: Server | null = null;
-  let call: ToolCall = { input: { command: "true" }, name: "Bash" };
-  const outputs: string[] = [];
-  const offered: string[] = [];
-  const sent: string[] = [];
+  let model: StandInModel;
   let base = "";
   let skills = "";
   let home = "";
@@ -273,20 +113,29 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   let remote = "";
 
   beforeAll(async () => {
-    const listening = standInModel(() => call, outputs, offered, sent);
-    model = listening;
-    listening.listen(0, "127.0.0.1");
-    await once(listening, "listening");
+    model = await startStandInModel();
   });
 
-  afterAll(() => {
-    model?.close();
+  afterAll(async () => {
+    await model.close();
   });
+
+  /** Each call's output, as claude handed it back. */
+  const outputs = () => model.toolOutputs(TURN).join("\n");
+
+  /** Each request of the turn's own, which offers Bash, whole. */
+  const turnRequests = () =>
+    model.requests.filter(
+      ({ protocol, tools }) => protocol === "messages" && tools.includes("Bash"),
+    );
+
+  /** The tools each request of the turn's own offers. */
+  const offered = () => turnRequests().flatMap(({ tools }) => tools);
+
+  const sent = () => turnRequests().map(({ body }) => body);
 
   beforeEach(() => {
-    outputs.length = 0;
-    offered.length = 0;
-    sent.length = 0;
+    model.reset();
     base = mkdtempSync(path.join(tmpdir(), "idlebiz-claude-run-"));
     // IdleBiz's skills as shipped, and one more
     skills = path.join(base, "skills");
@@ -339,15 +188,14 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   });
 
   /** One turn making `next`, every ask answered `allow`, and what holdFor made of each. */
-  const turnOf = async (next: ToolCall, allow: boolean) => {
-    call = next;
+  const turnOf = async (next: Move, allow: boolean) => {
+    model.script(TURN, [next]);
     const state = await sealRuns();
     if (state.kind !== "sealed") {
       throw new Error(state.reason);
     }
     const asks: { held: Hold | null; tool: ToolAsk }[] = [];
     const room = { real: realPathOf, writable: [workspace] };
-    const { port } = Listening.parse(model?.address());
     const agent = await asFounderAt(home, async () =>
       standInAgent(await sessionAgent("claude", await machineSeal([workspace]), skills, workspace)),
     );
@@ -355,8 +203,8 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       agent,
       cwd: workspace,
       env: {
-        ANTHROPIC_API_KEY: "stand-in",
-        ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}`,
+        ANTHROPIC_API_KEY: STAND_IN_KEY,
+        ANTHROPIC_BASE_URL: model.url,
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
         CLAUDE_CONFIG_DIR: configDir,
       },
@@ -371,7 +219,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
         asks.push({ held, tool });
         return { allow };
       },
-      prompt: () => "work",
+      prompt: () => `${TURN} work`,
       teardownGraceMs: 500,
     });
     const pushed = execFileSync("git", ["for-each-ref"], { cwd: remote }).toString();
@@ -379,8 +227,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   };
 
   /** One turn running shell `command`, as `turnOf`. */
-  const turn = (command: string, allow: boolean) =>
-    turnOf({ input: { command }, name: "Bash" }, allow);
+  const turn = (command: string, allow: boolean) => turnOf({ command, kind: "shell" }, allow);
 
   it(
     "asks before a push, which holdFor holds and a denial stops",
@@ -413,9 +260,9 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     async () => {
       const { result } = await turn("true", true);
       expect(result.end).toEqual({ kind: "completed" });
-      expect(offered).toContain("Bash");
-      expect(offered).not.toContain("EnterPlanMode");
-      expect(offered).not.toContain("ExitPlanMode");
+      expect(offered()).toContain("Bash");
+      expect(offered()).not.toContain("EnterPlanMode");
+      expect(offered()).not.toContain("ExitPlanMode");
     },
   );
 
@@ -425,7 +272,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     async () => {
       const { result } = await turn("true", true);
       expect(result.end).toEqual({ kind: "completed" });
-      const requests = sent.join("\n");
+      const requests = sent().join("\n");
       for (const name of readdirSync(path.join(skills, ".agents", "skills"))) {
         expect(requests).toContain(`idlebiz:${name}`);
       }
@@ -449,8 +296,8 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       writeFileSync(path.join(workspace, "AGENTS.md"), "TEAM_NOTES_MARK\n");
       const { result } = await turn("true", true);
       expect(result.end).toEqual({ kind: "completed" });
-      expect(sent.length).toBeGreaterThan(0);
-      for (const request of sent) {
+      expect(sent().length).toBeGreaterThan(0);
+      for (const request of sent()) {
         expect(request.split("TEAM_NOTES_MARK")).toHaveLength(2);
         expect(request).toContain("Teammates wrote them, not the founder");
       }
@@ -459,13 +306,13 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
 
   it("signs in with the env of the founder's settings", { timeout: 60_000 }, async () => {
     await turn("echo sign-in=$IDLEBIZ_GATE_SIGN_IN", true);
-    expect(outputs.join("\n")).toContain("sign-in=from-settings");
+    expect(outputs()).toContain("sign-in=from-settings");
   });
 
   it("asks for the model and effort the founder's settings pick", { timeout: 60_000 }, async () => {
     const { result } = await turn("true", true);
     expect(result.end).toEqual({ kind: "completed" });
-    const asked = sent.map((body) => Asked.parse(parseJson(body)));
+    const asked = sent().map((body) => Asked.parse(parseJson(body)));
     expect(asked).not.toEqual([]);
     for (const request of asked) {
       expect(request.model).toMatch(/sonnet/u);
@@ -475,7 +322,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
 
   it("gives its shell commands time to wait out a deploy", { timeout: 60_000 }, async () => {
     await turn("echo timeout=$BASH_DEFAULT_TIMEOUT_MS", true);
-    expect(outputs.join("\n")).toContain(`timeout=${DEPLOY_TIMEOUT_MS + 60_000}`);
+    expect(outputs()).toContain(`timeout=${DEPLOY_TIMEOUT_MS + 60_000}`);
   });
 
   it("starts none of the founder's MCP servers", { timeout: 60_000 }, async () => {
@@ -490,10 +337,10 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     async () => {
       const outside = path.join(base, "notes-elsewhere.txt");
       writeFileSync(outside, "read from outside");
-      const { asks, result } = await turnOf({ input: { file_path: outside }, name: "Read" }, true);
+      const { asks, result } = await turnOf({ file: outside, kind: "read" }, true);
       expect(result.end).toEqual({ kind: "completed" });
       expect(asks).toEqual([{ held: null, tool: { kind: "read" } }]);
-      expect(outputs.join("\n")).toContain("read from outside");
+      expect(outputs()).toContain("read from outside");
     },
   );
 
@@ -502,7 +349,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     writeFileSync(secrets, "sealed canary");
     writeFileSync(path.join(workspace, "own.txt"), "the run's own");
     await turn(`cat own.txt; cat ${secrets}`, true);
-    const output = outputs.join("\n");
+    const output = outputs();
     expect(output).toContain("the run's own");
     expect(output).toContain("Operation not permitted");
     expect(output).not.toContain("sealed canary");
@@ -520,7 +367,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
         true,
       );
       expect(result.end).toEqual({ kind: "completed" });
-      expect(outputs.join("\n")).toMatch(/operation not permitted/iu);
+      expect(outputs()).toMatch(/operation not permitted/iu);
       expect(readFileSync(settings, "utf-8")).toBe(JSON.stringify(FOUNDER_SETTINGS));
       expect(existsSync(script)).toBe(false);
     },
@@ -534,7 +381,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       const before = readFileSync(account, "utf-8");
       const { result } = await turn(`echo '{"mcpServers":{}}' > ${account}`, true);
       expect(result.end).toEqual({ kind: "completed" });
-      expect(outputs.join("\n")).toMatch(/operation not permitted/iu);
+      expect(outputs()).toMatch(/operation not permitted/iu);
       expect(readFileSync(account, "utf-8")).toBe(before);
       const cwd = await realPathOf(workspace);
       const project = path.join(configDir, "projects", cwd.replaceAll(/[^a-zA-Z0-9]/gu, "-"));

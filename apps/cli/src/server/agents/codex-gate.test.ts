@@ -1,5 +1,4 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { once } from "node:events";
 import {
   cpSync,
   existsSync,
@@ -10,43 +9,38 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { createServer } from "node:http";
-import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runnerBin } from "@repo/agent-driver/detect";
 import { endAllAgents, runAcpTurn } from "@repo/agent-driver/acp-session";
 import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
 import { holdFor } from "../policy";
 import type { Hold } from "../policy";
-import { parseJson } from "@repo/domain/json";
 import { readTeamNotes } from "./team-notes";
 import { acpAgentFor, codexSessionEnv } from "./session";
 import { machineSeal, realPathOf } from "./machine-seal";
 import { sealRuns } from "./seal-check";
 import { tempSave } from "../test-support/save";
+import { startStandInModel } from "../test-support/stand-in-model";
+import type { Move, StandInModel } from "../test-support/stand-in-model";
 
-// The real codex, driven through the app's codex-acp inside the seal, by a stand-in model on
-// loopback: nothing is billed, and codex's home is a scratch one. It proves codex, whose own
-// sandbox is off, still asks IdleBiz before it runs a command, so holdFor still judges it, even
-// one the founder's rules allow, starts no MCP server of theirs, offers the model IdleBiz's skills
-// and none of the founder's (their plugins' included), nor their instructions or memories, but
-// the workspace's AGENTS.md once, whole, and picked as main picks it for a claude run, leaves no skill for a later run, and runs, but cannot rewrite,
-// the config their own codex loads.
+// The real codex, driven through the app's codex-acp inside the seal, by the stand-in model on
+// loopback (test-support/stand-in-model.ts): nothing is billed, and codex's home is a scratch
+// one. It proves codex, whose own sandbox is off, still asks IdleBiz before it runs a command, so
+// holdFor still judges it, even one the founder's rules allow, starts no MCP server of theirs,
+// offers the model IdleBiz's skills and none of the founder's (their plugins' included), nor
+// their instructions or memories, but the workspace's AGENTS.md once, whole, and picked as main
+// picks it for a claude run, leaves no skill for a later run, and runs, but cannot rewrite, the
+// config their own codex loads.
 
 const root = tempSave();
 
 const codexRuns =
   process.platform === "darwin" && spawnSync(runnerBin("codex"), ["--version"]).status === 0;
 
-/** The model's one tool call: an `exec_command` or an `apply_patch`; after its output, a last word. */
-type Move = { tool: "exec_command"; cmd: string } | { tool: "apply_patch"; patch: string };
-
-const ResponsesRequest = z.object({ input: z.array(z.looseObject({ type: z.string() })) });
-
-const Listening = z.object({ port: z.number() });
+/** What every turn's prompt carries, so the stand-in answers it with the turn's move. */
+const TURN = "CODEX-GATE";
 
 /** Where `name` is described as `marker`, for a request that lists it to be found by. */
 const plantSkill = (skills: string, name: string, marker: string): void => {
@@ -56,85 +50,6 @@ const plantSkill = (skills: string, name: string, marker: string): void => {
     `---\nname: ${name}\ndescription: ${marker}. Use it for any work at all.\n---\n\n${marker}\n`,
   );
 };
-
-/** What the stand-in model says in a turn: a last word, or one tool call. */
-type ModelItem =
-  | {
-      type: "message";
-      id: string;
-      role: "assistant";
-      content: { type: "output_text"; text: string }[];
-    }
-  | { type: "function_call"; call_id: string; name: string; arguments: string }
-  | { type: "custom_tool_call"; call_id: string; name: string; input: string };
-
-type ModelEvent =
-  | { type: "response.created"; response: { id: string } }
-  | { type: "response.output_item.done"; item: ModelItem }
-  | {
-      type: "response.completed";
-      response: {
-        id: string;
-        usage: {
-          input_tokens: number;
-          input_tokens_details: null;
-          output_tokens: number;
-          output_tokens_details: null;
-          total_tokens: number;
-        };
-      };
-    };
-
-const sse = (events: readonly ModelEvent[]): string =>
-  events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join("");
-
-const LAST_WORD: ModelItem = {
-  content: [{ text: "done", type: "output_text" }],
-  id: "msg_1",
-  role: "assistant",
-  type: "message",
-};
-
-const callOf = (move: Move): ModelItem =>
-  move.tool === "exec_command"
-    ? {
-        arguments: JSON.stringify({ cmd: move.cmd }),
-        call_id: "call_1",
-        name: "exec_command",
-        type: "function_call",
-      }
-    : { call_id: "call_1", input: move.patch, name: "apply_patch", type: "custom_tool_call" };
-
-/** A Responses API that makes `move` first, then says "done"; each request lands whole in `sent`. */
-const standInModel = (move: () => Move, sent: string[]): Server =>
-  createServer((req, res) => {
-    let body = "";
-    req.on("data", (chunk: Buffer) => {
-      body += chunk.toString();
-    });
-    req.on("end", () => {
-      sent.push(body);
-      const parsed = ResponsesRequest.safeParse(parseJson(body));
-      const answered =
-        parsed.success && parsed.data.input.some((item) => item.type.endsWith("_call_output"));
-      const item = answered ? LAST_WORD : callOf(move());
-      const usage = {
-        input_tokens: 1,
-        input_tokens_details: null,
-        output_tokens: 1,
-        output_tokens_details: null,
-        total_tokens: 2,
-      };
-      res.writeHead(200, { "content-type": "text/event-stream" });
-      res.end(
-        sse([
-          { response: { id: "resp_1" }, type: "response.created" },
-          { item, type: "response.output_item.done" },
-          { response: { id: "resp_1", usage }, type: "response.completed" },
-        ]),
-      );
-    });
-  });
 
 /** `make` with HOME at `home`, where the seal and the run's env look for the founder's files. */
 const asFounderAt = async <T>(home: string, make: () => Promise<T>): Promise<T> => {
@@ -147,9 +62,7 @@ const asFounderAt = async <T>(home: string, make: () => Promise<T>): Promise<T> 
 };
 
 describe.skipIf(!codexRuns)("codex inside the seal", () => {
-  let model: Server | null = null;
-  let move: Move = { cmd: "true", tool: "exec_command" };
-  const sent: string[] = [];
+  let model: StandInModel;
   let base = "";
   let skills = "";
   let home = "";
@@ -158,18 +71,19 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   let remote = "";
 
   beforeAll(async () => {
-    const listening = standInModel(() => move, sent);
-    model = listening;
-    listening.listen(0, "127.0.0.1");
-    await once(listening, "listening");
+    model = await startStandInModel();
   });
 
-  afterAll(() => {
-    model?.close();
+  afterAll(async () => {
+    await model.close();
   });
+
+  /** Each request codex sent, whole. */
+  const sent = () =>
+    model.requests.filter(({ protocol }) => protocol === "responses").map(({ body }) => body);
 
   beforeEach(() => {
-    sent.length = 0;
+    model.reset();
     base = mkdtempSync(path.join(tmpdir(), "idlebiz-codex-run-"));
     // IdleBiz's skills as shipped, and one more
     skills = path.join(base, "skills");
@@ -177,7 +91,6 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       recursive: true,
     });
     plantSkill(path.join(skills, ".agents", "skills"), "bundled-gate", "BUNDLED_SKILL_MARK");
-    const { port } = Listening.parse(model?.address());
     home = path.join(base, "home");
     // where the founder's codex keeps its config, so the seal treats it as theirs
     codexHome = path.join(home, ".codex");
@@ -192,7 +105,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
         "project_doc_max_bytes = 4",
         "[model_providers.stand-in]",
         'name = "stand-in"',
-        `base_url = "http://127.0.0.1:${port}/v1"`,
+        `base_url = "${model.url}/v1"`,
         'wire_api = "responses"',
         // a server of the founder's, which leaves a mark if a run starts it
         "[mcp_servers.founder]",
@@ -253,7 +166,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
 
   /** One turn of `next`, every ask answered `allow`, and what holdFor made of each. */
   const turn = async (next: Move, allow: boolean) => {
-    move = next;
+    model.script(TURN, [next]);
     const state = await sealRuns();
     if (state.kind !== "sealed") {
       throw new Error(state.reason);
@@ -285,7 +198,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
         asks.push({ held, tool });
         return { allow };
       },
-      prompt: () => "work",
+      prompt: () => `${TURN} work`,
       teardownGraceMs: 500,
     });
     const pushed = execFileSync("git", ["for-each-ref"], { cwd: remote }).toString();
@@ -297,7 +210,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     { timeout: 60_000 },
     async () => {
       const { asks, pushed } = await turn(
-        { cmd: "git push origin main", tool: "exec_command" },
+        { command: "git push origin main", kind: "shell" },
         false,
       );
       expect(asks).toEqual([
@@ -317,7 +230,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     },
     async () => {
       const { pushed, result } = await turn(
-        { cmd: "git push origin main", tool: "exec_command" },
+        { command: "git push origin main", kind: "shell" },
         true,
       );
       expect(result.end).toEqual({ kind: "completed" });
@@ -326,7 +239,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   );
 
   it("starts none of the founder's MCP servers", { timeout: 60_000 }, async () => {
-    const { mcpStarted, result } = await turn({ cmd: "true", tool: "exec_command" }, true);
+    const { mcpStarted, result } = await turn({ command: "true", kind: "shell" }, true);
     expect(result.end).toEqual({ kind: "completed" });
     expect(mcpStarted).toBe(false);
   });
@@ -335,9 +248,9 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     "is offered IdleBiz's skills and none of the founder's, their plugins', instructions or memories",
     { timeout: 60_000 },
     async () => {
-      const { result } = await turn({ cmd: "true", tool: "exec_command" }, true);
+      const { result } = await turn({ command: "true", kind: "shell" }, true);
       expect(result.end).toEqual({ kind: "completed" });
-      const requests = sent.join("\n");
+      const requests = sent().join("\n");
       for (const name of readdirSync(path.join(skills, ".agents", "skills"))) {
         expect(requests).toContain(name);
       }
@@ -359,10 +272,10 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     { timeout: 60_000 },
     async () => {
       writeFileSync(path.join(workspace, "AGENTS.md"), "TEAM_NOTES_MARK\n");
-      const { result } = await turn({ cmd: "true", tool: "exec_command" }, true);
+      const { result } = await turn({ command: "true", kind: "shell" }, true);
       expect(result.end).toEqual({ kind: "completed" });
-      expect(sent.length).toBeGreaterThan(0);
-      for (const request of sent) {
+      expect(sent().length).toBeGreaterThan(0);
+      for (const request of sent()) {
         expect(request.split("TEAM_NOTES_MARK")).toHaveLength(2);
       }
     },
@@ -373,16 +286,16 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     { timeout: 120_000 },
     async () => {
       writeFileSync(path.join(workspace, "CLAUDE.md"), "CLAUDE_MD_MARK\n");
-      await turn({ cmd: "true", tool: "exec_command" }, true);
-      expect(sent.length).toBeGreaterThan(0);
-      expect(sent.join("\n")).not.toContain("CLAUDE_MD_MARK");
-      sent.length = 0;
+      await turn({ command: "true", kind: "shell" }, true);
+      expect(sent().length).toBeGreaterThan(0);
+      expect(sent().join("\n")).not.toContain("CLAUDE_MD_MARK");
+      model.reset();
       writeFileSync(path.join(workspace, "AGENTS.md"), "TEAM_NOTES_MARK\n");
       writeFileSync(path.join(workspace, "AGENTS.override.md"), "OVERRIDE_MARK\n");
-      const { result } = await turn({ cmd: "true", tool: "exec_command" }, true);
+      const { result } = await turn({ command: "true", kind: "shell" }, true);
       expect(result.end).toEqual({ kind: "completed" });
-      expect(sent.length).toBeGreaterThan(0);
-      const requests = sent.join("\n");
+      expect(sent().length).toBeGreaterThan(0);
+      const requests = sent().join("\n");
       expect(requests).toContain("OVERRIDE_MARK");
       expect(requests).not.toContain("TEAM_NOTES_MARK");
       expect(await readTeamNotes(workspace)).toEqual({ cut: false, text: "OVERRIDE_MARK" });
@@ -392,7 +305,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   it("leaves no skill in its workspace for a later run to load", { timeout: 60_000 }, async () => {
     const skill = path.join(workspace, ".agents", "skills", "planted", "SKILL.md");
     const cmd = `touch ran; mkdir -p ${path.dirname(skill)} && echo planted > ${skill}`;
-    const { result } = await turn({ cmd, tool: "exec_command" }, true);
+    const { result } = await turn({ command: cmd, kind: "shell" }, true);
     expect(result.end).toEqual({ kind: "completed" });
     expect(existsSync(path.join(workspace, "ran"))).toBe(true);
     expect(existsSync(path.join(workspace, ".agents"))).toBe(false);
@@ -403,7 +316,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     writeFileSync(secrets, "sealed canary");
     const outside = path.join(root, "outside.txt");
     const cmd = `cat ${secrets} > read.txt; echo x > ${outside}; touch ran`;
-    const { result } = await turn({ cmd, tool: "exec_command" }, true);
+    const { result } = await turn({ command: cmd, kind: "shell" }, true);
     expect(result.end).toEqual({ kind: "completed" });
     expect(existsSync(path.join(workspace, "ran"))).toBe(true);
     expect(readFileSync(path.join(workspace, "read.txt"), "utf-8")).toBe("");
@@ -425,7 +338,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
         "+b",
         "*** End Patch",
       ].join("\n");
-      const { asks } = await turn({ patch, tool: "apply_patch" }, true);
+      const { asks } = await turn({ kind: "patch", patch }, true);
       expect(asks).toEqual([{ held: null, tool: { kind: "edit" } }]);
       expect(existsSync(approvals)).toBe(false);
       expect(readFileSync(path.join(workspace, "notes.md"), "utf-8")).toBe("a\n");
@@ -441,7 +354,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       // a script `notify` could name
       const script = path.join(codexHome, "notify.py");
       const cmd = `touch ran; echo 'notify = ["x"]' >> ${config}; echo 'x' > ${script}`;
-      const { result } = await turn({ cmd, tool: "exec_command" }, true);
+      const { result } = await turn({ command: cmd, kind: "shell" }, true);
       expect(result.end).toEqual({ kind: "completed" });
       expect(existsSync(path.join(workspace, "ran"))).toBe(true);
       expect(readFileSync(config, "utf-8")).toBe(before);
