@@ -6,6 +6,7 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
 pnpm -F @repo/desktop package               # build, sign, notarize → apps/desktop/.output/bin/*.dmg
 pnpm -F @repo/desktop release:publish       # the same as a release, then published to GitHub
 IDLEBIZ_PACK_UNSIGNED=1 pnpm smoke:desktop  # an ad-hoc pack, booted on a scratch save
+IDLEBIZ_PACK_UNSIGNED=1 pnpm smoke:update   # two test packs, the installed one updating itself
 ```
 
 `package` packs the app on a Mac with Xcode's command line tools and the Rust toolchain
@@ -101,3 +102,30 @@ an ad-hoc pack would wait on a prompt to read, so on a Mac that runs IdleBiz it 
 launches anything. A launch where the Keychain holds none makes one, as a first launch does, and
 the smoke deletes it as it ends, since kept it would stop the next smoke and prompt the first
 IdleBiz installed after. CI's `test-macos` job runs it on an ad-hoc pack.
+
+`pnpm smoke:update` holds an update end to end, on an Apple-silicon Mac whose terminal may drive
+System Events (`apps/desktop/scripts/smoke-update.ts`). It serves a feed on loopback for the whole
+run, makes two throwaway keys in scratch with `tauri signer generate`, packs N, package.json's
+version, and then N+1 as test packs, both asking that feed and trusting the first key, and installs
+N with `ditto` into a scratch `Applications`, which the account writes, so the swap asks for no
+admin password; `--packs=<dir>`, in the OS's temporary folder, packs into `<dir>` once and reuses
+what it holds after. The save is Acme founded through the store with a $0 cap and autopilot off
+(`server/test-support/seed-save.seed.ts`, run under `apps/cli/vitest.seed.config.ts` alone, which
+`pnpm test` never runs), with one team value pasted into `secrets.json` as plain text. N launches on
+it with `--root=` and the system PATH, so the shell's `touch` guard holds, and the update is begun
+the founder's way, from the menu-bar item, clicked through System Events (`scripts/tray-ax.ts`):
+the page's session is the shell's alone, and the app takes no switch that installs. A release
+whose signature is the second key's is refused in a box that says it could not be downloaded, with
+main and the installed version as they were; the release as packed stops main cleanly, swaps the
+app and restarts it on the same `--root=`. N+1 then holds the update's Info.plist, shell bytes,
+server version and signature (`codesign --verify --deep --strict`), runs one new main on the same
+save, finds itself current, opens Acme from the menu, and has the save as N left it, but for
+`.main/`, `company/state/` and what was appended to each `*.jsonl`, which main moves itself, and the
+team value sealed with the same key. Its quit leaves nothing running and no `tauri_*_app` swap
+folder behind. An ad-hoc pack's code identity is its cdhash, which the update changes, so a
+keychain of the smoke's own in scratch, first on the search list while it runs, holds the sealing
+key with a partition list naming both packs' cdhashes (`scripts/update-keychain.ts`), as one
+Developer ID's would, and a Keychain prompt fails the run at once. It refuses where an IdleBiz is
+running or the Keychain holds IdleBiz's key, puts the search list back however it ends, and leaves
+every request the feed answered in `.output/smoke-update/feed.log`. CI's `update-macos` job runs it,
+and uploads that log and `main.log` when it fails.

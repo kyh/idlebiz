@@ -37,6 +37,6 @@ How each part works is told once, in the repo's [AGENTS.md](../../AGENTS.md) and
 ## What is deliberately not here
 
 - **No WebDriver of the window.** The page and main are driven in Chromium (`tools/e2e`, the dev
-  host); the shell is held by `cargo test`, booted packaged by `pnpm smoke:desktop`, and looked at
-  by hand.
+  host); the shell is held by `cargo test`, driven packaged by `pnpm smoke:desktop` and
+  `pnpm smoke:update`, and looked at by hand.
 - **No restart of main.** A main that dies says so in a box and the app quits: main owns the save.

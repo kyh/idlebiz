@@ -94,7 +94,9 @@ Its `test-macos` job runs what only a Mac can: clippy over the shell's macOS cod
 with the seal and every gate suite (it installs `claude`, `codex` and `agent-browser` at versions
 pinned there, signed in to nothing, and fails before the tests if one does not answer
 `--version`, since a gate skips on a CLI it cannot run), and `pnpm smoke:desktop` on an ad-hoc
-pack ([Packaging and release](docs/packaging.md)).
+pack ([Packaging and release](docs/packaging.md)). Its `update-macos` job runs `pnpm smoke:update`
+beside it: an installed test pack takes a second from a feed on loopback through its menu-bar item,
+and a failed run uploads `main.log` and the feed's log as the `update-smoke` artifact.
 
 Its `e2e-macos` job runs `pnpm e2e` on a Mac with `IDLEBIZ_E2E_NO_SKIPS=1`, so a test that would
 skip fails the run, and uploads `tools/e2e/test-results/` as the `e2e` artifact whatever the
@@ -152,8 +154,8 @@ Chromium (`tools/e2e/`): each launch starts the built main through the dev host
 (`apps/cli/src/dev-host/host.ts`), which answers main's asks of a native app as the shell would,
 and opens the built page main serves on the handoff link main hands it, as the shell's window
 opens. `pnpm -F @repo/e2e e2e` reruns it on the last build. The shell itself (the window, the
-menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test`, booted packaged by
-`pnpm smoke:desktop` and driven by hand. What the suite covers is its tests, in
+menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test` and driven packaged
+by `pnpm smoke:desktop` and `pnpm smoke:update`. What the suite covers is its tests, in
 `tools/e2e/src/*.spec.ts`. It is not part of `pnpm verify`; CI's `e2e-macos` job runs it, and
 fails on any skip:
 

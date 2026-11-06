@@ -119,7 +119,9 @@ which only that run's seal reaches, and what it does is the run's.
   downloads the release and checks its signature while the office keeps working; then the shell
   stops main as Quit does, installs the release over the app and starts it again. A download that
   fails leaves main running and has it ask the feed again, which may offer a newer release or none;
-  an install that fails says so in a box and starts the app again on the version it has.
+  an install that fails says so in a box and starts the app again on the version it has. CI's
+  `update-macos` job holds an install end to end, from the menu-bar item to the relaunch on the same
+  save (`pnpm smoke:update`, [Packaging and release](packaging.md)).
 - **Main's log.** Main's console is its stderr, which the shell appends, stamped, to `main.log`
   (`src-tauri/src/main_log.rs`; the account's `~/Library/Logs/IdleBiz/`, never under a HOME from
   launchd; dev: `logs/` in the `IdleBiz (dev)` data folder, or in `roots/<id>/` beneath it for an
