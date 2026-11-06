@@ -60,6 +60,7 @@ import { FEED_NAME, archiveName } from "./release-feed.ts";
 import {
   axReady,
   clickTrayItem,
+  describeWindows,
   dialogText,
   dismissDialog,
   securityPromptShown,
@@ -800,7 +801,7 @@ try {
     },
     BOX_TIMEOUT_MS,
     () =>
-      `IdleBiz showed no box within ${BOX_TIMEOUT_MS}ms of a click on "${offeredItem}" with a bad signature on offer${lastFailure()}`,
+      `IdleBiz showed no box within ${BOX_TIMEOUT_MS}ms of a click on "${offeredItem}" with a bad signature on offer${lastFailure()}\nits windows then:\n${describeWindows()}`,
   );
   if (!box.includes(NOT_DOWNLOADED)) {
     throw new Error(`the box a bad signature should open says something else:\n${box}`);
@@ -815,7 +816,8 @@ try {
   await waitFor(
     () => (look(dialogText) === "" ? true : null),
     BOX_TIMEOUT_MS,
-    () => `IdleBiz's box stayed open after its OK was clicked${lastFailure()}`,
+    () =>
+      `IdleBiz's box stayed open after its OK was clicked${lastFailure()}\nits windows then:\n${describeWindows()}`,
   );
   if (first.output().slice(said).includes("main exited")) {
     throw new Error("main exited over a release whose signature the pack refused");

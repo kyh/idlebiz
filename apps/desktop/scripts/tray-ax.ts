@@ -143,6 +143,9 @@ export const clickTrayItem = (prefix: string): void => {
 
 // A box the shell shows (host.rs, updater.rs) is an NSAlert of its own window, with an OK button
 // and its title and text as static texts; the office's window has no OK button of its own
+// A box is any window of IdleBiz's but the office's own, its OK and texts wherever they sit in it:
+// an alert puts them in a group on some macOS releases, not on the window itself. The office's
+// window is skipped, since walking its page's whole tree would take each poll seconds.
 const BOXES = `
 on run argv
   set appName to item 1 of argv
@@ -150,21 +153,76 @@ on run argv
   set boxTexts to ""
   tell application "System Events"
     repeat with aWindow in windows of process appName
-      if exists button "OK" of aWindow then
-        if whatToDo is "dismiss" then
-          click button "OK" of aWindow
-          return "dismissed"
-        end if
-        repeat with aText in static texts of aWindow
-          set textValue to value of aText
-          if textValue is not missing value then set boxTexts to boxTexts & textValue & linefeed
+      set windowRole to ""
+      try
+        set windowRole to subrole of aWindow
+      end try
+      if windowRole is not "AXStandardWindow" then
+        set okButton to missing value
+        set windowTexts to ""
+        repeat with anElement in (entire contents of aWindow)
+          try
+            set elementClass to class of anElement
+            if elementClass is button and name of anElement is "OK" then set okButton to anElement
+            if elementClass is static text then
+              set textValue to value of anElement
+              if textValue is not missing value then set windowTexts to windowTexts & textValue & linefeed
+            end if
+          end try
         end repeat
+        if okButton is not missing value then
+          if whatToDo is "dismiss" then
+            click okButton
+            return "dismissed"
+          end if
+          set boxTexts to boxTexts & windowTexts
+        end if
       end if
     end repeat
   end tell
   return boxTexts
 end run
 `;
+
+// every window of IdleBiz's, by subrole and title, and what each but the office's holds, for a
+// failure to say what was on screen when no box was found
+const WINDOWS = `
+on run argv
+  set appName to item 1 of argv
+  set described to ""
+  tell application "System Events"
+    repeat with aWindow in windows of process appName
+      set windowRole to "?"
+      set windowTitle to "?"
+      try
+        set windowRole to subrole of aWindow
+      end try
+      try
+        set windowTitle to name of aWindow
+      end try
+      set described to described & "window " & windowRole & " titled " & windowTitle & linefeed
+      if windowRole is not "AXStandardWindow" then
+        repeat with anElement in (entire contents of aWindow)
+          try
+            set described to described & "  " & (class of anElement as text) & " " & (name of anElement as text) & linefeed
+          end try
+        end repeat
+      end if
+    end repeat
+  end tell
+  return described
+end run
+`;
+
+/** Each window IdleBiz shows now and what the ones but the office's hold, or why none could be read. */
+export const describeWindows = (): string => {
+  try {
+    const described = osascript("describe IdleBiz's windows", WINDOWS);
+    return described === "" ? "IdleBiz shows no window" : described;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+};
 
 /** The texts of every box IdleBiz shows now, "" when it shows none. */
 export const dialogText = (): string => osascript("read IdleBiz's boxes", BOXES, ["read"]);
