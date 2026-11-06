@@ -146,9 +146,10 @@ export const clickTrayItem = (prefix: string): void => {
 // rfd hands CFUserNotificationDisplayAlert, so UserNotificationCenter draws it, not IdleBiz: one of
 // its windows whose header (the box's title) starts with the app's name. A window of IdleBiz's own
 // but the office's counts too, should a box ever get a parent. Its OK and texts (static, or a text
-// area for a long message) are found wherever they sit in it, a group on some macOS releases. The office's window is skipped, since walking its
-// page's whole tree would take each poll seconds. The OK is kept by its contents, as MENU keeps its
-// item: the loop's variable is only a reference into a list the loop is done with
+// area for a long message) are found wherever they sit in it, a group on some macOS releases. The
+// office's window is skipped, since walking its page's whole tree would take each poll seconds.
+// The OK is kept by its contents, as MENU keeps its item: the loop's variable is only a reference
+// into a list the loop is done with
 const BOXES = `
 on run argv
   set appName to item 1 of argv
