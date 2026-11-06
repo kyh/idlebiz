@@ -142,6 +142,28 @@ export const clickTrayItem = (prefix: string): void => {
   }
 };
 
+// Every UI element under `theElement`, walked through `UI elements` a level at a time and at most
+// eight deep: on CI `entire contents` listed nothing of UserNotificationCenter's AXSystemDialog,
+// where scripts that click such an alert's OK reach it as a UI element of the window
+const ELEMENTS_UNDER = `
+on elementsUnder(theElement, depth)
+  set found to {}
+  if depth > 8 then return found
+  tell application "System Events"
+    set kids to {}
+    try
+      set kids to UI elements of theElement
+    end try
+    repeat with aKid in kids
+      set kid to contents of aKid
+      set end of found to kid
+      set found to found & my elementsUnder(kid, depth + 1)
+    end repeat
+  end tell
+  return found
+end elementsUnder
+`;
+
 // A box the shell shows (host.rs, updater.rs, shell.rs) is a dialog with no parent window, which
 // rfd hands CFUserNotificationDisplayAlert, so UserNotificationCenter draws it, not IdleBiz: one of
 // its windows whose header (the box's title) starts with the app's name. A window of IdleBiz's own
@@ -150,7 +172,7 @@ export const clickTrayItem = (prefix: string): void => {
 // office's window is skipped, since walking its page's whole tree would take each poll seconds.
 // The OK is kept by its contents, as MENU keeps its item: the loop's variable is only a reference
 // into a list the loop is done with
-const BOXES = `
+const BOXES = `${ELEMENTS_UNDER}
 on run argv
   set appName to item 1 of argv
   set whatToDo to item 2 of argv
@@ -173,7 +195,7 @@ on run argv
       set okButton to missing value
       set windowTexts to ""
       set ours to isOwn of aCandidate
-      repeat with anElement in (entire contents of (theWindow of aCandidate))
+      repeat with anElement in (my elementsUnder(theWindow of aCandidate, 1))
         try
           set elementClass to class of anElement
           if elementClass is button and name of anElement is "OK" then set okButton to contents of anElement
@@ -207,9 +229,10 @@ on run argv
 end run
 `;
 
-// every window of IdleBiz's and of UserNotificationCenter's, by process, subrole and title, and
-// what each but the office's holds, for a failure to say what was on screen when no box was found
-const WINDOWS = `
+// every window of IdleBiz's and of UserNotificationCenter's, by process, subrole, title and count of
+// children, and each element of each but the office's by class, role, name, value and description,
+// for a failure to say what was on screen when no box was found
+const WINDOWS = `${ELEMENTS_UNDER}
 on run argv
   set appName to item 1 of argv
   set described to ""
@@ -228,16 +251,22 @@ on run argv
           try
             set windowTitle to name of aWindow
           end try
-          set described to described & processName & "'s window " & windowRole & " titled " & windowTitle & linefeed
+          set childCount to "?"
+          try
+            set childCount to (count of UI elements of aWindow) as text
+          end try
+          set described to described & processName & "'s window " & windowRole & " titled " & windowTitle & ", " & childCount & " UI elements" & linefeed
           if not (processName is appName and windowRole is "AXStandardWindow") then
-            repeat with anElement in (entire contents of aWindow)
+            repeat with anElement in (my elementsUnder(contents of aWindow, 1))
               set elementText to ""
-              try
-                set elementText to " " & (name of anElement as text)
-              end try
-              try
-                set elementText to elementText & " " & (value of anElement as text)
-              end try
+              repeat with aProperty in {"role", "name", "value", "description"}
+                try
+                  if contents of aProperty is "role" then set elementText to elementText & " role=" & (role of anElement as text)
+                  if contents of aProperty is "name" then set elementText to elementText & " name=" & (name of anElement as text)
+                  if contents of aProperty is "value" then set elementText to elementText & " value=" & (value of anElement as text)
+                  if contents of aProperty is "description" then set elementText to elementText & " description=" & (description of anElement as text)
+                end try
+              end repeat
               try
                 set described to described & "  " & (class of anElement as text) & elementText & linefeed
               end try
