@@ -646,7 +646,9 @@ try {
     ["exec", "vitest", "run", "--config", "vitest.seed.config.ts"],
     {
       cwd: cliRoot,
-      env: { ...process.env, IDLEBIZ_SEED_ROOT: save },
+      // the seed refuses a save outside its TMPDIR, and scratch lies in the system's, whatever
+      // this TMPDIR says
+      env: { ...process.env, IDLEBIZ_SEED_ROOT: save, TMPDIR: systemTempDir() },
     },
   );
   const canaries = Object.entries(readJson(path.join(save, "secrets.json"), secretsSchema)).filter(
