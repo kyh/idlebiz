@@ -142,42 +142,56 @@ export const clickTrayItem = (prefix: string): void => {
   }
 };
 
-// A box the shell shows (host.rs, updater.rs) is any window of IdleBiz's but the office's own, its
-// OK and texts wherever they sit in it: an alert puts them in a group on some macOS releases, not
-// on the window itself. The office's window is skipped, since walking its page's whole tree would
-// take each poll seconds. The OK is kept by its contents, as MENU keeps its item: the loop's
-// variable is only a reference into a list the loop is done with
+// A box the shell shows (host.rs, updater.rs, shell.rs) is a dialog with no parent window, which
+// rfd hands CFUserNotificationDisplayAlert, so UserNotificationCenter draws it, not IdleBiz: one of
+// its windows whose header (the box's title) starts with the app's name. A window of IdleBiz's own
+// but the office's counts too, should a box ever get a parent. Its OK and texts are found wherever
+// they sit in it, a group on some macOS releases. The office's window is skipped, since walking its
+// page's whole tree would take each poll seconds. The OK is kept by its contents, as MENU keeps its
+// item: the loop's variable is only a reference into a list the loop is done with
 const BOXES = `
 on run argv
   set appName to item 1 of argv
   set whatToDo to item 2 of argv
   set boxTexts to ""
   tell application "System Events"
+    set candidates to {}
     repeat with aWindow in windows of process appName
       set windowRole to ""
       try
         set windowRole to subrole of aWindow
       end try
-      if windowRole is not "AXStandardWindow" then
-        set okButton to missing value
-        set windowTexts to ""
-        repeat with anElement in (entire contents of aWindow)
-          try
-            set elementClass to class of anElement
-            if elementClass is button and name of anElement is "OK" then set okButton to contents of anElement
-            if elementClass is static text then
-              set textValue to value of anElement
-              if textValue is not missing value then set windowTexts to windowTexts & textValue & linefeed
+      if windowRole is not "AXStandardWindow" then set end of candidates to {theWindow:(contents of aWindow), isOwn:true}
+    end repeat
+    if exists process "UserNotificationCenter" then
+      repeat with aWindow in windows of process "UserNotificationCenter"
+        set end of candidates to {theWindow:(contents of aWindow), isOwn:false}
+      end repeat
+    end if
+    repeat with aCandidate in candidates
+      set okButton to missing value
+      set windowTexts to ""
+      set ours to isOwn of aCandidate
+      repeat with anElement in (entire contents of (theWindow of aCandidate))
+        try
+          set elementClass to class of anElement
+          if elementClass is button and name of anElement is "OK" then set okButton to contents of anElement
+          if elementClass is static text then
+            set textValue to value of anElement
+            if textValue is missing value or textValue is "" then set textValue to name of anElement
+            if textValue is not missing value then
+              set windowTexts to windowTexts & textValue & linefeed
+              if textValue starts with appName then set ours to true
             end if
-          end try
-        end repeat
-        if okButton is not missing value then
-          if whatToDo is "dismiss" then
-            click okButton
-            return "dismissed"
           end if
-          set boxTexts to boxTexts & windowTexts
+        end try
+      end repeat
+      if ours and okButton is not missing value then
+        if whatToDo is "dismiss" then
+          click okButton
+          return "dismissed"
         end if
+        set boxTexts to boxTexts & windowTexts
       end if
     end repeat
   end tell
@@ -185,35 +199,42 @@ on run argv
 end run
 `;
 
-// every window of IdleBiz's, by subrole and title, and what each but the office's holds, for a
-// failure to say what was on screen when no box was found
+// every window of IdleBiz's and of UserNotificationCenter's, by process, subrole and title, and
+// what each but the office's holds, for a failure to say what was on screen when no box was found
 const WINDOWS = `
 on run argv
   set appName to item 1 of argv
   set described to ""
   tell application "System Events"
-    repeat with aWindow in windows of process appName
-      set windowRole to "?"
-      set windowTitle to "?"
-      try
-        set windowRole to subrole of aWindow
-      end try
-      try
-        set windowTitle to name of aWindow
-      end try
-      set described to described & "window " & windowRole & " titled " & windowTitle & linefeed
-      if windowRole is not "AXStandardWindow" then
-        repeat with anElement in (entire contents of aWindow)
-          set elementText to ""
+    repeat with processIndex from 1 to 2
+      set processName to item processIndex of {appName, "UserNotificationCenter"}
+      if not (exists process processName) then
+        set described to described & processName & " is not running" & linefeed
+      else
+        repeat with aWindow in windows of process processName
+          set windowRole to "?"
+          set windowTitle to "?"
           try
-            set elementText to " " & (name of anElement as text)
+            set windowRole to subrole of aWindow
           end try
           try
-            set elementText to elementText & " " & (value of anElement as text)
+            set windowTitle to name of aWindow
           end try
-          try
-            set described to described & "  " & (class of anElement as text) & elementText & linefeed
-          end try
+          set described to described & processName & "'s window " & windowRole & " titled " & windowTitle & linefeed
+          if not (processName is appName and windowRole is "AXStandardWindow") then
+            repeat with anElement in (entire contents of aWindow)
+              set elementText to ""
+              try
+                set elementText to " " & (name of anElement as text)
+              end try
+              try
+                set elementText to elementText & " " & (value of anElement as text)
+              end try
+              try
+                set described to described & "  " & (class of anElement as text) & elementText & linefeed
+              end try
+            end repeat
+          end if
         end repeat
       end if
     end repeat
@@ -222,11 +243,14 @@ on run argv
 end run
 `;
 
-/** Each window IdleBiz shows now and what the ones but the office's hold, or why none could be read. */
+/**
+ * Each window IdleBiz and UserNotificationCenter show now and what the ones but the office's hold,
+ * or why none could be read.
+ */
 export const describeWindows = (): string => {
   try {
-    const described = osascript("describe IdleBiz's windows", WINDOWS);
-    return described === "" ? "IdleBiz shows no window" : described;
+    const described = osascript("describe IdleBiz's and UserNotificationCenter's windows", WINDOWS);
+    return described === "" ? "neither shows a window" : described;
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }

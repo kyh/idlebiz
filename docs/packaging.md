@@ -122,8 +122,10 @@ System Events (`apps/desktop/scripts/smoke-update.ts`), in these steps:
    item opens its menu (tray-icon gives the item its menu only while it handles a real
    mouse-down), and System Events reads the menu and clicks its update item;
 5. it offers a release signed by the untrusted key first, which is refused in a box that says it
-   could not be downloaded, with main and the installed version as they were, then the release as
-   packed, which stops main cleanly, swaps the app and restarts it on the same `--root=`;
+   could not be downloaded (UserNotificationCenter draws the shell's boxes, which have no parent
+   window, so the smoke reads that process's windows too), with main and the installed version as
+   they were, then the release as packed, which stops main cleanly, swaps the app and restarts it
+   on the same `--root=`;
 6. it checks N+1: the update's Info.plist, shell bytes, server version and signature
    (`codesign --verify --deep --strict`), one new main on the same save, a check that finds itself
    current, Open Acme in its menu, the team value sealed with the same key, and the save as N left
