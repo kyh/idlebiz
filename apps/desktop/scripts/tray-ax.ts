@@ -177,8 +177,15 @@ on run argv
           set elementClass to class of anElement
           if elementClass is button and name of anElement is "OK" then set okButton to contents of anElement
           if elementClass is static text then
-            set textValue to value of anElement
-            if textValue is missing value or textValue is "" then set textValue to name of anElement
+            set textValue to missing value
+            try
+              set textValue to value of anElement
+            end try
+            if textValue is missing value or textValue is "" then
+              try
+                set textValue to name of anElement
+              end try
+            end if
             if textValue is not missing value then
               set windowTexts to windowTexts & textValue & linefeed
               if textValue starts with appName then set ours to true
