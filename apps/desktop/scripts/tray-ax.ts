@@ -142,11 +142,11 @@ export const clickTrayItem = (prefix: string): void => {
   }
 };
 
-// A box the shell shows (host.rs, updater.rs) is an NSAlert of its own window, with an OK button
-// and its title and text as static texts; the office's window has no OK button of its own
-// A box is any window of IdleBiz's but the office's own, its OK and texts wherever they sit in it:
-// an alert puts them in a group on some macOS releases, not on the window itself. The office's
-// window is skipped, since walking its page's whole tree would take each poll seconds.
+// A box the shell shows (host.rs, updater.rs) is any window of IdleBiz's but the office's own, its
+// OK and texts wherever they sit in it: an alert puts them in a group on some macOS releases, not
+// on the window itself. The office's window is skipped, since walking its page's whole tree would
+// take each poll seconds. The OK is kept by its contents, as MENU keeps its item: the loop's
+// variable is only a reference into a list the loop is done with
 const BOXES = `
 on run argv
   set appName to item 1 of argv
@@ -164,7 +164,7 @@ on run argv
         repeat with anElement in (entire contents of aWindow)
           try
             set elementClass to class of anElement
-            if elementClass is button and name of anElement is "OK" then set okButton to anElement
+            if elementClass is button and name of anElement is "OK" then set okButton to contents of anElement
             if elementClass is static text then
               set textValue to value of anElement
               if textValue is not missing value then set windowTexts to windowTexts & textValue & linefeed
@@ -204,8 +204,15 @@ on run argv
       set described to described & "window " & windowRole & " titled " & windowTitle & linefeed
       if windowRole is not "AXStandardWindow" then
         repeat with anElement in (entire contents of aWindow)
+          set elementText to ""
           try
-            set described to described & "  " & (class of anElement as text) & " " & (name of anElement as text) & linefeed
+            set elementText to " " & (name of anElement as text)
+          end try
+          try
+            set elementText to elementText & " " & (value of anElement as text)
+          end try
+          try
+            set described to described & "  " & (class of anElement as text) & elementText & linefeed
           end try
         end repeat
       end if
