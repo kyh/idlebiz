@@ -56,6 +56,7 @@ const checkout = "/work/idlebiz";
 const context = {
   checkout,
   identity: "-",
+  installed: ["/Applications", "/home/founder/Applications"],
   pubkey: RELEASE_PUBKEY,
   real: (file: string): string => path.resolve(file),
   release: false,
@@ -190,6 +191,18 @@ describe("a test pack's spec", () => {
       { outDir: "/Applications" },
       {},
       "a test pack's folder lies in scratch",
+    ],
+    [
+      "where apps are installed, though scratch is set to it",
+      { outDir: "/Applications" },
+      { scratch: "/Applications" },
+      "never leaves anything where apps are installed",
+    ],
+    [
+      "the founder's own Applications, though scratch is above it",
+      { outDir: "/home/founder/Applications/next" },
+      { scratch: "/home" },
+      "never leaves anything where apps are installed",
     ],
     ["the release's folder", { outDir: context.releaseOut }, {}, "which publishing uploads"],
     [

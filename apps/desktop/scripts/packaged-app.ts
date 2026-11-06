@@ -115,8 +115,11 @@ export const how = (child: ChildProcess): string =>
 export const killGroup = (pgid: number): void => {
   try {
     process.kill(-pgid, "SIGKILL");
-  } catch {
-    // already gone
+  } catch (error) {
+    // a group already gone is fine; any other failure leaves processes running
+    if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) {
+      throw error;
+    }
   }
 };
 

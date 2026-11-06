@@ -14,7 +14,7 @@ import { spawnSync } from "node:child_process";
 import type { SpawnSyncOptions } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import { FEED_NAME, archiveName, releaseAssets, releaseFeed } from "./release-feed.ts";
@@ -64,6 +64,16 @@ const run = (file: string, args: readonly string[], options: SpawnSyncOptions = 
   if (result.status !== 0) {
     throw new Error(`${file} ${args.join(" ")} exited ${result.status ?? result.signal}`);
   }
+};
+
+/** macOS's per-user temporary folder, as the system names it whatever TMPDIR says. */
+const systemTempDir = (): string => {
+  const asked = spawnSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], { encoding: "utf-8" });
+  const folder = asked.stdout.trim();
+  if (asked.status !== 0 || !path.isAbsolute(folder)) {
+    throw new Error("getconf named no DARWIN_USER_TEMP_DIR, the scratch a test pack lies in");
+  }
+  return folder;
 };
 
 interface Notary {
@@ -233,11 +243,13 @@ if (spec !== null) {
   refuseUpdateTest(spec, {
     checkout,
     identity,
+    installed: ["/Applications", path.join(homedir(), "Applications")],
     pubkey: updater.pubkey,
     real: realPathOf,
     release: process.env.IDLEBIZ_RELEASE === "1",
     releaseOut: outDir,
-    scratch: tmpdir(),
+    // the system's, as the shell gives main: TMPDIR is what `launchctl setenv` could point elsewhere
+    scratch: systemTempDir(),
     updaterKey: UPDATER_KEY,
   });
   if (spec.archive && !existsSync(spec.key)) {

@@ -69,7 +69,9 @@ also names that throwaway `key`, which signs its archive at pack time and goes i
 builds from `.output/update-test` into `src-tauri/target/update-test`, apart from every other pack,
 and leaves its .app, and with `archive` its signed archive and feed, in the spec's `outDir`. It is
 refused as a release, as a signed pack, on a feed off loopback, with a key or folder outside
-scratch (the OS's temporary folder, never where the app is installed), with a key beside
+scratch (the system's temporary folder, from `getconf`, since TMPDIR is what `launchctl setenv`
+could point anywhere), with its folder in `/Applications` or `~/Applications` whatever scratch is,
+with a key beside
 `~/.tauri/idlebiz.key` or in the checkout, with tauri.conf.json's public key however it is encoded,
 or with `.output/bin` as its folder, and an archive whose signature carries the release key's ID is
 removed and stops the pack, however that key was reached: its feed is plain http and its key has no

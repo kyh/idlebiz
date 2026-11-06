@@ -55,6 +55,11 @@ interface Pack {
   releaseOut: string;
   /** The OS's temporary folder, where a test pack's key and folder lie. */
   scratch: string;
+  /**
+   * The folders apps are installed in (`/Applications`, `~/Applications`), refused whatever scratch
+   * is: a test pack replaces the .app in its folder, and scratch is read from the environment.
+   */
+  installed: readonly string[];
   /** A path as the file system resolves it, through every link in it, as the disk spells it. */
   real: (file: string) => string;
 }
@@ -171,6 +176,10 @@ const refusalsOf = (spec: UpdateTestSpec, pack: Pack): string[] => {
     [
       !within(scratch, outDir),
       `a test pack's folder lies in scratch (${scratch}), never where an installed app is: ${spec.outDir}`,
+    ],
+    [
+      pack.installed.some((dir) => within(pack.real(dir), outDir)),
+      `a test pack never leaves anything where apps are installed, whatever scratch is: ${spec.outDir}`,
     ],
     [
       within(pack.real(pack.releaseOut), outDir),
