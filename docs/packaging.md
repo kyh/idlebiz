@@ -107,10 +107,10 @@ IdleBiz installed after. CI's `test-macos` job runs it on an ad-hoc pack.
 System Events (`apps/desktop/scripts/smoke-update.ts`), in these steps:
 
 1. it serves a feed on loopback for the whole run and makes throwaway keys in scratch with
-   `tauri signer generate`: one no pack trusts, and, when it packs afresh, the one the packs trust.
+   `tauri signer generate`: the packs' key, when it packs afresh, and an untrusted one every run.
    Scratch is the system's temporary folder (`getconf`), which `package.ts` holds a test pack to;
 2. it packs N, the version in package.json, and then N+1 as test packs, both asking that feed and
-   trusting the first key; `--packs=<dir>` packs into `<dir>` once and reuses what it holds after;
+   trusting the packs' key; `--packs=<dir>` packs into `<dir>` once and reuses what it holds after;
 3. it installs N with `ditto` into a scratch `Applications`, which the account writes, so the swap
    asks for no admin password, and seeds its save: Acme founded through the store with a $0 cap and
    autopilot off (`server/test-support/seed-save.seed.ts`, run under
@@ -121,8 +121,8 @@ System Events (`apps/desktop/scripts/smoke-update.ts`), in these steps:
    session is the shell's alone and the app takes no switch that installs: a click posted at the
    item opens its menu (tray-icon gives the item its menu only while it handles a real
    mouse-down), and System Events reads the menu and clicks its update item;
-5. it offers a release signed by the second key first, which is refused in a box that says it could
-   not be downloaded, with main and the installed version as they were, then the release as
+5. it offers a release signed by the untrusted key first, which is refused in a box that says it
+   could not be downloaded, with main and the installed version as they were, then the release as
    packed, which stops main cleanly, swaps the app and restarts it on the same `--root=`;
 6. it checks N+1: the update's Info.plist, shell bytes, server version and signature
    (`codesign --verify --deep --strict`), one new main on the same save, a check that finds itself
