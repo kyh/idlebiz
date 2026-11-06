@@ -178,6 +178,9 @@ orient a reader and link into them, never telling a mechanic again.
 - **An agent verifies the app with no login and no bill**: the suites drive the CLIs the adapters
   bundle, sealed, against a stand-in model on loopback; only the model is replaced, its every
   switch is one the packaged shell drops, and CI's Mac jobs fail where a test would skip.
+- **An update is held end to end** on two ad-hoc test packs from a loopback feed under a throwaway
+  key: a test pack's feed and pubkey live only in the config `package.ts` writes for it, never in
+  `tauri.conf.json` and never read at runtime, and a release refuses one.
 - **AGENTS.md stays under 32 KiB**: codex reads AGENTS.md only that far (`project_doc_max_bytes`'s
   default) and Claude loads it, with this file, into every session. So it holds the workflow, the
   map and the traps, and each mechanic is a `docs/` file read by whoever changes it.
