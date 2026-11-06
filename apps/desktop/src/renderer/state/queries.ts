@@ -1,4 +1,5 @@
-// Main's answers as the page holds them: one tanstack-query cache, which only main's events move.
+// Main's answers as the page holds them: one tanstack-query cache, which main's events and its
+// answers to the founder's own actions move.
 
 import {
   CancelledError,
@@ -13,6 +14,7 @@ import { taskIn } from "@repo/domain/domain";
 import type {
   Company,
   Employee,
+  LoadReport,
   LoadSkip,
   Product,
   RestingRunners,
@@ -65,6 +67,8 @@ const productsQuery = orpc.products.list.queryOptions();
 const betsQuery = orpc.bets.list.queryOptions();
 const roomQuery = orpc.team.messages.queryOptions({ input: { limit: FEED_LINES } });
 export const stripeKeyQuery = orpc.stripe.keyStatus.queryOptions();
+/** IdleBiz's own update status, which main's `update` event moves (Settings' Updates row). */
+export const updateQuery = orpc.app.update.queryOptions();
 
 // ---- outside React ---------------------------------------------------------
 
@@ -236,15 +240,31 @@ export const useSaveIssues = (): LoadSkip[] => useQuery(saveReportQuery).data?.s
 /** What the window waits on to open: the save, the company and, with one, its team and their work. */
 export const BOOT_QUERIES = [saveReportQuery, companyQuery, employeesQuery, openTasksQuery];
 
-/** What the window shows, re-rendered only when one of its inputs moves. */
-export const useBoot = (): Boot => {
-  const report = useQuery(saveReportQuery);
-  const company = useQuery(companyQuery);
+/** A read the window waits on, as it stands: main's answer once one lands, else why it failed. */
+interface Asked<T> {
+  data: T | undefined;
+  error: Error | null;
+}
+
+/** What the window shows, from where the reads it waits on stand: `useBoot`'s, outside React. */
+export const bootOfReads = ({
+  authed,
+  company,
+  employees,
+  report,
+  tasks,
+}: {
+  /** Null until main's CLI probe answers. */
+  authed: boolean | null;
+  report: Asked<LoadReport>;
+  company: Asked<Company | null>;
+  employees: Asked<Employee[]>;
+  tasks: Asked<Task[]>;
+}): Boot => {
   const hasCompany = company.data !== undefined && company.data !== null;
-  const employees = useQuery({ ...employeesQuery, enabled: hasCompany });
-  const tasks = useQuery({ ...openTasksQuery, enabled: hasCompany });
-  const { authed } = useAuth();
-  const awaited = hasCompany ? [report, company, employees, tasks] : [report, company];
+  const awaited: Asked<unknown>[] = hasCompany
+    ? [report, company, employees, tasks]
+    : [report, company];
   const failed = awaited.find(({ data, error }) => data === undefined && error !== null);
   return bootOf({
     authed,
@@ -253,4 +273,15 @@ export const useBoot = (): Boot => {
     hasCompany,
     saveIssues: report.data?.skipped ?? NOTHING,
   });
+};
+
+/** What the window shows, re-rendered only when one of its inputs moves. */
+export const useBoot = (): Boot => {
+  const report = useQuery(saveReportQuery);
+  const company = useQuery(companyQuery);
+  const hasCompany = company.data !== undefined && company.data !== null;
+  const employees = useQuery({ ...employeesQuery, enabled: hasCompany });
+  const tasks = useQuery({ ...openTasksQuery, enabled: hasCompany });
+  const { authed } = useAuth();
+  return bootOfReads({ authed, company, employees, report, tasks });
 };

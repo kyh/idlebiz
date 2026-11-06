@@ -35,7 +35,8 @@ const keepStore = (store: PrintfulStore | null): void => {
   if (store === null) {
     rmSync(storePath(), { force: true });
   } else {
-    writeJsonFile(storePath(), store);
+    // the token sells only with its store, so the store is kept as surely as the token
+    writeJsonFile(storePath(), store, { durable: true });
   }
 };
 

@@ -22,7 +22,7 @@ export class CrashScreen extends Component<{ children: ReactNode }, Crashed> {
       return this.props.children;
     }
     return (
-      <div className="pointer-events-auto absolute inset-0 z-50 flex items-center justify-center bg-[#10121b]/90 p-6">
+      <div className="pointer-events-auto absolute inset-0 z-50 flex items-center justify-center bg-veil/90 p-6">
         <div className="px-battle w-full max-w-lg p-4">
           <div className="text-base text-fg">Something in the office broke</div>
           <div className="mt-1 text-sm leading-relaxed text-fg-dim">

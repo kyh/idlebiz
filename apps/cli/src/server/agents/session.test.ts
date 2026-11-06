@@ -37,7 +37,7 @@ const live = () => new AbortController().signal;
 
 describe("permissionGate", () => {
   const push = { command: "git push", kind: "shell" } as const;
-  const workspace = path.join(root, "acme", "workspace");
+  const workspace = path.join(root, "company/products/ledger/workspace");
   const room = { real: realPathOf, writable: [workspace] };
 
   /** The gate of an attempt at `taskId`, and every ask it raised. */
@@ -144,9 +144,9 @@ describe("acpAgentFor", () => {
     expect(codex.AGENT_BROWSER_NAMESPACE).toBe("idlebiz-x");
     expect(claude.AGENT_BROWSER_NAMESPACE).toBe("idlebiz-c");
     expect(browserNamespace(root, "claude", [])).not.toBe(browserNamespace(root, "codex", []));
-    const workspace = path.join(root, "acme/workspace");
+    const workspace = path.join(root, "company/products/ledger/workspace");
     expect(browserNamespace(root, "claude", [workspace])).not.toBe(
-      browserNamespace(root, "claude", [path.join(root, "acme/products/b/workspace")]),
+      browserNamespace(root, "claude", [path.join(root, "company/products/b/workspace")]),
     );
     expect(codex.AGENT_BROWSER_SOCKET_DIR).toBe(path.join(homedir(), ".agent-browser"));
   });

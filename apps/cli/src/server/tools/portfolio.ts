@@ -6,7 +6,7 @@ import { RefusalError } from "../refusal";
 import * as store from "../store/store";
 import { TOOL_SPECS } from "../tool-specs";
 import type { ToolName } from "../tool-specs";
-import { define, post, productFor } from "./define";
+import { define, productFor } from "./define";
 import type { Tool } from "./define";
 import { linkEntry } from "./money";
 
@@ -15,7 +15,6 @@ export const PORTFOLIO_TOOLS = {
   read_bets: define(TOOL_SPECS.read_bets, () => betLedger(store.listBets())),
   create_product: define(TOOL_SPECS.create_product, (ctx, { name, description }) => {
     const product = startProduct({ description, name }, ctx.employee.id);
-    post(ctx, `🆕 New product: ${product.name} — ${product.description}`);
     return `Created "${product.name}" (${product.id}); its workspace is ${product.workspaceDir}. Fund work on it with open_bet and "product":"${product.id}", then delegate against that bet.`;
   }),
   name_product: define(TOOL_SPECS.name_product, (ctx, { product: named, ...draft }) => {

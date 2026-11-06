@@ -1,10 +1,17 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SYSTEM_PATH as LAUNCHD_PATH } from "./founder-env";
 import { adoptShellPath, runShell } from "./shell-path";
-
-const LAUNCHD_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 
 const adopted = (): string[] => process.env.PATH?.split(path.delimiter) ?? [];
 
@@ -91,6 +98,23 @@ describe.skipIf(process.platform !== "darwin")("adoptShellPath", () => {
     expect(adopted()).toEqual([...LAUNCHD_PATH.split(":"), path.join(home, ".local/bin")]);
   });
 
+  it("reads the account's startup files, never those a ZDOTDIR in main's env names", async () => {
+    const zdot = path.join(box, "zdot");
+    const canary = path.join(box, "canary");
+    mkdirSync(zdot);
+    writeFileSync(
+      path.join(zdot, ".zshenv"),
+      `/usr/bin/touch ${canary}\nexport PATH="${path.join(box, "evil")}:$PATH"\n`,
+    );
+    process.env.ZDOTDIR = zdot;
+
+    await adoptShellPath(true);
+
+    expect(adopted().slice(0, 2)).toEqual([path.join(home, ".bun/bin"), path.join(home, "bin")]);
+    expect(adopted()).not.toContain(path.join(box, "evil"));
+    expect(existsSync(canary)).toBe(false);
+  });
+
   it("settles though an rc file reads stdin and leaves a sleeper on stdout, and leaves no process behind", async () => {
     const pids = path.join(box, "pids");
     writeFileSync(
@@ -108,11 +132,95 @@ describe.skipIf(process.platform !== "darwin")("adoptShellPath", () => {
   });
 });
 
+// The founder's login shell is bash, which runs what main's env names before any startup file: a
+// function exported in it, and a trace whose prompt runs a command. Main's env is launchd's in the
+// app, which any process of the founder's sets for the next launch.
+describe.skipIf(!existsSync("/bin/bash"))("adoptShellPath's login shell", () => {
+  let box = "";
+
+  beforeEach(() => {
+    box = realpathSync(mkdtempSync(path.join(tmpdir(), "idlebiz-shell-")));
+    mkdirSync(path.join(box, "home"));
+    writeFileSync(path.join(box, "home/.bash_profile"), 'export PATH="$HOME/bin:$PATH"\n');
+    vi.stubEnv("HOME", path.join(box, "home"));
+    vi.stubEnv("SHELL", "/bin/bash");
+    vi.stubEnv("PATH", LAUNCHD_PATH);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(box, { force: true, recursive: true });
+  });
+
+  it("starts on the account's names, never main's env", async () => {
+    const exported = path.join(box, "exported");
+    const traced = path.join(box, "traced");
+    vi.stubEnv("BASH_FUNC_echo%%", `() { /usr/bin/touch ${exported}; builtin echo "$@"; }`);
+    vi.stubEnv("SHELLOPTS", "xtrace");
+    vi.stubEnv("PS4", `$(/usr/bin/touch ${traced})`);
+
+    await adoptShellPath(true);
+
+    expect(adopted()[0]).toBe(path.join(box, "home/bin"));
+    expect(existsSync(exported)).toBe(false);
+    expect(existsSync(traced)).toBe(false);
+  });
+
+  // an rc file that starts an ssh agent when it finds none, and notes the one it found
+  const agentProfile = () => {
+    const seen = path.join(box, "agent-seen");
+    const started = path.join(box, "agent-started");
+    writeFileSync(
+      path.join(box, "home/.bash_profile"),
+      `if [ -z "$SSH_AUTH_SOCK" ]; then /usr/bin/touch ${started}; fi\nprintf %s "$SSH_AUTH_SOCK" > ${seen}\nexport PATH="$HOME/bin:$PATH"\n`,
+    );
+    return { seen, started };
+  };
+
+  it("starts with launchd's ssh agent, as a terminal does, so an rc file starts none", async () => {
+    const { seen, started } = agentProfile();
+    const launchd = "/private/tmp/com.apple.launchd.ib/Listeners";
+    vi.stubEnv("SSH_AUTH_SOCK", launchd);
+
+    await adoptShellPath(true);
+
+    expect(readFileSync(seen, "utf-8")).toBe(launchd);
+    expect(existsSync(started)).toBe(false);
+  });
+
+  it("starts with no ssh agent but launchd's, so an rc file's keys go to no socket a run made", async () => {
+    const { seen } = agentProfile();
+    for (const planted of [
+      path.join(box, "ssh-x/agent.1"),
+      "/private/tmp/com.apple.launchd.ib/Listeners/../../ib/agent",
+    ]) {
+      vi.stubEnv("SSH_AUTH_SOCK", planted);
+
+      await adoptShellPath(true);
+
+      expect(readFileSync(seen, "utf-8")).toBe("");
+    }
+  });
+});
+
 describe("runShell", () => {
   it("answers what the command printed", async () => {
-    await expect(runShell("/bin/sh", ["-c", "echo one; echo two"], 5000)).resolves.toBe(
-      "one\ntwo\n",
-    );
+    await expect(
+      runShell("/bin/sh", ["-c", "echo one; echo two"], 5000, { PATH: LAUNCHD_PATH }),
+    ).resolves.toBe("one\ntwo\n");
+  });
+
+  it("starts the shell on the env it is handed alone", async () => {
+    vi.stubEnv("IDLEBIZ_SHELL_CANARY", "main's");
+    try {
+      await expect(
+        runShell("/bin/sh", ["-c", 'echo "[$IDLEBIZ_SHELL_CANARY] $HANDED"'], 5000, {
+          HANDED: "handed",
+        }),
+      ).resolves.toBe("[] handed\n");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("gives up at its deadline on a shell that never prints the PATH, and kills what it started", async () => {
@@ -121,7 +229,9 @@ describe("runShell", () => {
     const started = Date.now();
 
     await expect(
-      runShell("/bin/sh", ["-c", `sleep 30 & echo $! > ${pid}; echo started; wait`], 500),
+      runShell("/bin/sh", ["-c", `sleep 30 & echo $! > ${pid}; echo started; wait`], 500, {
+        PATH: LAUNCHD_PATH,
+      }),
     ).rejects.toThrow("/bin/sh did not answer within 500ms");
 
     expect(Date.now() - started).toBeLessThan(2000);
@@ -130,6 +240,8 @@ describe("runShell", () => {
   });
 
   it("rejects a shell that does not exist", async () => {
-    await expect(runShell("/nonexistent/shell", ["-c", "true"], 5000)).rejects.toThrow(/ENOENT/u);
+    await expect(runShell("/nonexistent/shell", ["-c", "true"], 5000, {})).rejects.toThrow(
+      /ENOENT/u,
+    );
   });
 });

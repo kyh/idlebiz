@@ -617,7 +617,7 @@ describe("create_payment_link", () => {
     const { ctx } = chargingRun("sk_test_founder");
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
     expect(await answerText(ctx, "create_payment_link", LINK)).toBe(
-      `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL} Nothing names a delivery, so a buyer gets only Stripe's receipt. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless IdleBiz runs with IDLEBIZ_COUNT_TEST_MONEY=1.`,
+      `Created a payment link for "Pro plan" at $9.00 on Acme: ${PAID_URL} Nothing names a delivery, so a buyer gets only Stripe's receipt. Stripe is in test mode: the link takes no real money, and what it takes counts for nothing unless a developer's launch opts in to count test money.`,
     );
   });
 

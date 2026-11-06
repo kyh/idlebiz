@@ -374,7 +374,6 @@ const CatalogProductSchema = z.object({
     .array(z.object({ key: z.string() }))
     .nullish()
     .transform((techniques) => techniques ?? []),
-  type: z.string().nullish(),
 });
 export type CatalogProduct = z.infer<typeof CatalogProductSchema>;
 

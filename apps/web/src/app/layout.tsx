@@ -7,7 +7,6 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   description: siteConfig.description,
-  manifest: "/manifest.webmanifest",
   metadataBase: new URL(siteConfig.url),
   openGraph: {
     description: siteConfig.description,

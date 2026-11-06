@@ -61,10 +61,15 @@ export const Digest = () => {
     if (!hasCompany) {
       return;
     }
+    // a look main refuses (its company gone in a reset) or cannot answer shows nothing
     const look = async () => {
-      const d = await digest();
-      if (d && eventful(d) && Date.now() - d.since >= AWAY_MS) {
-        setSummary(d);
+      try {
+        const d = await digest();
+        if (d && eventful(d) && Date.now() - d.since >= AWAY_MS) {
+          setSummary(d);
+        }
+      } catch (error) {
+        console.error("Could not read the digest", error);
       }
     };
     const onFocus = () => {

@@ -1,7 +1,7 @@
 {
   "from": "main",
   "params": {
-    "text": "git clone --no-local ~/.idlebiz/acme/workspace"
+    "text": "Pocket Ledger is live: budgeting that fits on one screen."
   },
   "result": null
 }

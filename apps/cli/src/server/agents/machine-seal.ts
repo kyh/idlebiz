@@ -16,20 +16,29 @@ import { secretsPath } from "../secrets";
 import { inside } from "./seal";
 import type { Reach, RunnerHome, Seal } from "./seal";
 
-/** The founder's logins under HOME, which no run reads or writes. */
+/**
+ * The founder's logins under HOME, which no run reads or writes. A file that holds a login is
+ * sealed whole, even where a toolchain reads it on every build (`.npmrc`, `.m2/settings.xml`,
+ * `.gradle/gradle.properties`); the caches and plugins beside it (`~/.m2/repository`,
+ * `~/.pulumi/plugins`, the rest of `~/.gradle`) stay readable. So does `~/.yarnrc.yml`, yarn's
+ * settings, where `yarn npm login` adds a token (docs/seal.md's "What stays open").
+ */
 const LOGINS = [
   ".ssh",
   ".config/gh",
+  ".config/hub",
   ".npmrc",
   ".netrc",
   ".git-credentials",
   ".config/git/credentials",
   ".aws",
   ".azure",
+  ".oci",
   ".kube",
   ".docker",
   ".gnupg",
   ".config/gcloud",
+  "Library/Application Support/doctl",
   ".config/stripe",
   ".wrangler",
   ".config/.wrangler",
@@ -44,13 +53,29 @@ const LOGINS = [
   ".railway",
   ".supabase",
   ".terraform.d",
+  ".terraformrc",
+  ".pulumi/credentials.json",
+  ".vault-token",
+  ".pgpass",
+  ".my.cnf",
+  ".mylogin.cnf",
   ".pypirc",
   ".cargo/credentials",
   ".cargo/credentials.toml",
+  ".gem/credentials",
+  ".local/share/gem/credentials",
+  ".m2/settings.xml",
+  ".m2/settings-security.xml",
+  ".gradle/gradle.properties",
+  ".cache/huggingface/token",
+  ".cache/huggingface/stored_tokens",
+  ".sentryclirc",
   ".config/configstore",
   ".config/op",
   ".config/github-copilot",
   ".appstoreconnect",
+  // the updater's signing key: whoever holds it ships code to every installed IdleBiz
+  ".tauri",
   ".agent-browser/auth",
   ".agent-browser/.encryption-key",
   "Library/Application Support/Google/Chrome",
@@ -66,9 +91,9 @@ const LOGINS = [
 
 /**
  * Each runner's home, and what of it the seal treats apart from the rest, which no run writes; why
- * each is sealed so is AGENTS.md's "A run's seal". `state` is what its runs write, each a prefix,
- * since a CLI writes a file through a sibling it renames over it; one ending in a slash is only
- * that folder. claude's `projects/` is written only for the run's own folder
+ * each is sealed so is docs/seal.md's "A run's seal". `state` is what its runs write, each a
+ * prefix, since a CLI writes a file through a sibling it renames over it; one ending in a slash is
+ * only that folder. claude's `projects/` is written only for the run's own folder
  * (`Seal.claudeProjects`). `account` is where the CLI records the founder's account, in the home
  * and beside it in HOME, each with every name that starts with it, which only the sign-in writes.
  * `personal` is what of the founder's own its runs cannot read, in the home and in HOME, and
@@ -305,7 +330,9 @@ const ownFolders = async (save: string, folders: readonly string[]): Promise<Rea
 /**
  * A runner's home, and the state in it its runs write, each where it is named and where it leads:
  * a dotfile manager may link any of it in from elsewhere. Moved by `override`, the account file
- * sits only in it, else beside it in HOME too.
+ * sits only in it, else beside it in HOME too. A moved home leaves the one in HOME the founder's
+ * own CLI keeps, account file and all, still theirs: it stays in `home`, which the other runner's
+ * runs read none of and this runner's write none of.
  */
 const runnerHomeOf = async (
   home: string,
@@ -315,7 +342,19 @@ const runnerHomeOf = async (
   const { absent, account, dir, override, personal, state } = RUNNER_HOMES[runner];
   const moved = env[override];
   const inHome = moved === undefined || moved === "";
-  const folder = inHome ? path.join(home, dir) : path.resolve(moved);
+  const usual = path.join(home, dir);
+  const folder = inHome ? usual : path.resolve(moved);
+  // the account file in HOME is the founder's whenever the home is moved, even to where the one in
+  // HOME leads: the runner then keeps its own in the moved folder, and `accounts` names only that
+  const leftBehind = inHome
+    ? []
+    : [
+        ...((await realPathOf(folder)) === (await realPathOf(usual)) ? [] : await reachOf(usual)),
+        ...(await reachesOf(
+          account.map((name) => path.join(home, name)),
+          "prefix",
+        )),
+      ];
   const states = await Promise.all(
     state.map((name) =>
       name.endsWith("/")
@@ -331,7 +370,7 @@ const runnerHomeOf = async (
     absent: await reachesOf(absent.map((name) => path.join(folder, name))),
     account: await reachesOf(accounts, "prefix"),
     folder: await realPathOf(folder),
-    home: await reachOf(folder),
+    home: [...(await reachOf(folder)), ...leftBehind],
     personal: await reachesOf([
       ...personal.home.map((name) => path.join(folder, name)),
       ...personal.user.map((name) => path.join(home, name)),

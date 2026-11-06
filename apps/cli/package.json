@@ -15,6 +15,8 @@
   "type": "module",
   "exports": {
     "./dev-host": "./src/dev-host/host.ts",
+    "./stand-in-model": "./src/server/test-support/stand-in-model.ts",
+    "./stand-in-runners": "./src/server/test-support/stand-in-runners.ts",
     "./task-file": "./src/server/test-support/task-file.ts"
   },
   "scripts": {
@@ -39,7 +41,7 @@
     "citty": "^0.2.2",
     "ignore": "^7.0.14",
     "typescript": "catalog:",
-    "vite": "^8.3.5",
+    "vite": "catalog:",
     "vitest": "catalog:",
     "zod": "catalog:"
   },

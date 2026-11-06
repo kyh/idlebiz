@@ -68,7 +68,7 @@ export const Modal = ({
             <div>
               <Dialog.Title className="text-base">{title}</Dialog.Title>
               {subtitle ? (
-                <Dialog.Description className="text-xs text-[#c4c9dd]">
+                <Dialog.Description className="text-xs text-light-dim">
                   {subtitle}
                 </Dialog.Description>
               ) : null}

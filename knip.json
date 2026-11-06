@@ -3,7 +3,12 @@
   "ignoreBinaries": ["agent-browser", "ffmpeg"],
   "workspaces": {
     "apps/cli": {
-      "entry": ["src/index.ts", "scripts/*.ts"],
+      "entry": [
+        "src/index.ts",
+        "scripts/*.ts",
+        "vitest.seed.config.ts",
+        "src/server/test-support/seed-save.seed.ts"
+      ],
       "project": ["src/**", "scripts/**"],
       "ignoreDependencies": [
         "@agentclientprotocol/claude-agent-acp",
@@ -12,6 +17,9 @@
     },
     "apps/desktop": {
       "project": ["src/**", "scripts/**"]
+    },
+    "packages/*": {
+      "includeEntryExports": true
     },
     "tools/e2e": {
       "entry": ["src/stub-services.ts"],

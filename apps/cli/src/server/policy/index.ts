@@ -6,8 +6,8 @@ import { pipelinesOf } from "./reading";
 import type { Call } from "./reading";
 import { RULE_PROGRAMS, ruleHolding } from "./shell-rules";
 
-// A tripwire for outward actions, not a boundary: what it holds and what goes unseen is AGENTS.md's
-// "The command policy", and what the seal leaves open its "What stays open".
+// A tripwire for outward actions, not a boundary: what it holds and what goes unseen is
+// docs/seal.md's "The command policy", and what the seal leaves open its "What stays open".
 
 /** What a shell command runs, read once for the rules and the browser gate alike. */
 export const callsOf = (command: string): Call[][] => pipelinesOf(command, RULE_PROGRAMS);

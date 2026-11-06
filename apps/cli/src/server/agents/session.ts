@@ -13,6 +13,7 @@ import type { BlockedAsk } from "@repo/domain/domain";
 import { isLeased } from "@repo/domain/hold-rules";
 import { parseJson } from "@repo/domain/json";
 import type { RunnerId } from "@repo/domain/runners";
+import { SYSTEM_PATH, namedWith, proxiesOf, unsealedEnv } from "../lib/founder-env";
 import { holdFor } from "../policy";
 import type { BrowserCli, Confinement, LivePage } from "../policy/browser";
 import { teamNotesPrompt } from "../prompts/team-notes";
@@ -23,16 +24,30 @@ import { claudeUserSettings } from "./claude-user-settings";
 import { runEnv } from "./run-env";
 import { runTmpdir } from "./run-workspace";
 import { browserSocketDir, namespaceUnder } from "./machine-seal";
-import { SANDBOX_EXEC, sealedCommand } from "./seal";
+import { sealedCommand } from "./seal";
 import type { Seal } from "./seal";
 import { TEAM_NOTES_MAX_BYTES, readTeamNotes } from "./team-notes";
 
-// The desktop app ships the ACP binaries, so resolve them against its node_modules.
-const resolveFromApp = createRequire(import.meta.url);
+// The ACP adapters are this package's own dependencies, which the .app ships beside the bundle.
+const fromPackage = createRequire(import.meta.url);
 
 /** What of main's env a runner's CLI gets, for a run or a probe of its login alike. */
 export const runnerEnv = (runner: RunnerId): Record<string, string> =>
   runEnv(process.env, RUNNERS[runner].providerEnv);
+
+/**
+ * What of main's env a runner's CLI gets to sign in: the account's names, main's PATH and the
+ * founder's proxies, and the runner's own settings, never the rest of main's, which is launchd's in
+ * the app. Its seal lets it open the browser and lacks the denies a run's has, so no variable a CLI
+ * reads to run something on the way there (BROWSER) reaches it.
+ */
+export const signInEnv = (runner: RunnerId) => ({
+  ...unsealedEnv(process.env, {
+    PATH: process.env.PATH ?? SYSTEM_PATH,
+    ...proxiesOf(process.env),
+  }),
+  ...namedWith(process.env, RUNNERS[runner].providerEnv),
+});
 
 /**
  * Chrome's own sandbox is one more that cannot start inside the seal. No AGENT_BROWSER_PROFILE:
@@ -79,10 +94,7 @@ export const acpAgentFor = (
     env.BASH_DEFAULT_TIMEOUT_MS = String(DEPLOY_TIMEOUT_MS + 60_000);
   }
   return {
-    command: sealedCommand(seal, runner, [
-      process.execPath,
-      resolveFromApp.resolve(adapter.acpEntry),
-    ]),
+    command: sealedCommand(seal, runner, [process.execPath, fromPackage.resolve(adapter.acpEntry)]),
     env,
     readDirs: session.readDirs,
     sessionMeta: session.meta,
@@ -94,7 +106,7 @@ export const acpAgentFor = (
 
 export const acpAgentInstalled = (runner: RunnerId): boolean => {
   try {
-    resolveFromApp.resolve(RUNNERS[runner].acpEntry);
+    fromPackage.resolve(RUNNERS[runner].acpEntry);
     return true;
   } catch {
     return false;
@@ -144,7 +156,7 @@ export const codexSessionEnv = async (
   seal: Seal,
   env: Record<string, string> = {},
 ): Promise<Record<string, string>> => {
-  const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, "codex", [
+  const [bin, ...rest] = sealedCommand(seal, "codex", [
     runnerBin("codex"),
     "mcp",
     "list",
@@ -193,7 +205,7 @@ export const sessionAgent = async (
 export const sealedBrowser =
   (seal: Seal, runner: RunnerId): BrowserCli =>
   async (args) => {
-    const [bin = SANDBOX_EXEC, ...rest] = sealedCommand(seal, runner, ["agent-browser", ...args]);
+    const [bin, ...rest] = sealedCommand(seal, runner, ["agent-browser", ...args]);
     const env = { ...runnerEnv(runner), ...browserEnv(seal, runner) };
     const { stdout } = await execFileAsync(bin, rest, { env, timeout: 8000 });
     return stdout;

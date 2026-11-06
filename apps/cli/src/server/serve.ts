@@ -1,9 +1,9 @@
-// Main, the server `idlebiz serve` runs, as AGENTS.md's "The page, the shell and main" describes.
+// Main, the server `idlebiz serve` runs, as docs/app.md's "The page, the shell and main" describes.
 // Importing this module boots it, so commands/serve.ts loads it for `serve` alone.
 
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import path from "node:path";
 import { BodyLimitPlugin, RPCHandler } from "@orpc/server/node";
 import { z } from "zod";
@@ -22,6 +22,7 @@ import { host, hostOver, launchSchema, setHost, trayClickSchema, windowSchema } 
 import type { Handoff, Launch, WindowChange } from "./host";
 import { keepAwake } from "./keep-awake";
 import { broadcast } from "./lib/broadcast";
+import { identityRefusal } from "./lib/founder-env";
 import { suspendWrites } from "./lib/fs";
 import { initLog } from "./lib/log";
 import { guarded, report } from "./lib/report";
@@ -49,6 +50,7 @@ import {
 } from "./stripe-links";
 import type { Integrations } from "./tools/define";
 import { appTray } from "./tray";
+import { installFromMenu, startUpdateChecks, updateStatus } from "./updates";
 import { productionHosts, validateToken } from "./vercel";
 import { setVercelEnv } from "./vercel-env";
 
@@ -70,17 +72,10 @@ const integrations: Integrations = {
   setEnv: setVercelEnv,
 };
 
-// the shell's power assertion: one at a time, since keepAwake starts at most one
 const scheduler = createScheduler(
   runnerPool,
-  keepAwake({
-    start: () => {
-      host().keepAwake(true);
-      return 1;
-    },
-    stop: () => {
-      host().keepAwake(false);
-    },
+  keepAwake((on) => {
+    host().keepAwake(on);
   }),
   integrations,
 );
@@ -229,6 +224,15 @@ const pageSourceOf = (launch: Launch): PageSource => {
 
 const boot = async (launch: Launch): Promise<void> => {
   setHost(hostOver(peer), launch);
+  // the packaged shell starts main as the account the user database names, whatever launchd's env
+  // says; main checks it before it writes anything, since the save, the seal and the sockets all
+  // come from HOME, and the PATH the runs find their CLIs on from SHELL
+  if (launch.packaged) {
+    const refused = identityRefusal(homedir(), process.env.SHELL, userInfo());
+    if (refused !== null) {
+      throw new Error(refused);
+    }
+  }
   claim = await claimSave(rootDir(), homedir());
   sealSecrets(launch);
   store.initStore();
@@ -266,6 +270,10 @@ const boot = async (launch: Launch): Promise<void> => {
   if (openedAtLogin()) {
     appTray.startWindowless();
   }
+  startUpdateChecks(() => {
+    appTray.refresh();
+    broadcast("update", updateStatus());
+  });
 
   // the queue waits on the seal's check: drain it the moment that settles, not a tick later
   void (async () => {
@@ -309,4 +317,9 @@ peer.on("tray", trayClickSchema, ({ on }) => {
   if (store.getCompany()) {
     guarded("tray autopilot", () => setAutopilot(on));
   }
+});
+
+// the menu's update item installs the release main offers, as Settings' button does
+peer.on("update", z.null(), () => {
+  void installFromMenu();
 });

@@ -1,11 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { expect, test } from "./harness";
+import { expect, keyShot, test } from "./harness";
 
 test("a first launch opens on the title screen", async ({ launch }) => {
   const { page } = await launch();
   await expect(page.getByRole("img", { name: "IdleBiz" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Start your company" })).toBeVisible();
+  await keyShot(page, "title");
 });
 
 test("a save a newer IdleBiz wrote asks for an update, not a fix", async ({ launch, root }) => {

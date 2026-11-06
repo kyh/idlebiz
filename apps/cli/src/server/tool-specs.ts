@@ -36,7 +36,7 @@ const WAGER = {
 
 /**
  * How long a deploy may take. The agent's call waits on it without a word, so it
- * stays well inside the run's idle watchdog (`DEFAULT_IDLE_TIMEOUT_MS`).
+ * stays well inside the run's idle watchdog (`RUN_IDLE_TIMEOUT_MS`, agents/runner-pool.ts).
  */
 export const DEPLOY_TIMEOUT_MS = 5 * 60_000;
 

@@ -26,7 +26,7 @@ const opened: { seal: Seal; cwd: string }[] = [];
 
 /** `args` as agent-browser runs them in a claude run under `seal`, from `cwd`. */
 const browse = (seal: Seal, cwd: string, ...args: string[]) => {
-  const [bin = "", ...rest] = sealedCommand(seal, "claude", [
+  const [bin, ...rest] = sealedCommand(seal, "claude", [
     "agent-browser",
     "--session",
     SESSION,

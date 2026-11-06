@@ -8,10 +8,26 @@ import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { fetchRealMetrics } from "../metrics";
 import { activityEvents } from "../activity";
+import { startProduct } from "../company-actions";
 
 const root = freshSave();
 
 describe("portfolio tools", () => {
+  it("tells the room of a new product as whoever started it, the lead or the founder", async () => {
+    const { ctx } = runAs("mae");
+    await answerText(ctx, "create_product", { description: "Ships widgets", name: "Widget" });
+    startProduct({ description: "Sells gadgets", name: "Gadget" }, null);
+    expect(
+      store
+        .recentTeamMessages()
+        .slice(-2)
+        .map(({ from, text }) => ({ from, text })),
+    ).toEqual([
+      { from: { id: "mae", kind: "employee" }, text: "🆕 New product: Widget — Ships widgets" },
+      { from: { kind: "founder" }, text: "🆕 New product: Gadget — Sells gadgets" },
+    ]);
+  });
+
   it("opens a bet for the lead and says how it is counted", async () => {
     const { ctx } = runAs("mae");
     const answer = await answerText(ctx, "open_bet", BET);

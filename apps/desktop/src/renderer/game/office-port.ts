@@ -12,8 +12,16 @@ export interface OfficeMessages {
   "despawn-employee": string;
   /** UI → scene: an overlay is up, so the keyboard and clicks are not the game's. */
   "ui-modal": boolean;
-  /** UI → scene: a company was just founded; rebuild the room around its team. */
+  /**
+   * UI → scene: the window holds what the office boots on anew, as a company was just founded or
+   * main answered after the window could not reach it; rebuild the room around its team.
+   */
   "company-ready": null;
+  /**
+   * UI → scene: main's events came back after a drop, and its roster and tasks are read again;
+   * what was missed meanwhile is lost, so set who is in and what they do by the window's answers.
+   */
+  resynced: null;
   /** scene → UI: input is wired, so the current modal state can be replayed. */
   "office-input-ready": null;
   /** scene → UI: the founder walked up to someone. */

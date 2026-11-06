@@ -83,8 +83,8 @@ const LOOKS = founderChoices(6);
 const TitleScreen = ({ onStart }: { onStart: () => void }) => (
   <div className="ob-title-screen">
     <div className="ob-title-art">
-      <img className="ob-title-props" src="./onboarding/founding-props.webp" alt="" />
-      <img className="ob-title-logo" src="./onboarding/idlebiz-wordmark.webp" alt="IdleBiz" />
+      <img className="ob-title-props" src="/onboarding/founding-props.webp" alt="" />
+      <img className="ob-title-logo" src="/onboarding/idlebiz-wordmark.webp" alt="IdleBiz" />
     </div>
     <p className="ob-tagline">A little office. A big idea. Your company.</p>
     <button type="button" className="px-btn ob-start" onClick={onStart}>
@@ -317,7 +317,7 @@ const Encounter = ({
   const team = step === "team" ? flow.team : null;
   const showingPanel = team?.kind === "cast" || step === "budget";
   return (
-    <div className="ob-stage" data-look={pickingLook} data-panel={showingPanel}>
+    <div className="ob-stage" data-look={pickingLook}>
       <OfficeBackdrop />
       <div className="ob-status ob-status-guide px-plate">
         <strong>Chad Runwayson</strong>

@@ -31,9 +31,7 @@ mod platform {
             Ok(bytes) => {
                 let key = String::from_utf8(bytes).ok().filter(|key| is_key(key));
                 if key.is_none() {
-                    eprintln!(
-                        "[shell] the Keychain's IdleBiz key is not {KEY_BYTES} bytes of base64"
-                    );
+                    log::warn!("the Keychain's IdleBiz key is not {KEY_BYTES} bytes of base64");
                 }
                 key
             }
@@ -42,13 +40,13 @@ mod platform {
                 match set_generic_password(SERVICE, ACCOUNT, key.as_bytes()) {
                     Ok(()) => Some(key),
                     Err(error) => {
-                        eprintln!("[shell] the Keychain would not keep IdleBiz's key: {error}");
+                        log::warn!("the Keychain would not keep IdleBiz's key: {error}");
                         None
                     }
                 }
             }
             Err(error) => {
-                eprintln!("[shell] the Keychain would not give IdleBiz its key: {error}");
+                log::warn!("the Keychain would not give IdleBiz its key: {error}");
                 None
             }
         }

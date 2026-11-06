@@ -3,6 +3,7 @@ import { linesOf, useAuthFlow } from "@/renderer/hooks/use-auth-flow";
 import { useNow } from "@/renderer/hooks/use-now";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import type { Submission } from "@/renderer/hooks/use-submission";
+import { CancelLogin } from "@/renderer/ui/auth-step";
 import { Bust } from "@/renderer/ui/bust";
 import {
   useAuth,
@@ -41,6 +42,7 @@ const Stat = ({
   label: string;
   value: string;
   sub?: string;
+  /** The figure's colour, as a px-kit text class. */
   accent?: string | undefined;
   title?: string;
   /** A bust beside the figures, for a plate that is about a person. */
@@ -50,19 +52,14 @@ const Stat = ({
   <button
     type="button"
     onClick={onClick}
-    className="px-plate pointer-events-auto flex min-w-[64px] cursor-pointer items-center gap-2 px-3 py-1.5 text-center"
+    className="px-plate pointer-events-auto flex min-w-16 items-center gap-2 px-3 py-1.5 text-center"
     title={title}
   >
     {face}
     <span className="block flex-1">
-      <span className="px-label block text-[#c3c9de]">{label}</span>
-      <span
-        className="block text-base leading-tight tabular-nums"
-        style={accent ? { color: accent } : undefined}
-      >
-        {value}
-      </span>
-      {sub ? <span className="block text-xs tabular-nums text-[#a7adc6]">{sub}</span> : null}
+      <span className="px-label block text-light-dim">{label}</span>
+      <span className={cn("block text-base leading-tight tabular-nums", accent)}>{value}</span>
+      {sub ? <span className="block text-xs tabular-nums text-light-faint">{sub}</span> : null}
     </span>
   </button>
 );
@@ -83,7 +80,7 @@ const Scoreboard = ({
         value={
           company.revenueUsd === null ? "—" : `$${formatCompact(Math.floor(company.revenueUsd))}`
         }
-        accent={out ? "var(--danger)" : "#9fe6b0"}
+        accent={out ? "text-danger" : "text-money"}
         sub={company.revenueUsd === null ? `${usage} · connect` : `${usage}${out ? " · OUT" : ""}`}
         title="Real Stripe revenue vs AI usage at API prices — budget & Stripe live here"
         onClick={() => onOpen({ kind: "budget" })}
@@ -91,7 +88,7 @@ const Scoreboard = ({
       <Stat
         label={company.users === null ? "users" : "users ⚡"}
         value={company.users === null ? "—" : formatCompact(company.users)}
-        accent="var(--accent-hi)"
+        accent="text-accent-hi"
         sub={company.users === null ? "connect" : "web analytics"}
         title="Real users from Vercel Web Analytics on your deployed product"
         onClick={() => onOpen({ kind: "ships" })}
@@ -148,7 +145,7 @@ const CompanyPlates = ({
       <Stat
         label={lead && products.length > 1 ? lead.name : "product"}
         value={productState}
-        accent={productState === "LIVE" ? "var(--ok)" : undefined}
+        accent={productState === "LIVE" ? "text-ok" : undefined}
         sub={`${company.ships} shipped${portfolio}`}
         title={deploy ? `Live at ${deploy.url}` : "Products and the shipping log"}
         onClick={() => onOpen({ kind: "ships" })}
@@ -250,7 +247,8 @@ const SignedOutRunners = ({ company, employees }: { company: Company; employees:
           {lines.join("\n")}
         </div>
       ) : null}
-      <div className="mt-2 flex justify-end">
+      <div className="mt-2 flex items-center justify-end gap-3">
+        {auth.phase === "logging-in" ? <CancelLogin /> : null}
         <button
           type="button"
           onClick={login}

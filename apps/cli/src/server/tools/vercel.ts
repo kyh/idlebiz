@@ -13,11 +13,11 @@ import { keepEnvValue, serverOnlyValueIn, teamSetEnv, unshippableEnvValues } fro
 import { define, holdOnFounder, post, productFor, requireSignOff } from "./define";
 import type { RunContext, Tool } from "./define";
 
-export const VERCEL_WAITING =
+const VERCEL_WAITING =
   "Vercel is not connected: the founder has a Vercel connect card waiting. Continue with what you can — this task resumes automatically once connected.";
 
 /** Ask the founder for Vercel for `productId`, whose binding answers it, which holds the call. */
-export const needVercel = (
+const needVercel = (
   ctx: RunContext,
   productId: string,
   reason: string,
@@ -25,6 +25,10 @@ export const needVercel = (
   why: string,
 ): never =>
   holdOnFounder(ctx, { integration: "vercel", productId, reason, type: "integration" }, sent, why);
+
+/** Ask the founder for a Vercel token for `productId`, saying `reason`, which holds the call. */
+export const needVercelToken = (ctx: RunContext, productId: string, reason: string): never =>
+  needVercel(ctx, productId, reason, VERCEL_WAITING, "Vercel is not connected.");
 
 /** What the founder signs for a deploy: the product, and the Vercel project it lands in. */
 const deployAction = (productId: string, target: DeployTarget): string =>
@@ -104,20 +108,8 @@ export const VERCEL_TOOLS = {
     if (!product) {
       throw new RefusalError(store.noSuchProduct(productId));
     }
-    const token = getSecret(VERCEL_TOKEN);
-    if (!token) {
-      return holdOnFounder(
-        ctx,
-        {
-          integration: "vercel",
-          productId: product.id,
-          reason: `to deploy ${product.name}`,
-          type: "integration",
-        },
-        VERCEL_WAITING,
-        "Vercel is not connected.",
-      );
-    }
+    const token =
+      getSecret(VERCEL_TOKEN) ?? needVercelToken(ctx, product.id, `to deploy ${product.name}`);
     const target: DeployTarget =
       product.vercel === null
         ? { kind: "new", name: product.id }
@@ -132,14 +124,10 @@ export const VERCEL_TOOLS = {
     const deployed = await ctx.deploy({ cwd: product.workspaceDir, target, token, unshippable });
     if (deployed.kind === "name-taken") {
       const refused = `Nothing was deployed: Vercel already has a project named "${deployed.name}", and ${product.name} is not bound to it.`;
-      return holdOnFounder(
+      return needVercel(
         ctx,
-        {
-          integration: "vercel",
-          productId: product.id,
-          reason: `to bind ${product.name} to its Vercel project: one named "${deployed.name}" already exists`,
-          type: "integration",
-        },
+        product.id,
+        `to bind ${product.name} to its Vercel project: one named "${deployed.name}" already exists`,
         `${refused} The founder has a Vercel card waiting to bind ${product.name} to its project; this task resumes once they do. Continue with what you can.`,
         refused,
       );
@@ -177,20 +165,9 @@ export const VERCEL_TOOLS = {
         `${product.name} has no Vercel project yet: deploy it first, which makes one, then set ${name}.`,
       );
     }
-    const token = getSecret(VERCEL_TOKEN);
-    if (!token) {
-      return holdOnFounder(
-        ctx,
-        {
-          integration: "vercel",
-          productId: product.id,
-          reason: `to set ${name} on ${product.name}`,
-          type: "integration",
-        },
-        VERCEL_WAITING,
-        "Vercel is not connected.",
-      );
-    }
+    const token =
+      getSecret(VERCEL_TOKEN) ??
+      needVercelToken(ctx, product.id, `to set ${name} on ${product.name}`);
     const held = heldKeyIn(value);
     if (held !== null) {
       throw new RefusalError(

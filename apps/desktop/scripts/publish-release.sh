@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Pack the signed, notarized app (`pnpm package`, which refuses a release that is either less),
-# then publish its dmg as the release tagged v<version>: a draft first, made public only once the
-# dmg is up, so the site's download link never resolves a release with nothing to download.
+# then publish its dmg, and the signed archive and feed the installed app updates from, as the
+# release tagged v<version>: a draft first, made public and latest only once all three are up, so
+# neither the site's download link nor the updater's feed resolves a release missing one.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." # -> apps/desktop
 
@@ -46,7 +47,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-gh release upload "$TAG" ".output/bin/IdleBiz-${VERSION}-arm64.dmg"
+gh release upload "$TAG" \
+  ".output/bin/IdleBiz-${VERSION}-arm64.dmg" \
+  ".output/bin/IdleBiz-${VERSION}-arm64.app.tar.gz" \
+  ".output/bin/latest.json"
 uploaded=1
 gh release edit "$TAG" --draft=false --latest
 echo "published ${TAG}: $(gh release view "$TAG" --json url -q .url)"

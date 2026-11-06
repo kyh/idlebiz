@@ -23,7 +23,7 @@ const pngSize = (url: string) => {
 
 describe("the bundled characters", () => {
   it("ship a sheet and a bust for every sheet a seed can wear, and nothing else", () => {
-    const shipped = readdirSync(path.join(publicDir, "characters")).map((f) => `characters/${f}`);
+    const shipped = readdirSync(path.join(publicDir, "characters")).map((f) => `/characters/${f}`);
     const worn = pinned.flatMap((seed) => [sheetUrl(seed), bustUrl(seed)]);
     expect(shipped.toSorted()).toEqual(worn.toSorted());
   });

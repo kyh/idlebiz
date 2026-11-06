@@ -3,6 +3,7 @@ import {
   closeSync,
   existsSync,
   fstatSync,
+  fsyncSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -25,23 +26,38 @@ export const suspendWrites = (): void => {
   writesSuspended = true;
 };
 
+interface WriteOptions {
+  /** On the disk before it takes the file's name: see atomicWrite. */
+  durable?: boolean;
+  mode?: number;
+}
+
 /**
  * Write the whole file via tmp + rename, so a reader never sees half of it. The tmp is always
  * made new: one already there, left by a crash or planted as a link to where a reader waits,
  * is removed, and `wx` (O_EXCL) never opens through a link, not even a dangling one.
+ *
+ * A `durable` file is also on the disk before the rename, so an OS crash or a power cut leaves
+ * the old file or the new one, never an empty one. Only a file whose loss blocks the office or
+ * loses what the founder gave asks: on the Mac the flush is a full one (F_FULLFSYNC), which
+ * the synchronous store waits on.
  */
-export const atomicWrite = (
-  file: string,
-  content: string,
-  options: { mode?: number } = {},
-): void => {
+export const atomicWrite = (file: string, content: string, options: WriteOptions = {}): void => {
   if (writesSuspended) {
     return;
   }
   mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
   rmSync(tmp, { force: true });
-  writeFileSync(tmp, content, { flag: "wx", mode: options.mode });
+  const fd = openSync(tmp, "wx", options.mode);
+  try {
+    writeFileSync(fd, content);
+    if (options.durable) {
+      fsyncSync(fd);
+    }
+  } finally {
+    closeSync(fd);
+  }
   renameSync(tmp, file);
 };
 
@@ -72,7 +88,7 @@ export const writeJsonFile = (
   file: string,
   // oxlint-disable-next-line anti-slop/no-object-parameters -- a sink, not an input: any value JSON.stringify can write
   value: object,
-  options: { mode?: number } = {},
+  options: WriteOptions = {},
 ): void => {
   atomicWrite(file, `${JSON.stringify(value, null, 2)}\n`, options);
 };

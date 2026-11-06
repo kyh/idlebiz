@@ -13,7 +13,8 @@ import type {
 
 interface OfficeObjectPlacement {
   readonly key: string;
-  readonly path: string;
+  /** Where the page loads its art: office-design.json names it within public/. */
+  readonly url: string;
   readonly x: number;
   readonly y: number;
   readonly depth: number;
@@ -68,7 +69,7 @@ const placementsOf = (objects: OfficeLayoutData["objects"]): readonly OfficeObje
     flipX: obj.flipX ?? false,
     flipY: obj.flipY ?? false,
     key: `office-object-sprite-${obj.path}`,
-    path: obj.path,
+    url: `/${obj.path}`,
     x: obj.x,
     y: obj.y,
   }));

@@ -1,159 +1,167 @@
 @import "tailwindcss";
 @import "@repo/px-kit/px-kit.css";
 
-html,
-body {
-  margin: 0;
-  padding: 0;
-  background: var(--void);
-  color: var(--light);
-}
-
-img {
-  image-rendering: pixelated;
-}
-
-::selection {
-  background: var(--accent);
-  color: var(--light);
-}
-
-/* faint office floor grid on the dark backdrop */
-.px-floor {
-  background-image:
-    linear-gradient(rgba(82, 92, 132, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(82, 92, 132, 0.12) 1px, transparent 1px);
-  background-size: 48px 48px;
-}
-
-/* the landing card is one employee's office: real game sprites roam it */
-.px-npc {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 48px;
-  height: 96px;
-  isolation: isolate;
-  transition-property: transform;
-  transition-timing-function: linear;
-}
-.px-npc-body {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  background-image: url(/office/npc.png);
-  background-size: 288px 576px;
-  background-repeat: no-repeat;
-  image-rendering: pixelated;
-}
-.px-npc-anim {
-  animation: px-gait 0.66s steps(6) infinite;
-}
-.px-prop-wrap {
-  display: inline-block;
-  isolation: isolate;
-}
-.px-prop,
-.px-npc-body {
-  position: relative;
-  z-index: 0;
-}
-.px-ground-shadow {
-  position: absolute;
-  bottom: -4px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: -1;
-  border-radius: 50%;
-  background: radial-gradient(
-    closest-side,
-    rgba(29, 33, 54, 0.5),
-    rgba(29, 33, 54, 0.3) 65%,
-    rgba(29, 33, 54, 0)
-  );
-}
-@keyframes px-gait {
-  from {
-    background-position-x: 0;
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: var(--void);
+    color: var(--light);
   }
-  to {
-    background-position-x: -288px;
+
+  img {
+    image-rendering: pixelated;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--light);
   }
 }
-.px-say {
-  position: absolute;
-  bottom: 84px;
-  left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  background: #ffffff;
-  color: var(--fg);
-  border: 2px solid var(--ink);
-  padding: 2px 6px;
-  font-size: 10px;
-  line-height: 1.4;
-}
-/* tail: ink outline triangle (::before) with a white fill triangle (::after)
-   inset 2px on top, both centered under the bubble so they read as one shape */
-.px-say::before,
-.px-say::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  border-style: solid;
-}
-.px-say::before {
-  margin-left: -6px;
-  border-width: 7px 6px 0 6px;
-  border-color: var(--ink) transparent transparent transparent;
-}
-.px-say::after {
-  top: calc(100% - 2px);
-  margin-left: -4px;
-  border-width: 5px 4px 0 4px;
-  border-color: #ffffff transparent transparent transparent;
-}
-@media (prefers-reduced-motion: reduce) {
+
+@layer components {
+  /* faint office floor grid on the dark backdrop */
+  .px-floor {
+    background-image:
+      linear-gradient(rgba(82, 92, 132, 0.12) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(82, 92, 132, 0.12) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+
+  /* the landing card is one employee's office: real game sprites roam it */
   .px-npc {
-    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 48px;
+    height: 96px;
+    isolation: isolate;
+    transition-property: transform;
+    transition-timing-function: linear;
+  }
+  .px-npc-body {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background-image: url(/office/npc.png);
+    background-size: 288px 576px;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+  }
+  .px-npc-anim {
+    animation: px-gait 0.66s steps(6) infinite;
+  }
+  .px-prop-wrap {
+    display: inline-block;
+    isolation: isolate;
+  }
+  .px-prop,
+  .px-npc-body {
+    position: relative;
+    z-index: 0;
+  }
+  .px-ground-shadow {
+    position: absolute;
+    bottom: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: -1;
+    border-radius: 50%;
+    background: radial-gradient(
+      closest-side,
+      rgba(29, 33, 54, 0.5),
+      rgba(29, 33, 54, 0.3) 65%,
+      rgba(29, 33, 54, 0)
+    );
+  }
+  @keyframes px-gait {
+    from {
+      background-position-x: 0;
+    }
+    to {
+      background-position-x: -288px;
+    }
+  }
+  .px-say {
+    position: absolute;
+    bottom: 84px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    background: #ffffff;
+    color: var(--fg);
+    border: 2px solid var(--ink);
+    padding: 2px 6px;
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  /* tail: ink outline triangle (::before) with a white fill triangle (::after)
+   inset 2px on top, both centered under the bubble so they read as one shape */
+  .px-say::before,
+  .px-say::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-style: solid;
+  }
+  .px-say::before {
+    margin-left: -6px;
+    border-width: 7px 6px 0 6px;
+    border-color: var(--ink) transparent transparent transparent;
+  }
+  .px-say::after {
+    top: calc(100% - 2px);
+    margin-left: -4px;
+    border-width: 5px 4px 0 4px;
+    border-color: #ffffff transparent transparent transparent;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .px-npc {
+      display: none;
+    }
+  }
+  .px-drag {
+    touch-action: none;
+    user-select: none;
   }
 }
-.px-drag {
-  touch-action: none;
-  user-select: none;
-}
 
-/* pixel arrow cursor from the Modern Interiors UI pack, everywhere: `cursor`
+@layer base {
+  /* pixel arrow cursor from the Modern Interiors UI pack, everywhere: `cursor`
    inherits from body, so only elements the UA gives their own cursor are listed.
-   No kit class sets `cursor` — a class would beat these element selectors. */
-body,
-a,
-button,
-[role="button"] {
-  cursor:
-    url(/office/cursor.png) 2 2,
-    default;
+   No kit class sets `cursor`: a component would beat these base rules. */
+  body,
+  a,
+  button,
+  [role="button"] {
+    cursor:
+      url(/office/cursor.png) 2 2,
+      default;
+  }
 }
 
-/* click-dispatch selection marker: bracket frames lock onto the target */
-.px-selector {
-  position: absolute;
-  width: 48px;
-  height: 48px;
-  transform: translate(-50%, -50%);
-  background-image: url(/office/selector.png);
-  background-repeat: no-repeat;
-  image-rendering: pixelated;
-  animation: px-select 0.55s steps(3) infinite;
-}
-@keyframes px-select {
-  from {
-    background-position-x: 0;
+@layer components {
+  /* click-dispatch selection marker: bracket frames lock onto the target */
+  .px-selector {
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    transform: translate(-50%, -50%);
+    background-image: url(/office/selector.png);
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    animation: px-select 0.55s steps(3) infinite;
   }
-  to {
-    background-position-x: -144px;
+  @keyframes px-select {
+    from {
+      background-position-x: 0;
+    }
+    to {
+      background-position-x: -144px;
+    }
   }
 }

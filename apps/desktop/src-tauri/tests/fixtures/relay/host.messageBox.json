@@ -1,9 +1,9 @@
 {
   "from": "main",
   "params": {
-    "detail": "Switch it off in Stripe's dashboard.",
+    "detail": "These payment links still take money: in Stripe's dashboard, open Payment links and deactivate each. \"Field guide\" https://buy.stripe.com/test_00g (plink_1): Stripe did not answer.",
     "kind": "warning",
-    "message": "Stripe did not confirm it revoked IdleBiz's access"
+    "message": "Some of the company's sales need you in Stripe or Printful"
   },
   "result": null
 }

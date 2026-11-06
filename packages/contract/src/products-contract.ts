@@ -5,6 +5,7 @@ import { z } from "zod";
 import { KillReasonSchema, ProductDraftSchema } from "@repo/domain/domain";
 import type { Product } from "@repo/domain/domain";
 import type { ProductStatus } from "@repo/domain/integrations";
+import type { Done } from "./done";
 
 export const productsContract = {
   create: oc.input(ProductDraftSchema).output(type<Product>()),
@@ -13,7 +14,7 @@ export const productsContract = {
     .input(z.object({ productId: z.string(), reason: KillReasonSchema }))
     .output(type<Product>()),
   list: oc.output(type<Product[]>()),
-  /** Opens a product's workspace, answering what opened. */
-  open: oc.input(z.object({ productId: z.string() })).output(type<{ opened: string }>()),
+  /** Opens the product where it lives: a URL in the browser, a file of its workspace with its app. */
+  open: oc.input(z.object({ productId: z.string() })).output(type<Done>()),
   status: oc.input(z.object({ productId: z.string() })).output(type<ProductStatus>()),
 };

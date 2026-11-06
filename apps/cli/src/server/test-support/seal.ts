@@ -31,10 +31,12 @@ export const SEAL: Seal = {
   runsAsFounder: [],
   save: [{ match: "subpath", path: "/Users/me/.idlebiz" }],
   scratch: [{ match: "subpath", path: "/private/tmp" }],
-  skillFolders: [{ match: "subpath", path: "/Users/me/.idlebiz/acme/workspace/.agents" }],
+  skillFolders: [
+    { match: "subpath", path: "/Users/me/.idlebiz/company/products/ledger/workspace/.agents" },
+  ],
   sockets: [{ match: "subpath", path: "/private/var/run/com.apple.launchd.x/Listeners" }],
   unreadable: [{ match: "prefix", path: "/Users/me/.idlebiz/secrets.json" }],
-  writable: [{ match: "subpath", path: "/Users/me/.idlebiz/acme/workspace" }],
+  writable: [{ match: "subpath", path: "/Users/me/.idlebiz/company/products/ledger/workspace" }],
 };
 
 export const SKILLS = "/Applications/IdleBiz.app/Contents/Resources/skills";

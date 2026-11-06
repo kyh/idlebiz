@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { apiOf, expect, foundCompany, test } from "./harness";
+import { apiOf, expect, foundCompany, keyShot, test } from "./harness";
 
 test("an out-of-budget company tells the founder to press Start once the cap is raised", async ({
   launch,
@@ -13,6 +13,7 @@ test("an out-of-budget company tells the founder to press Start once the cap is 
   await page.getByRole("button", { name: /revenue/iu }).click();
   const budget = page.getByRole("dialog", { name: "Budget" });
   await expect(budget.getByText(/Out of budget/u)).toContainText("then press ▶ Start");
+  await keyShot(page, "budget-out-of-budget");
 });
 
 test("retiring the selected product shows the whole company again", async ({ launch }) => {
@@ -27,6 +28,7 @@ test("retiring the selected product shows the whole company again", async ({ lau
   const products = page.getByRole("dialog", { name: "Products" });
   await products.getByRole("button", { name: /Side Quest/u }).click();
   await expect(products.getByText("Bets · Side Quest")).toBeVisible();
+  await keyShot(page, "products");
 
   const card = products.locator(".px-inset").filter({ hasText: "▶ Side Quest" });
   await card.getByRole("button", { exact: true, name: "retire" }).click();

@@ -1,12 +1,10 @@
 import type { ReactNode } from "react";
 import { Toggle } from "@base-ui/react/toggle";
 import { ToggleGroup } from "@base-ui/react/toggle-group";
-import { cn } from "cn";
 
 export interface PickerOption<T extends string> {
   value: T;
   label: ReactNode;
-  title?: string;
 }
 
 /** One-of-many as a row of pressed/unpressed toggles. Base UI's ToggleGroup
@@ -19,7 +17,6 @@ export const Picker = <T extends string>({
   onChange,
   label,
   className,
-  itemClassName,
   disabled = false,
 }: {
   options: readonly PickerOption<T>[];
@@ -27,7 +24,6 @@ export const Picker = <T extends string>({
   onChange: (value: T) => void;
   label: string;
   className?: string;
-  itemClassName?: string;
   disabled?: boolean;
 }) => (
   <ToggleGroup
@@ -43,7 +39,7 @@ export const Picker = <T extends string>({
     disabled={disabled}
   >
     {options.map((o) => (
-      <Toggle key={o.value} value={o.value} title={o.title} className={cn("px-opt", itemClassName)}>
+      <Toggle key={o.value} value={o.value} className="px-opt">
         {o.label}
       </Toggle>
     ))}

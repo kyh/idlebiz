@@ -1,4 +1,4 @@
-import { cacheLife, cacheTag } from "next/cache";
+import { cacheLife } from "next/cache";
 import Link from "next/link";
 import { z } from "zod";
 
@@ -40,7 +40,6 @@ const MacLogoIcon = ({ className }: { className?: string }) => (
 const getLatestRelease = async (): Promise<Download> => {
   "use cache";
   cacheLife("hours");
-  cacheTag("download-url");
 
   try {
     const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {

@@ -6,7 +6,7 @@ use tauri::{AppHandle, Runtime};
 
 pub fn hold<R: Runtime>(app: &AppHandle<R>, on: bool) {
     if let Err(error) = app.run_on_main_thread(move || platform::hold(on)) {
-        eprintln!("[shell] could not hold the Mac awake: {error}");
+        log::warn!("could not hold the Mac awake: {error}");
     }
 }
 

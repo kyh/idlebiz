@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { realPathOf } from "./machine-seal";
+import { realPathOf, sealFor } from "./machine-seal";
 import { sealedCommand, signInCommand } from "./seal";
 import type { Seal } from "./seal";
 import { SEAL as SEAL_FIXTURE } from "../test-support/seal";
@@ -16,7 +16,7 @@ const SEAL: Seal = {
   writable: [],
 };
 
-const WORKSPACE = "/Users/me/.idlebiz/acme/workspace";
+const WORKSPACE = "/Users/me/.idlebiz/company/products/ledger/workspace";
 
 describe("sealedCommand", () => {
   it("runs argv under sandbox-exec with the profile inline", () => {
@@ -84,6 +84,14 @@ describe("sealedCommand", () => {
     expect(`${claude}${codex}`).not.toContain("/usr/bin/security");
   });
 
+  it("closes the pasteboard, where the founder pastes a key, to every run whichever program asks, and leaves it to a sign-in", () => {
+    const pasteboard = '(deny mach-lookup (global-name "com.apple.pasteboard.1"))';
+    for (const runner of ["claude", "codex"] as const) {
+      expect(readBack(sealedCommand(SEAL, runner, [])).lines).toContain(pasteboard);
+      expect(readBack(signInCommand(SEAL, runner, [])).lines).not.toContain(pasteboard);
+    }
+  });
+
   it("closes the save, reopens the run's own folders, then holds every later rule inside them", () => {
     const seal: Seal = {
       ...SEAL,
@@ -124,6 +132,24 @@ describe("sealedCommand", () => {
     for (const runner of ["claude", "codex"] as const) {
       expect(readBack(sealedCommand(SEAL, runner, [])).lines).toContain(opensNothing);
       expect(readBack(signInCommand(SEAL, runner, [])).lines).not.toContain(opensNothing);
+    }
+  });
+
+  it("lets no run mount, have launchd start a job or have cfprefsd write a preference, each outside the seal", () => {
+    const doneForIt = [
+      "(deny file-mount file-unmount)",
+      "(deny job-creation)",
+      "(deny user-preference-write)",
+    ];
+    for (const runner of ["claude", "codex"] as const) {
+      const { lines } = readBack(sealedCommand(SEAL, runner, []));
+      // whole operations, and no later rule names one, so none reopens inside a folder
+      expect(lines.filter((line) => /file-mount|job-creation|user-preference/u.test(line))).toEqual(
+        doneForIt,
+      );
+      expect(readBack(signInCommand(SEAL, runner, [])).profile).not.toMatch(
+        /file-mount|job-creation|user-preference/u,
+      );
     }
   });
 
@@ -198,13 +224,108 @@ describe("sealedCommand", () => {
       unreadable: [],
     };
     const { lines } = readBack(sealedCommand(bare, "claude", []));
-    // each on purpose: lsopen whole, since an app LaunchServices starts runs unsealed; writes
-    // whole, since a run writes only where a later rule allows it
+    // each on purpose: lsopen whole, since an app LaunchServices starts runs unsealed; mounts,
+    // launchd's jobs and cfprefsd's writes whole, since each lands outside the seal whichever
+    // program asks; writes whole, since a run writes only where a later rule allows it
     expect(lines.filter((line) => /^\((?:allow|deny) [\w* -]+\)$/u.test(line))).toEqual([
       "(allow default)",
       "(deny lsopen)",
+      "(deny file-mount file-unmount)",
+      "(deny job-creation)",
+      "(deny user-preference-write)",
       "(deny file-write*)",
     ]);
+  });
+});
+
+describe("a runner's home moved out of HOME", () => {
+  let box = "";
+  let home = "";
+  beforeEach(() => {
+    box = realpathSync(mkdtempSync(path.join(tmpdir(), "idlebiz-moved-")));
+    home = path.join(box, "home");
+    mkdirSync(path.join(home, ".idlebiz"), { recursive: true });
+  });
+  afterEach(() => {
+    rmSync(box, { force: true, recursive: true });
+  });
+
+  const sealMoving = (env: Record<string, string>): Promise<Seal> =>
+    sealFor({
+      clis: [],
+      closedPorts: [],
+      env,
+      home,
+      mainOnly: [],
+      pathDirs: [],
+      save: path.join(home, ".idlebiz"),
+      scratch: [path.join(box, "tmp")],
+      shims: [],
+      sshAgent: null,
+      writable: [],
+    });
+
+  it("keeps the one in HOME, account file and all, from the other runner's runs, and opens none of it", async () => {
+    const moved = path.join(box, "stand-in/claude");
+    const seal = await sealMoving({ CLAUDE_CONFIG_DIR: moved });
+    const usual = [path.join(home, ".claude"), path.join(home, ".claude.json")];
+    expect(seal.runners.claude.home).toEqual([
+      { match: "subpath", path: moved },
+      { match: "subpath", path: path.join(home, ".claude") },
+      { match: "prefix", path: path.join(home, ".claude.json") },
+    ]);
+    expect(seal.runners.claude.account).toEqual([
+      { match: "prefix", path: path.join(moved, ".claude.json") },
+    ]);
+    expect(readBack(sealedCommand(seal, "codex", [])).denied("file-read* file-write*")).toEqual(
+      expect.arrayContaining([moved, ...usual]),
+    );
+    // a claude run writes none of it, and its sign-in records the login in the moved home alone
+    expect(readBack(sealedCommand(seal, "claude", [])).denied("file-write*")).toEqual(
+      expect.arrayContaining(usual),
+    );
+    const signIn = readBack(signInCommand(seal, "claude", [])).allowed("file-write*");
+    expect(signIn).toContain(path.join(moved, ".claude.json"));
+    expect(signIn).not.toContain(path.join(home, ".claude.json"));
+  });
+
+  it("keeps codex's from claude's runs too, and names a home moved to where it was once", async () => {
+    const moved = path.join(box, "stand-in/codex");
+    const seal = await sealMoving({
+      CLAUDE_CONFIG_DIR: path.join(home, ".claude"),
+      CODEX_HOME: moved,
+    });
+    expect(seal.runners.codex.home).toEqual([
+      { match: "subpath", path: moved },
+      { match: "subpath", path: path.join(home, ".codex") },
+    ]);
+    expect(readBack(sealedCommand(seal, "claude", [])).denied("file-read* file-write*")).toEqual(
+      expect.arrayContaining([moved, path.join(home, ".codex")]),
+    );
+    // moved to its own folder, claude keeps its account file there, so the one beside it is theirs
+    expect(seal.runners.claude.home).toEqual([
+      { match: "subpath", path: path.join(home, ".claude") },
+      { match: "prefix", path: path.join(home, ".claude.json") },
+    ]);
+  });
+
+  it("keeps the account file in HOME theirs when the home is moved to where a link in HOME leads", async () => {
+    const dotfiles = path.join(box, "dotfiles/claude");
+    mkdirSync(dotfiles, { recursive: true });
+    symlinkSync(dotfiles, path.join(home, ".claude"));
+    const seal = await sealMoving({ CLAUDE_CONFIG_DIR: dotfiles });
+    const theirs = path.join(home, ".claude.json");
+    expect(seal.runners.claude.home).toEqual([
+      { match: "subpath", path: dotfiles },
+      { match: "prefix", path: theirs },
+    ]);
+    expect(seal.runners.claude.account).toEqual([
+      { match: "prefix", path: path.join(dotfiles, ".claude.json") },
+    ]);
+    expect(readBack(sealedCommand(seal, "codex", [])).denied("file-read* file-write*")).toContain(
+      theirs,
+    );
+    expect(readBack(sealedCommand(seal, "claude", [])).denied("file-write*")).toContain(theirs);
   });
 });
 

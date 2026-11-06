@@ -37,7 +37,7 @@ export const RichText = ({ text }: { text: string }) => {
           e.stopPropagation();
           void openAsset(token);
         }}
-        className="cursor-pointer text-accent-lo underline decoration-dotted underline-offset-2"
+        className="text-accent-lo underline decoration-dotted underline-offset-2"
         style={{ font: "inherit", letterSpacing: "inherit" }}
         title={/^https?:/u.test(token) ? "Open in browser" : "Open from the workspace"}
       >

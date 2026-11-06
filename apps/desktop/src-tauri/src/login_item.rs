@@ -63,7 +63,7 @@ mod platform {
             }
         };
         if let Err(error) = done {
-            eprintln!("[shell] macOS refused the login item: {error}");
+            log::warn!("macOS refused the login item: {error}");
         }
     }
 

@@ -3,6 +3,7 @@ import { lstat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { Company, Employee } from "@repo/domain/domain";
+import { SYSTEM_PATH, unsealedEnv } from "../lib/founder-env";
 import { report } from "../lib/report";
 import { toolCacheDir } from "../paths";
 
@@ -33,14 +34,19 @@ export const toolCacheEnv = () => ({
 /**
  * A product's workspace as a repository, made by main when it is none yet: a run cannot write a
  * repository's config or hooks, which the founder's own git would run. macOS's git, whose `init`
- * runs nothing the folder holds. Without Apple's command line tools it has no git to run, and the
- * run goes on in a plain folder rather than fail every attempt.
+ * runs nothing the folder holds, on an env of its own: a template or config main's env names would
+ * put hooks in it, and a developer folder would pick the git that runs. Without Apple's command
+ * line tools it has no git to run, and the run goes on in a plain folder rather than fail every
+ * attempt.
  */
 export const ensureRepository = async (workspace: string): Promise<void> => {
   const stats = await lstat(path.join(workspace, ".git")).catch(() => null);
   if (stats === null) {
     try {
-      await execFileAsync("/usr/bin/git", ["init", "--quiet"], { cwd: workspace });
+      await execFileAsync("/usr/bin/git", ["init", "--quiet"], {
+        cwd: workspace,
+        env: unsealedEnv(process.env, { PATH: SYSTEM_PATH }),
+      });
     } catch (error) {
       report("repository", error);
     }

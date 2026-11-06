@@ -12,8 +12,30 @@ updates:
       acp:
         patterns:
           - "@agentclientprotocol/*"
+      # one PR for the oRPC beta family: each member pins its siblings exactly, so a lone bump
+      # installs a second oRPC beside the first, and each beta breaks the last
+      orpc:
+        patterns:
+          - "@orpc/*"
+      # one PR for Tailwind and its plugins: each plugin pins its tailwindcss exactly, so a lone
+      # bump installs a second beside the first
+      tailwind:
+        patterns:
+          - "tailwindcss"
+          - "@tailwindcss/*"
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+
+  # the desktop shell's crates, Tauri and its plugins among them, in one PR: CI's ci job runs clippy
+  # and cargo test on them, and its test-macos job the macOS-only code and the packaged smoke
+  - package-ecosystem: cargo
+    directory: /apps/desktop/src-tauri
+    schedule:
+      interval: weekly
+    groups:
+      crates:
+        patterns:
+          - "*"

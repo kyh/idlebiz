@@ -187,7 +187,7 @@ export const contactPage: ProsePage = {
       "Use email for anything private: questions about how the app handles your data, a request to delete data, press, or partnership. Expect a reply within a few days.",
     ),
     p(
-      "For bugs — an employee stuck in a loop, an office that will not load, a save that fails to migrate, a release that will not open — open a GitHub issue. Include your macOS version, which CLI you use (claude or codex) and the relevant lines from ~/Library/Logs/IdleBiz/main.log. Public issues help the next person who hits the same thing.",
+      "For bugs — an employee stuck in a loop, an office that will not load, a save the app refuses, a release that will not open — open a GitHub issue. Include your macOS version, which CLI you use (claude or codex) and the relevant lines from ~/Library/Logs/IdleBiz/main.log. Public issues help the next person who hits the same thing.",
     ),
     h2("Channels"),
     {
@@ -219,10 +219,10 @@ export const contactPage: ProsePage = {
 };
 
 /** The date both legal documents took effect, as an ISO date for the sitemap and JSON-LD. */
-const legalRevisedIso = "2026-10-10";
+const legalRevisedIso = "2026-10-29";
 
 /** The last change to the home page and to the pages without a revision date of their own. */
-export const siteUpdatedIso = "2026-10-24";
+export const siteUpdatedIso = "2026-10-27";
 
 /** The same date as each document states it. */
 export const legalRevisedOn = new Date(legalRevisedIso).toLocaleDateString("en-US", {
@@ -282,7 +282,7 @@ const privacySections: Section[] = [
     ),
     p(
       strong("Information the desktop app keeps on your Mac."),
-      " The desktop app runs on your Mac and sends us nothing about you or your company. It has no telemetry and no crash reporting to us. Your company (its employees, tasks, memory, workspace files, orders and activity log) lives on your Mac under ~/.idlebiz. Your claude or codex CLI also keeps each run's transcript, prompts and tool results included, in ~/.claude/projects (in folders named after the ~/.idlebiz paths the runs work in) or ~/.codex/sessions. Stripe, Vercel and Printful keys you enter are stored in ~/.idlebiz, encrypted with the macOS Keychain whenever the Keychain is available (if it is not, they are kept there as plain text until it is), and are never handed to your employees. The app's logs stay on your Mac, in ~/Library/Logs/IdleBiz. If neither CLI is installed when you sign in during setup, the app downloads Anthropic's Claude Code installer from claude.ai and runs it, and signing a CLI in is that CLI's own sign-in with Anthropic or OpenAI. We do not receive any of this information; the services the app sends it to at your direction are described in ",
+      " The desktop app runs on your Mac and sends us nothing about you or your company. It has no telemetry and no crash reporting to us. Your company (its employees, tasks, memory, workspace files, orders and activity log) lives on your Mac under ~/.idlebiz. Your claude or codex CLI also keeps each run's transcript, prompts and tool results included, in ~/.claude/projects (in folders named after the ~/.idlebiz paths the runs work in) or ~/.codex/sessions. Stripe, Vercel and Printful keys you enter are stored in ~/.idlebiz, encrypted with the macOS Keychain whenever the Keychain is available (if it is not, they are kept there as plain text until it is), and are never handed to your employees. The app's logs stay on your Mac, in ~/Library/Logs/IdleBiz. If neither CLI is installed when you sign in during setup, the app downloads Anthropic's Claude Code installer from claude.ai and runs it, and signing a CLI in is that CLI's own sign-in with Anthropic or OpenAI. The app also asks GitHub for the latest IdleBiz release when it starts and every six hours while it runs, and downloads an update from GitHub only when you choose to install one. Each of those requests shows GitHub your IP address, as any request does, but nothing about your company. We do not receive any of this information; the services the app sends it to at your direction are described in ",
       link(SHARE, anchor(SHARE)),
       ".",
     ),
@@ -394,7 +394,7 @@ const privacySections: Section[] = [
       strong("Service providers."),
       " Third parties that provide services on our behalf or help us operate the Service or our business, such as hosting and email. ",
       link("Vercel", "https://vercel.com/legal/privacy-policy"),
-      " hosts our website and keeps its request logs. GitHub hosts the desktop app's source code and releases: to point the download link at the latest release, our website asks GitHub's public API, which receives nothing about you, and your browser then downloads the .dmg straight from GitHub. The provider that hosts our email inbox receives the messages you send us.",
+      " hosts our website and keeps its request logs. GitHub hosts the desktop app's source code and releases: to point the download link at the latest release, our website asks GitHub's public API, which receives nothing about you, and your browser then downloads the .dmg straight from GitHub. GitHub also answers the desktop app's update checks and serves the updates you choose to install. The provider that hosts our email inbox receives the messages you send us.",
     ),
     p(
       strong("Third parties designated by you."),

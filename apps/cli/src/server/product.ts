@@ -62,17 +62,16 @@ export const productStatus = async (productId: string): Promise<ProductStatus> =
 };
 
 /** Open the product where it lives: a URL in the browser, a path in its workspace with its app. */
-export const openProduct = async (productId: string): Promise<string> => {
+export const openProduct = async (productId: string): Promise<void> => {
   const product = store.requireProduct(productId);
   const entry = productEntry(productId) ?? "index.html";
   if (/^https?:\/\//u.test(entry)) {
     await host().open({ kind: "url", target: entry });
-    return entry;
+    return;
   }
   const opening = judgeOpening([product.workspaceDir], entry);
   if (opening === null) {
     throw new RefusalError("the product's entry is not in its workspace");
   }
   await openTarget(opening);
-  return entry;
 };

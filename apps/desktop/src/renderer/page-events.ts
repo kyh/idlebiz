@@ -2,6 +2,7 @@
 
 import type { PageEvent, PageEventName, PageEvents } from "@repo/contract/events";
 import { api } from "@/renderer/api";
+import { reportFault } from "@/renderer/report-fault";
 
 type Listener<E extends PageEventName> = (data: PageEvents[E]) => void;
 
@@ -11,6 +12,7 @@ type Listeners = { [E in PageEventName]: Set<Listener<E>> };
 const listeners: Listeners = {
   activity: new Set(),
   auth: new Set(),
+  update: new Set(),
 };
 
 /** Hears one of main's events until the function it returns is called. */
@@ -29,6 +31,7 @@ const tell = <E extends PageEventName>(name: E, data: PageEvents[E]): void => {
       listener(data);
     } catch (error) {
       console.error(`Could not apply main's ${name} event`, error);
+      reportFault(`event:${name}`, error);
     }
   }
 };
@@ -41,6 +44,10 @@ const hear = (event: PageEvent): void => {
       break;
     }
     case "auth": {
+      tell(event.name, event.data);
+      break;
+    }
+    case "update": {
       tell(event.name, event.data);
       break;
     }
@@ -58,20 +65,27 @@ const retryPause = (): Promise<void> =>
   });
 
 /**
- * Hears main's events for as long as the page is open. `resync` asks main for everything again,
- * and runs just before each stream opens, the first included: it is what the page missed meanwhile.
+ * Hears main's events for as long as the page is open. `resync` asks main for everything again
+ * once each stream but the first is open, since what main sent while none was open is lost. Open
+ * first: main then hears the page before it answers, so nothing it does after an answer is lost.
+ * The first stream opens beside the window's own first reads (docs/app.md).
  */
 export const hearMain = (resync: () => void): void => {
   void (async () => {
+    let reopened = false;
     for (;;) {
-      resync();
       try {
-        for await (const event of await api.events()) {
+        const events = await api.events();
+        if (reopened) {
+          resync();
+        }
+        for await (const event of events) {
           hear(event);
         }
       } catch (error) {
         console.error("Lost main's events", error);
       }
+      reopened = true;
       await retryPause();
     }
   })();

@@ -2,7 +2,6 @@ import { memo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useSubmission } from "@/renderer/hooks/use-submission";
-import { useTransientNote } from "@/renderer/hooks/use-transient-note";
 import { api, orpc } from "@/renderer/api";
 import {
   useBets,
@@ -44,7 +43,7 @@ const ShipRowView = ({ t, by }: { t: ShipLine; by: string }) => {
         </span>
       </button>
       {open ? (
-        <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-[#4c5064] select-text">
+        <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-fg-mid select-text">
           <RichText text={t.summary} />
         </p>
       ) : null}
@@ -87,7 +86,6 @@ const ProductCard = ({
   retirable,
   onSelect,
   onOpen,
-  onNote,
 }: {
   product: Product;
   selected: boolean;
@@ -95,18 +93,11 @@ const ProductCard = ({
   retirable: boolean;
   onSelect: () => void;
   onOpen: (overlay: Overlay) => void;
-  onNote: (note: string) => void;
 }) => {
   const status = useProductStatus(product.id);
   const state = productStateOf(status);
   const deploy = deploymentOf(status);
-  const open = async () => {
-    try {
-      await api.products.open({ productId: product.id });
-    } catch (error) {
-      onNote(errorMessage(error));
-    }
-  };
+  const opening = useSubmission(() => api.products.open({ productId: product.id }));
   // main answers with `product.killed`, and that event refetches what moved
   const retire = async () => {
     await api.products.kill({ productId: product.id, reason: "the founder retired it" });
@@ -136,9 +127,8 @@ const ProductCard = ({
       <div className="flex gap-1.5">
         <button
           type="button"
-          onClick={() => {
-            void open();
-          }}
+          onClick={() => opening.submit()}
+          disabled={opening.submission.kind === "sending"}
           className="px-chip"
         >
           ▶ Open
@@ -165,6 +155,7 @@ const ProductCard = ({
           />
         ) : null}
       </div>
+      <Failure submission={opening.submission} doing={`open ${product.name}`} />
     </div>
   );
 };
@@ -235,8 +226,8 @@ export const Ships = ({
   const employees = useEmployees();
   const products = useProducts();
   const bets = useBets();
-  const [note, showNote] = useTransientNote(2500);
   const [picked, setPicked] = useState<string | null>(null);
+  const opening = useSubmission((rel: string) => api.company.openPath({ rel }));
   const log = useQuery({ ...orpc.tasks.shipped.queryOptions(), enabled: company !== null });
 
   if (!company) {
@@ -246,13 +237,6 @@ export const Ships = ({
   const selectedProduct = products.find((p) => p.id === picked);
   const selected = selectedProduct?.id ?? null;
   const selectedName = selectedProduct ? ` · ${selectedProduct.name}` : "";
-  const openWorkspace = async () => {
-    try {
-      await api.company.openPath({ rel: selectedProduct?.workspaceDir ?? "" });
-    } catch (error) {
-      showNote(errorMessage(error));
-    }
-  };
 
   return (
     <Modal
@@ -263,9 +247,8 @@ export const Ships = ({
       actions={
         <button
           type="button"
-          onClick={() => {
-            void openWorkspace();
-          }}
+          onClick={() => opening.submit(selectedProduct?.workspaceDir ?? "")}
+          disabled={opening.submission.kind === "sending"}
           className="px-btn"
           title={
             selectedProduct
@@ -278,7 +261,7 @@ export const Ships = ({
       }
     >
       <div className="space-y-3">
-        {note ? <div className="text-xs text-danger">{note}</div> : null}
+        <Failure submission={opening.submission} doing="open the workspace" />
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {products.map((p) => (
             <ProductCard
@@ -288,7 +271,6 @@ export const Ships = ({
               retirable={products.length > 1}
               onSelect={() => setPicked(selected === p.id ? null : p.id)}
               onOpen={onOpen}
-              onNote={showNote}
             />
           ))}
           <NewProduct />

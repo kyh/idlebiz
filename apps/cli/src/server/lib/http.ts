@@ -2,6 +2,7 @@ import type { Server } from "node:http";
 import { z } from "zod";
 import { jsonValueSchema, parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
+import { listening } from "./listening";
 
 /** A non-2xx answer, with the status so a caller can tell "revoked" from "down". */
 export class HttpError extends Error {
@@ -41,13 +42,12 @@ export const fetchOk = async (url: string, init: RequestInit): Promise<Response>
   return res;
 };
 
+/** The hard timeout on each JSON call below. */
+const TIMEOUT_MS = 8000;
+
 /** GET a JSON endpoint with a hard timeout; throws HttpError on any non-2xx status. */
-export const getJson = async (
-  url: string,
-  headers: Record<string, string>,
-  timeoutMs = 8000,
-): Promise<JsonValue> => {
-  const res = await fetchOk(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+export const getJson = async (url: string, headers: Record<string, string>): Promise<JsonValue> => {
+  const res = await fetchOk(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
   return jsonValueSchema.parse(await res.json());
 };
 
@@ -56,13 +56,12 @@ export const postFormAnswer = async (
   url: string,
   headers: Record<string, string>,
   form: Readonly<Record<string, string>>,
-  timeoutMs = 8000,
 ): Promise<{ body: JsonValue; headers: Headers }> => {
   const res = await fetchOk(url, {
     body: new URLSearchParams(form),
     headers,
     method: "POST",
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   return { body: jsonValueSchema.parse(await res.json()), headers: res.headers };
 };
@@ -72,18 +71,15 @@ export const postForm = async (
   url: string,
   headers: Record<string, string>,
   form: Readonly<Record<string, string>>,
-  timeoutMs = 8000,
 ): Promise<JsonValue> => {
-  const { body } = await postFormAnswer(url, headers, form, timeoutMs);
+  const { body } = await postFormAnswer(url, headers, form);
   return body;
 };
 
-/** Bind a server to an ephemeral loopback port and return the port. */
-export const listenLoopback = async (server: Server): Promise<number> => {
-  // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+/** Bind `what`'s server to an ephemeral loopback port and return the port. */
+export const listenLoopback = async (server: Server, what: string): Promise<number> => {
+  await listening(server, what, () => {
+    server.listen(0, "127.0.0.1");
   });
   // address() is AddressInfo | string | null; only the object form has a port
   const address = z.object({ port: z.number() }).safeParse(server.address());

@@ -1,14 +1,19 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { apiOf, expect, foundCompany, test } from "./harness";
+import { apiOf, expect, foundCompany, keyShot, test } from "./harness";
 import type { Locator, Page } from "@playwright/test";
 import type { BlockedAsk, Task } from "@repo/domain/domain";
 import { serializeTask } from "idlebiz/task-file";
 import { z } from "zod";
 import type { Founded } from "./harness";
-
-// `npcs` is private to the scene and the manager; the string reaches them at runtime.
-const NPCS_IN_OFFICE = `window.__game?.scene.getScene("office")?.npcs?.npcs.size ?? -1`;
+import {
+  INBOX_BUTTON,
+  NPC_PLACED,
+  NPCS_IN_OFFICE,
+  OFFICE_HAS_KEYS,
+  SCENE,
+  STEP_OFFICE,
+} from "./office-probe";
 
 const HELD_COMMAND = "deploy tip-jar to production";
 
@@ -23,9 +28,9 @@ test("a founded company boots into the office", async ({ launch }) => {
   }
   await expect(page.getByText("# team")).toBeVisible();
   await expect.poll(() => page.evaluate(NPCS_IN_OFFICE)).toBe(employees.length);
+  await page.evaluate(STEP_OFFICE);
+  await keyShot(page, "office");
 });
-
-const INBOX_BUTTON = "Questions, steps only you can take and stuck tasks waiting on you";
 
 /** A task of the lead's, left blocked on `ask` as the store writes it, for the next launch to load. */
 const blockLead = async (
@@ -73,6 +78,7 @@ test("a held command waits in #team and the inbox until the founder denies it", 
   await expect(inbox.getByText(HELD_COMMAND)).toBeVisible();
   await expect(inbox.getByRole("button", { name: "Deny" })).toBeVisible();
   await expect(inbox.getByRole("button", { name: "Approve" })).toBeVisible();
+  await keyShot(page, "inbox-held-command");
   await inbox.getByRole("button", { exact: true, name: "Done" }).click();
 
   await expect(page.getByText(HELD_COMMAND)).toBeVisible();
@@ -113,11 +119,6 @@ test("an action card hands the founder its draft and carries their answer back",
   const open = await api.tasks.list({});
   expect(open.map((t) => t.description ?? "").join("\n")).toContain(`Done. They sent back: ${url}`);
 });
-
-// `npcs`, `player` and `facing` are private to the scene; the string reaches them at runtime.
-const SCENE = `window.__game.scene.getScene("office")`;
-const NPC_PLACED = (employeeId: string): string =>
-  `window.__game?.scene.getScene("office")?.npcs?.positionOf(${JSON.stringify(employeeId)}) != null`;
 
 const pointSchema = z.object({ x: z.number(), y: z.number() });
 type Point = z.infer<typeof pointSchema>;
@@ -412,14 +413,17 @@ test("#team keeps the keys after a message is sent", async ({ launch }) => {
   await founding.close();
 
   const { page } = await launch();
+  // #team shows before the office has run: until then the keys are Phaser's default, bound to nothing
+  await expect.poll(() => page.evaluate(OFFICE_HAS_KEYS)).toBe(true);
   const field = page.locator(".px-window").filter({ hasText: "# team" }).getByRole("textbox");
   await field.click();
+  await expect.poll(() => page.evaluate(OFFICE_HAS_KEYS)).toBe(false);
   await page.keyboard.type("first");
   await page.keyboard.press("Enter");
   await expect(page.getByText("first", { exact: true })).toBeVisible();
   await expect(field).toHaveValue("");
   await expect(field).toBeFocused();
-  expect(await page.evaluate(`${SCENE}.input.keyboard.enabled`)).toBe(false);
+  expect(await page.evaluate(OFFICE_HAS_KEYS)).toBe(false);
   await page.keyboard.type("second");
   await expect(field).toHaveValue("second");
 });

@@ -6,8 +6,14 @@ import { fileURLToPath } from "node:url";
 import { expect, test as base } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
 import { startDevHost } from "idlebiz/dev-host";
+import { startStandInModel } from "idlebiz/stand-in-model";
+import type { StandInModel } from "idlebiz/stand-in-model";
+import { isProviderEnv, standInRunnerEnv } from "idlebiz/stand-in-runners";
+import { PersistedActivitySchema } from "@repo/domain/activity";
+import type { PersistedActivity } from "@repo/domain/activity";
 import type { Company, Employee, Product } from "@repo/domain/domain";
 import type { HireProposal } from "@repo/domain/hire";
+import type { RunnerId } from "@repo/domain/runners";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { ContractRouterClient } from "@orpc/contract";
@@ -33,7 +39,24 @@ interface LaunchOptions {
   keys?: Keys;
 }
 
+interface Options {
+  /**
+   * The CLIs every launch finds signed in, each the one its adapter bundles, on `model`: both unless
+   * a test says otherwise, and none keeps the signed-out path.
+   */
+  runners: readonly RunnerId[];
+  /**
+   * How many runs the test scripts, each of which must start, end and not fail: none unless it
+   * says so. A test whose runs autopilot starts says "settled": any number, each ended so.
+   */
+  runs: number | "settled";
+}
+
 interface Fixtures {
+  /** The model every run of this test reaches, on loopback, and nothing else does. */
+  model: StandInModel;
+  /** Main's env for `runners` signed in to `model`, in homes of their own outside the save. */
+  standIn: Record<string, string>;
   /** A fresh save root for this test, deleted after it. */
   root: string;
   /**
@@ -43,18 +66,34 @@ interface Fixtures {
   launch: (options?: LaunchOptions) => Promise<Launched>;
 }
 
-/** Every `run.start` the company on `root` logged: each one would have been a paid CLI session. */
-const runsStarted = async (root: string): Promise<number> => {
+/**
+ * What the company on `root` logged, oldest first: nothing before it is founded. Only whole lines,
+ * so a read while main appends one never sees half of it.
+ */
+export const loggedActivity = async (root: string): Promise<PersistedActivity[]> => {
   const log = path.join(root, "company", "activity.jsonl");
   if (!existsSync(log)) {
-    return 0;
+    return [];
   }
-  const lines = await readFile(log, "utf-8");
-  return lines
+  const text = await readFile(log, "utf-8");
+  return text
+    .slice(0, text.lastIndexOf("\n") + 1)
     .split("\n")
-    .filter(
-      (line) => line.trim() !== "" && jsonRecordSchema.parse(parseJson(line)).kind === "run.start",
-    ).length;
+    .filter((line) => line.trim() !== "")
+    .map((line) => PersistedActivitySchema.parse(parseJson(line)));
+};
+
+/** Each run the company on `root` logged starting, by id, and each it logged ending, with how. */
+const runsLogged = async (
+  root: string,
+): Promise<{ started: string[]; ended: { runId: string; outcome: string }[] }> => {
+  const rows = await loggedActivity(root);
+  return {
+    ended: rows.flatMap((row) =>
+      row.kind === "run.end" ? [{ outcome: row.payload.outcome.kind, runId: row.runId }] : [],
+    ),
+    started: rows.flatMap((row) => (row.kind === "run.start" ? [row.runId] : [])),
+  };
 };
 
 /** What main gets for one call in place of the API's answer (stub-services.ts). */
@@ -122,10 +161,13 @@ const start = async (
   root: string,
   browser: Browser,
   options: LaunchOptions,
+  standIn: Readonly<Record<string, string>>,
   log: (line: string) => void,
 ): Promise<Launched> => {
   const host = await startDevHost({
-    env: { IDLEBIZ_E2E_CANNED: JSON.stringify(ANSWERS[options.keys ?? "taken"]) },
+    env: { IDLEBIZ_E2E_CANNED: JSON.stringify(ANSWERS[options.keys ?? "taken"]), ...standIn },
+    // the terminal's own logins stay out, so a run reaches the stand-in or nothing
+    inherit: (name) => !isProviderEnv(name),
     log,
     nodeArgs: ["--import", STUB_SERVICES],
     root,
@@ -155,12 +197,12 @@ const start = async (
   }
 };
 
-export const test = base.extend<Fixtures>({
-  launch: async ({ browser, root }, provide, testInfo) => {
+export const test = base.extend<Fixtures & Options>({
+  launch: async ({ browser, root, standIn }, provide, testInfo) => {
     const open: Launched[] = [];
     const lines: string[] = [];
     await provide(async (options = {}) => {
-      const launched = await start(root, browser, options, (line) => {
+      const launched = await start(root, browser, options, standIn, (line) => {
         lines.push(line);
       });
       open.push(launched);
@@ -171,19 +213,73 @@ export const test = base.extend<Fixtures>({
     }
     await testInfo.attach("main", { body: lines.join("\n"), contentType: "text/plain" });
   },
-  // oxlint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from this pattern; the root has none
-  root: async ({}, provide) => {
+  // oxlint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from this pattern; the model has none
+  model: async ({}, provide) => {
+    const model = await startStandInModel();
+    try {
+      await provide(model);
+    } finally {
+      await model.close();
+    }
+  },
+  // torn down after every launch, so each main has stopped its runs before the save is read
+  root: async ({ model, runs }, provide, testInfo) => {
     const root = await mkdtemp(path.join(tmpdir(), "idlebiz-e2e-"));
     try {
       await provide(root);
-      expect(await runsStarted(root), "no employee run may start").toBe(0);
+      // one that skipped, on the seal's refusal, did so before it ran any of them
+      const scripted = testInfo.status === "skipped" ? 0 : runs;
+      const { ended, started } = await runsLogged(root);
+      if (scripted !== "settled") {
+        expect(started, `only the runs the test scripts start: ${scripted}`).toHaveLength(scripted);
+      }
+      expect(ended.map(({ runId }) => runId).toSorted(), "every run that started ended").toEqual(
+        started.toSorted(),
+      );
+      expect(
+        ended.filter(({ outcome }) => outcome === "failed"),
+        "no run failed",
+      ).toEqual([]);
+      expect(model.leaks, "no login but the stand-in's reached the model").toEqual([]);
+      expect(model.unexpected, "the model was asked nothing it does not answer").toEqual([]);
+      if (scripted === 0) {
+        const turns = model.requests.filter(
+          ({ protocol }) => protocol === "messages" || protocol === "responses",
+        );
+        expect(
+          turns.map(({ path: asked }) => asked),
+          "a test that runs nothing asks the model nothing",
+        ).toEqual([]);
+      }
     } finally {
       await rm(root, { force: true, recursive: true });
+    }
+  },
+  runners: [["claude", "codex"], { option: true }],
+  runs: [0, { option: true }],
+  standIn: async ({ model, runners }, provide) => {
+    // outside the save, which a run's seal closes to it
+    const scratch = await mkdtemp(path.join(tmpdir(), "idlebiz-e2e-runners-"));
+    try {
+      await provide(await standInRunnerEnv({ model, runners, scratch }));
+    } finally {
+      await rm(scratch, { force: true, recursive: true });
     }
   },
 });
 
 export { expect } from "@playwright/test";
+
+/**
+ * A screenshot every run keeps, green or red, for whoever reads the run after it with no window:
+ * `test-results/screens/<name>.png`, attached to its test as well.
+ */
+export const keyShot = async (page: Page, name: string): Promise<void> => {
+  const info = test.info();
+  const file = path.join(info.project.outputDir, "screens", `${name}.png`);
+  await page.screenshot({ animations: "disabled", caret: "hide", path: file });
+  await info.attach(name, { contentType: "image/png", path: file });
+};
 
 /**
  * The page's API to the server, called from the test with what main asks of every call: the
@@ -221,16 +317,47 @@ export interface Founded {
   product: Product;
 }
 
+/** Where claude keeps the managed settings that outrank every other tier of its own. */
+const CLAUDE_MANAGED = "/Library/Application Support/ClaudeCode";
+
+/** Whether this Mac's claude has managed settings, whose env or key helper outrank the stand-in's. */
+const claudeManaged = (): boolean =>
+  ["managed-settings.json", "managed-settings.d"].some((name) =>
+    existsSync(path.join(CLAUDE_MANAGED, name)),
+  );
+
 /**
- * Found a company over the page's API with a hand-written team, skipping the test when no CLI is
- * signed in (founding picks each hire's CLI). The $0 cap is what keeps it free: the scheduler
- * checks the budget before it spawns anything, so no run can start even on a tick that lands
- * before autopilot is off. The window that founded it never learns of it: relaunch to see it.
+ * Skips a test that needs runs where none starts sealed: off a Mac, on the seal's own refusal, and
+ * on a Mac whose claude has managed settings. On a Mac a CLI the stand-in does not sign in fails
+ * it.
+ */
+export const sealedRunsOrSkip = async (page: Page): Promise<void> => {
+  const api = await apiOf(page);
+  // the first report waits on the seal's check, so a refusal is in it
+  const report = await api.save.report();
+  const sealing = report.skipped.find(({ kind }) => kind === "seal");
+  test.skip(process.platform !== "darwin" && sealing !== undefined, sealing?.error);
+  test.skip(
+    claudeManaged(),
+    `claude's managed settings in ${CLAUDE_MANAGED} outrank the stand-in's sign-in on this Mac`,
+  );
+  const auth = await api.agents.hasAuth();
+  expect(
+    auth.ok,
+    `the stand-in's CLIs did not sign in under the seal: hasAuth ${JSON.stringify(auth)}, the save's report ${JSON.stringify(report)}, and main's log is attached as "main"`,
+  ).toBe(true);
+};
+
+/**
+ * Found a company over the page's API with a hand-written team, on the CLIs the stand-in signs in
+ * (founding picks each hire's CLI); it skips as `sealedRunsOrSkip` does. The $0 cap is what keeps
+ * it free: the scheduler checks the budget before it spawns anything, so no run can start even on
+ * a tick that lands before autopilot is off. The window that founded it never learns of it:
+ * relaunch to see it.
  */
 export const foundCompany = async (page: Page): Promise<Founded> => {
+  await sealedRunsOrSkip(page);
   const api = await apiOf(page);
-  const auth = await api.agents.hasAuth();
-  test.skip(!auth.ok, "no signed-in claude or codex CLI: founding and the office need one");
   const company = await api.onboarding.found({
     budget: { capUsd: 0, mode: "capped" },
     businessType: "custom",

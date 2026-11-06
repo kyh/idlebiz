@@ -9,8 +9,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# the token only checks the repo out, since no step writes to it: a wider default the repo or the
+# org sets later does not reach this workflow
+permissions:
+  contents: read
+
 env:
+  # turbo and Next report their use unless told not to, and a CI run reports nothing
   TURBO_TELEMETRY_DISABLED: 1
+  NEXT_TELEMETRY_DISABLED: 1
   # what the Turbo cache step saves, oldest entries out first: turbo never evicts unasked, and
   # every cache of the repo's shares 10GB
   TURBO_CACHE_MAX_SIZE: 1GB
@@ -18,8 +25,14 @@ env:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    # a backstop: a cold run is a quarter of it, and a hung step would otherwise hold the runner
+    # for GitHub's default six hours
+    timeout-minutes: 30
     steps:
+      # no later step reaches the remote, so the token is not left behind in .git/config
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
@@ -71,7 +84,8 @@ jobs:
         run: pnpm build
 
   # The app ships only as a macOS arm64 .app, and only a Mac compiles the shell's own code (the
-  # Keychain, the login item, keeping awake), runs the seal and the gate suites, and boots the pack.
+  # Keychain, the login item, keeping awake), runs the seal and the gate suites, boots the pack,
+  # updates an installed one (update-macos) and founds a company end to end (e2e-macos).
   # Typecheck, lint, knip, format and build read no platform, so the ci job alone runs them.
   test-macos:
     runs-on: macos-latest
@@ -82,7 +96,10 @@ jobs:
       # timing-bound gate tests past their limits
       TEST_CONCURRENCY: 2
     steps:
+      # as the ci job's: no later step reaches the remote
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
         with:
@@ -113,7 +130,7 @@ jobs:
       - name: Gate CLIs
         run: |
           pnpm add -g --allow-build=@anthropic-ai/claude-code --allow-build=agent-browser \
-            @anthropic-ai/claude-code@2.1.292 @openai/codex@0.153.4 agent-browser@0.37.0
+            @anthropic-ai/claude-code@2.1.292 @openai/codex@0.154.0 agent-browser@0.37.0
           agent-browser install
 
       # each gate suite skips on a CLI that does not answer this, which would pass it unseen
@@ -131,3 +148,149 @@ jobs:
           # ad-hoc: the runner's keychain holds no Developer ID
           IDLEBIZ_PACK_UNSIGNED: 1
         run: pnpm smoke:desktop
+
+      # what the seal refused while the gates or the smoke ran, which a run's own output may not
+      # say: Seatbelt logs each deny to the system log by process, operation and path, and these
+      # are the ones under the runner's home or TMPDIR
+      - name: Seal denials
+        if: ${{ failure() }}
+        run: |
+          sudo log show --last 60m --style compact --predicate 'sender == "Sandbox"' \
+            | grep -E 'deny\(' | grep -E '/(private/)?var/folders/|/Users/runner/' \
+            | tail -n 400 || true
+
+  # An update end to end on a Mac: an installed test pack takes the next release from a feed on
+  # loopback under a throwaway key, begun from its own menu-bar item
+  # (apps/desktop/scripts/smoke-update.ts). A runner of its own beside test-macos: its two packs
+  # would double that job's critical path, and it stays clear of that job's smoke's single-instance
+  # socket and Keychain checks. It needs no secret: both keys are made in scratch as it runs.
+  update-macos:
+    runs-on: macos-latest
+    # a backstop: two packs cold are most of it
+    timeout-minutes: 45
+    steps:
+      # as the ci job's: no later step reaches the remote
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
+        with:
+          runtime: node@24
+          cache: true
+
+      - name: Desktop Rust toolchain
+        working-directory: apps/desktop
+        run: rustup toolchain install
+
+      # the test packs' own target, apart from every other pack's (scripts/package.ts)
+      - name: Desktop Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: apps/desktop/src-tauri -> target/update-test
+
+      # the update begins from the menu-bar item, which osascript clicks and reads through System
+      # Events, as the image lets bash and osascript: an image that stops letting them fails here,
+      # rather than the smoke failing on a menu it cannot open
+      - name: UI scripting answers
+        run: osascript -e 'tell application "System Events" to get UI elements enabled' | grep -qx true
+
+      - name: Smoke an update
+        env:
+          # ad-hoc: a test pack is never signed, and opens on this runner alone
+          IDLEBIZ_PACK_UNSIGNED: 1
+        run: pnpm smoke:update
+
+      # main's log, the shell's lines among it, and every request the feed answered, which lies in
+      # .output, a folder upload-artifact leaves out unless hidden files are asked for
+      - name: Update smoke logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: update-smoke
+          path: |
+            ~/Library/Logs/IdleBiz/main.log
+            apps/desktop/.output/smoke-update/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The office end to end on a Mac, the one platform that seals a run: each launch signs the CLIs
+  # the adapters bundle in to a stand-in model on loopback, so nothing signs in or bills, and a test
+  # that would skip fails instead. A runner of its own beside test-macos: it needs no Rust, and
+  # stays clear of the smoke's single-instance socket and Keychain checks.
+  e2e-macos:
+    runs-on: macos-latest
+    # a backstop over the suite's own step
+    timeout-minutes: 40
+    steps:
+      # as the ci job's: no later step reaches the remote
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2.0.2
+        with:
+          runtime: node@24
+          cache: true
+
+      # a key of its own, so it never races test-macos to save one, restored from either's last
+      - name: Turbo cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo
+          key: turbo-e2e-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-e2e-${{ runner.os }}-
+            turbo-${{ runner.os }}-
+
+      # the Chromium the suite drives, cached under the Playwright version the lockfile holds: a
+      # bump fetches the new build, nothing else does. Only the headless shell, all CI runs
+      - name: E2E browser version
+        id: playwright
+        working-directory: tools/e2e
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: E2E browser cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: >-
+            playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+
+      - name: E2E browser
+        run: pnpm -F @repo/e2e exec playwright install --only-shell chromium
+
+      # Playwright's own global timeout is 20 minutes, and the build ahead of it in this step a few
+      # more, so the reporters still write before this one. The run tests drive real CLIs, two at
+      # once on the runner's three cores, each for up to 5 minutes
+      - name: E2E
+        timeout-minutes: 30
+        env:
+          # a skipped test fails the run, as a gate CLI that does not answer fails test-macos: here
+          # every founding test can run, and one that skips would pass unseen
+          IDLEBIZ_E2E_NO_SKIPS: 1
+        run: pnpm e2e
+
+      # what the seal refused while the suite ran, as test-macos's step reads it, into the artifact
+      - name: Seal denials
+        if: ${{ failure() }}
+        run: |
+          mkdir -p tools/e2e/test-results
+          sudo log show --last 45m --style compact --predicate 'sender == "Sandbox"' \
+            | grep -E 'deny\(' | grep -E '/(private/)?var/folders/|/Users/runner/' | tail -n 3000 \
+            > tools/e2e/test-results/seal-denials.log || true
+          tail -n 60 tools/e2e/test-results/seal-denials.log
+
+      # every run's SUMMARY.md, results.json and key screenshots, and a failure's trace and
+      # screenshot; .last-run.json feeds --last-failed. Public, as the repo is: every key a test
+      # types is a fake one
+      - name: E2E report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e
+          path: tools/e2e/test-results/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

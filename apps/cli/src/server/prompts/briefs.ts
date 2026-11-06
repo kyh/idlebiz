@@ -23,6 +23,7 @@ import type {
   Routine,
   RunMetrics,
   Task,
+  TaskIn,
   TeamMessage,
 } from "@repo/domain/domain";
 import { formatUsd } from "@repo/domain/format";
@@ -263,7 +264,7 @@ export interface AutonomousBriefInput {
   /** Summaries of recent ships, newest last. */
   ships: readonly string[];
   /** Dead-lettered tasks worth a second look. */
-  problems: readonly Task[];
+  problems: readonly TaskIn<"dead">[];
   /** The company reads Stripe with a test-mode key while test money does not count. */
   stripeTestMode: boolean;
   nameOf: (id: string) => string;
@@ -294,12 +295,7 @@ export const autonomousBrief = (input: AutonomousBriefInput): TaskBrief => {
       .join(", ") || "(just you)";
   const shipped = ships.map((s) => `- ${s}`).join("\n") || "(nothing shipped yet)";
   const failures =
-    problems
-      .map(
-        (t) =>
-          `- ${t.title}${t.state.kind === "dead" ? ` (last error: ${t.state.lastError})` : ""}`,
-      )
-      .join("\n") || "(none)";
+    problems.map((t) => `- ${t.title} (last error: ${t.state.lastError})`).join("\n") || "(none)";
   const budget = budgetLine(company);
 
   const coordinate = isLeader

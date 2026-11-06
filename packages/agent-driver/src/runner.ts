@@ -1,2 +1,0 @@
-export const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000;
-export const DEFAULT_MAX_SESSION_MS = 45 * 60_000;

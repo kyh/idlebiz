@@ -322,7 +322,7 @@ export const startPageServer = async (options: PageServerOptions): Promise<PageS
       }
     })();
   });
-  port = await listenLoopback(server);
+  port = await listenLoopback(server, "the page's server");
   live.add(port);
   const ownOrigin = `http://127.0.0.1:${port}`;
 

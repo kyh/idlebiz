@@ -15,16 +15,16 @@ import type { ToolName } from "../tool-specs";
 import { define, needIntegration, post, productFor, requireSignOff } from "./define";
 import type { RunContext, Tool } from "./define";
 import {
-  NO_STRIPE_KEY,
   TEST_MODE,
   UNRECORDED_LINK,
   madeWhileRetiring,
+  needStripeKey,
   requireStripeAccess,
   revenueBetRefusal,
   stripeTurnedAway,
 } from "./money";
 import type { StripeGrant } from "./money";
-import { VERCEL_WAITING, domainsLabel, needVercel, productHosts } from "./vercel";
+import { domainsLabel, needVercelToken, productHosts } from "./vercel";
 
 const NO_PRINTFUL_TOKEN =
   "IdleBiz has no Printful token: the founder has a Printful card waiting that takes them to the Budget panel to add one. Continue with what you can — this task resumes automatically once the token is saved.";
@@ -73,22 +73,10 @@ const sellingKeys = (
 ): SellingKeys => {
   const vercel =
     getSecret(VERCEL_TOKEN) ??
-    needVercel(
-      ctx,
-      product.id,
-      `to check where ${product.name} serves its print files`,
-      VERCEL_WAITING,
-      "Vercel is not connected.",
-    );
+    needVercelToken(ctx, product.id, `to check where ${product.name} serves its print files`);
   const stripe =
     getSecret(STRIPE_SECRET_KEY) ??
-    needIntegration(
-      ctx,
-      "stripe",
-      `to sell ${JSON.stringify(name)} at ${price} through a payment link`,
-      NO_STRIPE_KEY,
-      "IdleBiz has no Stripe key to charge with.",
-    );
+    needStripeKey(ctx, `to sell ${JSON.stringify(name)} at ${price} through a payment link`);
   const printful =
     printfulCredential() ??
     needIntegration(

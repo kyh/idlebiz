@@ -19,6 +19,7 @@ import type { Activity } from "@/renderer/game/npc-look";
 import type { PixelPoint } from "@/renderer/game/office-layout-schema";
 import { planSeats } from "@/renderer/game/office-placement";
 import type { SeatPlan } from "@/renderer/game/office-placement";
+import { Arrivals, activityOf, onWaitingHeard, resyncOf } from "@/renderer/game/office-resync";
 import { DEFAULT_WORK_POSE } from "@/renderer/game/office-poses";
 import type { WorkPose } from "@/renderer/game/office-poses";
 import { CHAR_ORIGIN_X, CHAR_ORIGIN_Y } from "@repo/domain/character-frame";
@@ -56,6 +57,10 @@ export class NpcManager {
   private chain: Promise<void> = Promise.resolve();
   /** Released while their spawn was still queued in the chain: never let them in. */
   private readonly released = new Set<string>();
+  /** What a run did while their spawn was still queued: they come in showing it. */
+  private readonly arriving = new Arrivals();
+  /** Who main says waits on the founder, as last heard: whoever comes in later shows it too. */
+  private waiting: ReadonlySet<string> = new Set();
   // a restart reuses this scene: a spawn still queued must not land in the next one's office
   private disposed = false;
   private readonly scene: Phaser.Scene;
@@ -85,6 +90,7 @@ export class NpcManager {
   }
 
   spawn(emp: Employee, passage: Passage): Promise<void> {
+    this.arriving.expect(emp.id);
     this.chain = this.spawnAfter(this.chain, emp, passage);
     return this.chain;
   }
@@ -99,6 +105,8 @@ export class NpcManager {
       await this.doSpawn(emp, passage);
     } catch {
       // a failed spawn must not hold up the hires queued behind it
+    } finally {
+      this.arriving.forget(emp.id);
     }
   }
 
@@ -136,14 +144,14 @@ export class NpcManager {
       plan: null,
       seat,
       sprite,
-      waiting: false,
+      waiting: this.waiting.has(emp.id),
     };
     this.npcs.set(emp.id, npc);
     if (passage === "door") {
       sprite.setAlpha(0);
       this.arrivals.push(emp.id);
     }
-    this.setState(emp.id, emp.status);
+    this.setState(emp.id, this.arriving.arrived(emp.id, activityOf(emp.status, npc.waiting)));
     applyDepth(npc);
   }
 
@@ -254,6 +262,7 @@ export class NpcManager {
   setState(id: string, state: NpcState): void {
     const npc = this.npcs.get(id);
     if (!npc) {
+      this.arriving.hear(id, state);
       return;
     }
     npc.activity =
@@ -279,20 +288,50 @@ export class NpcManager {
 
   /** Work was queued for them: a blocked employee was answered, a working one carries on. */
   unblock(id: string): void {
-    if (this.npcs.get(id)?.activity.kind === "blocked") {
+    const npc = this.npcs.get(id);
+    if (!npc) {
+      this.arriving.unblock(id);
+    } else if (npc.activity.kind === "blocked") {
       this.setState(id, "idle");
     }
   }
 
   /** Who main says still waits on the founder: they keep the "!" whatever they do, and nobody else does. */
   setWaiting(waiting: ReadonlySet<string>): void {
+    this.waiting = waiting;
     for (const [id, npc] of this.npcs) {
       npc.waiting = waiting.has(id);
-      if (!npc.waiting && npc.activity.kind === "blocked") {
-        this.setState(id, "idle");
-      } else {
+      const state = onWaitingHeard(npc.activity.kind, npc.waiting);
+      if (state === null) {
         applyLook(npc);
+      } else {
+        this.setState(id, state);
       }
+    }
+  }
+
+  /**
+   * Agree with main's roster and who it says waits on the founder, read again after the page
+   * missed main's events: the missing come in, the released leave, and whoever does something
+   * other than main says is set (office-resync.ts).
+   */
+  resync(roster: readonly Employee[], waiting: ReadonlySet<string>): void {
+    const office = [...this.npcs.values()].map(({ activity, id, phase }) => ({
+      activity: activity.kind,
+      id,
+      phase,
+    }));
+    const { arrive, leave, set } = resyncOf(office, roster, waiting);
+    for (const id of leave) {
+      this.despawn(id, "door");
+    }
+    for (const [id, state] of set) {
+      this.setState(id, state);
+    }
+    // before anyone comes in, so they come in showing it
+    this.setWaiting(waiting);
+    for (const emp of arrive) {
+      void this.spawn(emp, "door");
     }
   }
 

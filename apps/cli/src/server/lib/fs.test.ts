@@ -73,7 +73,7 @@ describe("JSON file read for an update", () => {
   );
 });
 
-describe("atomicWrite", () => {
+describe.each([false, true])("atomicWrite, durable: %s", (durable) => {
   const secrets = path.join(root, "secrets.json");
   const leak = path.join(root, "leak");
 
@@ -85,18 +85,19 @@ describe("atomicWrite", () => {
     writeFileSync(leak, "");
     plantLink(leak, `${secrets}.tmp`);
 
-    atomicWrite(secrets, "CANARY-NEW-KEY", { mode: 0o600 });
+    atomicWrite(secrets, "CANARY-NEW-KEY", { durable, mode: 0o600 });
 
     expect(readFileSync(leak, "utf-8")).toBe("");
     expect(readFileSync(secrets, "utf-8")).toBe("CANARY-NEW-KEY");
     expect(existsSync(`${secrets}.tmp`)).toBe(false);
   });
 
-  it("gives the file its mode over a tmp a crash left with another", () => {
+  it("gives the file its mode and content over a tmp a crash left with another", () => {
     writeFileSync(`${secrets}.tmp`, "stale", { mode: 0o644 });
 
-    atomicWrite(secrets, "{}", { mode: 0o600 });
+    atomicWrite(secrets, "{}", { durable, mode: 0o600 });
 
     expect(statSync(secrets).mode.toString(8)).toMatch(/600$/u);
+    expect(readFileSync(secrets, "utf-8")).toBe("{}");
   });
 });

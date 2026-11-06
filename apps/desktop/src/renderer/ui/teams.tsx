@@ -40,7 +40,7 @@ const RoomLine = ({
   }
   return (
     <div className="text-xs leading-snug">
-      <span className="text-[#3a76b8]">
+      <span className="text-name">
         {from.kind === "founder" ? "you" : employeeName(employees, from.id, "former teammate")}
       </span>
       <span className="text-fg">: {text}</span>

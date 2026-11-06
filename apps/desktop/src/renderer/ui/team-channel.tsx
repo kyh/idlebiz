@@ -79,7 +79,7 @@ const RoomRow = ({
       ) : (
         <span className="text-accent-lo">{nameOf(from.id)}</span>
       )}{" "}
-      <span className="text-[#4c5064]">{text}</span>
+      <span className="text-fg-mid">{text}</span>
     </div>
   );
 };
@@ -183,7 +183,7 @@ export const TeamChannel = () => {
     <div className="px-window pointer-events-auto absolute right-3 bottom-3 z-10 w-80">
       <div className="px-titlebar flex items-center justify-between px-3 py-1.5 text-xs">
         <span># team</span>
-        <span className="text-xs text-[#c3c9de]">{company.autopilot ? "● live" : "paused"}</span>
+        <span className="text-xs text-light-dim">{company.autopilot ? "● live" : "paused"}</span>
       </div>
       <div
         ref={scrollRef}

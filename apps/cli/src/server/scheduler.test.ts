@@ -10,7 +10,7 @@ import type { BlockedAsk, Budget, BusinessTypeId, RunOrigin, Task } from "@repo/
 import { RefusalError } from "./refusal";
 import type { RunResult, RunTools } from "./agents/runner-pool";
 import { keepAwake } from "./keep-awake";
-import type { KeepAwake, PowerBlocker } from "./keep-awake";
+import type { KeepAwake } from "./keep-awake";
 import type { EmployeeRunner } from "./scheduler";
 import * as store from "./store/store";
 import { activityFile, companyDir, tasksDir, betFile, routineFile, shippedDir } from "./paths";
@@ -27,19 +27,16 @@ const NAMES = ["Priya", "Mae", "Sam", "Ana"];
 
 const asleep: KeepAwake = { hold: () => {} };
 
-/** A power blocker that only keeps count: the ids held now, and how many were ever started. */
-const fakeBlocker = () => {
-  const held = new Set<number>();
-  let started = 0;
-  const blocker: PowerBlocker = {
-    start: () => {
-      started += 1;
-      held.add(started);
-      return started;
+/** The shell's side of keeping awake: each change it is told, and whether it holds the Mac now. */
+const fakeShell = () => {
+  const told: boolean[] = [];
+  return {
+    holding: () => told.at(-1) === true,
+    tell: (on: boolean) => {
+      told.push(on);
     },
-    stop: (id) => held.delete(id),
+    told,
   };
-  return { blocker, held, started: () => started };
 };
 
 const UNCAPPED: Budget = { mode: "infinite" };
@@ -175,8 +172,8 @@ describe("keeping the Mac awake", () => {
   it("still runs, and lets go, when a run's start cannot be announced", async () => {
     found();
     const { driver, running } = scripted();
-    const power = fakeBlocker();
-    const drain = createScheduler(driver, keepAwake(power.blocker), unaskedIntegrations);
+    const power = fakeShell();
+    const drain = createScheduler(driver, keepAwake(power.tell), unaskedIntegrations);
     activityEvents.on("activity", refuseRunStart);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     queue("priya");
@@ -187,51 +184,50 @@ describe("keeping the Mac awake", () => {
       logged.mockRestore();
     }
     expect(running.size).toBe(1);
-    expect(power.held.size).toBe(1);
+    expect(power.holding()).toBe(true);
 
     running.get("priya")?.(done());
-    await vi.waitFor(() => expect(power.held.size).toBe(0));
+    await vi.waitFor(() => expect(power.holding()).toBe(false));
   });
 
-  it("holds one blocker while any run is in flight and lets go when the last ends", async () => {
+  it("holds the Mac awake once while any run is in flight and lets go when the last ends", async () => {
     found();
     const { driver, running } = scripted();
-    const power = fakeBlocker();
-    const drain = createScheduler(driver, keepAwake(power.blocker), unaskedIntegrations);
+    const power = fakeShell();
+    const drain = createScheduler(driver, keepAwake(power.tell), unaskedIntegrations);
     queue("priya");
     queue("mae");
 
     drain.tick();
     expect(running.size).toBe(2);
-    expect(power.held.size).toBe(1);
+    expect(power.holding()).toBe(true);
 
     running.get("priya")?.(done());
     await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
-    expect(power.held.size).toBe(1);
+    expect(power.holding()).toBe(true);
 
     running.get("mae")?.(done());
-    await vi.waitFor(() => expect(power.held.size).toBe(0));
-    expect(power.started()).toBe(1);
+    await vi.waitFor(() => expect(power.holding()).toBe(false));
+    expect(power.told).toEqual([true, false]);
   });
 
   it("lets go when a run throws, and when a shutdown aborts one", async () => {
     found();
-    const power = fakeBlocker();
+    const power = fakeShell();
     const broken: EmployeeRunner = {
       ...scripted().driver,
       runTask: () => Promise.reject(new Error("spawn failed")),
     };
     queue("priya");
-    createScheduler(broken, keepAwake(power.blocker), unaskedIntegrations).tick();
-    await vi.waitFor(() => expect(power.started()).toBe(1));
-    await vi.waitFor(() => expect(power.held.size).toBe(0));
+    createScheduler(broken, keepAwake(power.tell), unaskedIntegrations).tick();
+    await vi.waitFor(() => expect(power.told).toEqual([true, false]));
 
-    const drain = createScheduler(scripted().driver, keepAwake(power.blocker), unaskedIntegrations);
+    const drain = createScheduler(scripted().driver, keepAwake(power.tell), unaskedIntegrations);
     queue("mae");
     drain.tick();
-    expect(power.held.size).toBe(1);
+    expect(power.holding()).toBe(true);
     await drain.shutdown();
-    expect(power.held.size).toBe(0);
+    expect(power.holding()).toBe(false);
   });
 });
 

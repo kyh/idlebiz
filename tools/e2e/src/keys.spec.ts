@@ -2,6 +2,7 @@ import {
   apiOf,
   expect,
   foundCompany,
+  keyShot,
   readSecrets,
   secretsText,
   test,
@@ -123,6 +124,7 @@ test("a Stripe key Stripe takes is kept sealed, shown as set, replaceable and re
   const saved = budget.getByText("✓ key …1234");
   await expect(saved).toBeVisible();
   await expect(saved.getByText("test", { exact: true })).toBeVisible();
+  await keyShot(page, "stripe-key-set");
   expect(await secretsText(root)).not.toContain(key);
   const secrets = await readSecrets(root);
   expect(secrets.STRIPE_SECRET_KEY).toMatch(SEALED);

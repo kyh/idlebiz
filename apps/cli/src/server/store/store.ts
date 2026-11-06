@@ -6,6 +6,7 @@ import {
   atomicWrite,
   moveDir,
   readJsonFile,
+  readJsonFileForUpdate,
   readJsonlTail,
   writeJsonFile,
 } from "../lib/fs";
@@ -14,8 +15,6 @@ import {
   rootDir,
   ensureAppDirs,
   companyDir,
-  toolCacheDir,
-  runBinDir,
   companyFile,
   sharedDir,
   activityFile,
@@ -71,13 +70,7 @@ import type { RoutineDefinition } from "../prompts/routines";
 import { betToDoc, docToBet } from "./bet-codec";
 import { docToProduct, productToDoc } from "./product-codec";
 import { docToTask, taskToDoc } from "./task-codec";
-import {
-  SAVE_FORMAT,
-  SaveFormatError,
-  companyToDoc,
-  docToCompany,
-  formatOf,
-} from "./company-codec";
+import { companyToDoc, docToCompany } from "./company-codec";
 import { docToEmployee, employeeBody, employeeToDoc } from "./employee-codec";
 import { docToRoutine, routineToDoc } from "./routine-codec";
 import {
@@ -136,6 +129,7 @@ import type {
 import type { RunnerId } from "@repo/domain/runners";
 import {
   DEFAULT_MAX_AGENTS,
+  HISTORY_TASK_STATUSES,
   LastShipSchema,
   ProductDraftSchema,
   RunMetricsSchema,
@@ -153,6 +147,7 @@ import type { ActivityEvent, PersistedActivity } from "@repo/domain/activity";
 
 const GrantSchema = z.object({ grantedAt: z.number(), key: z.string(), taskId: z.string() });
 type Grant = z.infer<typeof GrantSchema>;
+const GrantsSchema = z.array(GrantSchema);
 
 const ProposalEndSchema = z.object({
   briefedAt: z.number(),
@@ -333,8 +328,9 @@ const readTextIfPresent = (file: string): string | null => {
   }
 };
 
+/** Durable: a COMPANY.md that does not read blocks the office. */
 const saveCompany = (co: Company): void => {
-  atomicWrite(companyFile(), serializeDoc(companyToDoc(co)));
+  atomicWrite(companyFile(), serializeDoc(companyToDoc(co)), { durable: true });
 };
 
 const saveEmployee = (e: Employee, opts: { onlyIfChanged?: boolean } = {}): void => {
@@ -368,7 +364,7 @@ const shelve = (t: Task): void => {
 };
 
 /** Shipped work, answered asks, settled order cards and dropped work: shelved in shipped/, never acted on again. */
-const HISTORY: ReadonlySet<TaskStatus> = new Set(["done", "superseded", "settled", "dropped"]);
+const HISTORY: ReadonlySet<TaskStatus> = new Set(HISTORY_TASK_STATUSES);
 const isHistory = (t: Task): boolean => HISTORY.has(t.state.kind);
 
 /** Move a task just saved as history out of the open queue; one the move fails stays for boot to shelve. */
@@ -447,8 +443,21 @@ export const setAutopilot = (on: boolean): Company => patchCompany({ autopilot: 
 // command) would wait for anyone who later ran that exact string.
 const writeGrants = (grants: Grant[]): void => {
   const active = current();
-  writeJsonFile(approvalsFile(), grants);
+  // a file that does not read is the founder's to fix: rewriting it would lose the sign-offs in it
+  readJsonFileForUpdate(approvalsFile(), GrantsSchema);
+  // durable: each is a sign-off the founder gave
+  writeJsonFile(approvalsFile(), grants, { durable: true });
   active.grants = grants;
+};
+
+/** The sign-offs no run has used yet; a file that does not read is named in the load report. */
+const readGrants = (): Grant[] => {
+  try {
+    return readJsonFileForUpdate(approvalsFile(), GrantsSchema) ?? [];
+  } catch (error) {
+    skip("approvals", approvalsFile(), error);
+    return [];
+  }
 };
 
 export const grantApproval = (taskId: string, key: string): void => {
@@ -550,24 +559,6 @@ const routineRecord = (input: RoutineDefinition, id: string): Routine => ({
   name: input.name,
   role: input.role,
 });
-
-const createRoutine = (input: RoutineDefinition): Routine => {
-  const list = current().routines;
-  const id = uniqueSlug(
-    input.name,
-    list.map((r) => r.id),
-  );
-  const routine = routineRecord(input, id);
-  saveRoutine(routine);
-  list.push(routine);
-  return routine;
-};
-
-const seedDefaultRoutines = (businessType: BusinessTypeId): void => {
-  for (const routine of defaultRoutines(businessType)) {
-    createRoutine(routine);
-  }
-};
 
 export const listRoutines = (): Routine[] => [...current().routines];
 
@@ -739,7 +730,7 @@ const handOver = (active: ActiveCompany, leaverId: string, leaverName: string): 
   return moved;
 };
 
-/** Archive the employee package and hand their open work on, as `handOver` counts it. */
+/** Archive the employee package and hand their open work on, as `handOver` counts it. The lead stays. */
 export const archiveEmployee = (
   employeeId: string,
 ): ({ employee: Employee } & HandedOver) | null => {
@@ -747,15 +738,14 @@ export const archiveEmployee = (
   if (!emp) {
     return null;
   }
-  moveDir(employeeAgentDir(employeeId), archiveTo(alumniDir(), employeeId));
   const active = current();
+  if (active.company.leaderId === employeeId) {
+    throw new RefusalError(`${emp.name} leads the team, and a lead is never released.`);
+  }
+  moveDir(employeeAgentDir(employeeId), archiveTo(alumniDir(), employeeId));
   const idx = active.employees.findIndex((e) => e.id === employeeId);
   if (idx !== -1) {
     active.employees.splice(idx, 1);
-  }
-  // the lead left: whoever remains elects one, so the tools keep an owner
-  if (active.company.leaderId === employeeId) {
-    patchCompany({ leaderId: leadOf(listEmployees()) });
   }
   return { employee: emp, ...handOver(active, employeeId, emp.name) };
 };
@@ -1382,11 +1372,7 @@ export const postTeamMessage = (from: Speaker, text: string): TeamMessage => {
   return stored;
 };
 
-export const recentTeamMessages = (limit = 20, since = 0): TeamMessage[] => {
-  const ring = current().chat;
-  const filtered = since > 0 ? ring.filter((m) => m.createdAt > since) : ring;
-  return filtered.slice(-limit);
-};
+export const recentTeamMessages = (limit = 20): TeamMessage[] => current().chat.slice(-limit);
 
 // ---- tasks -----------------------------------------------------------------
 interface NewTask {
@@ -1842,32 +1828,6 @@ export const killProduct = (productId: string, reason: string, by: string | null
 };
 
 // ---- founding and boot -------------------------------------------------------
-/**
- * A COMPANY.md in a folder of the root beside company/, stamped before this build's format or
- * not at all: a pre-release save from before the save had a folder of its own, refused as it
- * would be in company/ so that no company is founded beside it. One at this build's format was
- * moved aside to start over. Dot folders are main's own, and cache/ and bin/ the runs'.
- */
-const strayPreReleaseSave = (): { file: string; format: number | null } | null => {
-  const notSaves = new Set([companyDir(), toolCacheDir(), runBinDir()]);
-  for (const entry of safeReaddir(rootDir())) {
-    const dir = path.join(rootDir(), entry);
-    if (entry.startsWith(".") || notSaves.has(dir)) {
-      continue;
-    }
-    const file = path.join(dir, "COMPANY.md");
-    const text = readTextIfPresent(file);
-    if (text === null) {
-      continue;
-    }
-    const format = formatOf(parseDoc(text));
-    if (format === null || format < SAVE_FORMAT) {
-      return { file, format };
-    }
-  }
-  return null;
-};
-
 /** Publish a complete company with one directory rename; boot ignores staging directories. */
 export const foundCompany = (input: {
   name: string;
@@ -1881,7 +1841,7 @@ export const foundCompany = (input: {
   if (c().active) {
     throw new RefusalError("a company is already active");
   }
-  if (existsSync(companyDir()) || strayPreReleaseSave() !== null) {
+  if (existsSync(companyDir())) {
     throw new RefusalError("an existing company save must be loaded or repaired before founding");
   }
   const co: Company = {
@@ -1927,25 +1887,26 @@ export const foundCompany = (input: {
   const staging = mkdtempSync(path.join(rootDir(), ".founding-"));
   // Only disk destinations change; persisted workspace paths refer to the final company.
   const staged = (file: string): string => path.join(staging, path.relative(companyDir(), file));
+  // durable, so the company/ one rename publishes never holds an empty file after an OS crash
+  const stage = (file: string, text: string): void => {
+    atomicWrite(staged(file), text, { durable: true });
+  };
   try {
     mkdirSync(staged(sharedDir()), { recursive: true });
     mkdirSync(staged(tasksDir()), { recursive: true });
     mkdirSync(staged(agentsDir()), { recursive: true });
     for (const product of active.products) {
       mkdirSync(staged(product.workspaceDir), { recursive: true });
-      atomicWrite(staged(productFile(product.id)), serializeDoc(productToDoc(product)));
+      stage(productFile(product.id), serializeDoc(productToDoc(product)));
     }
     for (const employee of active.employees) {
       mkdirSync(staged(employeeMemoryDir(employee.id)), { recursive: true });
-      atomicWrite(
-        staged(employeeFile(employee.id)),
-        serializeDoc(employeeToDoc(employee, co, active.products)),
-      );
+      stage(employeeFile(employee.id), serializeDoc(employeeToDoc(employee, co, active.products)));
     }
     for (const routine of active.routines) {
-      atomicWrite(staged(routineFile(routine.id)), serializeDoc(routineToDoc(routine)));
+      stage(routineFile(routine.id), serializeDoc(routineToDoc(routine)));
     }
-    atomicWrite(staged(companyFile()), serializeDoc(companyToDoc(co)));
+    stage(companyFile(), serializeDoc(companyToDoc(co)));
     moveDir(staging, companyDir());
   } catch (error) {
     rmSync(staging, { force: true, recursive: true });
@@ -1958,10 +1919,6 @@ export const foundCompany = (input: {
 /** The root's one company, or null when it holds none or one that does not read, which the load report names. */
 const readCompany = (): Company | null => {
   if (!existsSync(companyDir())) {
-    const stray = strayPreReleaseSave();
-    if (stray) {
-      skip("company", stray.file, new SaveFormatError(stray.format));
-    }
     return null;
   }
   try {
@@ -2046,7 +2003,7 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
   active.links = loadRecords("link", linksDir(), ChargeLinkSchema);
   active.orders = loadRecords("order", ordersDir(), OrderSchema);
   active.policy = readJsonFile(policyFile(), PolicyParamsSchema) ?? DEFAULT_POLICY;
-  active.grants = readJsonFile(approvalsFile(), z.array(GrantSchema)) ?? [];
+  active.grants = readGrants();
   active.routines = loadPackages("routine", routinesDir(), routineFile, docToRoutine);
   loadRecentChat(active);
   active.sinceLastLook = readJsonFile(sinceLastLookFile(), DigestSchema);
@@ -2127,9 +2084,6 @@ export const initStore = (): LoadReport => {
       saveCompany(active.company);
     }
     releaseOrphanedTasks(active);
-    if (!holdsPackage(routinesDir(), routineFile)) {
-      seedDefaultRoutines(company.businessType);
-    }
     for (const employee of active.employees) {
       try {
         saveEmployee(employee, { onlyIfChanged: true });
@@ -2145,9 +2099,14 @@ export const initStore = (): LoadReport => {
 };
 
 // ---- activity log ----------------------------------------------------------
+/** Losing it costs one count in the founder's summary, never the event, so a failed write is only reported. */
 const saveSinceLastLook = (active: ActiveCompany, next: Digest): void => {
-  writeJsonFile(sinceLastLookFile(), next);
   active.sinceLastLook = next;
+  try {
+    writeJsonFile(sinceLastLookFile(), next);
+  } catch (error) {
+    report("save the digest", error);
+  }
 };
 
 /** The founder has the office in view as of `at`: what came before is seen, and the count starts over. */

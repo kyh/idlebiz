@@ -43,13 +43,16 @@ fn handoff<R: Runtime>(app: &AppHandle<R>) -> Result<(Url, String), String> {
     }
 }
 
+/// Logs name the page by its origin alone: a link's path and query can carry a token, and main's
+/// log is a file of the founder's that runs read.
 fn open_externally<R: Runtime>(app: &AppHandle<R>, opens: &ExternalOpens, url: &Url) {
+    let site = url.origin().ascii_serialization();
     if !opens.allow(Instant::now()) {
-        eprintln!("[shell] refused to open {url}: another opened less than a second ago");
+        log::warn!("refused to open a page on {site}: another opened less than a second ago");
         return;
     }
     if let Err(error) = app.opener().open_url(url.as_str(), None::<&str>) {
-        eprintln!("[shell] could not open {url} in the browser: {error}");
+        log::warn!("could not open a page on {site} in the browser: {error}");
     }
 }
 
@@ -64,11 +67,11 @@ fn watch<R: Runtime>(window: &WebviewWindow<R>) {
         WindowEvent::CloseRequested { api, .. } => {
             api.prevent_close();
             if let Err(error) = watched.hide() {
-                eprintln!("[shell] could not hide the window: {error}");
+                log::warn!("could not hide the window: {error}");
             }
             #[cfg(target_os = "macos")]
             if let Err(error) = app.set_dock_visibility(false) {
-                eprintln!("[shell] could not hide the dock icon: {error}");
+                log::warn!("could not hide the dock icon: {error}");
             }
             told(&app, WindowState::Hidden);
         }
@@ -123,10 +126,10 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String
             if payload.event() != PageLoadEvent::Finished || shown.swap(true, Ordering::Relaxed) {
                 return;
             }
-            println!("[shell] window loaded");
+            log::info!("window loaded");
             match window.show().and_then(|()| window.set_focus()) {
                 Ok(()) => told(window.app_handle(), WindowState::Shown),
-                Err(error) => eprintln!("[shell] could not show the window: {error}"),
+                Err(error) => log::warn!("could not show the window: {error}"),
             }
         })
         .build();
@@ -149,7 +152,7 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> Result<WebviewWindow<R>, String
 pub fn show<R: Runtime>(app: &AppHandle<R>) {
     #[cfg(target_os = "macos")]
     if let Err(error) = app.set_dock_visibility(true) {
-        eprintln!("[shell] could not show the dock icon: {error}");
+        log::warn!("could not show the dock icon: {error}");
     }
     // a window made here is shown, and main told, by its first load; it waits on main's handoff, so
     // off the thread that asked, which is the main thread
@@ -157,7 +160,7 @@ pub fn show<R: Runtime>(app: &AppHandle<R>) {
         let making = app.clone();
         std::thread::spawn(move || {
             if let Err(error) = create(&making) {
-                eprintln!("[shell] could not make the window: {error}");
+                log::warn!("could not make the window: {error}");
             }
         });
         return;
@@ -168,6 +171,6 @@ pub fn show<R: Runtime>(app: &AppHandle<R>) {
         .and_then(|()| window.set_focus())
     {
         Ok(()) => told(app, WindowState::Shown),
-        Err(error) => eprintln!("[shell] could not show the window: {error}"),
+        Err(error) => log::warn!("could not show the window: {error}"),
     }
 }

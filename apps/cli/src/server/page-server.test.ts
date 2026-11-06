@@ -237,7 +237,7 @@ describe("main's page server", () => {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(`vite answered ${req.url ?? ""}`);
     });
-    const vitePort = await listenLoopback(vite);
+    const vitePort = await listenLoopback(vite, "a stand-in dev server");
     try {
       const server = await start({ kind: "dev", origin: `http://localhost:${vitePort}` });
       servers.push(server);
