@@ -106,9 +106,9 @@ IdleBiz installed after. CI's `test-macos` job runs it on an ad-hoc pack.
 `pnpm smoke:update` holds an update end to end, on an Apple-silicon Mac whose terminal may drive
 System Events (`apps/desktop/scripts/smoke-update.ts`), in these steps:
 
-1. it serves a feed on loopback for the whole run and makes two throwaway keys in scratch with
-   `tauri signer generate`, scratch being the system's temporary folder (`getconf`), which
-   `package.ts` holds a test pack to;
+1. it serves a feed on loopback for the whole run and makes throwaway keys in scratch with
+   `tauri signer generate`: one no pack trusts, and, when it packs afresh, the one the packs trust.
+   Scratch is the system's temporary folder (`getconf`), which `package.ts` holds a test pack to;
 2. it packs N, the version in package.json, and then N+1 as test packs, both asking that feed and
    trusting the first key; `--packs=<dir>` packs into `<dir>` once and reuses what it holds after;
 3. it installs N with `ditto` into a scratch `Applications`, which the account writes, so the swap

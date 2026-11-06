@@ -59,7 +59,7 @@ const security = (what: string, args: readonly string[]): string => {
 const cdhashOf = (app: string): string => {
   const described = spawnSync("codesign", ["-dvvv", app], { encoding: "utf-8" });
   if (described.status !== 0) {
-    throw new Error(`codesign could not describe ${app}: ${described.stderr.trim()}`);
+    throw new Error(`codesign could not describe ${app}: ${described.stderr?.trim() ?? ""}`);
   }
   return cdhashIn(described.stderr);
 };
