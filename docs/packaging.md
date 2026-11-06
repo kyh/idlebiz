@@ -104,32 +104,40 @@ the smoke deletes it as it ends, since kept it would stop the next smoke and pro
 IdleBiz installed after. CI's `test-macos` job runs it on an ad-hoc pack.
 
 `pnpm smoke:update` holds an update end to end, on an Apple-silicon Mac whose terminal may drive
-System Events (`apps/desktop/scripts/smoke-update.ts`). It serves a feed on loopback for the whole
-run, makes two throwaway keys in scratch with `tauri signer generate`, packs N, package.json's
-version, and then N+1 as test packs, both asking that feed and trusting the first key, and installs
-N with `ditto` into a scratch `Applications`, which the account writes, so the swap asks for no
-admin password; `--packs=<dir>`, in the OS's temporary folder, packs into `<dir>` once and reuses
-what it holds after. The save is Acme founded through the store with a $0 cap and autopilot off
-(`server/test-support/seed-save.seed.ts`, run under `apps/cli/vitest.seed.config.ts` alone, which
-`pnpm test` never runs), with one team value pasted into `secrets.json` as plain text. N launches on
-it with `--root=` and the system PATH, so the shell's `touch` guard holds, and the update is begun
-the founder's way, from the menu-bar item (`scripts/tray-ax.ts`): the page's session is the shell's
-alone, and the app takes no switch that installs. A click posted at the item opens its menu, since
-tray-icon gives the item its menu only while it handles a real mouse-down, and System Events reads
-the menu and clicks its update item. A release whose signature is the second key's is refused in a
-box that says it could not be downloaded, with main and the installed version as they were; the
-release as packed stops main cleanly, swaps the app and restarts it on the same `--root=`. N+1 then
-holds the update's Info.plist, shell bytes, server version and signature
-(`codesign --verify --deep --strict`), runs one new main on the same save, finds itself current,
-offers Open Acme in its menu, and has the save as N left it, but for `.main/`, `company/state/` and
-what was appended to each `*.jsonl`, which main moves itself, and the team value sealed with the
-same key. Its quit leaves nothing running and no `tauri_*_app` swap folder behind. An ad-hoc pack's
-code identity is its cdhash, which the update changes, so a keychain of the smoke's own in scratch,
-first on the search list while it runs, holds the sealing key with a partition list naming both
-packs' cdhashes (`scripts/update-keychain.ts`), as one Developer ID's would, and a Keychain prompt
-fails the run at once. It refuses where an IdleBiz is running or the Keychain holds IdleBiz's key,
-both as it starts and again once it has packed, so a key it finds in the user's keychains as it ends
-is one a launch made, which it deletes, never a founder's; and it refuses a search list a run killed
-outright left its keychain on. It puts the list back as it ends, on a throw or a signal alike, and
-leaves every request the feed answered in `.output/smoke-update/feed.log`. CI's `update-macos` job
-runs it, and uploads that log and `main.log` when it fails.
+System Events (`apps/desktop/scripts/smoke-update.ts`), in these steps:
+
+1. it serves a feed on loopback for the whole run and makes two throwaway keys in scratch with
+   `tauri signer generate`, scratch being the system's temporary folder (`getconf`), which
+   `package.ts` holds a test pack to;
+2. it packs N, the version in package.json, and then N+1 as test packs, both asking that feed and
+   trusting the first key; `--packs=<dir>` packs into `<dir>` once and reuses what it holds after;
+3. it installs N with `ditto` into a scratch `Applications`, which the account writes, so the swap
+   asks for no admin password, and seeds its save: Acme founded through the store with a $0 cap and
+   autopilot off (`server/test-support/seed-save.seed.ts`, run under
+   `apps/cli/vitest.seed.config.ts` alone, which `pnpm test` never runs), with one team value pasted
+   into `secrets.json` as plain text;
+4. it launches N with `--root=` and the system PATH, so the shell's `touch` guard holds, and begins
+   the update the founder's way, from the menu-bar item (`scripts/tray-ax.ts`), since the page's
+   session is the shell's alone and the app takes no switch that installs: a click posted at the
+   item opens its menu (tray-icon gives the item its menu only while it handles a real
+   mouse-down), and System Events reads the menu and clicks its update item;
+5. it offers a release signed by the second key first, which is refused in a box that says it could
+   not be downloaded, with main and the installed version as they were, then the release as
+   packed, which stops main cleanly, swaps the app and restarts it on the same `--root=`;
+6. it checks N+1: the update's Info.plist, shell bytes, server version and signature
+   (`codesign --verify --deep --strict`), one new main on the same save, a check that finds itself
+   current, Open Acme in its menu, the team value sealed with the same key, and the save as N left
+   it, but for `.main/`, `company/state/` and what was appended to each `*.jsonl`, which main moves
+   itself;
+7. it quits it, leaving nothing running and no `tauri_*_app` swap folder behind, puts the Keychain's
+   search list back, and leaves every request the feed answered in `.output/smoke-update/feed.log`.
+
+An ad-hoc pack's code identity is its cdhash, which the update changes, so a keychain of the
+smoke's own in scratch, first on the search list while it runs, holds the sealing key with a
+partition list naming both packs' cdhashes (`scripts/update-keychain.ts`), as one Developer ID's
+would, and a Keychain prompt fails the run at once. It refuses where an IdleBiz is running or the
+Keychain holds IdleBiz's key, both as it starts and again once it has packed, so a key it finds in
+the user's keychains as it ends is one a launch made, which it deletes, never a founder's; and it
+refuses a search list a run killed outright left its keychain on. It puts the list back on a throw
+or a signal alike. CI's `update-macos` job runs it, and uploads the feed's log and `main.log` when
+it fails.

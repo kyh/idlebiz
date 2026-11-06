@@ -134,7 +134,8 @@ export const trayItems = (): string[] => trayMenu("read IdleBiz's menu-bar item"
 /** Clicks the menu-bar item's first item whose name starts with `prefix`, as the founder would. */
 export const clickTrayItem = (prefix: string): void => {
   const names = trayMenu(`click "${prefix}" in IdleBiz's menu`, ["click", prefix]);
-  if (!names.some((name) => name.startsWith(prefix))) {
+  // as AppleScript's `starts with` matched it, ignoring case
+  if (!names.some((name) => name.toLowerCase().startsWith(prefix.toLowerCase()))) {
     throw new Error(
       `IdleBiz's menu-bar item offers nothing starting "${prefix}":\n  ${names.join("\n  ")}`,
     );

@@ -53,6 +53,7 @@ import {
   processes,
   runsBundledNode,
   startingEnvOf,
+  systemTempDir,
   waitForLine,
 } from "./packaged-app.ts";
 import type { Process } from "./packaged-app.ts";
@@ -299,6 +300,9 @@ const changesBetween = (before: Snapshot, after: Snapshot): string[] => [
       ? []
       : [`${name} was rewritten, not appended to`];
   }),
+  ...[...after.logs.keys()]
+    .filter((name) => !before.logs.has(name))
+    .map((name) => `${name} is new`),
 ];
 
 /** Every swap folder of the updater's in the folders it makes them in. */
@@ -383,7 +387,10 @@ const reusedPort =
     ? Number(new URL(readJson(kept.feed, feedSchema).platforms["darwin-aarch64"].url).port)
     : 0;
 
-const scratch = realpathSync.native(await mkdtemp(path.join(tmpdir(), "idlebiz-update-smoke-")));
+// package.ts refuses a test pack outside the system's own temporary folder, whatever TMPDIR says
+const scratch = realpathSync.native(
+  await mkdtemp(path.join(systemTempDir(), "idlebiz-update-smoke-")),
+);
 const {
   feed: packedFeed,
   installed: installedPack,

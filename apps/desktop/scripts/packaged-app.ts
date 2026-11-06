@@ -134,9 +134,30 @@ export const isRunning = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? error.code : null;
+    // gone; one that is there but not this user's to signal is still running
+    if (code === "ESRCH") {
+      return false;
+    }
+    if (code === "EPERM") {
+      return true;
+    }
+    throw error;
   }
+};
+
+/**
+ * macOS's per-user temporary folder, as the system names it whatever TMPDIR says: a test pack's
+ * scratch, since TMPDIR is what `launchctl setenv` could point anywhere.
+ */
+export const systemTempDir = (): string => {
+  const asked = spawnSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], { encoding: "utf-8" });
+  const folder = asked.stdout.trim();
+  if (asked.status !== 0 || !path.isAbsolute(folder)) {
+    throw new Error("getconf named no DARWIN_USER_TEMP_DIR, the scratch a test pack lies in");
+  }
+  return folder;
 };
 
 /** Whether `child` exited within `ms`. */

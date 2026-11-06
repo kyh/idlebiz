@@ -20,6 +20,7 @@ import { z } from "zod";
 import { FEED_NAME, archiveName, releaseAssets, releaseFeed } from "./release-feed.ts";
 import { writeRustNotices } from "./rust-notices.ts";
 import { signResources } from "./sign-resources.ts";
+import { systemTempDir } from "./packaged-app.ts";
 import { stageServer } from "./stage-server.ts";
 import {
   loopbackFeed,
@@ -64,16 +65,6 @@ const run = (file: string, args: readonly string[], options: SpawnSyncOptions = 
   if (result.status !== 0) {
     throw new Error(`${file} ${args.join(" ")} exited ${result.status ?? result.signal}`);
   }
-};
-
-/** macOS's per-user temporary folder, as the system names it whatever TMPDIR says. */
-const systemTempDir = (): string => {
-  const asked = spawnSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], { encoding: "utf-8" });
-  const folder = asked.stdout.trim();
-  if (asked.status !== 0 || !path.isAbsolute(folder)) {
-    throw new Error("getconf named no DARWIN_USER_TEMP_DIR, the scratch a test pack lies in");
-  }
-  return folder;
 };
 
 interface Notary {

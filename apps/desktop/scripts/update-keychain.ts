@@ -50,7 +50,7 @@ const security = (what: string, args: readonly string[]): string => {
   const ran = spawnSync("security", args, { encoding: "utf-8", timeout: SECURITY_TIMEOUT_MS });
   if (ran.status !== 0) {
     throw new Error(
-      `security could not ${what} (it exited ${ran.status ?? ran.signal ?? ran.error?.message}): ${ran.stderr.trim()}`,
+      `security could not ${what} (it exited ${ran.status ?? ran.signal ?? ran.error?.message}): ${ran.stderr?.trim() ?? ""}`,
     );
   }
   return ran.stdout;
