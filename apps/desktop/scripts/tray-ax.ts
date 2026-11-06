@@ -145,8 +145,8 @@ export const clickTrayItem = (prefix: string): void => {
 // A box the shell shows (host.rs, updater.rs, shell.rs) is a dialog with no parent window, which
 // rfd hands CFUserNotificationDisplayAlert, so UserNotificationCenter draws it, not IdleBiz: one of
 // its windows whose header (the box's title) starts with the app's name. A window of IdleBiz's own
-// but the office's counts too, should a box ever get a parent. Its OK and texts are found wherever
-// they sit in it, a group on some macOS releases. The office's window is skipped, since walking its
+// but the office's counts too, should a box ever get a parent. Its OK and texts (static, or a text
+// area for a long message) are found wherever they sit in it, a group on some macOS releases. The office's window is skipped, since walking its
 // page's whole tree would take each poll seconds. The OK is kept by its contents, as MENU keeps its
 // item: the loop's variable is only a reference into a list the loop is done with
 const BOXES = `
@@ -176,7 +176,7 @@ on run argv
         try
           set elementClass to class of anElement
           if elementClass is button and name of anElement is "OK" then set okButton to contents of anElement
-          if elementClass is static text then
+          if elementClass is static text or elementClass is text area then
             set textValue to missing value
             try
               set textValue to value of anElement
