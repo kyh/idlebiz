@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { expect, test } from "vitest";
+import { expect, it } from "vitest";
 import { openSave } from "../paths";
 import { ENV_PREFIX, secretsPath } from "../secrets";
 import * as store from "../store/store";
@@ -21,14 +21,16 @@ const CANARY = "UPDATE_SMOKE";
 
 /**
  * `root`, made, which lies in the OS's temporary folder as typed, before anything is made, and as
- * the disk resolves it after, through any link.
+ * the disk resolves it after, through any link. The folder is named both ways: on macOS TMPDIR's
+ * /var/folders is a link to /private/var/folders.
  */
 const scratchRoot = (root: string): string => {
   const temp = realpathSync.native(tmpdir());
-  const inTemp = (file: string): boolean => {
-    const relative = path.relative(temp, file);
-    return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
-  };
+  const inTemp = (file: string): boolean =>
+    [path.resolve(tmpdir()), temp].some((folder) => {
+      const relative = path.relative(folder, file);
+      return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+    });
   const refusal = `the update smoke's save lies in the OS's temporary folder (${temp}), never a founder's: ${root}`;
   if (!inTemp(path.resolve(root))) {
     throw new Error(refusal);
@@ -41,7 +43,7 @@ const scratchRoot = (root: string): string => {
   return real;
 };
 
-test("founds Acme on the save the update smoke installs over", () => {
+it("founds Acme on the save the update smoke installs over", () => {
   const root = process.env.IDLEBIZ_SEED_ROOT;
   if (root === undefined || root === "") {
     throw new Error(

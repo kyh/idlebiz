@@ -32,7 +32,7 @@ How each part works is told once, in the repo's [AGENTS.md](../../AGENTS.md) and
 - the Keychain's sealing key: [Keys and what spends them](../../docs/keys.md);
 - the dev loop, the toolchain and what Linux needs besides:
   [Quickstart](../../AGENTS.md#quickstart);
-- the pack, the release and the smoke: [Packaging and release](../../docs/packaging.md).
+- the pack, the release and the smokes: [Packaging and release](../../docs/packaging.md).
 
 ## What is deliberately not here
 

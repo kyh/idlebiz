@@ -1,6 +1,7 @@
 // IdleBiz updating itself end to end, on an Apple-silicon Mac with a display and UI scripting: an
-// installed test pack takes a second from a feed on loopback under a throwaway key, begun from its
-// own menu-bar item, and opens again on the save it had. docs/packaging.md says what it checks.
+// installed test pack takes the next release from a feed on loopback under a throwaway key, begun
+// from its own menu-bar item, and opens again on the save it had. docs/packaging.md says what it
+// checks.
 //
 // `--packs=<dir>` packs into <dir>, in the OS's temporary folder, once, and reuses what it holds
 // after, so a rerun packs nothing.
@@ -64,7 +65,7 @@ import {
   securityPromptShown,
   trayItems,
 } from "./tray-ax.ts";
-import { openScratchKeychain } from "./update-keychain.ts";
+import { openScratchKeychain, refuseKilledSmokesKeychain } from "./update-keychain.ts";
 import type { ScratchKeychain } from "./update-keychain.ts";
 import { loopbackFeed, updateTestSpecSchema } from "./update-test-pack.ts";
 
@@ -332,11 +333,17 @@ if (!axReady()) {
     "System Events does not answer UI scripting here, and the update begins from IdleBiz's menu-bar item: let this terminal control the computer (System Settings, Privacy & Security, Accessibility)",
   );
 }
-if (await answers(SINGLE_INSTANCE_SOCKET)) {
-  throw new Error(
-    "an IdleBiz is running on this Mac, which a launch would hand over to and whose menu-bar item would read as the smoke's: quit it",
-  );
-}
+/** Refuses an IdleBiz running on this Mac; asked again before the first launch, after the packs. */
+const refuseRunningIdleBiz = async (): Promise<void> => {
+  if (await answers(SINGLE_INSTANCE_SOCKET)) {
+    throw new Error(
+      "an IdleBiz is running on this Mac, which a launch would hand over to and whose menu-bar item would read as the smoke's: quit it",
+    );
+  }
+};
+await refuseRunningIdleBiz();
+// a run killed outright left its keychain first on the list, whose key would read as the user's
+refuseKilledSmokesKeychain();
 if (holdsSealingKey()) {
   throw new Error(
     `the Keychain holds IdleBiz's key ("${KEYCHAIN_SERVICE}", "${KEYCHAIN_ACCOUNT}"), which is no smoke's to sit beside or to delete: smoke on a Mac without it, as CI's`,
@@ -482,13 +489,9 @@ const cleanUp = (): void => {
   });
   const opened = keychain;
   if (opened !== null) {
-    step("put the Keychain back", () => {
-      for (const failure of opened.restore()) {
-        leftUndone(failure);
-      }
-    });
     // a key in the user's own keychains is one a launch made, having missed the smoke's: the smoke
-    // refused to start beside one
+    // refused to put its own first beside one, and a launch makes one only where it finds none. It
+    // is looked for before the list is put back, after which a founder's IdleBiz may make one
     step("look for a key a launch made", () => {
       if (!holdsSealingKey(opened.found)) {
         return;
@@ -503,6 +506,11 @@ const cleanUp = (): void => {
           ? "a launch made a sealing key of its own in the user's Keychain, which the smoke deleted"
           : `a launch made a sealing key of its own in the user's Keychain, which the smoke could not delete: delete "${KEYCHAIN_SERVICE}" in Keychain Access`,
       );
+    });
+    step("put the Keychain back", () => {
+      for (const failure of opened.restore()) {
+        leftUndone(failure);
+      }
     });
   }
   step("close the feed", () => {
@@ -520,6 +528,9 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
     process.kill(process.pid, signal);
   });
 }
+// an end the `finally` below never reaches: a throw outside its chain, such as an EPIPE on the
+// shell's output relayed to a closed stdout, or process.exit
+process.once("exit", cleanUp);
 
 try {
   // ---- the feed, before the packs, which name its port
@@ -714,20 +725,36 @@ try {
       throw new Error(`IdleBiz ${version} made a sealing key of its own in the user's Keychain`);
     }
   };
+  // one osascript a wait asks through can fail as System Events starts or the menu redraws, so the
+  // wait asks again, and its sentence names the last failure
+  let lookFailed: string | null = null;
+  const look = <T>(read: () => T): T | null => {
+    try {
+      const seen = read();
+      lookFailed = null;
+      return seen;
+    } catch (error) {
+      lookFailed = error instanceof Error ? error.message : String(error);
+      return null;
+    }
+  };
+  const lastFailure = (): string =>
+    lookFailed === null ? "" : `\nits last look failed: ${lookFailed}`;
   let lastTray: string[] = [];
   const waitForTray = (wanted: (items: string[]) => boolean, what: string): Promise<string[]> =>
     waitFor(
       () => {
-        lastTray = trayItems();
-        return wanted(lastTray) ? lastTray : null;
+        lastTray = look(trayItems) ?? lastTray;
+        return lookFailed === null && wanted(lastTray) ? lastTray : null;
       },
       TRAY_TIMEOUT_MS,
       () =>
-        `IdleBiz's menu-bar item did not ${what} within ${TRAY_TIMEOUT_MS}ms (a notification the shell is still posting holds main's redraws behind it, main_process.rs); it showed:\n  ${lastTray.join("\n  ")}`,
+        `IdleBiz's menu-bar item did not ${what} within ${TRAY_TIMEOUT_MS}ms (a notification the shell is still posting holds main's redraws behind it, main_process.rs); it showed:\n  ${lastTray.join("\n  ")}${lastFailure()}`,
       TRAY_POLL_MS,
     );
   const offeredItem = `${UPDATE_ITEM}${to}…`;
 
+  await refuseRunningIdleBiz();
   log(`launching IdleBiz ${from} on ${save}, on the system PATH`);
   const first = launch(installed, [`--root=${save}`], env);
   if (first.shell.pid === undefined) {
@@ -767,10 +794,13 @@ try {
   clickTrayItem(UPDATE_ITEM);
   log(`clicked "${offeredItem}", the feed offering a signature by key b`);
   const box = await waitFor(
-    () => dialogText() || null,
+    () => {
+      const text = look(dialogText);
+      return text === "" ? null : text;
+    },
     BOX_TIMEOUT_MS,
     () =>
-      `IdleBiz showed no box within ${BOX_TIMEOUT_MS}ms of a click on "${offeredItem}" with a bad signature on offer`,
+      `IdleBiz showed no box within ${BOX_TIMEOUT_MS}ms of a click on "${offeredItem}" with a bad signature on offer${lastFailure()}`,
   );
   if (!box.includes(NOT_DOWNLOADED)) {
     throw new Error(`the box a bad signature should open says something else:\n${box}`);
@@ -783,9 +813,9 @@ try {
   log(`IdleBiz downloaded the archive and refused it in a box:\n${box}`);
   dismissDialog();
   await waitFor(
-    () => (dialogText() === "" ? true : null),
+    () => (look(dialogText) === "" ? true : null),
     BOX_TIMEOUT_MS,
-    () => "IdleBiz's box stayed open after its OK was clicked",
+    () => `IdleBiz's box stayed open after its OK was clicked${lastFailure()}`,
   );
   if (first.output().slice(said).includes("main exited")) {
     throw new Error("main exited over a release whose signature the pack refused");

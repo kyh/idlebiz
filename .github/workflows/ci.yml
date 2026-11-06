@@ -159,11 +159,11 @@ jobs:
             | grep -E 'deny\(' | grep -E '/(private/)?var/folders/|/Users/runner/' \
             | tail -n 400 || true
 
-  # An update end to end on a Mac: an installed test pack takes a second from a feed on loopback
-  # under a throwaway key, begun from its own menu-bar item (apps/desktop/scripts/smoke-update.ts).
-  # A runner of its own beside test-macos, whose two packs would double its critical path, and clear
-  # of its smoke's single-instance socket and Keychain checks. It needs no secret: both keys are
-  # made in scratch as it runs.
+  # An update end to end on a Mac: an installed test pack takes the next release from a feed on
+  # loopback under a throwaway key, begun from its own menu-bar item
+  # (apps/desktop/scripts/smoke-update.ts). A runner of its own beside test-macos: its two packs
+  # would double that job's critical path, and it stays clear of that job's smoke's single-instance
+  # socket and Keychain checks. It needs no secret: both keys are made in scratch as it runs.
   update-macos:
     runs-on: macos-latest
     # a backstop: two packs cold are most of it
@@ -189,9 +189,9 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri -> target/update-test
 
-      # the update begins from the menu-bar item through System Events, which the image lets bash
-      # and osascript drive: an image that stops letting them fails here, rather than the smoke
-      # failing on a menu it cannot open
+      # the update begins from the menu-bar item, which osascript clicks and reads through System
+      # Events, as the image lets bash and osascript: an image that stops letting them fails here,
+      # rather than the smoke failing on a menu it cannot open
       - name: UI scripting answers
         run: osascript -e 'tell application "System Events" to get UI elements enabled' | grep -qx true
 

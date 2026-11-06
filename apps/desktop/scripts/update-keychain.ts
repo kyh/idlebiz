@@ -3,13 +3,19 @@
 // its ad-hoc packs, so each reads it with no prompt, as two releases signed by one Developer ID do.
 // An ad-hoc pack's code identity is its cdhash, which an update changes, so the item lets in either
 // cdhash (its partition list) and either app (its access list). The user's own keychains are only
-// read, and the search list is put back as it was found.
+// read, and the search list is put back as it was found, or named for the next run to refuse when a
+// run is killed outright.
 
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
-import { KEYCHAIN_ACCOUNT, KEYCHAIN_ITEM, KEYCHAIN_SERVICE } from "./packaged-app.ts";
+import {
+  KEYCHAIN_ACCOUNT,
+  KEYCHAIN_ITEM,
+  KEYCHAIN_SERVICE,
+  holdsSealingKey,
+} from "./packaged-app.ts";
 
 // the sealing key's 32 bytes, as the shell makes one
 const KEY_BYTES = 32;
@@ -17,6 +23,8 @@ const KEY_BYTES = 32;
 const APPLE_PARTITIONS = ["apple-tool:", "apple:"] as const;
 // a `security` call held on a prompt nobody answers
 const SECURITY_TIMEOUT_MS = 10_000;
+// the smoke's keychain in its scratch, which `security` keeps as *.keychain-db
+const KEYCHAIN_NAME = "update-smoke.keychain";
 
 /** The keychains `security list-keychains` prints, one quoted path a line. */
 export const parseSearchList = (listed: string): string[] =>
@@ -60,6 +68,10 @@ const cdhashOf = (app: string): string => {
 const searchList = (): string[] =>
   parseSearchList(security("list the user's keychains", ["list-keychains", "-d", "user"]));
 
+/** The command that sets the user's search list to `keychains`, for a sentence to name. */
+const setListCommand = (keychains: readonly string[]): string =>
+  `security list-keychains -d user -s ${keychains.map((each) => `"${each}"`).join(" ")}`;
+
 const setSearchList = (keychains: readonly string[]): void => {
   security("set the user's keychain search list", [
     "list-keychains",
@@ -82,14 +94,38 @@ export interface ScratchKeychain {
 }
 
 /**
+ * Refuses a search list a smoke killed outright left its keychain on, whose key a later look would
+ * take for the user's own, naming the command that takes it off.
+ */
+export const refuseKilledSmokesKeychain = (): void => {
+  const listed = searchList();
+  const left = listed.filter((file) =>
+    [KEYCHAIN_NAME, `${KEYCHAIN_NAME}-db`].includes(path.basename(file)),
+  );
+  if (left.length > 0) {
+    throw new Error(
+      `a smoke killed before it ended left ${left.join(", ")} on the user's keychain search list: take it off with \`${setListCommand(listed.filter((file) => !left.includes(file)))}\` and delete it`,
+    );
+  }
+};
+
+/**
  * A keychain in `dir`, first on the search list, holding a new sealing key that `apps` read with no
- * prompt: the installed pack, and the update it installs. The caller has refused a user's Keychain
- * that holds the item, so the shell finds this one's and makes none of its own.
+ * prompt: the installed pack, and the update it installs. It refuses where the user's own keychains
+ * hold the item, as it starts and once its own is first, so a key found there as the smoke ends is
+ * one a launch made: the shell makes one only where it finds none (keychain.rs).
  */
 export const openScratchKeychain = (dir: string, apps: readonly string[]): ScratchKeychain => {
   const found = searchList();
+  // a key there now is a founder's, made by an IdleBiz opened as the smoke packed: no smoke's to sit
+  // beside, nor to delete as it ends
+  const userHoldsKey = (): boolean => found.length > 0 && holdsSealingKey(found);
+  const held = `the user's Keychain now holds IdleBiz's key ("${KEYCHAIN_SERVICE}", "${KEYCHAIN_ACCOUNT}"), made by an IdleBiz opened as the smoke packed: a founder's key, which the smoke neither sits beside nor deletes, so smoke on a Mac without it`;
+  if (userHoldsKey()) {
+    throw new Error(held);
+  }
   // `security` keeps a keychain named *.keychain as *.keychain-db, and lists it by that name
-  const named = path.join(dir, "update-smoke.keychain");
+  const named = path.join(dir, KEYCHAIN_NAME);
   let file = named;
   const password = randomBytes(24).toString("hex");
   let created = false;
@@ -102,7 +138,7 @@ export const openScratchKeychain = (dir: string, apps: readonly string[]): Scrat
         listed = false;
       } catch (error) {
         failures.push(
-          `${String(error)}: put back the search list with \`security list-keychains -d user -s ${found.map((each) => `"${each}"`).join(" ")}\``,
+          `${String(error)}: put back the search list with \`${setListCommand(found)}\``,
         );
       }
     }
@@ -157,6 +193,10 @@ export const openScratchKeychain = (dir: string, apps: readonly string[]): Scrat
       throw new Error(
         `the search list finds "${KEYCHAIN_SERVICE}", "${KEYCHAIN_ACCOUNT}" in ${holder ?? "no keychain"}, not the smoke's ${file}`,
       );
+    }
+    // one made between the first look and the list's change: from here a launch finds this one's
+    if (userHoldsKey()) {
+      throw new Error(held);
     }
     return { file, found, key, restore };
   } catch (error) {
