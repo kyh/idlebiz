@@ -13,6 +13,7 @@
     "package": "node scripts/fetch-node.ts && node scripts/package.ts",
     "release:publish": "bash scripts/publish-release.sh",
     "smoke": "node scripts/smoke-packaged.ts",
+    "smoke:update": "node scripts/fetch-node.ts && node scripts/smoke-update.ts",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings",
     "test": "vitest run",

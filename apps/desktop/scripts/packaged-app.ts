@@ -1,6 +1,6 @@
 // The packaged app as a smoke drives it, on a macOS host: where the .app keeps the shell, main's
-// node and the server, the shell launched and read as it prints, and the processes it and main
-// run, as `ps` lists them.
+// node and the server, the shell launched and read as it prints, the processes it and main run, as
+// `ps` lists them, and the Keychain item it seals secrets.json with.
 
 import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcess, ChildProcessByStdio } from "node:child_process";
@@ -28,14 +28,45 @@ export const packagedApp = (appDir: string): PackagedApp => ({
 });
 
 // the shell's lines (src-tauri/src): the window's first load (window.rs), a launch it gave up on
-// (lib.rs, shell.rs), and main's end (main_process.rs)
+// (lib.rs, shell.rs), an update it downloaded but could not install (updater.rs), and main's end
+// (main_process.rs)
 export const WINDOW_LOADED = "[shell] window loaded";
 const GAVE_UP = [
   "[shell] IdleBiz failed to start",
   "[shell] IdleBiz couldn't start",
   "[shell] IdleBiz stopped",
+  "[shell] could not install IdleBiz",
 ];
 export const MAIN_EXITED_CLEANLY = "main exited (code 0)";
+
+// what the packaged shell gives main in place of launchd's (src-tauri/src/runtime.rs `main_env`),
+// and the PATH a launch's shell finds macOS's own `touch` first on, which an update runs
+// (src-tauri/src/updater.rs)
+export const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
+
+// the item the shell reads the key that seals secrets.json from, or makes on a first launch
+// (src-tauri/src/keychain.rs)
+export const KEYCHAIN_SERVICE = "IdleBiz";
+export const KEYCHAIN_ACCOUNT = "sealing-key";
+export const KEYCHAIN_ITEM = ["-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT] as const;
+// `security`'s exit when no item matches
+export const NO_SUCH_ITEM = 44;
+// a Keychain call held on a prompt nobody answers
+export const KEYCHAIN_TIMEOUT_MS = 10_000;
+
+/** Whether `keychains`, or the user's search list without any, hold IdleBiz's sealing key. */
+export const holdsSealingKey = (keychains: readonly string[] = []): boolean => {
+  const found = spawnSync("security", ["find-generic-password", ...KEYCHAIN_ITEM, ...keychains], {
+    stdio: "ignore",
+    timeout: KEYCHAIN_TIMEOUT_MS,
+  });
+  if (found.status !== 0 && found.status !== NO_SUCH_ITEM) {
+    throw new Error(
+      `security could not say whether the Keychain holds IdleBiz's key (it exited ${found.status ?? found.signal})`,
+    );
+  }
+  return found.status === 0;
+};
 
 // tauri-plugin-single-instance's machine-wide socket (`/tmp/<identifier>_si.sock`): an IdleBiz that
 // answers on it would take this launch over, and the smoke would watch the wrong app
@@ -98,6 +129,16 @@ export const loopbackPorts = (pid: number): number[] => {
 export const ended = (child: ChildProcess): boolean =>
   child.exitCode !== null || child.signalCode !== null;
 
+/** Whether `pid` still runs: one the launched shell restarted as is no child of the smoke's. */
+export const isRunning = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /** Whether `child` exited within `ms`. */
 export const exitsWithin = async (child: ChildProcess, ms: number): Promise<boolean> => {
   if (ended(child)) {
@@ -156,11 +197,30 @@ export const launch = (
   return { output: () => output, shell };
 };
 
+interface Wait {
+  /** Where in the output the line is looked for: one printed before it is another launch's. */
+  after?: number;
+  /** The shell that prints it, when the launched one restarted as it, as an update does. */
+  restartedAs?: number;
+  /** Asked as it waits, and failing it at once with what it says: a prompt the launch is held on. */
+  refusal?: () => string | null;
+}
+
 /** Waits for the shell to print `line`, failing as soon as it gives up or exits. */
-export const waitForLine = async (launched: Launched, line: string): Promise<void> => {
+export const waitForLine = async (
+  launched: Launched,
+  line: string,
+  { after = 0, restartedAs, refusal }: Wait = {},
+): Promise<void> => {
   const deadline = Date.now() + BOOT_TIMEOUT_MS;
+  const exited = (): string | null => {
+    if (restartedAs !== undefined) {
+      return isRunning(restartedAs) ? null : `the shell it restarted as (pid ${restartedAs})`;
+    }
+    return ended(launched.shell) ? `the shell (${how(launched.shell)})` : null;
+  };
   for (;;) {
-    const output = launched.output();
+    const output = launched.output().slice(after);
     if (output.includes(line)) {
       return;
     }
@@ -168,8 +228,13 @@ export const waitForLine = async (launched: Launched, line: string): Promise<voi
     if (gaveUp !== undefined) {
       throw new Error(`the shell gave up: ${gaveUp}`);
     }
-    if (ended(launched.shell)) {
-      throw new Error(`the shell exited (${how(launched.shell)}) before it printed "${line}"`);
+    const gone = exited();
+    if (gone !== null) {
+      throw new Error(`${gone} exited before it printed "${line}"`);
+    }
+    const refused = refusal?.() ?? null;
+    if (refused !== null) {
+      throw new Error(refused);
     }
     if (Date.now() > deadline) {
       throw new Error(
@@ -180,9 +245,9 @@ export const waitForLine = async (launched: Launched, line: string): Promise<voi
   }
 };
 
-/** Main: the shell's one child on the node the pack carries. */
-export const mainOf = (app: PackagedApp, shell: Shell): Process => {
-  const children = processes().filter((running) => running.ppid === shell.pid);
+/** Main: the one child of the shell `pid` on the node the pack carries. */
+export const mainUnder = (app: PackagedApp, pid: number): Process => {
+  const children = processes().filter((running) => running.ppid === pid);
   const mains = children.filter((running) => runsBundledNode(app, running));
   const [main] = mains;
   if (main === undefined || mains.length !== 1) {
@@ -193,10 +258,26 @@ export const mainOf = (app: PackagedApp, shell: Shell): Process => {
   return main;
 };
 
+/** Main: the launched shell's one child on the node the pack carries. */
+export const mainOf = (app: PackagedApp, shell: Shell): Process => {
+  if (shell.pid === undefined) {
+    throw new Error("the shell has no pid");
+  }
+  return mainUnder(app, shell.pid);
+};
+
 // a name opening an entry of `ps -E`'s env, which follows the command line, space-separated
 const ENV_ENTRY = / (?=[A-Za-z_][A-Za-z0-9_]*=)/u;
 // where main's command line ends: its bundle, asked to serve (src-tauri/src/runtime.rs)
 const SERVE_COMMAND_END = "/dist/index.js serve ";
+
+/** Every main the pack's node serves, whichever shell started it. */
+export const mainsOf = (app: PackagedApp): Process[] =>
+  processes().filter(
+    (running) =>
+      runsBundledNode(app, running) &&
+      `${running.args} `.includes(`${app.serverDir}${SERVE_COMMAND_END}`),
+  );
 
 /** The env main started with, as `ps -E` shows it: each value runs to the next ` NAME=`. */
 export const startingEnvOf = (main: Process): Map<string, string> => {

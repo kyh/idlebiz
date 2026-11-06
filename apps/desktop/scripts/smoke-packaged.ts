@@ -12,12 +12,19 @@ import { setTimeout as delay } from "node:timers/promises";
 import { HANDOFF_PARAM } from "@repo/contract/routes";
 import {
   BOOT_TIMEOUT_MS,
+  KEYCHAIN_ACCOUNT,
+  KEYCHAIN_ITEM,
+  KEYCHAIN_SERVICE,
+  KEYCHAIN_TIMEOUT_MS,
   MAIN_EXITED_CLEANLY,
+  NO_SUCH_ITEM,
   SINGLE_INSTANCE_SOCKET,
+  SYSTEM_PATH,
   WINDOW_LOADED,
   answers,
   ended,
   exitsWithin,
+  holdsSealingKey,
   how,
   killGroup,
   launch,
@@ -50,16 +57,6 @@ const { shellBinary, bundledNode, serverDir, noticesDir } = app;
 // what scripts/package.ts maps there: the Rust crates' licences, and node's with its source
 const NOTICES = ["rust-crates.txt", "node/LICENSE", "node/SOURCE"];
 
-// the item the shell reads the key that seals secrets.json from, or makes on a first launch
-// (src-tauri/src/keychain.rs)
-const KEYCHAIN_SERVICE = "IdleBiz";
-const KEYCHAIN_ACCOUNT = "sealing-key";
-const KEYCHAIN_ITEM = ["-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT];
-// `security`'s exit when no item matches
-const NO_SUCH_ITEM = 44;
-// a delete the Keychain holds on a prompt nobody answers
-const KEYCHAIN_TIMEOUT_MS = 10_000;
-
 // past a quit's 45s and main's 5s to exit once its stdin closes (main_process.rs)
 const EXIT_TIMEOUT_MS = 60_000;
 const HANDOVER_TIMEOUT_MS = 30_000;
@@ -67,8 +64,6 @@ const HANDOVER_TIMEOUT_MS = 30_000;
 // 15s main gives one (packages/agent-driver/src/detect.ts)
 const PROBE_GRACE_MS = 15_000;
 
-// what the packaged shell gives main in place of launchd's (src-tauri/src/runtime.rs `main_env`)
-const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 // the account's, wherever launchd's HOME points (src-tauri/src/shell.rs `logs_dir`)
 const MAIN_LOG = path.join(userInfo().homedir, "Library", "Logs", "IdleBiz", "main.log");
 // the names main's login-shell probe, its runners and its git would look up on a PATH
@@ -209,10 +204,7 @@ if (await answers(SINGLE_INSTANCE_SOCKET)) {
 // held, the key is an installed IdleBiz's, and an ad-hoc pack is not the app that made it: its read
 // would wait on a Keychain prompt nobody answers. Absent, the launch makes one, as a first launch
 // does, which the smoke deletes as it ends (`forgetKey`)
-const keyHeld =
-  spawnSync("security", ["find-generic-password", ...KEYCHAIN_ITEM], { stdio: "ignore" }).status ===
-  0;
-if (keyHeld) {
+if (holdsSealingKey()) {
   throw new Error(
     `the Keychain holds IdleBiz's key ("${KEYCHAIN_SERVICE}", "${KEYCHAIN_ACCOUNT}"), which this pack would wait on a prompt to read: smoke on a Mac without it, as CI's`,
   );
