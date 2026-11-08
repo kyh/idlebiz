@@ -5,7 +5,8 @@ import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import path from "node:path";
-import { BodyLimitPlugin, RPCHandler } from "@orpc/server/node";
+import { RPCHandler } from "@orpc/server/node";
+import { RequestLimitHandlerPlugin } from "@orpc/server/plugins";
 import { z } from "zod";
 import { endAllAgents } from "@repo/agent-driver/acp-session";
 import { RPC_PREFIX } from "@repo/contract/routes";
@@ -248,7 +249,7 @@ const boot = async (launch: Launch): Promise<void> => {
   await controlPlane.start();
   // the largest call a page makes: a pasted key, a long answer to a question
   const rpc = new RPCHandler(createPageRouter({ founder, resetGame }), {
-    plugins: [new BodyLimitPlugin({ maxBodySize: 1024 * 1024 })],
+    plugins: [new RequestLimitHandlerPlugin({ maxBodySize: 1024 * 1024 })],
   });
   const served = await startPageServer({
     handleRpc: async (request, response) => {

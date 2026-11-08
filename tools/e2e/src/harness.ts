@@ -16,14 +16,14 @@ import type { HireProposal } from "@repo/domain/hire";
 import type { RunnerId } from "@repo/domain/runners";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type { ContractRouterClient } from "@orpc/contract";
+import type { RouterContractClient } from "@orpc/contract";
 import type { Contract } from "@repo/contract/contract";
 import { RPC_PREFIX } from "@repo/contract/routes";
 import { jsonRecordSchema, parseJson } from "@repo/domain/json";
 import type { JsonRecord, JsonValue } from "@repo/domain/json";
 
 /** The page's API, as the page calls it. */
-type Api = ContractRouterClient<Contract>;
+type Api = RouterContractClient<Contract>;
 
 interface Launched {
   page: Page;

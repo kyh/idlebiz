@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { Server } from "node:http";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type { ContractRouterClient } from "@orpc/contract";
+import type { RouterContractClient } from "@orpc/contract";
 import { implement } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/node";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +16,7 @@ import { listenLoopback } from "./http";
 // the page router's `events`, alone, behind the RPC handler main serves the page with
 const router = { events: implement(contract).events.handler(({ signal }) => pageEvents(signal)) };
 
-type Client = ContractRouterClient<Pick<typeof contract, "events">>;
+type Client = RouterContractClient<Pick<typeof contract, "events">>;
 
 let server: Server | null = null;
 
