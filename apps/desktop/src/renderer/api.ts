@@ -2,12 +2,12 @@
 
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
-import type { ContractRouterClient } from "@orpc/contract";
+import type { RouterContractClient } from "@orpc/contract";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import type { Contract } from "@repo/contract/contract";
 import { RPC_PREFIX } from "@repo/contract/routes";
 
-export type Api = ContractRouterClient<Contract>;
+export type Api = RouterContractClient<Contract>;
 
 /** No headers: the page holds no bearer, and its cookie rides along. */
 export const api: Api = createORPCClient(new RPCLink({ url: RPC_PREFIX }));
