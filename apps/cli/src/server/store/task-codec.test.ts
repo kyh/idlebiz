@@ -125,7 +125,7 @@ describe("a blocked task's ask in TASK.md", () => {
     { integration: "vercel", productId: "side", reason: "to bind Side", type: "integration" },
     { integration: "stripe", productId: null, reason: "to sell a plan", type: "integration" },
     { command: "npx vercel deploy --prod", rule: "deploy", type: "approval" },
-    { command: "npm test\ngit push origin main", rule: "git-push", type: "approval" },
+    { command: 'payment link "Guide"\nat $9 on ledger', rule: "payments", type: "approval" },
     {
       action: "Post the launch thread on r/SideProject",
       draft: 'Line one\n\n"Quoted" line two: [approve] {not json}\n',

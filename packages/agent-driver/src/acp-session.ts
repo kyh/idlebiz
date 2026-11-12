@@ -62,8 +62,8 @@ const SessionFailureMeta = z.object({
 export interface AcpAgent {
   /** Argv of the ACP agent to spawn (e.g. the claude or codex adapter). */
   command: Argv;
-  /** Session mode to set every turn. */
-  sessionModeId: string;
+  /** The session mode to set every turn, from the turn's whole env. */
+  sessionMode: (env: Readonly<Record<string, string>>) => string;
   /** Sent as `_meta` when the session is created or resumed. */
   sessionMeta?: NewSessionRequest["_meta"];
   /** Folders every session is handed besides the turn's `addDirs`, to read. */
@@ -448,10 +448,10 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
         };
         sessionId = resumedId ?? (await startFresh());
 
-        // Fresh or resumed, a session starts in a default mode that may not ask at all, so
+        // Fresh or resumed, a session starts in a default mode the player's settings may pick, so
         // this runs every turn, and a mode that cannot be set fails the turn before it prompts.
         await agent.request("session/set_mode", {
-          modeId: opts.agent.sessionModeId,
+          modeId: opts.agent.sessionMode({ ...opts.agent.env, ...opts.env }),
           sessionId,
         });
 

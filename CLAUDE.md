@@ -70,7 +70,9 @@ orient a reader and link into them, never telling a mechanic again.
   break runs an update later. So each rule that closes something is held by a test: its line in
   `seal.test.ts`, a canary a Mac runs, or both. No library seals so: sandbox-runtime and
   Sandcastle deny by default, let every run reach the Keychain and take no rule of ours.
-- **The command policy is a tripwire, not a third boundary**: what a script runs goes unseen.
+- **The runner's own judge, never a policy of ours**: claude's auto mode and codex's own asks
+  decide what a command may do. A command list is a tripwire a script walks past, and a third
+  boundary it is not, so IdleBiz keeps none.
 - **No run starts unsealed**: the seal is one boundary, and also what makes a run's socket its own.
 - **Who calls the company is the socket, not a secret**: any run can read a teammate's env, token
   included, but never reach its socket, so no teammate calls lead-only tools as the lead.
@@ -165,7 +167,7 @@ orient a reader and link into them, never telling a mechanic again.
 ## The repo
 
 - **No sandbox runs inside the seal**: sandbox-exec cannot nest, so claude's, codex's and Chrome's
-  own are off, and a codex-acp upgrade must carry the app's patch.
+  own are off.
 - **One main per save**: boot claims the save before it reads it, so a second main refuses rather
   than run each task twice.
 - **An update lands between runs**: it replaces the server main loads as it goes and the launcher

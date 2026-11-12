@@ -27,7 +27,6 @@ import type { ToolCaller } from "../control-plane";
 import { readJsonFile, writeJsonFile } from "../lib/fs";
 import { report } from "../lib/report";
 import { runnerRestFile, runBinDir, toolCacheDir, employeeMemoryDir } from "../paths";
-import { livePageOf } from "../policy/browser";
 import { turnPrompt } from "../prompts/instructions";
 import { RefusalError } from "../refusal";
 import * as store from "../store/store";
@@ -35,7 +34,7 @@ import type { AskBox } from "./ask-box";
 import { bundledSkillsDir } from "./bundled-skills";
 import { refuseDeniedTools } from "./claude-denies";
 import { runTmpdir, toolCacheEnv, ensureRepository, gitIdentity } from "./run-workspace";
-import { machineSeal, namespaceUnder, realPathOf } from "./machine-seal";
+import { machineSeal } from "./machine-seal";
 import { sealedCommand, signInCommand } from "./seal";
 import type { Seal } from "./seal";
 import { sealRuns } from "./seal-check";
@@ -45,7 +44,6 @@ import {
   makeBrowserNamespace,
   permissionGate,
   runnerEnv,
-  sealedBrowser,
   sessionAgent,
 } from "./session";
 
@@ -516,10 +514,6 @@ export class RunnerPool {
     const shared = run.workspace === company.workspaceDir ? [] : [company.workspaceDir];
     const memory = employeeMemoryDir(emp.id);
     const addDirs = [...shared, memory, toolCacheDir()];
-    const confinement = {
-      real: realPathOf,
-      writable: [run.workspace, ...addDirs],
-    };
     // a run cannot make its own folders, only write in them
     mkdirSync(memory, { recursive: true });
     mkdirSync(runTmpdir(), { recursive: true });
@@ -527,7 +521,7 @@ export class RunnerPool {
     const handle = await controlPlane.registerRun(tools.call);
     let sawOutput = false;
     try {
-      const seal = await this.seal(confinement.writable, handle.socket);
+      const seal = await this.seal([run.workspace, ...addDirs], handle.socket);
       if (emp.runner === "claude") {
         await refuseDeniedTools();
       }
@@ -539,10 +533,6 @@ export class RunnerPool {
       if (run.workspace !== company.workspaceDir) {
         await ensureRepository(run.workspace);
       }
-      const livePage = livePageOf(
-        sealedBrowser(seal, emp.runner),
-        namespaceUnder(seal, emp.runner),
-      );
       const agent = await sessionAgent(emp.runner, seal, this.skills(), run.workspace);
       const res = await runAcpTurn({
         addDirs,
@@ -566,12 +556,7 @@ export class RunnerPool {
             report("run.onEvent", error);
           }
         },
-        onPermission: permissionGate({
-          confinement,
-          hold: tools.asks.raise,
-          livePage,
-          taskId: run.taskId,
-        }),
+        onPermission: permissionGate,
         prompt: (resumed) =>
           turnPrompt({
             changed: run.instructionsChanged,

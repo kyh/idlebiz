@@ -17,8 +17,6 @@ import type { AcpAgent } from "@repo/agent-driver/acp-session";
 import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { holdFor } from "../policy";
-import type { Hold } from "../policy";
 import { parseJson } from "@repo/domain/json";
 import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 import { sessionAgent } from "./session";
@@ -32,9 +30,9 @@ import type { Move, StandInModel } from "../test-support/stand-in-model";
 // model on loopback (test-support/stand-in-model.ts): nothing is billed, and claude's config dir
 // is a scratch one whose settings turn claude's own sandbox on, as a founder's may. It proves the
 // session's flag-tier settings keep that sandbox off, so a command runs inside the seal instead of
-// failing to nest, and still asks IdleBiz first, so holdFor still judges it; that it offers no
-// plan mode, whose exit would ask the founder to approve a plan; that no MCP server of the
-// founder's starts; that the model is offered IdleBiz's skills and none of the founder's, nor
+// failing to nest; that behind a gateway, where it runs in Manual, it asks IdleBiz first, and in
+// auto mode leaves a command to claude's own check; that it offers no plan mode, whose exit would
+// ask the founder to approve a plan; that no MCP server of the founder's starts; that the model is offered IdleBiz's skills and none of the founder's, nor
 // their instructions, but the notes the team keeps in the workspace's AGENTS.md, while the env of
 // their settings still reaches the run and the model and effort they picked are the ones asked;
 // and that a run cannot rewrite the settings or account file the founder's own claude loads, and
@@ -187,18 +185,18 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     }
   });
 
-  /** One turn making `next`, every ask answered `allow`, and what holdFor made of each. */
-  const turnOf = async (next: Move, allow: boolean) => {
+  /** One turn making `next` in the mode main picks, unless `mode` names another, every ask answered `allow`. */
+  const turnOf = async (next: Move, allow: boolean, mode?: string) => {
     model.script(TURN, [next]);
     const state = await sealRuns();
     if (state.kind !== "sealed") {
       throw new Error(state.reason);
     }
-    const asks: { held: Hold | null; tool: ToolAsk }[] = [];
-    const room = { real: realPathOf, writable: [workspace] };
-    const agent = await asFounderAt(home, async () =>
+    const asks: ToolAsk[] = [];
+    const made = await asFounderAt(home, async () =>
       standInAgent(await sessionAgent("claude", await machineSeal([workspace]), skills, workspace)),
     );
+    const agent = mode === undefined ? made : { ...made, sessionMode: () => mode };
     const result = await runAcpTurn({
       agent,
       cwd: workspace,
@@ -211,13 +209,9 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       idleTimeoutMs: 60_000,
       maxSessionMs: 90_000,
       onEvent: () => {},
-      onPermission: async (tool) => {
-        const held =
-          tool.kind === "sandbox"
-            ? null
-            : await holdFor(tool, new Set(), () => Promise.resolve(null), room);
-        asks.push({ held, tool });
-        return { allow };
+      onPermission: (tool) => {
+        asks.push(tool);
+        return Promise.resolve({ allow });
       },
       prompt: () => `${TURN} work`,
       teardownGraceMs: 500,
@@ -230,16 +224,26 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   const turn = (command: string, allow: boolean) => turnOf({ command, kind: "shell" }, allow);
 
   it(
-    "asks before a push, which holdFor holds and a denial stops",
+    "asks IdleBiz before a push behind a gateway, where it runs in Manual, and a denial stops it",
     { timeout: 60_000 },
     async () => {
       const { asks, pushed } = await turn("git push origin main", false);
-      expect(asks).toEqual([
-        {
-          held: { key: "git push origin main", rule: "git-push" },
-          tool: { command: "git push origin main", kind: "shell" },
-        },
-      ]);
+      expect(asks).toEqual([{ command: "git push origin main", kind: "shell" }]);
+      expect(pushed).toBe("");
+    },
+  );
+
+  it(
+    "leaves a push to auto mode's own check, refused where the check cannot run, and asks IdleBiz nothing",
+    { timeout: 60_000 },
+    async () => {
+      const { asks, pushed, result } = await turnOf(
+        { command: "git push origin main", kind: "shell" },
+        true,
+        "auto",
+      );
+      expect(result.end).toEqual({ kind: "completed" });
+      expect(asks).toEqual([]);
       expect(pushed).toBe("");
     },
   );
@@ -339,7 +343,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
       writeFileSync(outside, "read from outside");
       const { asks, result } = await turnOf({ file: outside, kind: "read" }, true);
       expect(result.end).toEqual({ kind: "completed" });
-      expect(asks).toEqual([{ held: null, tool: { kind: "read" } }]);
+      expect(asks).toEqual([{ kind: "read" }]);
       expect(outputs()).toContain("read from outside");
     },
   );

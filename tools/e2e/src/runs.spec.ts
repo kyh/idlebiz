@@ -20,13 +20,13 @@ import {
   test,
 } from "./harness";
 import type { Founded } from "./harness";
-import { INBOX_BUTTON, NPCS_IN_OFFICE, NPC_ACTIVITY, STEP_OFFICE } from "./office-probe";
+import { NPCS_IN_OFFICE, NPC_ACTIVITY, STEP_OFFICE } from "./office-probe";
 
 // The run loop end to end, once on each runner: the claude or codex its adapter bundles runs real
 // turns sealed, which the stand-in model scripts (harness.ts), through the company's own tool, the
-// seal, the founder's sign-off and onboarding. A test founds at $0 with autopilot off and raises
-// the cap itself, so only the work it directs runs, and the root fixture holds it to the runs it
-// scripts: each ended, none failed, none signed in but the stand-in's.
+// seal and onboarding. A test founds at $0 with autopilot off and raises the cap itself, so only
+// the work it directs runs, and the root fixture holds it to the runs it scripts: each ended, none
+// failed, none signed in but the stand-in's.
 
 /** How long a sealed CLI may take to start and reach a scripted step, or end, on a loaded Mac. */
 const A_RUN = 90_000;
@@ -152,9 +152,6 @@ const KEYS = {
   stripe: "sk_test_e2eCustody7310",
   vercel: "vercel_e2e_custody_token",
 };
-
-/** A push the hold rules sign off one run of, to a remote no workspace has. */
-const PUSH = "git push origin main";
 
 const COMPANY = "E2E Stand-in Co";
 const CAST: HireCandidate[] = [
@@ -327,60 +324,6 @@ for (const runner of RUNNER_IDS) {
           keys.filter(([, value]) => reached.some((text) => text.includes(value))).map(([k]) => k),
           "no saved key reached the run or the model",
         ).toEqual([]);
-      });
-    });
-
-    test.describe("two runs", () => {
-      test.use({ runs: 2 });
-
-      test("a held command waits for the founder, whose sign-off runs it once", async ({
-        launch,
-        model,
-        root,
-      }) => {
-        const founding = await launch();
-        const founded = await foundCompany(founding.page);
-        await founding.close();
-        const engineer = engineerOf(founded);
-        const marker = "E2E-HOLD-1";
-        model.script(marker, [{ command: PUSH, kind: "shell" }], USAGE);
-
-        const { page } = await launch();
-        const api = await apiOf(page);
-        await raiseTheCap(api);
-        await api.employees.direct({
-          employeeId: engineer.id,
-          instruction: `${marker} publish the README`,
-        });
-
-        // holdFor holds the push, so the first run ends waiting on the founder
-        const asked = sole(await runsEnded(root, 1), "run end");
-        const ask = { command: PUSH, rule: "git-push", type: "approval" };
-        expect(asked.payload).toMatchObject({
-          outcome: { ask, kind: "blocked" },
-          settled: "blocked",
-        });
-        await expect.poll(() => page.evaluate(NPC_ACTIVITY(engineer.id))).toBe("blocked");
-
-        await page.getByTitle(INBOX_BUTTON).click();
-        const inbox = page.getByRole("dialog", { name: "Inbox" });
-        await expect(inbox.getByText(PUSH)).toBeVisible();
-        await keyShot(page, `run-held-${runner}`);
-        await inbox.getByRole("button", { name: "Approve" }).click();
-        await expect(inbox.getByText(PUSH)).toHaveCount(0);
-
-        // signed, the same push runs once: git's own answer, from a workspace with no remote and,
-        // before the team's first commit, no `main` either
-        const [, signed] = await runsEnded(root, 2);
-        expect(signed?.payload).toMatchObject({ outcome: { kind: "done" }, settled: "done" });
-        expect(model.toolOutputs(marker).at(-1)).toMatch(
-          /src refspec main does not match any|'origin' does not appear to be a git repository/u,
-        );
-        const git = await readFile(
-          path.join(founded.product.workspaceDir, ".git", "config"),
-          "utf-8",
-        );
-        expect(git, "the workspace has no remote to push to").not.toContain("[remote");
       });
     });
 

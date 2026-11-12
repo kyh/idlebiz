@@ -165,9 +165,6 @@ catalogs:
       specifier: ^4.6.7
       version: 4.6.7
 
-patchedDependencies:
-  '@agentclientprotocol/codex-acp@1.12.0': c0ac03af3c611de6eb5c55796b830c60eaf046fa628f88c3316e4a381249607a
-
 importers:
 
   .:
@@ -201,7 +198,7 @@ importers:
         version: 0.85.1(@anthropic-ai/sdk@0.127.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.1(supports-color@7.2.0)(zod@4.6.7))
       '@agentclientprotocol/codex-acp':
         specifier: 'catalog:'
-        version: 1.12.0(patch_hash=c0ac03af3c611de6eb5c55796b830c60eaf046fa628f88c3316e4a381249607a)
+        version: 1.12.0
     devDependencies:
       '@orpc/client':
         specifier: 'catalog:'
@@ -3460,7 +3457,7 @@ snapshots:
       - '@anthropic-ai/sdk'
       - '@modelcontextprotocol/sdk'
 
-  '@agentclientprotocol/codex-acp@1.12.0(patch_hash=c0ac03af3c611de6eb5c55796b830c60eaf046fa628f88c3316e4a381249607a)':
+  '@agentclientprotocol/codex-acp@1.12.0':
     dependencies:
       '@agentclientprotocol/sdk': 1.7.0(zod@4.6.7)
       '@openai/codex': 0.154.0

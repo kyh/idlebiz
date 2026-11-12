@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lexLine } from "../policy/shell-lexer";
+import { shellWords } from "../test-support/shell-words";
 import { shellQuote } from "./shell-quote";
 
 describe("shellQuote", () => {
@@ -11,7 +11,6 @@ describe("shellQuote", () => {
     "'",
     "",
   ])("hands a shell %j back as one word", (value) => {
-    const [pipeline] = lexLine(`echo ${shellQuote(value)}`).pipelines;
-    expect(pipeline?.[0]?.words).toEqual(["echo", value]);
+    expect(shellWords(`echo ${shellQuote(value)}`)).toEqual(["echo", value]);
   });
 });

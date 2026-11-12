@@ -2,8 +2,8 @@
 // Contents/Resources/server: the `idlebiz` package as its `files` name it (the bundle and the page
 // staged beside it in `dist/`, the skills in `resources/`, the bin), and its production
 // dependencies (the ACP adapters it runs) installed from the lockfile, the workspace's patches
-// applied (codex-acp's external-sandbox patch among them), hoisted so no symlink rides into the
-// bundle. `pnpm deploy` does exactly that; npm itself would ignore the lockfile and every patch.
+// applied, hoisted so no symlink rides into the bundle. `pnpm deploy` does exactly that; npm
+// itself would ignore the lockfile and every patch.
 
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";

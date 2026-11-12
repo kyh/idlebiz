@@ -51,10 +51,7 @@ is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
   command calls back into; `agent-launcher.ts` writes that command at boot),
   `tool-specs.ts` (every company tool, described once) and `tools/` (each bound to its
   implementation: `define.ts` the binding, the asks and the holds, then the team's, portfolio,
-  Vercel, money and print tools), `policy/` (the command policy: `reading.ts` the words
-  `shell-lexer.ts` reads from a line as bash would, read loosely as well where another shell may
-  split it apart, `shell-rules.ts` the rules over them, `browser.ts` the agent-browser gate and
-  the live page it reads, `index.ts` `holdFor`), `refusal.ts`,
+  Vercel, money and print tools), `refusal.ts`,
   `agents/seal.ts` (the Seatbelt profile each run starts under), `agents/machine-seal.ts` (what
   it seals on this machine), `agents/seal-check.ts` (its boot check),
   `agents/bundled-skills.ts` (where IdleBiz's skills ship), `agents/claude-user-settings.ts`

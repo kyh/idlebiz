@@ -1,78 +1,18 @@
-// What the approval card says about a held tool call, by the rule that held it.
-// Data only, so the renderer names a hold without bundling the policy that judged it.
+// What the approval card says about a signed tool's call, by the rule that held it.
+// Data only, so the renderer names a hold without bundling the tool that raised it.
 
-/** Every rule that holds a call for the founder. A saved ask names one, so retiring one breaks the saves still asking under it. */
-export const HOLD_RULE_IDS = [
-  "browser-act",
-  "browser-file",
-  "browser-unseen",
-  "deploy",
-  "external-tool",
-  "git-push",
-  "github-create",
-  "http-write",
-  "payments",
-  "pipe-to-shell",
-  "publish-package",
-  "read-credentials",
-  "remote-copy",
-  "unknown-ask",
-] as const;
+/** Every rule that holds a signed tool's call for the founder. A saved ask names one, so retiring one breaks the saves still asking under it. */
+export const HOLD_RULE_IDS = ["deploy", "payments"] as const;
 
 export type HoldRuleId = (typeof HOLD_RULE_IDS)[number];
 
 const HOLD_RULES = {
-  "browser-act":
-    "Act in a real browser on this site — log in, type, click, submit — for the rest of this run.",
-  "browser-file":
-    "Open a file from outside the workspace in a real browser — one run of exactly this command.",
-  "browser-unseen":
-    "Act in a real browser on a page nobody could check first — one run of exactly this command.",
   deploy: "Deploy the product to a live, public URL.",
-  // No run loads the founder's MCP servers, so this holds only one that slipped past that, signed in as the founder.
-  "external-tool":
-    "Use a tool connected in your own CLI settings (an MCP server, signed in as you) for the rest of this run.",
-  "git-push": "Push commits to a remote repository.",
-  "github-create": "Change something on GitHub — open, merge, comment on, edit or release.",
-  "http-write": "Send data to a service on the internet.",
   payments: "Move real money or change records in your Stripe account.",
-  "pipe-to-shell": "Download code from the internet and run it immediately.",
-  "publish-package": "Publish a package to a public registry.",
-  "read-credentials": "Read your stored credentials.",
-  "remote-copy": "Copy files to another machine over the network.",
-  "unknown-ask": "A tool call IdleBiz could not recognise — one run of exactly this.",
 } satisfies Record<HoldRuleId, string>;
 
-/** Whether signing an ask under each rule covers the rest of the run rather than one run of it. */
-const LEASED: Record<HoldRuleId, boolean> = {
-  // what the founder signs is the site, not the keystroke
-  "browser-act": true,
-  // the page is a file, and the next could be any other
-  "browser-file": false,
-  // no site can be named, so there is nothing to lease
-  "browser-unseen": false,
-  deploy: false,
-  // like a site: what the founder signs is the server
-  "external-tool": true,
-  "git-push": false,
-  "github-create": false,
-  "http-write": false,
-  payments: false,
-  "pipe-to-shell": false,
-  "publish-package": false,
-  "read-credentials": false,
-  "remote-copy": false,
-  "unknown-ask": false,
-};
-
-/** Whether signing an ask under this rule covers the rest of the run rather than one run of it. */
-export const isLeased = (rule: HoldRuleId): boolean => LEASED[rule];
-
-/** What the founder signs for by approving an ask under this rule. */
-export const approvalScope = (rule: HoldRuleId): string =>
-  isLeased(rule)
-    ? "Approving covers this for the rest of this run."
-    : "Approving covers exactly this, once.";
+/** What the founder signs for by approving: exactly the action shown, once. */
+export const APPROVAL_SCOPE = "Approving covers exactly this, once.";
 
 /** What the card says a held ask's rule holds. */
 export const describeRule = (rule: HoldRuleId): string => HOLD_RULES[rule];

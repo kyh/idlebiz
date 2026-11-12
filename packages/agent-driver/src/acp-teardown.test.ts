@@ -72,7 +72,7 @@ const startTurn = (script: string, teardownGraceMs: number) => {
   cwd = mkdtempSync(path.join(tmpdir(), "idlebiz-teardown-"));
   const stop = new AbortController();
   const turn = runAcpTurn({
-    agent: { command: [process.execPath, "-e", script], env: {}, sessionModeId: "default" },
+    agent: { command: [process.execPath, "-e", script], env: {}, sessionMode: () => "default" },
     cwd,
     idleTimeoutMs: 0,
     maxSessionMs: 0,

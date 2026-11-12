@@ -9,16 +9,11 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
-import type { BlockedAsk } from "@repo/domain/domain";
-import { isLeased } from "@repo/domain/hold-rules";
 import { parseJson } from "@repo/domain/json";
 import type { RunnerId } from "@repo/domain/runners";
 import { SYSTEM_PATH, namedWith, proxiesOf, unsealedEnv } from "../lib/founder-env";
-import { holdFor } from "../policy";
-import type { BrowserCli, Confinement, LivePage } from "../policy/browser";
 import { teamNotesPrompt } from "../prompts/team-notes";
 import { RefusalError } from "../refusal";
-import * as store from "../store/store";
 import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 import { claudeUserSettings } from "./claude-user-settings";
 import { runEnv } from "./run-env";
@@ -98,7 +93,7 @@ export const acpAgentFor = (
     env,
     readDirs: session.readDirs,
     sessionMeta: session.meta,
-    sessionModeId: adapter.sessionModeId,
+    sessionMode: adapter.sessionMode,
     typedFailures: adapter.typedFailures,
     usagePerRequest: adapter.usagePerRequest,
   };
@@ -201,52 +196,10 @@ export const sessionAgent = async (
   return acpAgentFor(runner, seal, setup, env);
 };
 
-/** agent-browser as a `runner` run starts it: under its seal, in its env. */
-export const sealedBrowser =
-  (seal: Seal, runner: RunnerId): BrowserCli =>
-  async (args) => {
-    const [bin, ...rest] = sealedCommand(seal, runner, ["agent-browser", ...args]);
-    const env = { ...runnerEnv(runner), ...browserEnv(seal, runner) };
-    const { stdout } = await execFileAsync(bin, rest, { env, timeout: 8000 });
-    return stdout;
-  };
-
 /**
- * What answers each permission ask of one attempt at task `taskId`. An approval permits one
- * execution of the exact command, or — for a site or a server — the rest of the attempt, which
- * the gate's leases hold, so build one per attempt.
+ * What answers a run's permission ask. The runner's own judge has decided what it could before
+ * asking: what reaches IdleBiz runs, since the seal and custody are what hold a run. A widening
+ * of codex's own sandbox never does: once widened, nothing in the run would ask again.
  */
-export const permissionGate = ({
-  confinement,
-  hold,
-  livePage,
-  taskId,
-}: {
-  confinement: Confinement;
-  hold: (ask: BlockedAsk) => void;
-  livePage: LivePage;
-  taskId: string;
-}) => {
-  const leases = new Set<string>();
-  return async (tool: ToolAsk, turnEnded: AbortSignal): Promise<PermissionDecision> => {
-    if (tool.kind === "sandbox") {
-      return { allow: false };
-    }
-    const held = await holdFor(tool, leases, livePage, confinement);
-    // reading the browser can outlast the turn; its sign-off and its ask belong to a live one
-    if (turnEnded.aborted) {
-      return { allow: false };
-    }
-    if (held === null) {
-      return { allow: true };
-    }
-    if (store.consumeApproval(taskId, held.key)) {
-      if (isLeased(held.rule)) {
-        leases.add(held.key);
-      }
-      return { allow: true };
-    }
-    hold({ command: held.key, rule: held.rule, type: "approval" });
-    return { allow: false };
-  };
-};
+export const permissionGate = (tool: ToolAsk): Promise<PermissionDecision> =>
+  Promise.resolve({ allow: tool.kind !== "sandbox" });

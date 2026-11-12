@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lexLine } from "./policy/shell-lexer";
+import { shellWords } from "./test-support/shell-words";
 import {
   MAX_ENV_VALUE_BYTES,
   MAX_REQUEST_BYTES,
@@ -140,9 +140,10 @@ describe("tool specs", () => {
 
   it.each(TOOL_NAMES)("teaches %s as the words a shell hands the command", (name) => {
     const body = JSON.stringify(TOOL_SPECS[name].example);
-    const [pipeline] = lexLine(commandOf(name)).pipelines;
-    expect(pipeline?.map((command) => command.words)).toEqual([
-      ["idlebiz", verbOf(name), ...(body === "{}" ? [] : [body])],
+    expect(shellWords(commandOf(name))).toEqual([
+      "idlebiz",
+      verbOf(name),
+      ...(body === "{}" ? [] : [body]),
     ]);
   });
 });

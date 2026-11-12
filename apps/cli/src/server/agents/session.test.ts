@@ -1,130 +1,37 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { runAcpTurn } from "@repo/agent-driver/acp-session";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import type { LivePage } from "../policy/browser";
-import type { BlockedAsk } from "@repo/domain/domain";
 import { parseJson } from "@repo/domain/json";
 import { RefusalError } from "../refusal";
 import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 import type { Seal } from "./seal";
 import { TEAM_NOTES_MAX_BYTES } from "./team-notes";
-import { SEAL, SKILLS, found } from "../test-support/seal";
+import { SEAL, SKILLS } from "../test-support/seal";
 import { freshSave } from "../test-support/save";
-import * as store from "../store/store";
 import { acpAgentFor, codexSessionConfig, codexSessionEnv, permissionGate } from "./session";
 import { createRunnerPool } from "./runner-pool";
-import { browserNamespace, realPathOf } from "./machine-seal";
+import { browserNamespace } from "./machine-seal";
 import { sealedCommand } from "./seal";
 
 const root = freshSave();
 
 const SETUP = { skills: SKILLS, teamNotes: null, userSettings: {} };
 
-const noPage: LivePage = () => Promise.resolve(null);
-
-const live = () => new AbortController().signal;
-
 describe("permissionGate", () => {
-  const push = { command: "git push", kind: "shell" } as const;
-  const workspace = path.join(root, "company/products/ledger/workspace");
-  const room = { real: realPathOf, writable: [workspace] };
-
-  /** The gate of an attempt at `taskId`, and every ask it raised. */
-  const gateOf = (taskId: string) => {
-    const asked: BlockedAsk[] = [];
-    const gate = permissionGate({
-      confinement: room,
-      hold: (ask) => asked.push(ask),
-      livePage: noPage,
-      taskId,
-    });
-    return { asked, gate };
-  };
-
-  /** A company whose founder signed for one `git push` on task "deploy". */
-  const signedFor = () => {
-    found();
-    store.grantApproval("deploy", "git push");
-    const { asked, gate } = gateOf("deploy");
-    const decide = (signal: AbortSignal) => gate(push, signal);
-    return { asked, decide };
-  };
-
-  it("spends the sign-off on a live turn", async () => {
-    const { asked, decide } = signedFor();
-    expect(await decide(new AbortController().signal)).toEqual({ allow: true });
-    expect(store.consumeApproval("deploy", "git push")).toBe(false);
-    expect(asked).toEqual([]);
-  });
-
   it.each([
-    { key: "mcp: use gmail", leased: true, tool: { kind: "mcp", server: "gmail" } },
-    { key: "git push", leased: false, tool: push },
-  ] as const)(
-    "leases a sign-off for the attempt only when its rule says so: $key",
-    async (signed) => {
-      found();
-      store.grantApproval("deploy", signed.key);
-      const { gate } = gateOf("deploy");
-      expect(await gate(signed.tool, live())).toEqual({ allow: true });
-      expect(await gate(signed.tool, live())).toEqual({ allow: signed.leased });
-      expect(await gateOf("deploy").gate(signed.tool, live())).toEqual({ allow: false });
-    },
-  );
-
-  it.each([
+    { allow: true, tool: { command: "git push origin main", kind: "shell" } },
     { allow: true, tool: { kind: "edit" } },
+    { allow: true, tool: { kind: "mcp", server: "gmail" } },
     { allow: false, tool: { kind: "sandbox" } },
   ] as const)(
-    "answers a $tool.kind ask with no card: the seal judges edits, and no widening is signed",
+    "runs what the runner's judge let through, but never widens codex's own sandbox: $tool.kind",
     async ({ allow, tool }) => {
-      found();
-      const { asked, gate } = gateOf("deploy");
-      expect(await gate(tool, live())).toEqual({ allow });
-      expect(asked).toEqual([]);
+      expect(await permissionGate(tool)).toEqual({ allow });
     },
   );
-
-  it("holds a file the run linked in from outside, judged where the link leads", async () => {
-    found();
-    mkdirSync(workspace, { recursive: true });
-    writeFileSync(path.join(workspace, "index.html"), "own");
-    writeFileSync(path.join(root, "outside.html"), "outside");
-    symlinkSync(path.join(root, "outside.html"), path.join(workspace, "linked.html"));
-    const { asked, gate } = gateOf("qa");
-    const open = (file: string) =>
-      gate(
-        { command: `agent-browser open file://${path.join(workspace, file)}`, kind: "shell" },
-        live(),
-      );
-    expect(await open("index.html")).toEqual({ allow: true });
-    expect(await open("linked.html")).toEqual({ allow: false });
-    expect(asked).toEqual([
-      {
-        command: `agent-browser open file://${path.join(workspace, "linked.html")}`,
-        rule: "browser-file",
-        type: "approval",
-      },
-    ]);
-  });
-
-  it("neither spends the sign-off nor asks the founder for a turn that has ended", async () => {
-    const { asked, decide } = signedFor();
-    expect(await decide(AbortSignal.abort())).toEqual({ allow: false });
-    expect(asked).toEqual([]);
-    expect(store.consumeApproval("deploy", "git push")).toBe(true);
-  });
 });
 
 describe("acpAgentFor", () => {
@@ -157,8 +64,14 @@ describe("acpAgentFor", () => {
     );
   });
 
-  it("runs codex in the mode that asks for everything and sandboxes nothing itself", () => {
-    expect(acpAgentFor("codex", SEAL, SETUP).sessionModeId).toBe("external-sandbox");
+  it("runs codex in the mode that sandboxes nothing itself", () => {
+    expect(acpAgentFor("codex", SEAL, SETUP).sessionMode({})).toBe("agent-full-access");
+  });
+
+  it("runs claude in auto mode, but Manual behind a gateway its check cannot pass", () => {
+    const { sessionMode } = acpAgentFor("claude", SEAL, SETUP);
+    expect(sessionMode({})).toBe("auto");
+    expect(sessionMode({ ANTHROPIC_BASE_URL: "http://127.0.0.1:4000" })).toBe("default");
   });
 
   it("loads none of the founder's MCP servers or claude.ai connectors into a claude session", () => {
@@ -249,13 +162,13 @@ describe("acpAgentFor", () => {
           settings: {
             apiKeyHelper: "~/bin/anthropic-key",
             model: "haiku",
-            permissions: { ask: ["Bash", "Edit", "Write", "NotebookEdit"] },
             sandbox: { enabled: false },
           },
         },
       },
     });
     expect(agent.env.ANTHROPIC_BASE_URL).toBe("https://gateway.example.com");
+    expect(agent.sessionMode(agent.env)).toBe("default");
     expect(agent.env.AGENT_BROWSER_ARGS).toBe("--no-sandbox");
   });
 

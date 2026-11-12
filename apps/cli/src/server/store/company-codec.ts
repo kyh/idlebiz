@@ -6,7 +6,7 @@ import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
 /** What this build writes, and the only stamp it reads: CLAUDE.md's "No users yet" says why. */
-export const SAVE_FORMAT = 16;
+export const SAVE_FORMAT = 17;
 
 /**
  * A save stamped at a format this build does not write, which nothing here touches: a newer

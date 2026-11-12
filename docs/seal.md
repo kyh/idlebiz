@@ -1,4 +1,4 @@
-# The seal and the command policy
+# The seal and what judges a run
 
 Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the decisions.
 
@@ -136,45 +136,27 @@ leads from the next run on.
   through a planted link. Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks
   every session but the first out.
 
-## The command policy
+## What judges a run
 
-Every permission ask a runner raises meets one judgement, `holdFor` in `server/policy/index.ts`;
-every turn sets the runner's asking mode first (claude `default`, codex `external-sandbox`), since
-a session starts in a default that may not ask. A shell command matching a rule (deploy, publish,
-git push, GitHub writes, payments, sends, remote copies, pipe-to-shell, credential reads) is
-signed for once, exactly as sent, newlines and all (the card marks each with `⏎`), with the same
-grant a signed tool takes. It is a tripwire: what a script runs goes unseen (`npm run deploy`, a
-file on disk). codex would run a command the founder's `~/.codex/rules` allow without asking, so
-its runs find no rules there ([A run's seal](#a-runs-seal)).
+Every turn sets the runner's mode first (`sessionMode` in `packages/agent-driver/src/registry.ts`),
+since a session starts in a default the founder's settings may pick. The runner's own judge decides
+what it can; IdleBiz writes no rules of its own over commands:
 
-- An `idlebiz <tool>` line runs unasked: its request is data the game reads, and the tool itself
-  holds what needs the founder. No fetch is the company's, so a `curl` or `wget` that sends a body
-  asks wherever it goes, a loopback port (a product's dev server) or a socket included, since what
-  listens there may be anyone's.
-- An `agent-browser` verb is read where agent-browser reads it, the first word its global options
-  leave, and any verb but a listed page read is held unless the session's live page, read from the
-  browser before the command runs (a click can land anywhere), is loopback with every frame found
-  in it of the top page's own origin (or about:). A frame from any other origin, another localhost
-  port included, makes the page nobody's: a ref, a `frame` switch or `webmcp --frame` acts inside a
-  frame while the URL stays the top page's. Frames are found through `window.frames`, open shadow
-  roots and resource timing, so one in a closed shadow root is known only by the URL it first asked
-  for, once loaded. A remote site, once signed for, is leased for the rest of the run. An act
-  chained after a step that may move the page, or inside one no read can see (`batch`, `chat`, an
-  init script, an extension, an empty `--session`, a word the shell fills in), is signed for once,
-  exactly. An act on a `file:` page is held, and so is a command naming a `file:` URL outside the
-  run's own dirs, judged where its symlinks lead (`Confinement.real`). Only the command line's own
-  options count: an `AGENT_BROWSER_*` variable or an `agent-browser.json` goes unread.
-- No rule judges where a run writes: an edit by claude's Write/Edit, a codex patch and a shell
-  `rm` or `mv` all run unheld, and the seal refuses whatever lands outside the run's own folders.
-  codex asking to widen its own sandbox is refused with no card: once widened, nothing else in the
-  run would ask. An MCP server that asks anyway is leased for the run; one nothing can name never
-  is. A web read by the agent's own tool runs, as a bare `curl` does, and so does a file read by
-  claude's Read, Grep or Glob, as a bare `cat` does; an ask IdleBiz cannot recognise is held once,
-  exactly. A signature only ever picks the runner's one-time option. Both runners' wire formats
-  end in `packages/agent-driver/src/tool-ask.ts`; the policy only ever sees a `ToolAsk`.
-- Whether a sign-off leases is its rule's alone (`LEASED` in `@repo/domain/hold-rules`, which
-  every rule must fill), never the hold's. A saved ask names its rule, so retiring a hold rule is
-  a breaking store change (bump `SAVE_FORMAT`): a TASK.md still asking under it is refused.
+- claude runs in auto mode: its classifier, on Anthropic's servers, reads each action before it
+  runs and refuses what it takes for harm. Behind a gateway at `ANTHROPIC_BASE_URL`, which may not
+  pass that check through, every checked action would be refused, so there it runs in Manual and
+  asks. The session sets no ask rule, since one forces a prompt even in auto mode.
+- codex runs in `agent-full-access`: no sandbox of its own can start inside the seal, and its auto
+  review judges only what that sandbox would stop, so it asks nothing. Its runs find none of the
+  founder's `~/.codex/rules` ([A run's seal](#a-runs-seal)).
+- Whatever ask reaches IdleBiz is allowed (`permissionGate` in `server/agents/session.ts`): the
+  seal and custody are what hold a run, and a step that spends IdleBiz's keys is a signed tool,
+  signed for once by the founder ([Keys and what spends them](keys.md)). The one refusal is codex
+  asking to widen its own sandbox: once widened, nothing in the run would ask again. A deny rule of
+  the session's own (`mcp__*`, plan mode) refuses before anything asks. Both runners' wire formats
+  end in `packages/agent-driver/src/tool-ask.ts`.
+- A saved ask names a signed tool's hold rule (`@repo/domain/hold-rules`), so retiring one is a
+  breaking store change (bump `SAVE_FORMAT`): a TASK.md still asking under it is refused.
 
 ## What stays open
 
@@ -228,8 +210,8 @@ On purpose or for want of a rule:
   nothing without the `.p8` the seal keeps in `~/.appstoreconnect/private_keys`, and holds the
   updater key's password, which signs nothing without `~/.tauri/idlebiz.key`, sealed as well;
 - to claude runs, which share the founder's login, the Keychain: claude reads its login there, so
-  a token the founder's `gh` or git keeps there is guarded only by the tripwire's
-  `read-credentials` and `git-push` holds;
+  a token the founder's `gh` or git keeps there, and what a run does with it (a push over https),
+  is guarded only by auto mode's classifier, and behind a gateway by nothing;
 - to claude runs, a deny rule of managed policy outside the managed settings files: main reads
   none in the MDM profile, in server-managed settings (claude.ai's or a gateway's, which claude
   caches) or in a `policyHelper`'s output, so a run under one starts, and each company tool's

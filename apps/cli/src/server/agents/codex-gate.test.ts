@@ -15,11 +15,9 @@ import { runnerBin } from "@repo/agent-driver/detect";
 import { endAllAgents, runAcpTurn } from "@repo/agent-driver/acp-session";
 import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { holdFor } from "../policy";
-import type { Hold } from "../policy";
 import { readTeamNotes } from "./team-notes";
 import { acpAgentFor, codexSessionEnv } from "./session";
-import { machineSeal, realPathOf } from "./machine-seal";
+import { machineSeal } from "./machine-seal";
 import { sealRuns } from "./seal-check";
 import { tempSave } from "../test-support/save";
 import { startStandInModel } from "../test-support/stand-in-model";
@@ -27,8 +25,8 @@ import type { Move, StandInModel } from "../test-support/stand-in-model";
 
 // The real codex, driven through the app's codex-acp inside the seal, by the stand-in model on
 // loopback (test-support/stand-in-model.ts): nothing is billed, and codex's home is a scratch
-// one. It proves codex, whose own sandbox is off, still asks IdleBiz before it runs a command, so
-// holdFor still judges it, even one the founder's rules allow, starts no MCP server of theirs,
+// one. It proves codex, whose own sandbox is off, asks IdleBiz nothing and runs each command inside
+// the seal, loads no rule of the founder's, starts no MCP server of theirs,
 // offers the model IdleBiz's skills and none of the founder's (their plugins' included), nor
 // their instructions or memories, but the workspace's AGENTS.md once, whole, and picked as main
 // picks it for a claude run, leaves no skill for a later run, and runs, but cannot rewrite, the
@@ -135,7 +133,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     writeFileSync(path.join(codexHome, "AGENTS.md"), "FOUNDER_INSTRUCTIONS_MARK\n");
     mkdirSync(path.join(codexHome, "memories"));
     writeFileSync(path.join(codexHome, "memories", "memory_summary.md"), "FOUNDER_MEMORY_MARK\n");
-    // a rule of theirs, which would run a push without asking
+    // a rule of theirs, which no run loads
     mkdirSync(path.join(codexHome, "rules"));
     writeFileSync(
       path.join(codexHome, "rules", "default.rules"),
@@ -164,15 +162,14 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     }
   });
 
-  /** One turn of `next`, every ask answered `allow`, and what holdFor made of each. */
-  const turn = async (next: Move, allow: boolean) => {
+  /** One turn of `next`, and every ask it raised. */
+  const turn = async (next: Move) => {
     model.script(TURN, [next]);
     const state = await sealRuns();
     if (state.kind !== "sealed") {
       throw new Error(state.reason);
     }
-    const asks: { held: Hold | null; tool: ToolAsk }[] = [];
-    const room = { real: realPathOf, writable: [workspace] };
+    const asks: ToolAsk[] = [];
     const agent = await asFounderAt(home, async () => {
       const seal = await machineSeal([workspace]);
       const setup = { skills, teamNotes: null, userSettings: {} };
@@ -190,13 +187,9 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       idleTimeoutMs: 60_000,
       maxSessionMs: 90_000,
       onEvent: () => {},
-      onPermission: async (tool) => {
-        const held =
-          tool.kind === "sandbox"
-            ? null
-            : await holdFor(tool, new Set(), () => Promise.resolve(null), room);
-        asks.push({ held, tool });
-        return { allow };
+      onPermission: (tool) => {
+        asks.push(tool);
+        return Promise.resolve({ allow: false });
       },
       prompt: () => `${TURN} work`,
       teardownGraceMs: 500,
@@ -206,40 +199,21 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   };
 
   it(
-    "asks before a push, though a rule of the founder's allows it, which holdFor holds and a denial stops",
+    "runs a command asking IdleBiz nothing, with no sandbox of its own to fail inside the seal",
     { timeout: 60_000 },
     async () => {
-      const { asks, pushed } = await turn(
-        { command: "git push origin main", kind: "shell" },
-        false,
-      );
-      expect(asks).toEqual([
-        {
-          held: { key: "git push origin main", rule: "git-push" },
-          tool: { command: "git push origin main", kind: "shell" },
-        },
-      ]);
-      expect(pushed).toBe("");
-    },
-  );
-
-  it(
-    "runs what it was allowed, with no sandbox of its own to fail inside the seal",
-    {
-      timeout: 60_000,
-    },
-    async () => {
-      const { pushed, result } = await turn(
-        { command: "git push origin main", kind: "shell" },
-        true,
-      );
+      const { asks, pushed, result } = await turn({
+        command: "git push origin main",
+        kind: "shell",
+      });
       expect(result.end).toEqual({ kind: "completed" });
+      expect(asks).toEqual([]);
       expect(pushed).toContain("refs/heads/main");
     },
   );
 
   it("starts none of the founder's MCP servers", { timeout: 60_000 }, async () => {
-    const { mcpStarted, result } = await turn({ command: "true", kind: "shell" }, true);
+    const { mcpStarted, result } = await turn({ command: "true", kind: "shell" });
     expect(result.end).toEqual({ kind: "completed" });
     expect(mcpStarted).toBe(false);
   });
@@ -248,7 +222,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     "is offered IdleBiz's skills and none of the founder's, their plugins', instructions or memories",
     { timeout: 60_000 },
     async () => {
-      const { result } = await turn({ command: "true", kind: "shell" }, true);
+      const { result } = await turn({ command: "true", kind: "shell" });
       expect(result.end).toEqual({ kind: "completed" });
       const requests = sent().join("\n");
       for (const name of readdirSync(path.join(skills, ".agents", "skills"))) {
@@ -272,7 +246,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     { timeout: 60_000 },
     async () => {
       writeFileSync(path.join(workspace, "AGENTS.md"), "TEAM_NOTES_MARK\n");
-      const { result } = await turn({ command: "true", kind: "shell" }, true);
+      const { result } = await turn({ command: "true", kind: "shell" });
       expect(result.end).toEqual({ kind: "completed" });
       expect(sent().length).toBeGreaterThan(0);
       for (const request of sent()) {
@@ -286,13 +260,13 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     { timeout: 120_000 },
     async () => {
       writeFileSync(path.join(workspace, "CLAUDE.md"), "CLAUDE_MD_MARK\n");
-      await turn({ command: "true", kind: "shell" }, true);
+      await turn({ command: "true", kind: "shell" });
       expect(sent().length).toBeGreaterThan(0);
       expect(sent().join("\n")).not.toContain("CLAUDE_MD_MARK");
       model.reset();
       writeFileSync(path.join(workspace, "AGENTS.md"), "TEAM_NOTES_MARK\n");
       writeFileSync(path.join(workspace, "AGENTS.override.md"), "OVERRIDE_MARK\n");
-      const { result } = await turn({ command: "true", kind: "shell" }, true);
+      const { result } = await turn({ command: "true", kind: "shell" });
       expect(result.end).toEqual({ kind: "completed" });
       expect(sent().length).toBeGreaterThan(0);
       const requests = sent().join("\n");
@@ -305,7 +279,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   it("leaves no skill in its workspace for a later run to load", { timeout: 60_000 }, async () => {
     const skill = path.join(workspace, ".agents", "skills", "planted", "SKILL.md");
     const cmd = `touch ran; mkdir -p ${path.dirname(skill)} && echo planted > ${skill}`;
-    const { result } = await turn({ command: cmd, kind: "shell" }, true);
+    const { result } = await turn({ command: cmd, kind: "shell" });
     expect(result.end).toEqual({ kind: "completed" });
     expect(existsSync(path.join(workspace, "ran"))).toBe(true);
     expect(existsSync(path.join(workspace, ".agents"))).toBe(false);
@@ -316,7 +290,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     writeFileSync(secrets, "sealed canary");
     const outside = path.join(root, "outside.txt");
     const cmd = `cat ${secrets} > read.txt; echo x > ${outside}; touch ran`;
-    const { result } = await turn({ command: cmd, kind: "shell" }, true);
+    const { result } = await turn({ command: cmd, kind: "shell" });
     expect(result.end).toEqual({ kind: "completed" });
     expect(existsSync(path.join(workspace, "ran"))).toBe(true);
     expect(readFileSync(path.join(workspace, "read.txt"), "utf-8")).toBe("");
@@ -324,7 +298,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   });
 
   it(
-    "lets a patch through unheld, and the seal refuses one that moves a file into the save",
+    "makes a patch asking nothing, and the seal refuses one that moves a file into the save",
     { timeout: 60_000 },
     async () => {
       const approvals = path.join(root, "company", "approvals.json");
@@ -338,8 +312,8 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
         "+b",
         "*** End Patch",
       ].join("\n");
-      const { asks } = await turn({ kind: "patch", patch }, true);
-      expect(asks).toEqual([{ held: null, tool: { kind: "edit" } }]);
+      const { asks } = await turn({ kind: "patch", patch });
+      expect(asks).toEqual([]);
       expect(existsSync(approvals)).toBe(false);
       expect(readFileSync(path.join(workspace, "notes.md"), "utf-8")).toBe("a\n");
     },
@@ -354,7 +328,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
       // a script `notify` could name
       const script = path.join(codexHome, "notify.py");
       const cmd = `touch ran; echo 'notify = ["x"]' >> ${config}; echo 'x' > ${script}`;
-      const { result } = await turn({ command: cmd, kind: "shell" }, true);
+      const { result } = await turn({ command: cmd, kind: "shell" });
       expect(result.end).toEqual({ kind: "completed" });
       expect(existsSync(path.join(workspace, "ran"))).toBe(true);
       expect(readFileSync(config, "utf-8")).toBe(before);

@@ -4,9 +4,9 @@ packages:
   - tools/*
 
 # One declaration per dep that more than one workspace uses, so versions
-# cannot drift between them, and the ACP adapters, pinned beside codex-acp's patch.
+# cannot drift between them, and the ACP adapters.
 catalog:
-  # Exact: a bump changes the wire acp-session.ts speaks and moves codex-acp's patch key.
+  # Exact: a bump changes the wire acp-session.ts speaks.
   "@agentclientprotocol/claude-agent-acp": 0.85.1
   "@agentclientprotocol/codex-acp": 1.12.0
   "@agentclientprotocol/sdk": 1.7.0
@@ -31,6 +31,3 @@ catalog:
 updateConfig:
   ignoreDependencies:
     - typescript
-
-patchedDependencies:
-  "@agentclientprotocol/codex-acp@1.12.0": patches/@agentclientprotocol__codex-acp@1.12.0.patch

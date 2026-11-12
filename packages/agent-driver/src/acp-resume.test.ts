@@ -40,7 +40,11 @@ afterEach(() => {
 
 const turn = (agentScript: string, prompt: AcpTurnOptions["prompt"] = () => "work") =>
   runAcpTurn({
-    agent: { command: [process.execPath, "-e", agentScript], env: {}, sessionModeId: "default" },
+    agent: {
+      command: [process.execPath, "-e", agentScript],
+      env: {},
+      sessionMode: () => "default",
+    },
     cwd,
     idleTimeoutMs: 0,
     maxSessionMs: 0,

@@ -16,7 +16,7 @@ import { employeeName } from "@/renderer/ui/employee-name";
 import { Failure } from "@/renderer/ui/failure";
 import { RichText } from "@/renderer/ui/linkify";
 import { Modal } from "@/renderer/ui/modal";
-import { approvalScope, describeRule, shownKey } from "@repo/domain/hold-rules";
+import { APPROVAL_SCOPE, describeRule, shownKey } from "@repo/domain/hold-rules";
 import type { HoldRuleId } from "@repo/domain/hold-rules";
 import { INTEGRATION_LABELS } from "@repo/domain/domain";
 import type { Overlay } from "@/renderer/ui/overlay";
@@ -57,7 +57,6 @@ const ConnectRow = ({
   );
 };
 
-// Show the exact held command and what approving it signs for.
 const ApprovalRow = ({
   t,
   by,
@@ -78,7 +77,7 @@ const ApprovalRow = ({
       <div className="mt-1 text-sm leading-snug text-fg">{describeRule(rule)}</div>
       <pre className="px-inset px-code mt-2 overflow-x-auto p-2">{shownKey(command)}</pre>
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-xs text-fg-dim">{approvalScope(rule)}</span>
+        <span className="text-xs text-fg-dim">{APPROVAL_SCOPE}</span>
         <ApprovalButtons decided={decided} decide={decide} />
       </div>
       <Failure submission={submission} />

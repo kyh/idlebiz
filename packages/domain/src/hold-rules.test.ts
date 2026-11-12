@@ -1,18 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { approvalScope, describeRule, shownKey } from "./hold-rules";
+import { describeRule, shownKey } from "./hold-rules";
 
 describe("describeRule", () => {
   it("describes each rule", () => {
-    expect(describeRule("git-push")).toBe("Push commits to a remote repository.");
-    expect(describeRule("browser-unseen")).toContain("one run of exactly this command");
-    expect(describeRule("unknown-ask")).toContain("one run of exactly this");
-  });
-
-  it("says a leased approval covers the rest of the run, and any other one run", () => {
-    expect(approvalScope("browser-act")).toContain("rest of this run");
-    expect(approvalScope("external-tool")).toContain("rest of this run");
-    expect(approvalScope("git-push")).toContain("once");
-    expect(approvalScope("unknown-ask")).toContain("once");
+    expect(describeRule("deploy")).toBe("Deploy the product to a live, public URL.");
+    expect(describeRule("payments")).toContain("Stripe");
   });
 });
 

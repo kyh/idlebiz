@@ -116,7 +116,7 @@ describe("a resumed turn the agent answered", () => {
       agent: {
         command: [process.execPath, "-e", codexLikeAgent],
         env: {},
-        sessionModeId: "default",
+        sessionMode: () => "default",
         usagePerRequest: true,
       },
       cwd,
@@ -154,7 +154,7 @@ const cutOff = (usagePerRequest?: true) =>
     agent: {
       command: [process.execPath, "-e", cutOffAgent],
       env: {},
-      sessionModeId: "default",
+      sessionMode: () => "default",
       usagePerRequest,
     },
     cwd,

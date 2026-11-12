@@ -261,6 +261,7 @@ from git's config and hooks there, but git still obeys what a run leaves in the 
 todo list, a `.gitattributes`), unsealed, as the founder. A clone runs only upload-pack there,
 which runs nothing its config names since git stopped lazy-fetching a partial clone's missing
 objects (2.45.1; 2.39.4 and the other backports). The prompts and the questions IdleBiz asks the
-founder say so. A shell `git push` is still held under `git-push`, and signed it runs as any
-command does: on a claude run git reaches a credential helper that reads the Keychain (gh's), so
-it can push over https as the founder. Refuse it.
+founder say so. No rule of IdleBiz's holds a shell `git push`: on a codex run git finds no login,
+but on a claude run it reaches a credential helper that reads the Keychain (gh's), so it can push
+over https as the founder, judged only by auto mode's classifier
+([What judges a run](seal.md#what-judges-a-run)).

@@ -268,13 +268,12 @@ that runs main differs (the dev host, or the shell).
 
 No test needs a window or Phaser.
 
-- `pnpm --filter idlebiz test` covers main: schemas, codecs, the command policy, store and
+- `pnpm --filter idlebiz test` covers main: schemas, codecs, the store and
   integration behaviour under temporary save roots, real loopback and socket requests, the page's
   router and the `idlebiz` verbs against a live control plane. A test file opens its save with
   `tempSave` or `freshSave` and founds Kai's Acme with `foundAcme` (`server/test-support/save.ts`):
   `server/paths.ts` reads the root when a path is asked for and refuses one before any save is
-  open, so a test that opens none fails rather than writing the founder's. Command policy rules
-  each need a matching example; everyday commands must remain allowed.
+  open, so a test that opens none fails rather than writing the founder's.
 - On macOS main's suite also runs the seal on canary files under a stand-in home and on what
   launchd, cfprefsd, the find pasteboard and a mount would do in this session for a run, each
   undone after (`seal.mac.test.ts`), and main's login-shell probe on a stand-in home's startup files
@@ -282,7 +281,7 @@ No test needs a window or Phaser.
   (`server/agents/claude-gate.test.ts`, `codex-gate.test.ts`) drive the real CLI through the app's
   ACP adapter, sealed, against a stand-in model on loopback, billing nothing, on a scratch config
   that never touches its login.
-  They fail once a command nests a sandbox or runs unasked (a push must reach `holdFor`), a
+  They fail once a command nests a sandbox, an ask in Manual skips IdleBiz, codex asks at all, a
   founder's MCP server starts, a command escapes the seal, or a run rewrites the founder's config;
   claude's runs under founder settings that turn its sandbox on, and codex's checks that the seal
   refuses a patch moving a file into the save. Where `agent-browser` is installed, the real
@@ -370,8 +369,8 @@ Each mechanic is described once, in its file under `docs/`, and read before it i
   goes, the replay.
 - [How a product earns](docs/earning.md): the business models, checking who paid, action cards.
 - [Runs](docs/runs.md): a run's env, login and team notes, failures and rests, IdleBiz's skills.
-- [The seal and the command policy](docs/seal.md): what a run reads, writes and reaches, the
-  command policy, what stays open.
+- [The seal and what judges a run](docs/seal.md): what a run reads, writes and reaches, the
+  runner's own judge, what stays open.
 - [Keys and what spends them](docs/keys.md): IdleBiz's keys, the signed tools, Vercel, Stripe,
   Printful, the order pump, retiring a product, a reset.
 - [The app](docs/app.md): the page, the shell and main, what the siblings share, the renderer's
@@ -386,12 +385,9 @@ Each mechanic is described once, in its file under `docs/`, and read before it i
   (`sandbox_apply: Operation not permitted`), so any sandbox a runner or its tools start inside
   the seal makes every command fail. claude's own is forced off in its flag-tier settings
   (`packages/agent-driver/src/registry.ts`), whatever the founder's say. Runs start Chrome without
-  its own (`AGENT_BROWSER_ARGS=--no-sandbox`). codex runs in `external-sandbox`, a mode
-  `patches/@agentclientprotocol__codex-acp@1.12.0.patch` adds: no sandbox of codex's own and
-  approval `untrusted`, so codex asks before every command and patch it does not know is safe.
-  codex-acp's own modes either sandbox or never ask, so an upgrade must carry the patch, keyed by
-  the exact version the catalog pins. Both adapters and the ACP sdk are pinned exactly in the
-  `pnpm-workspace.yaml` catalog: a bump moves the patch's key, may change the wire `acp-session.ts`
+  its own (`AGENT_BROWSER_ARGS=--no-sandbox`). codex runs in `agent-full-access`, its one mode
+  with no sandbox of its own. Both adapters and the ACP sdk are pinned exactly in the
+  `pnpm-workspace.yaml` catalog: a bump may rename a mode or change the wire `acp-session.ts`
   speaks, and must pass `claude-gate.test.ts` and `codex-gate.test.ts` on a Mac with both CLIs,
   which CI's `test-macos` job runs. The boot check runs plain node, so it cannot see a runner's
   own sandbox; the gate tests can ([Tests](#tests)).

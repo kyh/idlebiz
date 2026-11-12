@@ -27,8 +27,6 @@ import type {
   TeamMessage,
 } from "@repo/domain/domain";
 import { formatUsd } from "@repo/domain/format";
-import { isLeased } from "@repo/domain/hold-rules";
-import type { HoldRuleId } from "@repo/domain/hold-rules";
 
 export interface TaskBrief {
   title: string;
@@ -430,25 +428,15 @@ export const actionAnswer = (reply: ActionReply): string => {
 };
 
 /** What the run reads once the founder decides `ask`: if signed, exactly what the sign-off covers. */
-export const approvalAnswer = (
-  approved: boolean,
-  ask: { command: string; rule: HoldRuleId },
-): string => {
+export const approvalAnswer = (approved: boolean, ask: { command: string }): string => {
   if (!approved) {
     return "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.";
   }
-  const signed = ["", ...fenced(ask.command), ""];
-  return (
-    isLeased(ask.rule)
-      ? [
-          "Approved, in this task only, for the rest of this run:",
-          ...signed,
-          "Anything else outward-facing needs a fresh approval.",
-        ]
-      : [
-          "Approved. The sign-off is for exactly this, character for character, in this task only — a reworded command is a different command and will be held again:",
-          ...signed,
-          "It covers one run of it. Anything else outward-facing needs a fresh approval.",
-        ]
-  ).join("\n");
+  return [
+    "Approved. The sign-off is for exactly this, character for character, in this task only — a reworded call is a different call and will be held again:",
+    "",
+    ...fenced(ask.command),
+    "",
+    "It covers one run of it. Anything else outward-facing needs a fresh approval.",
+  ].join("\n");
 };

@@ -75,7 +75,7 @@ const turn = (
       command: [process.execPath, "-e", agentScript],
       env: {},
       sessionMeta: more.sessionMeta,
-      sessionModeId: "default",
+      sessionMode: () => "default",
     },
     cwd,
     idleTimeoutMs: 0,

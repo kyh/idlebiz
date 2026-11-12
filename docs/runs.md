@@ -19,7 +19,7 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
   `packages/agent-driver/src/registry.ts`): not the founder's user settings (their CLAUDE.md and
   rules, skills, plugins, hooks, permissions), nor a project's or a local one, which a run could
   otherwise write for the next to load. What remains is managed policy and the flag tier its session
-  options set: claude's own sandbox off, ask rules for shell and edits, no bypass mode, no plan mode
+  options set: claude's own sandbox off, no ask rules, no bypass mode, no plan mode
   (its exit asks to approve a plan, which would block the task on a founder card that changes
   nothing), no skills of claude's own (`disableBundledSkills`), IdleBiz's as a plugin, and none of
   their MCP servers or claude.ai connectors (`strictMcpConfig`, `disableClaudeAiConnectors`, a deny
@@ -33,8 +33,8 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
   login fails as it did. So does the model they picked, with its effort (`model`, `effortLevel`,
   `modelSettings`, `alwaysThinkingEnabled`, `modelOverrides`), in the flag tier: claude would
   otherwise run its default, and claude-agent-acp, which reads their user settings, sets a model
-  only when it thinks claude picked another. A deny rule in managed settings outranks the flag
-  tier's ask rules and would refuse a company tool's `idlebiz` command before IdleBiz is asked, the
+  only when it thinks claude picked another. A deny rule in managed settings outranks every mode
+  and would refuse a company tool's `idlebiz` command before IdleBiz is asked, the
   turn still ending as done, so a claude run under one in the managed settings files does not
   start, and says which rule and file (`refuseDeniedTools` in `server/agents/claude-denies.ts`):
   `managed-settings.json` and the drop-ins of `managed-settings.d/`, which claude merges into one

@@ -309,23 +309,15 @@ describe("the founder's reply to an action", () => {
 });
 
 describe("the founder's answer to a sign-off", () => {
-  it("quotes the command as sent, in a fence no line of it can close", () => {
-    const command = "npm test\ngit push origin main # ```";
-    const answer = approvalAnswer(true, { command, rule: "git-push" });
+  it("quotes the action as sent, in a fence no line of it can close", () => {
+    const command = "deploy ledger to production\non Vercel project ledger # ```";
+    const answer = approvalAnswer(true, { command });
     expect(answer).toContain(`\n\`\`\`\`\n${command}\n\`\`\`\`\n`);
     expect(answer).toContain("character for character");
     expect(answer).toContain("It covers one run of it.");
   });
 
-  it("says a leased sign-off covers the rest of the run, not one run", () => {
-    const answer = approvalAnswer(true, { command: "mcp: use gmail", rule: "external-tool" });
-    expect(answer).toContain("for the rest of this run");
-    expect(answer).not.toContain("one run of it");
-  });
-
   it("tells a refused run not to work around it", () => {
-    expect(approvalAnswer(false, { command: "git push", rule: "git-push" })).toMatch(
-      /^Not approved\./u,
-    );
+    expect(approvalAnswer(false, { command: "deploy ledger" })).toMatch(/^Not approved\./u);
   });
 });

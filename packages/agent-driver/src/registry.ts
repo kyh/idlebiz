@@ -10,11 +10,11 @@ export interface RunnerAdapter {
   /** Module specifier of the ACP subprocess. */
   acpEntry: string;
   /**
-   * Mode that raises permission requests, set every turn: fresh or resumed, a session
-   * starts in a default that may skip the founder gate — codex's own, or the
-   * `permissions.defaultMode` claude reads from the player's user, project or local settings.
+   * The mode set every turn, from the run's whole env: fresh or resumed, a session starts in a
+   * default the player's own settings may pick. The runner's own judge decides what a command may
+   * do where it can; the seal and custody are what hold a run either way.
    */
-  sessionModeId: string;
+  sessionMode: (env: Readonly<Record<string, string>>) => string;
   /**
    * How a session starts loading IdleBiz's skills and none of the player's: the `_meta` sent on
    * session/new and session/resume (the adapter's own session options), and folders it is handed
@@ -121,8 +121,7 @@ const claudeLoggedIn = (output: string): boolean => {
 
 /**
  * What a claude session loads is docs/runs.md's "A claude session". With bypass off, no settings
- * tier can start a session in it, and `settings`, the flag tier, has ask rules that beat allow
- * rules from any tier.
+ * tier can start a session in it.
  */
 const claudeSession = ({ skills, teamNotes, userSettings }: SessionSetup): SessionStart => {
   const meta: NonNullable<SessionStart["meta"]> = {
@@ -135,10 +134,9 @@ const claudeSession = ({ skills, teamNotes, userSettings }: SessionSetup): Sessi
           ...userSettings,
           disableBundledSkills: true,
           disableClaudeAiConnectors: true,
-          // Plan mode's exit asks to approve a plan: IdleBiz would hold that for the founder to
-          // sign, blocking the task over a step that changes no boundary.
+          // No ask rule: one forces a prompt even in auto mode, which would take the judging from
+          // claude's classifier. Plan mode's exit asks to approve a plan, which nobody answers.
           permissions: {
-            ask: ["Bash", "Edit", "Write", "NotebookEdit"],
             deny: ["mcp__*", "EnterPlanMode", "ExitPlanMode"],
           },
           // Off: the run is already inside a Seatbelt profile, and one cannot apply inside
@@ -180,7 +178,10 @@ export const RUNNERS = {
       "GOOGLE_APPLICATION_CREDENTIALS",
     ],
     session: claudeSession,
-    sessionModeId: "default",
+    // Auto mode's check runs on Anthropic's servers, which a gateway at ANTHROPIC_BASE_URL may not
+    // pass through, and then every action it checks is refused: behind one, Manual asks instead.
+    sessionMode: (env) =>
+      env.ANTHROPIC_BASE_URL === undefined || env.ANTHROPIC_BASE_URL === "" ? "auto" : "default",
   },
   codex: {
     acpEntry: "@agentclientprotocol/codex-acp/dist/index.js",
@@ -193,10 +194,9 @@ export const RUNNERS = {
     // Bedrock as for claude; the Azure provider codex documents reads AZURE_OPENAI_API_KEY
     providerEnv: ["OPENAI_", "CODEX_", "AWS_BEARER_TOKEN_BEDROCK", "AZURE_OPENAI_"],
     session: codexSession,
-    // Added by the app's patch of codex-acp (patches/): no sandbox of codex's own, which cannot
-    // start inside the run's, and approval "untrusted", so codex asks before every command and
-    // patch it does not know is safe. codex-acp's own modes either sandbox or never ask.
-    sessionModeId: "external-sandbox",
+    // No sandbox of codex's own, which cannot start inside the run's. Its auto review judges only
+    // what that sandbox would stop, so with none it has nothing to judge, and codex asks nothing.
+    sessionMode: () => "agent-full-access",
     typedFailures: true,
     usagePerRequest: true,
   },
