@@ -161,7 +161,7 @@ const sellingRun = (missing: Keys = {}, sellers: Parameters<typeof fakeSellers>[
       JSON.stringify({ id: 42, name: "Acme Prints" }),
     );
   }
-  writeFileSync(path.join(root, "secrets.json"), JSON.stringify(Object.fromEntries(secrets)));
+  writeFileSync(path.join(root, "vault.json"), JSON.stringify(Object.fromEntries(secrets)));
   const run = runAs("priya");
   store.setProductVercel("acme", VERCEL);
   const sent = fakeSellers(sellers);
@@ -323,7 +323,7 @@ describe("sell_print", () => {
   it("lists on a live key, since each paid order reaches Printful", async () => {
     const { ctx } = sellingRun();
     writeFileSync(
-      path.join(root, "secrets.json"),
+      path.join(root, "vault.json"),
       JSON.stringify({
         PRINTFUL_TOKEN: "pf_founder_token",
         STRIPE_SECRET_KEY: "rk_live_founder",

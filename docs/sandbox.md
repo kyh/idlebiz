@@ -17,7 +17,7 @@ back as a `FolderRefusedError`, which main words for the founder.
   and model hubs' publish logins, App Store Connect's notary keys, the updater's signing key,
   browser and chat-app profiles, agent-browser's saved logins; a file that holds one is sandboxed
   whole, even where a toolchain reads it on every build, and the caches and plugins beside it
-  stay readable), `secrets.json` with every name that starts with it, the other runner's home
+  stay readable), `vault.json` with every name that starts with it, the other runner's home
   (and, where `CLAUDE_CONFIG_DIR` or `CODEX_HOME` moved it, as the e2e suite's stand-ins do, the
   one in HOME with claude's account file beside it, which the founder's own CLI still keeps),
   and, for a codex run, what of the founder's own it would load
@@ -160,7 +160,7 @@ what it can; IdleBiz writes no rules of its own over commands:
   review judges only what that sandbox would stop, so it asks nothing. Its runs find none of the
   founder's `~/.codex/rules` ([A run's sandbox](#a-runs-sandbox)).
 - Whatever ask reaches IdleBiz is allowed (`permissionGate` in `server/agents/session.ts`): the
-  sandbox and custody are what hold a run, and a step that spends IdleBiz's keys is a signed tool,
+  sandbox and the vault are what hold a run, and a step that spends IdleBiz's keys is a signed tool,
   signed for once by the founder ([Keys and what spends them](keys.md)). The one refusal is codex
   asking to widen its own sandbox: once widened, nothing in the run would ask again. A deny rule of
   the session's own (`mcp__*`, plan mode) refuses before anything asks. Both runners' wire formats
@@ -203,7 +203,7 @@ On purpose or for want of a rule:
 - the shell's own env, which is launchd's: the updater runs `touch` on launchd's PATH (an update
   is refused while that finds any but `/usr/bin/touch`), stages in launchd's TMPDIR and may keep
   a failed install's backup under launchd's HOME, and whether a `CFFIXED_USER_HOME` there moves
-  where the Keychain looks, and with it the sealing key, is unverified;
+  where the Keychain looks, and with it the vault, is unverified;
 - an update while it is staged: the updater unpacks the new app into a folder under the shell's
   TMPDIR, the per-user temp folder every run writes, before it moves it over the installed app,
   so a process a run left behind could alter it in between (whether macOS's checks of a

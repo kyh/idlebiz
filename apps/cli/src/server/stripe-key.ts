@@ -1,6 +1,7 @@
 import { getJson } from "./lib/http";
 import type { VendorFault } from "./lib/vendor-call";
-import { STRIPE_SECRET_KEY, deleteSecret, getSecret, setSecret } from "./secrets";
+import { STRIPE_SECRET_KEY } from "./vault/names";
+import { deleteSecret, getSecret, setSecret } from "./vault/vault";
 import { STRIPE_API, answeringStripe, isTestKey, stripeHeaders } from "./stripe-api";
 import type { StripeKeyStatus } from "@repo/domain/integrations";
 import { forgetStripeRead } from "./metrics";
@@ -66,13 +67,13 @@ export const saveStripeKey = async (key: string): Promise<void> => {
   if (probed.kind !== "ok") {
     throw new RefusalError(turnedAway(probed));
   }
-  setSecret(STRIPE_SECRET_KEY, key);
+  await setSecret(STRIPE_SECRET_KEY, key);
   // A restricted key's grants are edited in place, so the key the pulse found refused may be
   // pasted again once it is granted Read on Charges: what was read of it no longer stands.
   refusedKey = null;
   forgetStripeRead();
 };
 
-export const removeStripeKey = (): void => {
-  deleteSecret(STRIPE_SECRET_KEY);
+export const removeStripeKey = async (): Promise<void> => {
+  await deleteSecret(STRIPE_SECRET_KEY);
 };

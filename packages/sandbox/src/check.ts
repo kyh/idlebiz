@@ -73,7 +73,7 @@ export const checkSandbox = async (
 ): Promise<SandboxCheck> => {
   const dir = await realpath(await mkdtemp(path.join(tmpdir(), "sandbox-check-")));
   try {
-    const canary = path.join(dir, "secrets.json");
+    const canary = path.join(dir, "vault.json");
     await writeFile(canary, "canary");
     const probed: Sandbox = {
       ...sandbox,

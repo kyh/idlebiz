@@ -47,10 +47,7 @@ describe("metricsPulse.pulsingSince", () => {
 
 describe("a pulse", () => {
   it("lands each product's and bet's numbers when the company's cannot write", async () => {
-    writeFileSync(
-      path.join(root, "secrets.json"),
-      JSON.stringify({ STRIPE_SECRET_KEY: "sk_pulse" }),
-    );
+    writeFileSync(path.join(root, "vault.json"), JSON.stringify({ STRIPE_SECRET_KEY: "sk_pulse" }));
     foundAcme([hire("Priya")]);
     const productId = store.listProducts()[0]?.id ?? "";
     const bet = store.openBet({

@@ -5,7 +5,6 @@
 
 import { z } from "zod";
 import type { Peer } from "./relay/rpc";
-import { sealingKeySchema } from "./secrets";
 import { LAUNCH_AT_LOGIN } from "@repo/domain/domain";
 import type { LaunchAtLogin } from "@repo/domain/domain";
 
@@ -26,6 +25,8 @@ export const RELAY_METHODS = [
   "host.relaunch",
   "host.checkUpdate",
   "host.installUpdate",
+  "host.vaultSet",
+  "host.vaultDelete",
 ] as const;
 export type RelayMethod = (typeof RELAY_METHODS)[number];
 
@@ -36,9 +37,11 @@ export const launchSchema = z.strictObject({
   // Vite's dev server, whose files main hands the page in place of the built ones, so it reloads in
   // place: `tauri dev`'s and `pnpm dev:browser`'s. Null in a packaged app, which serves what it ships
   pageDevUrl: z.string().nullable(),
-  // the key the Keychain keeps for sealing secrets.json; null in dev, which seals with its own, or
-  // when the Keychain would not answer
-  sealingKey: sealingKeySchema.nullable(),
+  // the vault's keys as the Keychain holds them, and the name of each it would not give; null in
+  // dev, which keeps its keys in a file, or when the Keychain would not list them
+  vault: z
+    .strictObject({ keys: z.record(z.string(), z.string()), refused: z.array(z.string()) })
+    .nullable(),
 });
 export type Launch = z.infer<typeof launchSchema>;
 /** The hello as the shell writes it. */
@@ -116,6 +119,12 @@ type KeepAwake = z.infer<typeof keepAwakeSchema>;
 export const releaseSchema = z.strictObject({ version: z.string() });
 type Release = z.infer<typeof releaseSchema>;
 
+// keeps a key in the vault under its name, or forgets it
+export const vaultSetSchema = z.strictObject({ name: z.string(), value: z.string() });
+type VaultSet = z.infer<typeof vaultSetSchema>;
+export const vaultDeleteSchema = z.strictObject({ name: z.string() });
+type VaultDelete = z.infer<typeof vaultDeleteSchema>;
+
 // installs the release main offered, by its version: one the feed has moved past is refused
 export const installUpdateSchema = z.strictObject({ version: z.string() });
 type InstallUpdate = z.infer<typeof installUpdateSchema>;
@@ -135,6 +144,9 @@ export interface Host {
   checkUpdate: () => Promise<Release | null>;
   // downloads `version` and answers; then the shell stops main, installs it and starts the app again
   installUpdate: (version: string) => Promise<void>;
+  // the Keychain's: answers once it keeps the change, and refuses with why it would not
+  vaultSet: (name: string, value: string) => Promise<void>;
+  vaultDelete: (name: string) => Promise<void>;
 }
 
 export const hostOver = (peer: Peer<RelayMethod>): Host => ({
@@ -164,6 +176,12 @@ export const hostOver = (peer: Peer<RelayMethod>): Host => ({
   },
   tray: (model) => {
     peer.notify("host.tray", model);
+  },
+  vaultDelete: async (name) => {
+    await peer.request("host.vaultDelete", { name } satisfies VaultDelete, z.null());
+  },
+  vaultSet: async (name, value) => {
+    await peer.request("host.vaultSet", { name, value } satisfies VaultSet, z.null());
   },
 });
 

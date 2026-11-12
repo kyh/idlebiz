@@ -170,8 +170,8 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
     },
     stripe: {
       keyStatus: os.stripe.keyStatus.handler(() => stripeKeyStatus()),
-      removeKey: os.stripe.removeKey.handler(() => {
-        removeStripeKey();
+      removeKey: os.stripe.removeKey.handler(async () => {
+        await removeStripeKey();
         metricsPulse.now();
       }),
       saveKey: os.stripe.saveKey.handler(async ({ input }) => {
@@ -203,13 +203,13 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       post: os.team.post.handler(({ input }) => founder.founderMessage(input.text.trim())),
     },
     vercel: {
-      connect: os.vercel.connect.handler(({ input }) => {
-        vercelConnected(connectVercel(input));
+      connect: os.vercel.connect.handler(async ({ input }) => {
+        vercelConnected(await connectVercel(input));
       }),
       disconnect: os.vercel.disconnect.handler(({ input }) => disconnectVercel(input.productId)),
       projects: os.vercel.projects.handler(({ input }) => listVercelProjects(input.token)),
-      saveToken: os.vercel.saveToken.handler(({ input }) => {
-        vercelConnected(saveVercelToken(input));
+      saveToken: os.vercel.saveToken.handler(async ({ input }) => {
+        vercelConnected(await saveVercelToken(input));
       }),
     },
   });

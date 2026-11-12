@@ -375,13 +375,11 @@ export const foundCompany = async (page: Page): Promise<Founded> => {
   return { company, employees: await api.employees.list(), product };
 };
 
-const secretsFile = (root: string): string => path.join(root, "secrets.json");
+/** Where a development launch's vault keeps its keys (apps/cli/src/server/vault/vault.ts). */
+const vaultFile = (root: string): string => path.join(root, "vault.json");
 
-/** secrets.json as written, to look for a key in plain text anywhere in it. */
-export const secretsText = (root: string): Promise<string> => readFile(secretsFile(root), "utf-8");
+export const readVault = async (root: string): Promise<JsonRecord> =>
+  jsonRecordSchema.parse(parseJson(await readFile(vaultFile(root), "utf-8")));
 
-export const readSecrets = async (root: string): Promise<JsonRecord> =>
-  jsonRecordSchema.parse(parseJson(await secretsText(root)));
-
-export const writeSecrets = (root: string, secrets: JsonRecord): Promise<void> =>
-  writeFile(secretsFile(root), JSON.stringify(secrets, null, 2), { mode: 0o600 });
+export const writeVault = (root: string, keys: JsonRecord): Promise<void> =>
+  writeFile(vaultFile(root), JSON.stringify(keys, null, 2), { mode: 0o600 });

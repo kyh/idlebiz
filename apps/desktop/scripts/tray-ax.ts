@@ -303,8 +303,8 @@ export const dismissDialog = (): void => {
   }
 };
 
-// SecurityAgent draws the Keychain's prompts: one open means a launch is held on a read of the
-// sealing key it was not let make silently
+// SecurityAgent draws the Keychain's prompts: one open means a launch is held on a read of a key
+// its vault was not let read silently
 const PROMPTS = `
 on run argv
   tell application "System Events"

@@ -13,7 +13,7 @@ import type { Sandbox } from "@repo/sandbox/profile";
 import { pagePorts } from "../page-server";
 import { rootDir } from "../paths";
 import { RefusalError } from "../refusal";
-import { secretsPath } from "../secrets";
+import { vaultFile } from "../vault/vault";
 
 // Vite's dev server reads any file of the checkout to whoever asks (`/@fs`) and under
 // `pnpm dev:browser` signs a browser in to main's page, and main's own page port carries the
@@ -43,7 +43,7 @@ export const sandboxOf = async (
       apiSocket,
       clis: RUNNER_IDS.map(runnerBin),
       closedPorts: closedPorts(),
-      hostOnly: [secretsPath()],
+      hostOnly: [vaultFile()],
       label: label === null ? null : `${RUN_LABEL}${label}`,
       save: rootDir(),
       writable,

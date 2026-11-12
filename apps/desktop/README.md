@@ -29,7 +29,7 @@ How each part works is told once, in the repo's [AGENTS.md](../../AGENTS.md) and
 
 - main as the shell's child over its stdio, the window as main's own page, the menu bar, the login
   item and updates: [The page, the shell and main](../../docs/app.md#the-page-the-shell-and-main);
-- the Keychain's sealing key: [Keys and what spends them](../../docs/keys.md);
+- the vault's Keychain items: [Keys and what spends them](../../docs/keys.md);
 - the dev loop, the toolchain and what Linux needs besides:
   [Quickstart](../../AGENTS.md#quickstart);
 - the pack, the release and the smokes: [Packaging and release](../../docs/packaging.md).

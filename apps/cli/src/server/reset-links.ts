@@ -2,7 +2,8 @@ import { formatUsd } from "@repo/domain/format";
 import type { LinkCore } from "./link-record";
 import type { Order } from "./order";
 import { RefusalError } from "./refusal";
-import { STRIPE_SECRET_KEY, getSecret } from "./secrets";
+import { STRIPE_SECRET_KEY } from "./vault/names";
+import { getSecret } from "./vault/vault";
 import * as store from "./store/store";
 import { switchOffPaymentLink } from "./stripe-links";
 

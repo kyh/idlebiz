@@ -74,7 +74,7 @@ describe("JSON file read for an update", () => {
 });
 
 describe.each([false, true])("atomicWrite, durable: %s", (durable) => {
-  const secrets = path.join(root, "secrets.json");
+  const secrets = path.join(root, "vault.json");
   const leak = path.join(root, "leak");
 
   it.each([

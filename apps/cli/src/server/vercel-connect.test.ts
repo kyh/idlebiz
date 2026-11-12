@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import * as store from "./store/store";
-import { getSecret, setSecret } from "./secrets";
+import { getSecret, setSecret } from "./vault/vault";
 import {
   connectVercel,
   disconnectVercel,
@@ -44,24 +44,24 @@ const vercelAccount = (override: Override = () => null): (string | null)[] => {
   return tokens;
 };
 
-it("rejects an unknown product before replacing the founder's credential", () => {
-  setSecret("VERCEL_TOKEN", "existing-token");
+it("rejects an unknown product before replacing the founder's credential", async () => {
+  await setSecret("VERCEL_TOKEN", "existing-token");
 
-  expect(() =>
+  await expect(
     connectVercel({
       productId: "missing",
       projectId: "prj_new",
       projectName: "new-project",
       token: "replacement-token",
     }),
-  ).toThrow();
+  ).rejects.toThrow("no product missing");
 
   expect(getSecret("VERCEL_TOKEN")).toBe("existing-token");
 });
 
-it("unbinds the active product without removing the token every product deploys with", () => {
+it("unbinds the active product without removing the token every product deploys with", async () => {
   const product = foundProduct();
-  connectVercel({
+  await connectVercel({
     productId: product.id,
     projectId: "prj_acme",
     projectName: "acme",
@@ -75,33 +75,38 @@ it("unbinds the active product without removing the token every product deploys 
   expect(getSecret("VERCEL_TOKEN")).toBe("shared-token");
 });
 
-it("binds a product with the saved token when none is given, leaving it as it was", () => {
-  setSecret("VERCEL_TOKEN", "saved-token");
+it("binds a product with the saved token when none is given, leaving it as it was", async () => {
+  await setSecret("VERCEL_TOKEN", "saved-token");
   const product = foundProduct();
 
-  connectVercel({ productId: product.id, projectId: "prj_acme", projectName: "acme" });
+  await connectVercel({ productId: product.id, projectId: "prj_acme", projectName: "acme" });
 
   expect(store.requireProduct(product.id).vercel?.projectId).toBe("prj_acme");
   expect(getSecret("VERCEL_TOKEN")).toBe("saved-token");
 });
 
-it("saves a token with no project picked, leaving the product for its first deploy to bind", () => {
+it("saves a token with no project picked, leaving the product for its first deploy to bind", async () => {
   const product = foundProduct();
 
-  const connection = saveVercelToken({ productId: product.id, token: "fresh-token" });
+  const connection = await saveVercelToken({ productId: product.id, token: "fresh-token" });
 
   expect(getSecret("VERCEL_TOKEN")).toBe("fresh-token");
   expect(store.requireProduct(product.id).vercel).toBeNull();
   expect(connection).toEqual({ kind: "token" });
 });
 
-it("answers every product with the first token, however it is saved, and only the one bound after", () => {
+it("answers every product with the first token, however it is saved, and only the one bound after", async () => {
   const product = foundProduct();
 
   expect([
-    connectVercel({ productId: product.id, projectId: "prj_a", projectName: "a", token: "first" }),
-    saveVercelToken({ productId: product.id, token: "second" }),
-    connectVercel({ productId: product.id, projectId: "prj_b", projectName: "b" }),
+    await connectVercel({
+      productId: product.id,
+      projectId: "prj_a",
+      projectName: "a",
+      token: "first",
+    }),
+    await saveVercelToken({ productId: product.id, token: "second" }),
+    await connectVercel({ productId: product.id, projectId: "prj_b", projectName: "b" }),
   ]).toEqual([
     { kind: "token" },
     { kind: "product", productId: product.id },
@@ -110,7 +115,7 @@ it("answers every product with the first token, however it is saved, and only th
 });
 
 it("lists the saved token's projects when none is given", async () => {
-  setSecret("VERCEL_TOKEN", "saved-token");
+  await setSecret("VERCEL_TOKEN", "saved-token");
   const tokens = vercelAccount();
 
   const listed = await listVercelProjects();

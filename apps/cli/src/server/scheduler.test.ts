@@ -1269,7 +1269,7 @@ describe("an integration the founder connects", () => {
   it("leaves a Stripe ask waiting while the key saved is in test mode", async () => {
     const { founder, task } = await blockedOn(KEY);
     writeFileSync(
-      path.join(root, "secrets.json"),
+      path.join(root, "vault.json"),
       JSON.stringify({ STRIPE_SECRET_KEY: "sk_test_x" }),
     );
     founder.resumeIntegrationAsks("stripe");
@@ -1370,7 +1370,7 @@ describe("an action only the founder can take", () => {
   it("sends none of IdleBiz's own keys to the team, whatever the founder types", async () => {
     const { founder, task } = await blockedOn(POST);
     const key = "sk_live_founders_own_key";
-    writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ STRIPE_SECRET_KEY: key }));
+    writeFileSync(path.join(root, "vault.json"), JSON.stringify({ STRIPE_SECRET_KEY: key }));
     const card = store.raiseOrderCard(
       { kind: "order", orderId: "1", trouble: "deliver it" },
       "Order 1: deliver it",

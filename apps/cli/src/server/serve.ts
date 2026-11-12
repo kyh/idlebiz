@@ -33,14 +33,14 @@ import { metricsPulse } from "./metrics-pulse";
 import { createPageRouter } from "./page-router";
 import { devPageOrigin, startPageServer } from "./page-server";
 import type { PageServer, PageSource } from "./page-server";
-import { launchRoot, onRealSave, openSave, rootDir, runBinDir } from "./paths";
+import { launchRoot, openSave, rootDir, runBinDir } from "./paths";
 import { readPrintFile } from "./print-listing";
 import { printfulCatalog, printfulQuote } from "./printful";
 import { stdioPeer } from "./relay/stdio";
 import { claimSave } from "./save-claim";
 import type { SaveClaim } from "./save-claim";
 import { createScheduler } from "./scheduler";
-import { DEV_SECRETS_KEY, checkSecrets, sealerFor, setSealer } from "./secrets";
+import { clearVault, openVault } from "./vault/vault";
 import * as store from "./store/store";
 import {
   stripeCheckoutAccess,
@@ -98,6 +98,12 @@ const resetGame = async (): Promise<void> => {
   suspendWrites();
   try {
     const [, linksLeft] = await Promise.all([stopAgents(), switchOffBeforeReset()]);
+    // the Keychain's items outlive the save; a key that will not go is the founder's to delete
+    try {
+      await clearVault();
+    } catch (error) {
+      report("reset vault", error);
+    }
     await rm(rootDir(), { force: true, maxRetries: 5, recursive: true, retryDelay: 200 });
     if (linksLeft) {
       await host().messageBox({
@@ -139,20 +145,6 @@ const windowChanged = ({ state }: WindowChange): void => {
   }
   if (state === "hidden" || state === "shown") {
     appTray.setWindowless(state === "hidden");
-  }
-};
-
-// The app can't open what dev's key seals, so on the real save dev seals nothing:
-// a key dev entered or found plain stays plain for the app to seal, never stranded.
-const sealSecrets = (launch: Launch): void => {
-  if (!launch.packaged && onRealSave()) {
-    report("secrets", "dev on the real save keeps secrets.json's keys as it finds them");
-  } else if (!launch.packaged) {
-    setSealer(sealerFor(DEV_SECRETS_KEY));
-  } else if (launch.sealingKey === null) {
-    report("secrets", "the Keychain is unavailable, so secrets.json keeps its keys as plain text");
-  } else {
-    setSealer(sealerFor(launch.sealingKey));
   }
 };
 
@@ -235,11 +227,10 @@ const boot = async (launch: Launch): Promise<void> => {
     }
   }
   claim = await claimSave(rootDir(), homedir());
-  sealSecrets(launch);
+  const vaultProblem = openVault(launch, host());
   store.initStore();
-  const unreadableSecrets = checkSecrets();
-  if (unreadableSecrets) {
-    store.noteUnreadable("secrets", unreadableSecrets.file, unreadableSecrets.cause);
+  if (vaultProblem) {
+    store.noteUnreadable("secrets", vaultProblem.where, vaultProblem.cause);
   }
   // the runs' sandbox and the look for their CLIs read PATH, so they wait for the login shell's;
   // the window does not

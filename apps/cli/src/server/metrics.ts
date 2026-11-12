@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { HttpError, getJson } from "./lib/http";
-import { STRIPE_SECRET_KEY, VERCEL_TOKEN, getSecret } from "./secrets";
+import { STRIPE_SECRET_KEY, VERCEL_TOKEN } from "./vault/names";
+import { getSecret } from "./vault/vault";
 import { STRIPE_API, isTestKey, stripeHeaders } from "./stripe-api";
 import type { Bet } from "@repo/domain/bets";
 import type { Product } from "@repo/domain/domain";

@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OrderCard } from "@repo/domain/domain";
 import type { ChargeLink } from "./link-record";
 import type { Listing } from "./listing";
@@ -15,8 +15,14 @@ import {
 } from "./company-actions";
 import { switchOffBeforeReset } from "./reset-links";
 import { foundAcme, freshSave } from "./test-support/save";
+import { fileVault, keychainVault } from "./test-support/vault";
+import { setSecret, vaultFile } from "./vault/vault";
 
 const root = freshSave();
+
+beforeEach(() => {
+  fileVault();
+});
 
 const TEE = "plink_tee";
 const PRO = "plink_pro";
@@ -69,10 +75,7 @@ const fakeStripe = ({ answers = {} }: StripeSetup = {}) => {
 };
 
 const saveKey = (key: string | null) => {
-  writeFileSync(
-    path.join(root, "secrets.json"),
-    JSON.stringify(key === null ? {} : { STRIPE_SECRET_KEY: key }),
-  );
+  writeFileSync(vaultFile(), JSON.stringify(key === null ? {} : { STRIPE_SECRET_KEY: key }));
 };
 
 const listingOn = (productId: string): Listing => ({
@@ -280,10 +283,7 @@ describe("retiring a product", () => {
 
   it("waits for a saved key this launch cannot open, rather than hand its links over as keyless", async () => {
     const { side } = openShop();
-    writeFileSync(
-      path.join(root, "secrets.json"),
-      JSON.stringify({ STRIPE_SECRET_KEY: "sealed:v2:c2VhbGVk" }),
-    );
+    keychainVault({ refused: ["STRIPE_SECRET_KEY"] });
     const stripe = fakeStripe();
 
     await retireProduct(side.id, "dud", null);
@@ -292,7 +292,7 @@ describe("retiring a product", () => {
     expect(statesOf()).toEqual({ [PRO]: "selling", [TEE]: "selling" });
     expect(cards()).toEqual([]);
 
-    saveKey("rk_live_founder");
+    await setSecret("STRIPE_SECRET_KEY", "rk_live_founder");
     await switchOffRetiredLinks();
 
     expect(statesOf()).toEqual({ [PRO]: "switched-off", [TEE]: "switched-off" });

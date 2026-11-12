@@ -1,17 +1,6 @@
-import {
-  apiOf,
-  expect,
-  foundCompany,
-  keyShot,
-  readSecrets,
-  secretsText,
-  test,
-  writeSecrets,
-} from "./harness";
+import { apiOf, expect, foundCompany, keyShot, readVault, test, writeVault } from "./harness";
 
-const SEALED = /^sealed:v2:/u;
-
-test("a Vercel token Vercel takes binds the product's project and is kept sealed", async ({
+test("a Vercel token Vercel takes binds the product's project and is kept in the vault", async ({
   launch,
   root,
 }) => {
@@ -33,9 +22,7 @@ test("a Vercel token Vercel takes binds the product's project and is kept sealed
 
   await users.click();
   await expect(page.getByRole("button", { exact: true, name: "▲ Vercel ✓" })).toBeVisible();
-  expect(await secretsText(root)).not.toContain(token);
-  const secrets = await readSecrets(root);
-  expect(secrets.VERCEL_TOKEN).toMatch(SEALED);
+  expect(await readVault(root)).toHaveProperty("VERCEL_TOKEN", token);
 });
 
 test("a Vercel token is kept with no project picked, for the first deploy to make one", async ({
@@ -56,8 +43,7 @@ test("a Vercel token is kept with no project picked, for the first deploy to mak
   await connect.getByRole("button", { name: "Save token only" }).click();
   await expect(connect).toBeHidden();
 
-  const secrets = await readSecrets(root);
-  expect(secrets.VERCEL_TOKEN).toMatch(SEALED);
+  expect(await readVault(root)).toHaveProperty("VERCEL_TOKEN", "vercel_e2e_fresh_token");
   const api = await apiOf(page);
   const [product] = await api.products.list();
   expect(product?.vercel).toBeNull();
@@ -80,7 +66,7 @@ test("a Vercel token Vercel refuses is shown as refused and never saved", async 
   await expect(
     connect.getByText("That token was rejected — create one at vercel.com/account/tokens."),
   ).toBeVisible();
-  expect(await readSecrets(root)).not.toHaveProperty("VERCEL_TOKEN");
+  expect(await readVault(root)).not.toHaveProperty("VERCEL_TOKEN");
 });
 
 test("a Stripe key Stripe refuses is shown as refused and never saved", async ({
@@ -104,10 +90,10 @@ test("a Stripe key Stripe refuses is shown as refused and never saved", async ({
   await key.fill("sk_test_e2eNotARealKey");
   await save.click();
   await expect(budget.getByRole("alert")).toContainText("Stripe doesn't recognise this key");
-  expect(await readSecrets(root)).not.toHaveProperty("STRIPE_SECRET_KEY");
+  expect(await readVault(root)).not.toHaveProperty("STRIPE_SECRET_KEY");
 });
 
-test("a Stripe key Stripe takes is kept sealed, shown as set, replaceable and removable", async ({
+test("a Stripe key Stripe takes is kept in the vault, shown as set, replaceable and removable", async ({
   launch,
   root,
 }) => {
@@ -125,9 +111,7 @@ test("a Stripe key Stripe takes is kept sealed, shown as set, replaceable and re
   await expect(saved).toBeVisible();
   await expect(saved.getByText("test", { exact: true })).toBeVisible();
   await keyShot(page, "stripe-key-set");
-  expect(await secretsText(root)).not.toContain(key);
-  const secrets = await readSecrets(root);
-  expect(secrets.STRIPE_SECRET_KEY).toMatch(SEALED);
+  expect(await readVault(root)).toHaveProperty("STRIPE_SECRET_KEY", key);
 
   await budget.getByLabel("New Stripe secret key").fill("sk_test_e2eGood5678");
   await budget.getByRole("button", { name: "Replace key" }).click();
@@ -135,30 +119,24 @@ test("a Stripe key Stripe takes is kept sealed, shown as set, replaceable and re
 
   await budget.getByRole("button", { exact: true, name: "Remove" }).click();
   await expect(budget.getByLabel("Stripe secret key", { exact: true })).toBeVisible();
-  expect(await readSecrets(root)).not.toHaveProperty("STRIPE_SECRET_KEY");
+  expect(await readVault(root)).not.toHaveProperty("STRIPE_SECRET_KEY");
 });
 
-test("a token pasted into secrets.json is sealed at boot and still used", async ({
-  launch,
-  root,
-}) => {
+test("a token pasted into vault.json is used", async ({ launch, root }) => {
   const founding = await launch();
   const { product } = await foundCompany(founding.page);
   const api = await apiOf(founding.page);
   await api.vercel.connect({ productId: product.id, projectId: "prj_e2e", projectName: "e2e" });
   await founding.close();
   const token = "e2e-pasted-vercel-token";
-  await writeSecrets(root, { ...(await readSecrets(root)), VERCEL_TOKEN: token });
+  await writeVault(root, { ...(await readVault(root)), VERCEL_TOKEN: token });
 
   const { page } = await launch({ keys: "refused" });
-  expect(await secretsText(root)).not.toContain(token);
-  const secrets = await readSecrets(root);
-  expect(secrets.VERCEL_TOKEN).toMatch(SEALED);
-  // only a token main opened reaches Vercel, which here refuses every one
+  // only a token main read reaches Vercel, which here refuses every one
   await expect(page.getByRole("button", { name: /vercel refused/iu })).toBeVisible();
 });
 
-test("a Printful token Printful takes is kept sealed, shown with its store, replaceable and removable", async ({
+test("a Printful token Printful takes is kept in the vault, shown with its store, replaceable and removable", async ({
   launch,
   root,
 }) => {
@@ -173,9 +151,7 @@ test("a Printful token Printful takes is kept sealed, shown with its store, repl
   await budget.getByLabel("Printful private token").fill(token);
   await budget.getByRole("button", { name: "Save token" }).click();
   await expect(budget.getByText("✓ token …9876 · E2E Prints")).toBeVisible();
-  expect(await secretsText(root)).not.toContain(token);
-  const secrets = await readSecrets(root);
-  expect(secrets.PRINTFUL_TOKEN).toMatch(SEALED);
+  expect(await readVault(root)).toHaveProperty("PRINTFUL_TOKEN", token);
 
   const renewed = "pf_e2e_private_token_5432";
   await budget.getByLabel("New Printful private token").fill(renewed);
@@ -184,5 +160,5 @@ test("a Printful token Printful takes is kept sealed, shown with its store, repl
 
   await budget.getByRole("button", { name: "Remove token" }).click();
   await expect(budget.getByLabel("Printful private token", { exact: true })).toBeVisible();
-  expect(await readSecrets(root)).not.toHaveProperty("PRINTFUL_TOKEN");
+  expect(await readVault(root)).not.toHaveProperty("PRINTFUL_TOKEN");
 });

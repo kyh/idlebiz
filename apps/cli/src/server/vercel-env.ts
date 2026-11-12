@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { HttpError } from "./lib/http";
-import { ENV_PREFIX, MIN_SECRET_LENGTH, hasSecret, secretsUnder, setSecret } from "./secrets";
-import type { EnvSecretName } from "./secrets";
+import { ENV_PREFIX } from "./vault/names";
+import { MIN_SECRET_LENGTH, hasSecret, secretsUnder, setSecret } from "./vault/vault";
+import type { EnvSecretName } from "./vault/names";
 import { VercelSaid, vercelCall, vercelRefusalOf, vercelSays } from "./vercel-api";
 import type { Product, VercelBinding } from "@repo/domain/domain";
 import { isPublicEnvName } from "./env-name";
@@ -45,17 +46,17 @@ export const teamSetEnv = (product: ProductRef, projectId: string, name: string)
   hasSecret(keptKey(product, projectId, name));
 
 /** Keep a value Vercel now holds, both as the team's name to replace and for the deploy guard. */
-export const keepEnvValue = (
+export const keepEnvValue = async (
   product: ProductRef,
   projectId: string,
   name: string,
   value: string,
-): void => {
-  setSecret(keptKey(product, projectId, name), value);
+): Promise<void> => {
+  await setSecret(keptKey(product, projectId, name), value);
 };
 
 /**
- * Every value set_env set under a server-only name, on any product (kept in secrets.json, never
+ * Every value set_env set under a server-only name, on any product (kept in the vault, never
  * the save, which runs read): one product's key ships as publicly from another's folder. A value
  * under a public name is built into the page anyway, so a file holding it ships nothing new. That
  * trusts the name, not the framework: a prefix the product's framework does not read (`VITE_` in

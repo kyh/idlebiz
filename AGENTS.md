@@ -308,7 +308,8 @@ Drive anything requiring a window live instead, or cover it in the e2e suite.
 Nothing is required to run. Every key is optional and its absence disables one feature
 rather than crashing boot.
 
-- IdleBiz's keys live in `~/.idlebiz/secrets.json`, not a `.env`, and are entered in the app
+- IdleBiz's keys live in the macOS Keychain (a development launch's in `<root>/vault.json`), not
+  a `.env`, and are entered in the app
   ([Keys and what spends them](docs/keys.md)).
 - The shell's env reaches main, but for every `NODE_*` and `OPENSSL_*` variable, which the shell
   and the dev host both drop (`main_env`, `mainEnv`): none loads code into main, and no `NODE_ENV`

@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { atomicWrite } from "./lib/fs";
 import { savePrintfulToken } from "./printful-token";
-import { setSecret } from "./secrets";
+import { setSecret } from "./vault/vault";
 import * as store from "./store/store";
 import { foundAcme, freshSave } from "./test-support/save";
 
@@ -80,10 +80,10 @@ describe("what the founder would lose to an OS crash", () => {
         ),
       ),
     );
-    setSecret("VERCEL_TOKEN", "vercel-token");
+    await setSecret("VERCEL_TOKEN", "vercel-token");
     await savePrintfulToken("pf_founder_token_0000000000abcd");
 
-    expect(flushedBefore("secrets.json")).toBe(true);
+    expect(flushedBefore("vault.json")).toBe(true);
     expect(flushedBefore("printful-store.json")).toBe(true);
   });
 });

@@ -55,8 +55,6 @@ export const rootDir = (): string => {
   }
   return openedRoot;
 };
-/** Whether this launch runs on the founder's own save rather than an isolated root. */
-export const onRealSave = (): boolean => rootDir() === DEFAULT_ROOT_DIR;
 
 /** The save: a folder of its own, so founding publishes the whole company with one rename. */
 export const companyDir = (): string => path.join(rootDir(), "company");

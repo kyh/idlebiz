@@ -239,7 +239,7 @@ const fakeWorld = ({
 
 const saveSecrets = (stripeKey = "rk_live_founder") => {
   writeFileSync(
-    path.join(root, "secrets.json"),
+    path.join(root, "vault.json"),
     JSON.stringify({ PRINTFUL_TOKEN: "pf_founder_token", STRIPE_SECRET_KEY: stripeKey }),
   );
   writeFileSync(
@@ -677,7 +677,7 @@ describe("the order pump", () => {
 
   it("asks Stripe nothing without a key", async () => {
     openShop();
-    writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ PRINTFUL_TOKEN: "pf_token" }));
+    writeFileSync(path.join(root, "vault.json"), JSON.stringify({ PRINTFUL_TOKEN: "pf_token" }));
     const world = fakeWorld({ sessions: [checkout("cs_paid")] });
 
     await pumpOrders(NOW, "read");
@@ -687,7 +687,7 @@ describe("the order pump", () => {
 
   it("cards the founder when no live key reads a live link that still takes money", async () => {
     openShop();
-    writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ PRINTFUL_TOKEN: "pf_token" }));
+    writeFileSync(path.join(root, "vault.json"), JSON.stringify({ PRINTFUL_TOKEN: "pf_token" }));
     fakeWorld({ sessions: [checkout("cs_paid")] });
 
     await pumpOrders(NOW, "read");
@@ -710,7 +710,7 @@ describe("the order pump", () => {
     for (const held of store.paymentLinks()) {
       store.setLinkState(held, { at: NOW, by: "idlebiz", kind: "switched-off" });
     }
-    writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ PRINTFUL_TOKEN: "pf_token" }));
+    writeFileSync(path.join(root, "vault.json"), JSON.stringify({ PRINTFUL_TOKEN: "pf_token" }));
     fakeWorld();
 
     await pumpOrders(NOW, "read");

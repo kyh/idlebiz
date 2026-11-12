@@ -13,7 +13,7 @@ use crate::main_log::{self, MAIN_LOG_MAX_BYTES, MainLog};
 use crate::main_process::{Host, MainProcess, MainSpec, RequestError, describe};
 use crate::protocol::Hello;
 use crate::runtime::Packaged;
-use crate::{host, keychain, runtime, shell_log, window};
+use crate::{host, runtime, shell_log, vault, window};
 
 /// How long main has to boot once it is said hello to: it opens the save, the control plane and
 /// the page's server, and waits on nothing of the founder's.
@@ -179,7 +179,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>, opened_at_login: bool) {
         opened_at_login,
         packaged: bundled,
         page_dev_url,
-        sealing_key: keychain::sealing_key(bundled),
+        vault: vault::open(bundled),
     });
     let hello = match hello {
         Ok(hello) => hello,

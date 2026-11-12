@@ -97,7 +97,7 @@ export const deployingRun = (result: DeployResult) => {
 };
 
 export const connectVercel = (root: string) =>
-  writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ VERCEL_TOKEN: TOKEN }));
+  writeFileSync(path.join(root, "vault.json"), JSON.stringify({ VERCEL_TOKEN: TOKEN }));
 
 export const PAID_URL = "https://buy.stripe.com/pro";
 

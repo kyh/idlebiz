@@ -26,7 +26,7 @@ describe("a reset while Stripe makes a signed payment link", () => {
       throw new Error("no priya");
     }
     writeFileSync(
-      path.join(root, "secrets.json"),
+      path.join(root, "vault.json"),
       JSON.stringify({ STRIPE_SECRET_KEY: "rk_live_founder" }),
     );
     const switchedOff: string[] = [];

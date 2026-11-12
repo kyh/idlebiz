@@ -1,28 +1,18 @@
-import { readFileSync, rmSync } from "node:fs";
-import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RefusalError } from "./refusal";
-import { getSecret, setSealer, setSecret } from "./secrets";
+import { getSecret, setSecret } from "./vault/vault";
 import { noteStripeRead, removeStripeKey, saveStripeKey, stripeKeyStatus } from "./stripe-key";
 import { fetchRealMetrics, stripeCredential } from "./metrics";
 import type { StripeAnswer } from "./metrics";
 import { tempSave } from "./test-support/save";
+import { keychainVault } from "./test-support/vault";
 
-const root = tempSave();
+tempSave();
 
-const secretsFile = path.join(root, "secrets.json");
+let keychain = keychainVault();
 
 beforeEach(() => {
-  rmSync(secretsFile, { force: true });
-  // a stand-in for the Keychain: it only has to keep the key out of the file
-  setSealer({
-    open: (sealed) => Buffer.from(sealed.toReversed()).toString("utf-8"),
-    seal: (plain) => Buffer.from(Buffer.from(plain, "utf-8").toReversed()),
-  });
-});
-
-afterEach(() => {
-  setSealer(null);
+  keychain = keychainVault();
 });
 
 /** Stripe answering every call with `answer`; keeps what each call asked for, and with which key. */
@@ -57,7 +47,7 @@ const refused = (status: number) => () =>
   );
 
 describe("saving the charging key", () => {
-  it("keeps a key Stripe takes, sealed, and tells the renderer only its last four and mode", async () => {
+  it("keeps a key Stripe takes in the Keychain, and tells the renderer only its last four and mode", async () => {
     const asked = stripe(listed);
 
     await saveStripeKey("sk_live_founder1234");
@@ -69,7 +59,7 @@ describe("saving the charging key", () => {
         url: "https://api.stripe.com/v1/payment_links?limit=1",
       },
     ]);
-    expect(readFileSync(secretsFile, "utf-8")).not.toContain("sk_live_founder1234");
+    expect(keychain.calls).toEqual([["STRIPE_SECRET_KEY", "sk_live_founder1234"]]);
     expect(getSecret("STRIPE_SECRET_KEY")).toBe("sk_live_founder1234");
     expect(stripeKeyStatus()).toEqual({ last4: "1234", livemode: true, state: "set" });
   });
@@ -185,14 +175,14 @@ describe("removing the charging key", () => {
     stripe(listed);
     await saveStripeKey("sk_live_founder1234");
 
-    removeStripeKey();
+    await removeStripeKey();
 
     expect(stripeKeyStatus()).toEqual({ state: "unset" });
     expect(getSecret("STRIPE_SECRET_KEY")).toBeNull();
   });
 
-  it("counts a key left blank in the file as none", () => {
-    setSecret("STRIPE_SECRET_KEY", "");
+  it("counts a key left blank in the file as none", async () => {
+    await setSecret("STRIPE_SECRET_KEY", "");
     expect(stripeKeyStatus()).toEqual({ state: "unset" });
   });
 });

@@ -12,7 +12,7 @@ const SANDBOX: Sandbox = {
   ...SANDBOX_FIXTURE,
   skillFolders: [],
   sockets: [],
-  unreadable: [{ match: "subpath", path: "/Users/me/.idlebiz/secrets.json" }],
+  unreadable: [{ match: "subpath", path: "/Users/me/.idlebiz/vault.json" }],
   writable: [],
 };
 

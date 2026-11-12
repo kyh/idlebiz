@@ -145,7 +145,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       closedPorts: [],
       env: {},
       home,
-      hostOnly: [at(".idlebiz/secrets.json")],
+      hostOnly: [at(".idlebiz/vault.json")],
       pathDirs: [],
       save: at(".idlebiz"),
       scratch: [at("tmp")],
@@ -245,7 +245,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     "Library/Application Support/Slack/Cookies",
     "Library/Application Support/discord/Local Storage/leveldb/x.ldb",
     "Library/Cookies/Cookies.binarycookies",
-    ".idlebiz/secrets.json",
+    ".idlebiz/vault.json",
   ];
 
   it.each(["claude", "codex"] as const)(
@@ -832,12 +832,12 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     });
   });
 
-  it("keeps a run from reading a sibling of secrets.json, where the save is named and where it leads", async () => {
+  it("keeps a run from reading a sibling of vault.json, where the save is named and where it leads", async () => {
     link("linked-save", "elsewhere/idlebiz/");
-    const stale = plant("elsewhere/idlebiz/secrets.json.tmp");
-    const named = at("linked-save/secrets.json.tmp");
+    const stale = plant("elsewhere/idlebiz/vault.json.tmp");
+    const named = at("linked-save/vault.json.tmp");
     const sandboxed = sandbox({
-      hostOnly: [at("linked-save/secrets.json")],
+      hostOnly: [at("linked-save/vault.json")],
       save: at("linked-save"),
       writable: [],
     });
@@ -1379,7 +1379,7 @@ for (const target of targets) {
     expect(
       await checkSandbox(
         sandboxed,
-        under('(version 1)\n(allow default)\n(deny file-read* (regex #"/secrets\\.json$"))'),
+        under('(version 1)\n(allow default)\n(deny file-read* (regex #"/vault\\.json$"))'),
       ),
     ).toEqual({ kind: "wrote-outside" });
     expect(await checkSandbox(sandboxed, under("(version 1)\n(allow nonsense)"))).toMatchObject({

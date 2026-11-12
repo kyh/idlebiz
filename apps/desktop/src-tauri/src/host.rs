@@ -13,7 +13,7 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::protocol::{Ask, BoxKind, OpeningKind, Tell};
-use crate::{keep_awake, login_item, tray, updater};
+use crate::{keep_awake, login_item, tray, updater, vault};
 
 pub fn answer<R: Runtime>(
     app: &AppHandle<R>,
@@ -66,6 +66,14 @@ pub fn answer<R: Runtime>(
         }
         Ask::InstallUpdate(request) => {
             updater::install(app, &request.version)?;
+            Ok(Value::Null)
+        }
+        Ask::VaultSet(request) => {
+            vault::set(&request.name, &request.value)?;
+            Ok(Value::Null)
+        }
+        Ask::VaultDelete(request) => {
+            vault::delete(&request.name)?;
             Ok(Value::Null)
         }
     }

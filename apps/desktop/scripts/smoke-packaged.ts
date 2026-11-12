@@ -12,19 +12,17 @@ import { setTimeout as delay } from "node:timers/promises";
 import { HANDOFF_PARAM } from "@repo/contract/routes";
 import {
   BOOT_TIMEOUT_MS,
-  KEYCHAIN_ACCOUNT,
-  KEYCHAIN_ITEM,
   KEYCHAIN_SERVICE,
   KEYCHAIN_TIMEOUT_MS,
   MAIN_EXITED_CLEANLY,
-  NO_SUCH_ITEM,
   SINGLE_INSTANCE_SOCKET,
   SYSTEM_PATH,
   WINDOW_LOADED,
   answers,
   ended,
   exitsWithin,
-  holdsSealingKey,
+  VAULT_READ,
+  holdsVaultItem,
   how,
   killGroup,
   launch,
@@ -74,23 +72,23 @@ const log = (line: string): void => {
 };
 
 /**
- * Deletes the key a launch made on a Mac whose Keychain held none: it sealed only the scratch save,
- * and kept, it would stop the next smoke here and meet the first IdleBiz installed after with a
- * prompt, being this ad-hoc pack's.
+ * Deletes any key a launch wrote, which none should, entering none: kept, it would stop the next
+ * smoke here and meet the first IdleBiz installed after with a prompt, being this ad-hoc pack's.
  */
-const forgetKey = (): void => {
-  const deleted = spawnSync("security", ["delete-generic-password", ...KEYCHAIN_ITEM], {
+const forgetKeys = (): void => {
+  if (!holdsVaultItem()) {
+    return;
+  }
+  process.exitCode = 1;
+  const deleted = spawnSync("security", ["delete-generic-password", "-s", KEYCHAIN_SERVICE], {
     stdio: "ignore",
     timeout: KEYCHAIN_TIMEOUT_MS,
   });
-  if (deleted.status === 0) {
-    log("deleted the key the launch made, leaving the Keychain as the smoke found it");
-  } else if (deleted.status !== NO_SUCH_ITEM) {
-    process.exitCode = 1;
-    process.stderr.write(
-      `smoke: the Keychain kept the key the launch made (security exited ${deleted.status ?? deleted.signal}): delete "${KEYCHAIN_SERVICE}" in Keychain Access before the next smoke\n`,
-    );
-  }
+  process.stderr.write(
+    deleted.status === 0 && !holdsVaultItem()
+      ? "smoke: the launch wrote a key to the Keychain, entering none; the smoke deleted it\n"
+      : `smoke: the launch wrote a key to the Keychain, entering none, which the smoke could not delete: delete "${KEYCHAIN_SERVICE}" in Keychain Access before the next smoke\n`,
+  );
 };
 
 /**
@@ -201,12 +199,11 @@ if (await answers(SINGLE_INSTANCE_SOCKET)) {
     "an IdleBiz is running on this Mac, which this launch would hand over to: quit it",
   );
 }
-// held, the key is an installed IdleBiz's, and an ad-hoc pack is not the app that made it: its read
-// would wait on a Keychain prompt nobody answers. Absent, the launch makes one, as a first launch
-// does, which the smoke deletes as it ends (`forgetKey`)
-if (holdsSealingKey()) {
+// held, a key is an installed IdleBiz's, and an ad-hoc pack is not the app that made it: its read
+// would wait on a Keychain prompt nobody answers
+if (holdsVaultItem()) {
   throw new Error(
-    `the Keychain holds IdleBiz's key ("${KEYCHAIN_SERVICE}", "${KEYCHAIN_ACCOUNT}"), which this pack would wait on a prompt to read: smoke on a Mac without it, as CI's`,
+    `the Keychain holds IdleBiz's keys ("${KEYCHAIN_SERVICE}"), which this pack would wait on a prompt to read: smoke on a Mac without them, as CI's`,
   );
 }
 
@@ -284,6 +281,9 @@ try {
   launched.push(first);
   // the shell makes the window only once main answered hello, on the handoff main then mints
   await waitForLine(first, WINDOW_LOADED);
+  if (!first.output().includes(`${VAULT_READ}0 of its keys`)) {
+    throw new Error("the shell did not read the Keychain's empty vault at hello");
+  }
   main = mainOf(app, first.shell);
   log(`hello booted main (pid ${main.pid}) on the pack's node, and the window loaded its page`);
   proveEnv(main, expected, Object.keys(dropped));
@@ -357,6 +357,6 @@ try {
   if (mainGroup !== undefined && processes().some((running) => running.pgid === mainGroup)) {
     killGroup(mainGroup);
   }
-  forgetKey();
+  forgetKeys();
   await rm(scratch, { force: true, recursive: true });
 }

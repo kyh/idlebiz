@@ -349,7 +349,7 @@ describe.skipIf(!claudeRuns)("claude inside the sandbox", () => {
   );
 
   it("runs each command inside the sandbox", { timeout: 60_000 }, async () => {
-    const secrets = path.join(root, "secrets.json");
+    const secrets = path.join(root, "vault.json");
     writeFileSync(secrets, "sandboxed canary");
     writeFileSync(path.join(workspace, "own.txt"), "the run's own");
     await turn(`cat own.txt; cat ${secrets}`, true);

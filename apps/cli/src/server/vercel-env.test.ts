@@ -203,11 +203,11 @@ describe("the values a deploy may not ship", () => {
   const acme = { id: "acme" };
   const beta = { id: "beta" };
 
-  it("keeps one value a name per project of each product, replaced when the name is set again, and lets a deploy ship a public one", () => {
-    keepEnvValue(acme, "prj_1", "OPENAI_API_KEY", "sk-proj-old");
-    keepEnvValue(acme, "prj_1", "OPENAI_API_KEY", "sk-proj-new");
-    keepEnvValue(beta, "prj_2", "RESEND_API_KEY", "re_beta_key");
-    keepEnvValue(acme, "prj_1", "NEXT_PUBLIC_STRIPE_KEY", "pk_live_acmePublishable");
+  it("keeps one value a name per project of each product, replaced when the name is set again, and lets a deploy ship a public one", async () => {
+    await keepEnvValue(acme, "prj_1", "OPENAI_API_KEY", "sk-proj-old");
+    await keepEnvValue(acme, "prj_1", "OPENAI_API_KEY", "sk-proj-new");
+    await keepEnvValue(beta, "prj_2", "RESEND_API_KEY", "re_beta_key");
+    await keepEnvValue(acme, "prj_1", "NEXT_PUBLIC_STRIPE_KEY", "pk_live_acmePublishable");
 
     expect(teamSetEnv(acme, "prj_1", "NEXT_PUBLIC_STRIPE_KEY")).toBe(true);
     expect(unshippableEnvValues()).toEqual([
@@ -216,8 +216,8 @@ describe("the values a deploy may not ship", () => {
     ]);
   });
 
-  it("owns a name only on the project of the product that set it", () => {
-    keepEnvValue(acme, "prj_1", "STRIPE_WEBHOOK_SECRET", "whsec_acme");
+  it("owns a name only on the project of the product that set it", async () => {
+    await keepEnvValue(acme, "prj_1", "STRIPE_WEBHOOK_SECRET", "whsec_acme");
 
     expect(teamSetEnv(acme, "prj_1", "STRIPE_WEBHOOK_SECRET")).toBe(true);
     expect(teamSetEnv(acme, "prj_live", "STRIPE_WEBHOOK_SECRET")).toBe(false);

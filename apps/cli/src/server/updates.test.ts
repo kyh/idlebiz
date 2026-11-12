@@ -7,7 +7,7 @@ const launchOf = (packaged: boolean): Launch => ({
   openedAtLogin: false,
   packaged,
   pageDevUrl: null,
-  sealingKey: null,
+  vault: null,
 });
 
 const unasked = (): never => {
@@ -44,6 +44,8 @@ const shellOf = (feed: Feed) => {
     open: unasked,
     relaunch: unasked,
     tray: unasked,
+    vaultDelete: unasked,
+    vaultSet: unasked,
   };
   return { boxes, host, installed, told };
 };

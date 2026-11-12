@@ -97,11 +97,11 @@ nothing main started running, and nothing the poisoned env named was run or made
 a decoy save, another TMPDIR, a `ZDOTDIR`, a runner's home and model address, a CA, test money
 counted and an `OPENSSL_CONF`, and a shell, a CLI and a PATH whose programs leave a mark when run,
 as the `ZDOTDIR`'s startup file does; it leaves HOME alone, since the shell's own Keychain read
-may follow it. It refuses where an IdleBiz is running or the Keychain holds IdleBiz's key, which
-an ad-hoc pack would wait on a prompt to read, so on a Mac that runs IdleBiz it stops before it
-launches anything. A launch where the Keychain holds none makes one, as a first launch does, and
-the smoke deletes it as it ends, since kept it would stop the next smoke and prompt the first
-IdleBiz installed after. CI's `test-macos` job runs it on an ad-hoc pack.
+may follow it. It refuses where an IdleBiz is running or the Keychain holds any of IdleBiz's keys,
+which an ad-hoc pack would wait on a prompt to read, so on a Mac that runs IdleBiz it stops before
+it launches anything. The shell must say it read the empty vault at hello, and a key a launch wrote
+is deleted as the smoke ends and fails it, since kept it would stop the next smoke and prompt the
+first IdleBiz installed after. CI's `test-macos` job runs it on an ad-hoc pack.
 
 `pnpm smoke:update` holds an update end to end, on an Apple-silicon Mac whose terminal may drive
 System Events (`apps/desktop/scripts/smoke-update.ts`), in these steps:
@@ -114,8 +114,7 @@ System Events (`apps/desktop/scripts/smoke-update.ts`), in these steps:
 3. it installs N with `ditto` into a scratch `Applications`, which the account writes, so the swap
    asks for no admin password, and seeds its save: Acme founded through the store with a $0 cap and
    autopilot off (`server/test-support/seed-save.seed.ts`, run under
-   `apps/cli/vitest.seed.config.ts` alone, which `pnpm test` never runs), with one team value pasted
-   into `secrets.json` as plain text;
+   `apps/cli/vitest.seed.config.ts` alone, which `pnpm test` never runs);
 4. it launches N with `--root=` and the system PATH, so the shell's `touch` guard holds, and begins
    the update the founder's way, from the menu-bar item (`scripts/tray-ax.ts`), since the page's
    session is the shell's alone and the app takes no switch that installs: a click posted at the
@@ -128,18 +127,19 @@ System Events (`apps/desktop/scripts/smoke-update.ts`), in these steps:
    on the same `--root=`;
 6. it checks N+1: the update's Info.plist, shell bytes, server version and signature
    (`codesign --verify --deep --strict`), one new main on the same save, a check that finds itself
-   current, Open Acme in its menu, the team value sealed with the same key, and the save as N left
+   current, Open Acme in its menu, the shell's word that it read the vault's one key, and the save as N left
    it, but for `.main/`, `company/state/` and what was appended to each `*.jsonl`, which main moves
    itself;
 7. it quits it, leaving nothing running and no `tauri_*_app` swap folder behind, puts the Keychain's
    search list back, and leaves every request the feed answered in `.output/smoke-update/feed.log`.
 
 An ad-hoc pack's code identity is its cdhash, which the update changes, so a keychain of the
-smoke's own in scratch, first on the search list while it runs, holds the sealing key with a
-partition list naming both packs' cdhashes (`scripts/update-keychain.ts`), as one Developer ID's
-would, and a Keychain prompt fails the run at once. It refuses where an IdleBiz is running or the
-Keychain holds IdleBiz's key, both as it starts and again once it has packed, so a key it finds in
-the user's keychains as it ends is one a launch made, which it deletes, never a founder's; and it
+smoke's own in scratch, first on the search list while it runs, holds one team value as a vault
+item with a partition list naming both packs' cdhashes (`scripts/update-keychain.ts`), as one
+Developer ID's would, and a Keychain prompt fails the run at once. It refuses where an IdleBiz is
+running or the Keychain holds any of IdleBiz's keys, both as it starts and again once it has
+packed, so a key it finds in the user's keychains as it ends is one a launch wrote, which it
+deletes, never a founder's; and it
 refuses a search list a run killed outright left its keychain on. It puts the list back on a throw
 or a signal alike. CI's `update-macos` job runs it, and uploads the feed's log and `main.log` when
 it fails.

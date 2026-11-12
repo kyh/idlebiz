@@ -1,6 +1,6 @@
 // The packaged app as a smoke drives it, on a macOS host: where the .app keeps the shell, main's
 // node and the server, the shell launched and read as it prints, the processes it and main run, as
-// `ps` lists them, and the Keychain item it seals secrets.json with.
+// `ps` lists them, and the Keychain items its vault keeps.
 
 import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcess, ChildProcessByStdio } from "node:child_process";
@@ -44,25 +44,25 @@ export const MAIN_EXITED_CLEANLY = "main exited (code 0)";
 // (src-tauri/src/updater.rs)
 export const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 
-// the item the shell reads the key that seals secrets.json from, or makes on a first launch
-// (src-tauri/src/keychain.rs)
+// the vault's items (src-tauri/src/vault.rs): one a key, under this service
 export const KEYCHAIN_SERVICE = "IdleBiz";
-export const KEYCHAIN_ACCOUNT = "sealing-key";
-export const KEYCHAIN_ITEM = ["-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT] as const;
 // `security`'s exit when no item matches
-export const NO_SUCH_ITEM = 44;
+const NO_SUCH_ITEM = 44;
 // a Keychain call held on a prompt nobody answers
 export const KEYCHAIN_TIMEOUT_MS = 10_000;
+// what the shell logs once it has read the vault at hello, before the count
+export const VAULT_READ = "[shell] the Keychain gave IdleBiz ";
 
-/** Whether `keychains`, or the user's search list without any, hold IdleBiz's sealing key. */
-export const holdsSealingKey = (keychains: readonly string[] = []): boolean => {
-  const found = spawnSync("security", ["find-generic-password", ...KEYCHAIN_ITEM, ...keychains], {
-    stdio: "ignore",
-    timeout: KEYCHAIN_TIMEOUT_MS,
-  });
+/** Whether `keychains`, or the user's search list without any, hold any of IdleBiz's keys. */
+export const holdsVaultItem = (keychains: readonly string[] = []): boolean => {
+  const found = spawnSync(
+    "security",
+    ["find-generic-password", "-s", KEYCHAIN_SERVICE, ...keychains],
+    { stdio: "ignore", timeout: KEYCHAIN_TIMEOUT_MS },
+  );
   if (found.status !== 0 && found.status !== NO_SUCH_ITEM) {
     throw new Error(
-      `security could not say whether the Keychain holds IdleBiz's key (it exited ${found.status ?? found.signal})`,
+      `security could not say whether the Keychain holds IdleBiz's keys (it exited ${found.status ?? found.signal})`,
     );
   }
   return found.status === 0;

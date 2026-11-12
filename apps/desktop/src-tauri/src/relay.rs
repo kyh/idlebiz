@@ -138,7 +138,7 @@ mod tests {
             "openedAtLogin": false,
             "packaged": true,
             "pageDevUrl": null,
-            "sealingKey": null,
+            "vault": null,
         });
         assert_eq!(
             parse_line(&request_line(7, "hello", &params)),

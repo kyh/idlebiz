@@ -201,7 +201,7 @@ export const sessionAgent = async (
 
 /**
  * What answers a run's permission ask. The runner's own judge has decided what it could before
- * asking: what reaches IdleBiz runs, since the sandbox and custody are what hold a run. A widening
+ * asking: what reaches IdleBiz runs, since the sandbox and the vault are what hold a run. A widening
  * of codex's own sandbox never does: once widened, nothing in the run would ask again.
  */
 export const permissionGate = (tool: ToolAsk): Promise<PermissionDecision> =>

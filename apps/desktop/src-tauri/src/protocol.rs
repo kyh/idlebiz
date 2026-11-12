@@ -4,6 +4,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::vault::Held;
+
 pub const HELLO: &str = "hello";
 pub const HANDOFF: &str = "handoff";
 pub const QUIT: &str = "quit";
@@ -24,6 +26,8 @@ pub const KEEP_AWAKE: &str = "host.keepAwake";
 pub const RELAUNCH: &str = "host.relaunch";
 pub const CHECK_UPDATE: &str = "host.checkUpdate";
 pub const INSTALL_UPDATE: &str = "host.installUpdate";
+pub const VAULT_SET: &str = "host.vaultSet";
+pub const VAULT_DELETE: &str = "host.vaultDelete";
 
 /// What only the shell knows of this launch (`launchSchema`).
 #[derive(Serialize)]
@@ -35,9 +39,9 @@ pub struct Hello {
     pub packaged: bool,
     /// The dev server under `tauri dev`, whose files main hands the page in place of the built ones.
     pub page_dev_url: Option<String>,
-    /// The key the Keychain keeps for sealing main's secrets, 32 bytes in base64; none in a
-    /// development build, which never touches the Keychain, or when the Keychain would not answer.
-    pub sealing_key: Option<String>,
+    /// The vault's keys as the Keychain holds them; none in a development build, which never
+    /// touches the Keychain, or when the Keychain would not list them.
+    pub vault: Option<Held>,
 }
 
 /// What main answers `handoff` with: a link into its page, and the origin it is on.
@@ -197,6 +201,23 @@ pub struct Release {
     pub version: String,
 }
 
+/// Keeps `value` under `name` in the vault, in place of any it had.
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
+#[serde(deny_unknown_fields)]
+pub struct VaultSet {
+    pub name: String,
+    pub value: String,
+}
+
+/// Forgets `name` in the vault.
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
+#[serde(deny_unknown_fields)]
+pub struct VaultDelete {
+    pub name: String,
+}
+
 /// Installs the release main offered, by its version: one the feed has since moved past is refused.
 #[derive(Deserialize)]
 #[cfg_attr(test, derive(Serialize))]
@@ -218,17 +239,21 @@ pub enum Ask {
     LoginItem(LoginItem),
     CheckUpdate,
     InstallUpdate(InstallUpdate),
+    VaultSet(VaultSet),
+    VaultDelete(VaultDelete),
 }
 
 impl Ask {
     /// Every method `read` reads.
-    pub const METHODS: [&str; 6] = [
+    pub const METHODS: [&str; 8] = [
         MESSAGE_BOX,
         COPY_TEXT,
         OPEN,
         LOGIN_ITEM,
         CHECK_UPDATE,
         INSTALL_UPDATE,
+        VAULT_SET,
+        VAULT_DELETE,
     ];
 
     /// The request main sent, or why the shell cannot answer it.
@@ -240,6 +265,8 @@ impl Ask {
             LOGIN_ITEM => parsed(method, params).map(Self::LoginItem),
             CHECK_UPDATE => parsed::<()>(method, params).map(|()| Self::CheckUpdate),
             INSTALL_UPDATE => parsed(method, params).map(Self::InstallUpdate),
+            VAULT_SET => parsed(method, params).map(Self::VaultSet),
+            VAULT_DELETE => parsed(method, params).map(Self::VaultDelete),
             _ => Err(format!(
                 "the shell answers no {method}, only {}",
                 Self::METHODS.join(", ")
@@ -430,7 +457,7 @@ mod tests {
         assert_eq!(
             Ask::read("host.beep", Value::Null).err().as_deref(),
             Some(
-                "the shell answers no host.beep, only host.messageBox, host.copyText, host.open, host.loginItem, host.checkUpdate, host.installUpdate"
+                "the shell answers no host.beep, only host.messageBox, host.copyText, host.open, host.loginItem, host.checkUpdate, host.installUpdate, host.vaultSet, host.vaultDelete"
             )
         );
         assert!(Ask::read(COPY_TEXT, json!({ "text": "x", "html": "<b>x</b>" })).is_err());
@@ -450,5 +477,6 @@ mod tests {
         assert!(Tell::read(RELAUNCH, json!({})).is_err());
         assert!(Ask::read(CHECK_UPDATE, json!({})).is_err());
         assert!(Ask::read(INSTALL_UPDATE, json!({ "version": "1.0.0", "notes": "" })).is_err());
+        assert!(Ask::read(VAULT_SET, json!({ "name": "VERCEL_TOKEN" })).is_err());
     }
 }

@@ -61,7 +61,7 @@ describe.skipIf(!onMac)("sandboxRuns", () => {
     ]);
     expect(sandbox.unreadable).toContainEqual({
       match: "prefix",
-      path: path.join(realpathSync(root), "secrets.json"),
+      path: path.join(realpathSync(root), "vault.json"),
     });
     expect(sandbox.scratch).toEqual(
       expect.arrayContaining([

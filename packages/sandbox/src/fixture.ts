@@ -36,6 +36,6 @@ export const SANDBOX: Sandbox = {
     { match: "subpath", path: "/Users/me/.idlebiz/company/products/ledger/workspace/.agents" },
   ],
   sockets: [{ match: "subpath", path: "/private/var/run/com.apple.launchd.x/Listeners" }],
-  unreadable: [{ match: "prefix", path: "/Users/me/.idlebiz/secrets.json" }],
+  unreadable: [{ match: "prefix", path: "/Users/me/.idlebiz/vault.json" }],
   writable: [{ match: "subpath", path: "/Users/me/.idlebiz/company/products/ledger/workspace" }],
 };

@@ -81,7 +81,7 @@ describe("portfolio tools", () => {
     expect(store.listBets().map((b) => b.state.kind)).toEqual(["open", "open"]);
 
     writeFileSync(
-      path.join(root, "secrets.json"),
+      path.join(root, "vault.json"),
       '{"STRIPE_SECRET_KEY":"sk_live_1","VERCEL_TOKEN":"token"}',
     );
     expect(await measure(money.id)).toContain("is measuring");
@@ -103,7 +103,7 @@ describe("portfolio tools", () => {
       throw new Error("no revenue bet opened");
     }
     const measure = () => answerText(ctx, "measure_bet", { slug: money.id });
-    const secrets = path.join(root, "secrets.json");
+    const secrets = path.join(root, "vault.json");
 
     writeFileSync(secrets, '{"STRIPE_SECRET_KEY":"sk_test_1"}');
     expect(await measure()).toContain("Stripe is in test mode — no charge counts");
@@ -259,7 +259,7 @@ describe("name_product", () => {
 describe("kill_product", () => {
   it("retires the product and says which of its payment links Stripe switched off", async () => {
     writeFileSync(
-      path.join(root, "secrets.json"),
+      path.join(root, "vault.json"),
       JSON.stringify({ STRIPE_SECRET_KEY: "sk_live_founder" }),
     );
     const { ctx } = runAs("mae");

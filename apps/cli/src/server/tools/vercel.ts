@@ -4,7 +4,8 @@ import { unshippableIn } from "../deploy";
 import type { DeployTarget } from "../deploy";
 import { publicPrefixOf, publicValueRefusal } from "../env-name";
 import { RefusalError } from "../refusal";
-import { VERCEL_TOKEN, getSecret, heldKeyIn, heldKeys } from "../secrets";
+import { VERCEL_TOKEN } from "../vault/names";
+import { getSecret, heldKeyIn, heldKeys } from "../vault/vault";
 import * as store from "../store/store";
 import { holdsStripeSecretKey } from "../stripe-api";
 import { TOOL_SPECS } from "../tool-specs";
@@ -199,7 +200,7 @@ export const VERCEL_TOOLS = {
         : `\nset_env only replaces a variable the team set: if ${product.vercel.projectName} already has ${name}, it is the founder's, so hand them an ask_boss action to change it.`;
       throw new RefusalError(`${name} was not set on ${product.name}: ${set.error}${notOurs}`);
     }
-    keepEnvValue(product, product.vercel.projectId, name, value);
+    await keepEnvValue(product, product.vercel.projectId, name, value);
     post(ctx, `🔑 set ${name} on ${product.name}`);
     const where = `Set ${name} on ${product.name}'s Vercel project ${product.vercel.projectName}, for production and preview.`;
     return prefix === undefined

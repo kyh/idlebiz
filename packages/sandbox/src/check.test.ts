@@ -17,9 +17,9 @@ describe("checkSandbox", () => {
     for (const { argv, env } of seen) {
       const { allowed, denied, runs } = readBack(argv);
       const [canary = "", written = ""] = runs.slice(-2);
-      expect(canary).not.toBe("/Users/me/.idlebiz/secrets.json");
+      expect(canary).not.toBe("/Users/me/.idlebiz/vault.json");
       expect(denied("file-read* file-write*")).toContain(canary);
-      expect(denied("file-read* file-write*")).toContain("/Users/me/.idlebiz/secrets.json");
+      expect(denied("file-read* file-write*")).toContain("/Users/me/.idlebiz/vault.json");
       expect(path.dirname(written)).toBe(path.dirname(canary));
       expect(allowed("file-write*")).not.toContain("/private/tmp");
       expect(runs[0]).toBe(process.execPath);

@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { host } from "./host";
-import { VERCEL_TOKEN, getSecret } from "./secrets";
+import { VERCEL_TOKEN } from "./vault/names";
+import { getSecret } from "./vault/vault";
 import * as store from "./store/store";
 import { latestDeployment } from "./vercel";
 import { judgeAgentPath, judgeOpening } from "./workspace-open";

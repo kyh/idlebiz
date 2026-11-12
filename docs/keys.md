@@ -2,32 +2,28 @@
 
 Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the decisions.
 
-**Keys.** The keys IdleBiz holds live in `~/.idlebiz/secrets.json`, which the sandbox keeps from
-every run. They are IdleBiz's own: main reads each where it uses it (`getSecret` in
-`server/secrets.ts`) and exports none into any env, so no employee holds `STRIPE_SECRET_KEY` or
-`VERCEL_TOKEN`. A key is named only by its constant there, or by a set_env value's `ENV/` name,
-so a misspelt name fails typecheck rather than reading as no key.
+**The vault.** IdleBiz's keys are its own: main reads each where it uses it (`getSecret` in
+`server/vault/vault.ts`) and exports none into any env, so no employee holds `STRIPE_SECRET_KEY` or
+`VERCEL_TOKEN`. A key is named only by its constant in `server/vault/names.ts`, or by a set_env
+value's `ENV/` name, so a misspelt name fails typecheck rather than reading as no key.
 
-- Each value is also sealed with a key the macOS Keychain keeps for IdleBiz (service "IdleBiz",
-  account "sandboxing-key": 32 random bytes, base64, made on the first launch that finds none,
-  `src-tauri/src/keychain.rs`), since a claude run can still reach the Keychain. The shell reads
-  it with no prompt, being the signed app that made it, and hands it main at hello as
-  `sealingKey`; main never reaches the Keychain. It seals with AES-256-GCM, a random nonce and the
-  key's name as associated data, as `sealed:v2:<base64 of nonce, ciphertext and tag>`
-  (`sealerFor` in `server/secrets.ts`, `setSealer` at boot).
+- The installed app keeps each key as a generic-password item in the login keychain: service
+  "IdleBiz", account the key's name (`src-tauri/src/vault.rs`), so the founder finds them in
+  Keychain Access. The shell reads every item at hello and hands them to main as `vault`, naming any
+  the Keychain would not give; main keeps a copy it reads synchronously and asks the shell to keep
+  each change (`host.vaultSet`, `host.vaultDelete`) before it holds it. Main never reaches the
+  Keychain. The app reads its own items with no prompt, being the signed app that made them; any
+  other program, a run's `security` among them, gets a prompt the founder answers, never the key.
 - Keys are entered in the app: `VERCEL_TOKEN` through a product's Vercel button (under users),
-  Stripe and Printful in the Budget panel (under revenue). A key pasted into the file as plain
-  text is sealed the next time main reads it. One main can't open (another build or another
-  scheme sealed it, a byte of it changed, it was moved under another name, or access was denied)
-  reads as absent, is named in Settings and stays as it is: enter it again. A `secrets.json` that
-  fails to parse is listed in Settings and never rewritten (`readJsonFileForUpdate` in
-  `server/lib/fs.ts`).
-- Dev (any unpackaged launch, e2e too) seals with a fixed key, `DEV_SECRETS_KEY`: a development
-  shell is ad-hoc signed, so the real Keychain would ask again after every rebuild and stall
-  automation. It never touches the Keychain: a key dev sealed is no secret and only dev opens it.
-  On the real save (no `IDLEBIZ_ROOT_DIR`) dev seals nothing, so it strands none: the packaged
-  app's keys read as absent there and one entered there is written plain for the app to seal. Use
-  `IDLEBIZ_ROOT_DIR`.
+  Stripe and Printful in the Budget panel (under revenue). One the Keychain would not give reads as
+  absent but held (`hasSecret`), so nothing that needs it acts as keyless; boot names it in
+  Settings: enter it again. A reset deletes every item (`clearVault`).
+- Dev (any unpackaged launch, e2e too) keeps its keys in `<root>/vault.json`, plain text, seeded
+  with a note on first boot and read on every call, so a key pasted there is used at once: a
+  development shell is ad-hoc signed, so the real Keychain would ask again after every rebuild and
+  stall automation. It never touches the Keychain, so the installed app's keys never reach a dev
+  launch. A `vault.json` that fails to parse is listed in Settings and never rewritten
+  (`readJsonFileForUpdate` in `server/lib/fs.ts`). The sandbox keeps it from every run.
 - Those keys never reach a run by the founder's hand either: no run reaches the pasteboard a key is
   pasted through ([A run's sandbox](sandbox.md#a-runs-sandbox); a clipboard manager's history on disk is read
   as any file is, [What stays open](sandbox.md#what-stays-open)), and an action's reply, a question's
@@ -77,11 +73,11 @@ handed back for that product has reached runs anyway: their reply sits in the ta
 - It only creates a name set_env never set there, and replaces only one it did: the founder may
   bind a live project whose variables are theirs, and a sensitive one cannot be read back. Nothing
   is retried as a readable type.
-- Main keeps each value Vercel took in `secrets.json` (`ENV/<product>/<project>/<NAME>`, per
+- Main keeps each value Vercel took in the vault (`ENV/<product>/<project>/<NAME>`, per
   project, so a product rebound to a project of the founder's replaces none of theirs; main's own
   copy never in the save, which runs read).
 - A deploy refuses a folder any of whose uploaded files holds one, from any product, or any key
-  IdleBiz itself holds (`heldKeys` in `server/secrets.ts`), naming the file and the variable or
+  IdleBiz itself holds (`heldKeys` in `server/vault/vault.ts`), naming the file and the variable or
   key, never the value: a key in source ships publicly. It reads the folder for that before it
   asks for the sign-off, and again over what it uploads. Only values of 8 characters or more are
   scanned. It is a tripwire, not a boundary: an encoded or split key passes, and nothing scans
@@ -172,7 +168,7 @@ for anew.
   listing under `listings/` with each file's sha256 and whether its link is live.
 - The Printful token and its one store are the founder's, pasted in the Budget panel and kept only
   once Printful shows it can place orders in exactly one store (`server/printful-token.ts`). The
-  store is no secret, so it sits in `printful-store.json` beside `secrets.json`, written before
+  store is no secret, so it sits in the save's `printful-store.json`, never the vault, written before
   the token and put back as it was if the token can't be kept: neither is kept without the other.
   With no token, or one Printful refuses, the tool leaves a Printful card that opens that panel,
   where a new token is pasted over the saved one.

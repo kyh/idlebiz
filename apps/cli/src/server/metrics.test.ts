@@ -14,7 +14,7 @@ import {
 import { tempSave } from "./test-support/save";
 
 const root = tempSave();
-const secretsFile = path.join(root, "secrets.json");
+const secretsFile = path.join(root, "vault.json");
 
 const charge = (id: string, amount: number, metadata: Record<string, string> = {}) => ({
   amount,

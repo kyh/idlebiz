@@ -12,7 +12,7 @@ export interface RunnerAdapter {
   /**
    * The mode set every turn, from the run's whole env: fresh or resumed, a session starts in a
    * default the player's own settings may pick. The runner's own judge decides what a command may
-   * do where it can; the sandbox and custody are what hold a run either way.
+   * do where it can; the sandbox and the vault are what hold a run either way.
    */
   sessionMode: (env: Readonly<Record<string, string>>) => string;
   /**

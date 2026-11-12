@@ -6,7 +6,8 @@ import { HttpError } from "./lib/http";
 import { rootDir } from "./paths";
 import { printfulGet, printfulSays } from "./printful";
 import type { PrintfulCredential } from "./printful";
-import { PRINTFUL_TOKEN, deleteSecret, getSecret, setSecret } from "./secrets";
+import { PRINTFUL_TOKEN } from "./vault/names";
+import { deleteSecret, getSecret, setSecret } from "./vault/vault";
 import { errorMessage } from "@repo/domain/errors";
 import type { PrintfulTokenStatus } from "@repo/domain/integrations";
 import { RefusalError } from "./refusal";
@@ -14,7 +15,7 @@ import { RefusalError } from "./refusal";
 // The founder's private token, from developers.printful.com/tokens: main prices listings and
 // places orders with it, and the renderer is told only which token and store are saved.
 
-/** The one store the token sells through: no secret, so it is kept beside secrets.json, never in it. */
+/** The one store the token sells through: no secret, so it is kept beside the vault, never in it. */
 const storePath = (): string => path.join(rootDir(), "printful-store.json");
 
 /** Printable ASCII with no space: anything else would fail in the Authorization header, and fetch's refusal quotes the token. */
@@ -105,7 +106,7 @@ export const savePrintfulToken = async (token: string): Promise<void> => {
   const before = savedStore();
   keepStore(store);
   try {
-    setSecret(PRINTFUL_TOKEN, token);
+    await setSecret(PRINTFUL_TOKEN, token);
   } catch (error) {
     keepStore(before);
     throw error;
@@ -113,7 +114,7 @@ export const savePrintfulToken = async (token: string): Promise<void> => {
 };
 
 /** The token goes first: a store left by a failure is one no token sells through, which reads as none. */
-export const removePrintfulToken = (): void => {
-  deleteSecret(PRINTFUL_TOKEN);
+export const removePrintfulToken = async (): Promise<void> => {
+  await deleteSecret(PRINTFUL_TOKEN);
   keepStore(null);
 };

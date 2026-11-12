@@ -246,8 +246,8 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       openedAtLogin: false,
       packaged: false,
       pageDevUrl: options.pageDevUrl ?? null,
-      // main seals a dev save with its own key
-      sealingKey: null,
+      // dev keeps its keys in a file under its save, never the Keychain
+      vault: null,
     };
     try {
       await within(peer.request("hello", hello, z.null()), BOOT_TIMEOUT_MS, "boot");

@@ -62,9 +62,9 @@ orient a reader and link into them, never telling a mechanic again.
 ## Security
 
 - **Two boundaries hold a run**, since a run is a real CLI session running as the founder's OS
-  user: the Seatbelt sandbox decides what it reads, writes and reaches on this machine, and custody
-  keeps IdleBiz's keys in main and runs every step that spends them there, once the founder signs
-  off.
+  user: the Seatbelt sandbox decides what it reads, writes and reaches on this machine, and the
+  vault keeps IdleBiz's keys in main and runs every step that spends them there, once the founder
+  signs off.
 - **The sandbox allows by default and denies by name**: a run hosts Chrome, claude, codex and node
   toolchains, whose system needs move with each macOS, and a profile that denied by default would
   break runs an update later. So each rule that closes something is held by a test: its line in
@@ -81,6 +81,11 @@ orient a reader and link into them, never telling a mechanic again.
   included, but never reach its socket, so no teammate calls lead-only tools as the lead.
 - **Keys stay in main; what spends them runs there.** No key reaches a run's env; a step that needs
   one is a tool main runs once the founder signs off on the action it names.
+- **The vault is the login keychain, one item a key**, read by the shell, never main: macOS's own
+  store, which the founder can see and delete, and which prompts any other program, a run's
+  `security` too. Not the data-protection keychain, which needs a provisioning profile no ad-hoc
+  pack carries, so no smoke could hold it. A development launch keeps a plain file instead, since
+  an ad-hoc shell would meet a prompt after every rebuild.
 - **Who the founder is comes from the system, never launchd's env**: `launchctl setenv` from any
   process of the founder's sets the env of every app opened after it, so the packaged shell gives
   main the account's HOME, SHELL and user, macOS's TMPDIR and the system PATH, its save only from

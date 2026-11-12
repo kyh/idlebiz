@@ -1,4 +1,5 @@
-import { VERCEL_TOKEN, getSecret, setSecret } from "./secrets";
+import { VERCEL_TOKEN } from "./vault/names";
+import { getSecret, setSecret } from "./vault/vault";
 import * as store from "./store/store";
 import { listProjects, validateToken } from "./vercel";
 import { errorMessage } from "@repo/domain/errors";
@@ -15,12 +16,15 @@ import type { VercelListing } from "@repo/domain/integrations";
  */
 export type VercelConnection = { kind: "token" } | { kind: "product"; productId: string };
 
-const saveToken = (productId: string, token: string | undefined): VercelConnection => {
+const saveToken = async (
+  productId: string,
+  token: string | undefined,
+): Promise<VercelConnection> => {
   if (token === undefined) {
     return { kind: "product", productId };
   }
   const first = getSecret(VERCEL_TOKEN) === null;
-  setSecret(VERCEL_TOKEN, token);
+  await setSecret(VERCEL_TOKEN, token);
   return first ? { kind: "token" } : { kind: "product", productId };
 };
 
@@ -41,21 +45,23 @@ export const listVercelProjects = async (token?: string): Promise<VercelListing>
   }
 };
 
-export const connectVercel = (input: z.infer<typeof connectInput>): VercelConnection => {
+export const connectVercel = async (
+  input: z.infer<typeof connectInput>,
+): Promise<VercelConnection> => {
   const { productId, token, projectId, projectName, teamId } = input;
   store.requireProduct(productId);
-  const connection = saveToken(productId, token);
+  const connection = await saveToken(productId, token);
   store.setProductVercel(productId, { projectId, projectName, teamId: teamId ?? null });
   return connection;
 };
 
 /** Save a token with no project picked: the product's first deploy makes one named after it and binds it. */
-export const saveVercelToken = ({
+export const saveVercelToken = async ({
   productId,
   token,
-}: z.infer<typeof saveTokenInput>): VercelConnection => {
+}: z.infer<typeof saveTokenInput>): Promise<VercelConnection> => {
   store.requireProduct(productId);
-  return saveToken(productId, token);
+  return await saveToken(productId, token);
 };
 
 export const disconnectVercel = (productId: string): void => {

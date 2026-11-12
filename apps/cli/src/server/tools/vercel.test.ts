@@ -168,7 +168,7 @@ describe("deploy", () => {
     const product = store.setProductVercel("acme", VERCEL);
     const key = "sk-proj-acme-runtime";
     writeFileSync(
-      path.join(root, "secrets.json"),
+      path.join(root, "vault.json"),
       JSON.stringify({
         [`ENV/${product.id}/${VERCEL.projectId}/OPENAI_API_KEY`]: key,
         VERCEL_TOKEN: TOKEN,
@@ -187,7 +187,7 @@ describe("deploy", () => {
     const { ctx, asked, deploys } = deployingRun(DEPLOYED);
     const product = store.setProductVercel("acme", VERCEL);
     writeFileSync(
-      path.join(root, "secrets.json"),
+      path.join(root, "vault.json"),
       JSON.stringify({ STRIPE_SECRET_KEY: "sk_live_founders_own", VERCEL_TOKEN: TOKEN }),
     );
     writeFileSync(path.join(product.workspaceDir, "pay.js"), 'const key = "sk_live_founders_own";');
@@ -283,7 +283,7 @@ const settingRun = (result: EnvResult = SET) => {
 describe("set_env", () => {
   it("refuses to set a key IdleBiz itself uses, naming only the key", async () => {
     writeFileSync(
-      path.join(root, "secrets.json"),
+      path.join(root, "vault.json"),
       JSON.stringify({ STRIPE_SECRET_KEY: "sk_live_founders_own", VERCEL_TOKEN: TOKEN }),
     );
     const { ctx, sets } = settingRun();
@@ -435,7 +435,7 @@ describe("set_env", () => {
     ]);
   });
 
-  it("keeps the value in secrets.json, out of the save, and hands it to the next deploy to refuse", async () => {
+  it("keeps the value in the vault, out of the save, and hands it to the next deploy to refuse", async () => {
     connectVercel(root);
     const { ctx } = settingRun();
     store.setProductVercel("acme", VERCEL);
@@ -456,7 +456,7 @@ describe("set_env", () => {
       { kind: "held", name: "VERCEL_TOKEN", value: TOKEN },
     ]);
     const saved = readdirSync(root, { recursive: true, withFileTypes: true }).filter(
-      (entry) => entry.isFile() && entry.name !== "secrets.json",
+      (entry) => entry.isFile() && entry.name !== "vault.json",
     );
     expect(saved.length).toBeGreaterThan(0);
     for (const entry of saved) {

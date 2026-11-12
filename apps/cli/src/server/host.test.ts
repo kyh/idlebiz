@@ -17,6 +17,8 @@ import {
   releaseSchema,
   trayClickSchema,
   trayModelSchema,
+  vaultDeleteSchema,
+  vaultSetSchema,
   windowSchema,
 } from "./host";
 import type { RelayMethod } from "./host";
@@ -55,6 +57,8 @@ const MESSAGES = {
   "host.open": { from: "main", params: openingSchema, result: z.null() },
   "host.relaunch": { from: "main", params: z.null() },
   "host.tray": { from: "main", params: trayModelSchema },
+  "host.vaultDelete": { from: "main", params: vaultDeleteSchema, result: z.null() },
+  "host.vaultSet": { from: "main", params: vaultSetSchema, result: z.null() },
   quit: { from: "shell", params: z.null(), result: z.null() },
   tray: { from: "shell", params: trayClickSchema },
   update: { from: "shell", params: z.null() },

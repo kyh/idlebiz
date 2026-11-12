@@ -15,7 +15,6 @@ import {
   foundCompany,
   keyShot,
   loggedActivity,
-  readSecrets,
   sandboxedRunsOrSkip,
   test,
 } from "./harness";
@@ -148,9 +147,9 @@ const LAST_WORD = "Tidied the README.";
 
 /** IdleBiz's keys, as the founder enters them: stub-services takes each. */
 const KEYS = {
-  printful: "pf_e2e_custody_token_7310",
+  printful: "pf_e2e_vault_token_7310",
   stripe: "sk_test_e2eCustody7310",
-  vercel: "vercel_e2e_custody_token",
+  vercel: "vercel_e2e_vault_token",
 };
 
 const COMPANY = "E2E Stand-in Co";
@@ -264,19 +263,19 @@ for (const runner of RUNNER_IDS) {
         );
       });
 
-      test("the sandbox and custody hold inside a run", async ({ launch, model, root }) => {
+      test("the sandbox and the vault hold inside a run", async ({ launch, model, root }) => {
         const founding = await launch();
         const founded = await foundCompany(founding.page);
         await founding.close();
         const engineer = engineerOf(founded);
-        const secrets = path.join(root, "secrets.json");
+        const vault = path.join(root, "vault.json");
         const planted = path.join(root, "company", "written-by-a-run");
         const marker = "E2E-SANDBOX-1";
         model.script(
           marker,
           [
             {
-              command: `cat '${secrets}'; touch '${planted}'; env | tee run-env.txt`,
+              command: `cat '${vault}'; touch '${planted}'; env | tee run-env.txt`,
               kind: "shell",
             },
             { kind: "say", text: "Looked around." },
@@ -289,11 +288,6 @@ for (const runner of RUNNER_IDS) {
         await api.stripe.saveKey({ key: KEYS.stripe });
         await api.vercel.saveToken({ productId: founded.product.id, token: KEYS.vercel });
         await api.printful.saveToken({ token: KEYS.printful });
-        const held = await readSecrets(root);
-        const sealed = [held.STRIPE_SECRET_KEY, held.VERCEL_TOKEN, held.PRINTFUL_TOKEN].filter(
-          (value): value is string => typeof value === "string" && value.startsWith("sealed:v2:"),
-        );
-        expect(sealed, "each key is kept sealed").toHaveLength(3);
         await raiseTheCap(api);
         await api.employees.direct({
           employeeId: engineer.id,
@@ -304,24 +298,22 @@ for (const runner of RUNNER_IDS) {
 
         // the sandbox: the keys' file unreadable, the save unwritable but for the run's own folders
         const output = model.toolOutputs(marker).join("\n");
-        expect(output).toMatch(/secrets\.json: Operation not permitted/u);
+        expect(output).toMatch(/vault\.json: Operation not permitted/u);
         expect(output).toMatch(/written-by-a-run: Operation not permitted/u);
         expect(existsSync(planted)).toBe(false);
 
-        // custody: the env the run's shell had holds no key, and no request to the model carried
-        // one, as entered or as sealed
+        // the vault: the env the run's shell had holds no key, and no request to the model carried
+        // one
         const runEnv = await readFile(
           path.join(founded.product.workspaceDir, "run-env.txt"),
           "utf-8",
         );
         expect(runEnv, "the env written is the run's").toContain("IDLEBIZ_API_SOCKET=");
         const reached = [runEnv, output, ...model.requests.map(({ body }) => body)];
-        const keys = [
-          ...Object.entries(KEYS),
-          ...sealed.map((value, i): [string, string] => [`sealed key ${i + 1}`, value]),
-        ];
         expect(
-          keys.filter(([, value]) => reached.some((text) => text.includes(value))).map(([k]) => k),
+          Object.entries(KEYS)
+            .filter(([, value]) => reached.some((text) => text.includes(value)))
+            .map(([k]) => k),
           "no saved key reached the run or the model",
         ).toEqual([]);
       });

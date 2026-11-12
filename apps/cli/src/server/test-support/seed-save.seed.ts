@@ -1,23 +1,17 @@
-import { randomBytes } from "node:crypto";
-import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, it } from "vitest";
 import { openSave } from "../paths";
-import { ENV_PREFIX, secretsPath } from "../secrets";
 import * as store from "../store/store";
 import { foundAcme, hire } from "./save";
 
 // The save `pnpm smoke:update` installs an update over (apps/desktop/scripts/smoke-update.ts), on
 // the root IDLEBIZ_SEED_ROOT names. Founding through the page needs a signed-in CLI, and the
 // packaged app drops the stand-in's switches, so Kai's Acme is founded through the store, as main's
-// tests found it: its cap $0 and its autopilot off, so its scheduler starts no run. secrets.json
-// holds one value pasted as plain text, a team's value main never sends a vendor, which the
-// installed app seals with its Keychain key as it boots. vitest.seed.config.ts alone runs this
-// file, and `pnpm test`'s config, which names *.test.ts, never does.
-
-// a value the smoke reads back, so its name is the smoke's to find: the one ENV/ key in the file
-const CANARY = "UPDATE_SMOKE";
+// tests found it: its cap $0 and its autopilot off, so its scheduler starts no run. Its keys are the
+// smoke's scratch keychain's (update-keychain.ts). vitest.seed.config.ts alone runs this file, and
+// `pnpm test`'s config, which names *.test.ts, never does.
 
 /**
  * `root`, made, which lies in the OS's temporary folder as typed, before anything is made, and as
@@ -54,16 +48,6 @@ it("founds Acme on the save the update smoke installs over", () => {
   store.initStore();
   foundAcme([hire("Ada")], { budget: { capUsd: 0, mode: "capped" } });
   store.setAutopilot(false);
-  const [product] = store.listProducts();
-  if (product === undefined) {
-    throw new Error("Acme was founded with no product to keep a team's value for");
-  }
-  // `wx`: a secrets.json already there is someone's keys, never overwritten
-  writeFileSync(
-    secretsPath(),
-    `${JSON.stringify({ [`${ENV_PREFIX}${product.id}/${product.id}/${CANARY}`]: randomBytes(16).toString("hex") }, null, 2)}\n`,
-    { flag: "wx", mode: 0o600 },
-  );
   expect(store.getCompany()).toMatchObject({
     autopilot: false,
     budget: { capUsd: 0, mode: "capped" },

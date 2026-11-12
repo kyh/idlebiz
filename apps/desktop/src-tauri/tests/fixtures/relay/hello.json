@@ -4,7 +4,13 @@
     "openedAtLogin": false,
     "packaged": true,
     "pageDevUrl": null,
-    "sealingKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+    "vault": {
+      "keys": {
+        "ENV/ledger/prj_1/API_KEY": "sk_team_value",
+        "VERCEL_TOKEN": "vercel_token_value"
+      },
+      "refused": ["STRIPE_SECRET_KEY"]
+    }
   },
   "result": null
 }

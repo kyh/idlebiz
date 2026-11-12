@@ -2,7 +2,6 @@
 
 mod host;
 mod keep_awake;
-mod keychain;
 mod login_item;
 mod main_log;
 mod main_process;
@@ -14,6 +13,7 @@ mod shell;
 mod shell_log;
 mod tray;
 mod updater;
+mod vault;
 mod window;
 
 use tauri::RunEvent;

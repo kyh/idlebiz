@@ -20,7 +20,7 @@ import type { KeptEnvValue } from "./vercel-env";
 import { deployToVercel, unshippableIn } from "./deploy";
 import { tempSave } from "./test-support/save";
 
-// outside the save, so the secrets.json a symlink names below is not the save's own
+// outside the save, so the vault.json a symlink names below is not the save's own
 const scratch = mkdtempSync(path.join(tmpdir(), "idlebiz-deploy-"));
 const workspace = path.join(scratch, "workspace");
 tempSave();
@@ -237,7 +237,7 @@ describe("deploying through Vercel's API", () => {
   });
 
   it("uploads a symlink as the path it holds, never the file it names", async () => {
-    const secret = path.join(scratch, "secrets.json");
+    const secret = path.join(scratch, "vault.json");
     writeFileSync(secret, '{"STRIPE_SECRET_KEY":"sk_live_founder"}');
     symlinkSync(secret, path.join(workspace, "leak.json"));
     const vercel = fakeVercel();

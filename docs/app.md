@@ -66,7 +66,7 @@ which only that run's sandbox reaches, and what it does is the run's.
   menu-bar icon (main decides it, `server/tray.ts`; the shell draws it, `src-tauri/src/tray.rs`), a
   notification, the login item, the Mac kept awake, a relaunch, and an update checked or installed.
   The shell says hello first, with what only it knows: whether it is the packaged app, the dev
-  server's address in dev, whether the login item launched it, the Keychain's sealing key; main
+  server's address in dev, whether the login item launched it, the vault's keys; main
   finds its own files beside itself (the skills in `resources/`, the built page in `dist/page`).
   Each end names every method once (`RELAY_METHODS` and its zod schemas in `server/host.ts`; the
   consts and serde types of `src-tauri/src/protocol.rs`), and both are pinned to one sample a

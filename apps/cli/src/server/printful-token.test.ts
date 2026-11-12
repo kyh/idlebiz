@@ -1,9 +1,8 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RefusalError } from "./refusal";
-import type { Sealer } from "./secrets";
-import { getSecret, heldKeyIn, heldKeys, setSealer, setSecret } from "./secrets";
+import { getSecret, heldKeyIn, heldKeys, setSecret } from "./vault/vault";
 import {
   printfulCredential,
   printfulTokenStatus,
@@ -11,26 +10,18 @@ import {
   savePrintfulToken,
 } from "./printful-token";
 import { tempSave } from "./test-support/save";
+import { keychainVault } from "./test-support/vault";
 
 const root = tempSave();
 
-const secretsFile = path.join(root, "secrets.json");
 const storeFile = path.join(root, "printful-store.json");
 const TOKEN = "pf_founder_token_0000000000abcd";
 
-const reversing: Sealer = {
-  open: (sealed) => Buffer.from(sealed.toReversed()).toString("utf-8"),
-  seal: (plain) => Buffer.from(Buffer.from(plain, "utf-8").toReversed()),
-};
+let keychain = keychainVault();
 
 beforeEach(() => {
-  rmSync(secretsFile, { force: true });
   rmSync(storeFile, { force: true });
-  setSealer(reversing);
-});
-
-afterEach(() => {
-  setSealer(null);
+  keychain = keychainVault();
 });
 
 const ORDERS = { data: [{ name: "View and manage orders", value: "orders" }] };
@@ -56,7 +47,7 @@ const printful = ({
 };
 
 describe("saving the Printful token", () => {
-  it("keeps a token that can place orders in one store, sealed, and shows its last four and store", async () => {
+  it("keeps a token that can place orders in one store, in the Keychain, and shows its last four and store", async () => {
     const asked = printful();
 
     await savePrintfulToken(TOKEN);
@@ -66,8 +57,7 @@ describe("saving the Printful token", () => {
       "https://api.printful.com/v2/stores",
     ]);
     expect(asked[0]?.headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
-    expect(readFileSync(secretsFile, "utf-8")).not.toContain(TOKEN);
-    expect(readFileSync(secretsFile, "utf-8")).not.toContain("Acme Prints");
+    expect(keychain.calls).toEqual([["PRINTFUL_TOKEN", TOKEN]]);
     expect(JSON.parse(readFileSync(storeFile, "utf-8"))).toEqual({ id: 42, name: "Acme Prints" });
     expect(printfulTokenStatus()).toEqual({ last4: "abcd", state: "set", store: "Acme Prints" });
     expect(printfulCredential()).toEqual({ storeId: 42, token: TOKEN });
@@ -83,16 +73,9 @@ describe("saving the Printful token", () => {
   });
 
   describe("when the token can't be kept", () => {
-    const refusing: Sealer = {
-      ...reversing,
-      seal: () => {
-        throw new Error("the Keychain refused");
-      },
-    };
-
     it("keeps no store without a token", async () => {
       printful();
-      setSealer(refusing);
+      keychainVault({ refusing: "the Keychain refused" });
 
       await expect(savePrintfulToken(TOKEN)).rejects.toThrow("the Keychain refused");
 
@@ -105,7 +88,7 @@ describe("saving the Printful token", () => {
       printful();
       await savePrintfulToken(TOKEN);
       printful({ stores: { data: [{ id: 7, name: "Other Prints", type: "native" }] } });
-      setSealer(refusing);
+      keychainVault({ keys: { PRINTFUL_TOKEN: TOKEN }, refusing: "the Keychain refused" });
 
       await expect(savePrintfulToken("pf_other_token_00000000000wxyz")).rejects.toThrow(
         "the Keychain refused",
@@ -183,9 +166,9 @@ describe("removing the Printful token", () => {
   it("forgets the token and its store, and leaves the Stripe key", async () => {
     printful();
     await savePrintfulToken(TOKEN);
-    setSecret("STRIPE_SECRET_KEY", "sk_live_founder");
+    await setSecret("STRIPE_SECRET_KEY", "sk_live_founder");
 
-    removePrintfulToken();
+    await removePrintfulToken();
 
     expect(printfulTokenStatus()).toEqual({ state: "unset" });
     expect(printfulCredential()).toBeNull();
@@ -193,8 +176,8 @@ describe("removing the Printful token", () => {
     expect(getSecret("STRIPE_SECRET_KEY")).toBe("sk_live_founder");
   });
 
-  it("counts a token without its store as none", () => {
-    setSecret("PRINTFUL_TOKEN", TOKEN);
+  it("counts a token without its store as none", async () => {
+    await setSecret("PRINTFUL_TOKEN", TOKEN);
     expect(printfulTokenStatus()).toEqual({ state: "unset" });
     expect(printfulCredential()).toBeNull();
   });

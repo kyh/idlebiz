@@ -53,7 +53,7 @@ const fakeStripe = () => {
 /** A run of Priya's on Acme that charges through the fake Stripe, with the founder's key saved. */
 const chargingRun = (key: string | null = "sk_live_founder") => {
   if (key !== null) {
-    writeFileSync(path.join(root, "secrets.json"), JSON.stringify({ STRIPE_SECRET_KEY: key }));
+    writeFileSync(path.join(root, "vault.json"), JSON.stringify({ STRIPE_SECRET_KEY: key }));
   }
   const run = runAs("priya");
   const stripe = fakeStripe();
@@ -74,7 +74,7 @@ const UNLOCK_ACTION = `payment link "Pro plan" at $9.00 on acme then send buyers
 const landingRun = () => {
   const run = chargingRun(null);
   writeFileSync(
-    path.join(root, "secrets.json"),
+    path.join(root, "vault.json"),
     JSON.stringify({ STRIPE_SECRET_KEY: "sk_live_founder", VERCEL_TOKEN: TOKEN }),
   );
   store.setProductVercel("acme", VERCEL);
@@ -730,7 +730,7 @@ describe("create_payment_link", () => {
   it("leaves a Vercel card while it cannot check where the product is served", async () => {
     const { ctx, asked, hostsAsked, stripe } = landingRun();
     writeFileSync(
-      path.join(root, "secrets.json"),
+      path.join(root, "vault.json"),
       JSON.stringify({ STRIPE_SECRET_KEY: "sk_live_founder" }),
     );
     expect(

@@ -8,7 +8,7 @@
 
 import { spawnSync } from "node:child_process";
 import type { SpawnSyncOptions } from "node:child_process";
-import { createDecipheriv, createHash } from "node:crypto";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import {
   appendFileSync,
@@ -31,17 +31,16 @@ import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import {
-  KEYCHAIN_ACCOUNT,
-  KEYCHAIN_ITEM,
   KEYCHAIN_SERVICE,
   KEYCHAIN_TIMEOUT_MS,
   MAIN_EXITED_CLEANLY,
   SINGLE_INSTANCE_SOCKET,
   SYSTEM_PATH,
+  VAULT_READ,
   WINDOW_LOADED,
   answers,
   ended,
-  holdsSealingKey,
+  holdsVaultItem,
   how,
   isRunning,
   killGroup,
@@ -83,17 +82,11 @@ const OPEN_ITEM = "Open Acme";
 const UPDATE_ITEM = "Update to IdleBiz ";
 // the box a download main asked for and the shell refused says (apps/cli/src/server/updates.ts)
 const NOT_DOWNLOADED = "could not be downloaded";
-// what the shell and main say when the launch has no Keychain key (keychain.rs, serve.ts)
-const NO_KEY = ["[shell] the Keychain would not", "the Keychain is unavailable"];
+// what the shell says when the Keychain would not list or give the vault's keys (vault.rs)
+const VAULT_REFUSED = "[shell] the Keychain would not";
 // the folders tauri-plugin-updater swaps the app through, on the app's volume: the shell's TMPDIR,
 // or beside the app
 const SWAP_FOLDER = /^tauri_(?:current|updated)_app/u;
-// main's sealed value (apps/cli/src/server/secrets.ts): AES-256-GCM's nonce, ciphertext and tag,
-// as base64, bound to the name it is kept under
-const SEALED_V2 = "sealed:v2:";
-const NONCE_BYTES = 12;
-const TAG_BYTES = 16;
-
 // main's check at boot, a moment after its window loads
 const CHECK_TIMEOUT_MS = 60_000;
 // main's menu redraws 1.5s after it moves, behind any notification the shell is still posting
@@ -206,42 +199,6 @@ const feedSchema = z.object({
   version: z.string(),
 });
 
-// secrets.json as the seed writes it and main keeps it: each name's value, as text
-const secretsSchema = z.record(z.string(), z.string());
-
-/** What the save's secrets.json holds under `name`, as main wrote it. */
-const storedSecret = (save: string, name: string): string => {
-  const value = readJson(path.join(save, "secrets.json"), secretsSchema)[name];
-  if (value === undefined) {
-    throw new Error(`secrets.json holds no ${name} any more`);
-  }
-  return value;
-};
-
-/** A value main sealed, opened with `key`; null when it is not sealed, or sealed with another. */
-const openSealed = (text: string, name: string, key: string): string | null => {
-  if (!text.startsWith(SEALED_V2)) {
-    return null;
-  }
-  const sealed = Buffer.from(text.slice(SEALED_V2.length), "base64");
-  try {
-    const decipher = createDecipheriv(
-      "aes-256-gcm",
-      Buffer.from(key, "base64"),
-      sealed.subarray(0, NONCE_BYTES),
-      { authTagLength: TAG_BYTES },
-    );
-    decipher.setAAD(Buffer.from(name, "utf-8"));
-    decipher.setAuthTag(sealed.subarray(sealed.length - TAG_BYTES));
-    return Buffer.concat([
-      decipher.update(sealed.subarray(NONCE_BYTES, sealed.length - TAG_BYTES)),
-      decipher.final(),
-    ]).toString("utf-8");
-  } catch {
-    return null;
-  }
-};
-
 // what main moves on its own in a save it boots on, left out of the comparison: the claim each main
 // makes on the save as it boots (apps/cli/src/server/save-claim.ts), and the running state main
 // keeps for itself, rewritten as the founder looks away and the office moves, whose loss loses
@@ -349,9 +306,9 @@ const refuseRunningIdleBiz = async (): Promise<void> => {
 await refuseRunningIdleBiz();
 // a run killed outright left its keychain first on the list, whose key would read as the user's
 refuseKilledSmokesKeychain();
-if (holdsSealingKey()) {
+if (holdsVaultItem()) {
   throw new Error(
-    `the Keychain holds IdleBiz's key ("${KEYCHAIN_SERVICE}", "${KEYCHAIN_ACCOUNT}"), which is no smoke's to sit beside or to delete: smoke on a Mac without it, as CI's`,
+    `the Keychain holds IdleBiz's keys ("${KEYCHAIN_SERVICE}"), which are no smoke's to sit beside or to delete: smoke on a Mac without them, as CI's`,
   );
 }
 
@@ -497,22 +454,22 @@ const cleanUp = (): void => {
   });
   const opened = keychain;
   if (opened !== null) {
-    // a key in the user's own keychains is one a launch made, having missed the smoke's: the smoke
-    // refused to put its own first beside one, and a launch makes one only where it finds none. It
-    // is looked for before the list is put back, after which a founder's IdleBiz may make one
-    step("look for a key a launch made", () => {
-      if (!holdsSealingKey(opened.found)) {
+    // a key in the user's own keychains is one a launch wrote, entering none: the smoke refused to
+    // start beside one. It is looked for before the list is put back, after which a founder's
+    // IdleBiz may write one
+    step("look for a key a launch wrote", () => {
+      if (!holdsVaultItem(opened.found)) {
         return;
       }
       const deleted = spawnSync(
         "security",
-        ["delete-generic-password", ...KEYCHAIN_ITEM, ...opened.found],
+        ["delete-generic-password", "-s", KEYCHAIN_SERVICE, ...opened.found],
         { stdio: "ignore", timeout: KEYCHAIN_TIMEOUT_MS },
       );
       leftUndone(
         deleted.status === 0
-          ? "a launch made a sealing key of its own in the user's Keychain, which the smoke deleted"
-          : `a launch made a sealing key of its own in the user's Keychain, which the smoke could not delete: delete "${KEYCHAIN_SERVICE}" in Keychain Access`,
+          ? "a launch wrote a key to the user's Keychain, entering none, which the smoke deleted"
+          : `a launch wrote a key to the user's Keychain, entering none, which the smoke could not delete: delete "${KEYCHAIN_SERVICE}" in Keychain Access`,
       );
     });
     step("put the Keychain back", () => {
@@ -651,19 +608,10 @@ try {
       env: { ...process.env, IDLEBIZ_SEED_ROOT: save, TMPDIR: systemTempDir() },
     },
   );
-  const canaries = Object.entries(readJson(path.join(save, "secrets.json"), secretsSchema)).filter(
-    ([name]) => name.startsWith("ENV/"),
-  );
-  const [canary] = canaries;
-  if (canary === undefined || canaries.length !== 1) {
-    throw new Error(`the seed left ${canaries.length} team values in secrets.json, not one`);
-  }
-  const [canaryName, canaryValue] = canary;
-  log(`seeded Acme on ${save}, with ${canaryName} pasted as plain text`);
+  log(`seeded Acme on ${save}`);
 
   keychain = openScratchKeychain(scratch, [install, updatePack]);
-  const { key } = keychain;
-  log(`${keychain.file} holds IdleBiz's key for both packs, first on the search list`);
+  log(`${keychain.file} holds a key of IdleBiz's for both packs, first on the search list`);
 
   const archive = path.join(updateDir, archiveName(to));
   const badDir = path.join(scratch, "bad");
@@ -719,20 +667,18 @@ try {
       );
     }
   };
-  const proveSealed = (version: string): void => {
-    if (openSealed(storedSecret(save, canaryName), canaryName, key) !== canaryValue) {
+  // the shell reads the vault at hello, before main boots, so a launch that answered read it
+  const proveVaultRead = (output: string, version: string): void => {
+    if (output.includes(VAULT_REFUSED)) {
       throw new Error(
-        `under IdleBiz ${version}, secrets.json's ${canaryName} is not sealed with the scratch keychain's key: main had another key, or none`,
+        `IdleBiz ${version} was refused its keys: ${output.slice(output.indexOf(VAULT_REFUSED)).split("\n")[0] ?? ""}`,
       );
     }
-  };
-  const proveNoKeyOfItsOwn = (output: string, version: string): void => {
-    const said = NO_KEY.find((line) => output.includes(line));
-    if (said !== undefined) {
-      throw new Error(`IdleBiz ${version} had no Keychain key: it said "${said}"`);
+    if (!output.includes(`${VAULT_READ}1 of its keys`)) {
+      throw new Error(`IdleBiz ${version} did not read the scratch keychain's key at hello`);
     }
-    if (keychain !== null && holdsSealingKey(keychain.found)) {
-      throw new Error(`IdleBiz ${version} made a sealing key of its own in the user's Keychain`);
+    if (keychain !== null && holdsVaultItem(keychain.found)) {
+      throw new Error(`IdleBiz ${version} wrote a key to the user's Keychain, entering none`);
     }
   };
   // one osascript a wait asks through can fail as System Events starts or the menu redraws, so the
@@ -784,11 +730,8 @@ try {
     () =>
       `IdleBiz ${from} asked ${feedUrl} nothing within ${CHECK_TIMEOUT_MS}ms: main's boot check never reached the feed`,
   );
-  proveSealed(from);
-  proveNoKeyOfItsOwn(first.output(), from);
-  log(
-    `IdleBiz ${from} read the scratch keychain's key with no prompt and sealed ${canaryName} with it`,
-  );
+  proveVaultRead(first.output(), from);
+  log(`IdleBiz ${from} read the scratch keychain's key with no prompt`);
   await waitForTray(
     (items) => items.includes(OPEN_ITEM) && items.includes(offeredItem),
     `show "${OPEN_ITEM}" and "${offeredItem}"`,
@@ -949,9 +892,10 @@ try {
   if (changes.length > 0) {
     throw new Error(`the update moved the save:\n  ${changes.join("\n  ")}`);
   }
-  proveSealed(to);
-  proveNoKeyOfItsOwn(first.output().slice(said), to);
-  log(`the save is as IdleBiz ${from} left it, and ${to} reads the same Keychain key`);
+  proveVaultRead(first.output().slice(said), to);
+  log(
+    `the save is as IdleBiz ${from} left it, and ${to} reads the same Keychain key with no prompt`,
+  );
 
   // ---- the quit
 
