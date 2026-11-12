@@ -8,7 +8,7 @@ import type { RunnerProbe } from "@repo/agent-driver/detect";
 import { runnerPool } from "./runner-pool";
 import type { RunnerPool } from "./runner-pool";
 import { signInEnv } from "./session";
-import { SYSTEM_PATH, proxiesOf, unsealedEnv } from "../lib/founder-env";
+import { SYSTEM_PATH, proxiesOf, unsandboxedEnv } from "../lib/founder-env";
 import { foundingTeamPrompt } from "../prompts/onboarding";
 import { errorMessage } from "@repo/domain/errors";
 import { RUNNER_NAMES } from "@repo/domain/runners";
@@ -124,7 +124,7 @@ const CODEX_FILE_LOGIN =
 
 type SignIn = Pick<
   RunnerPool,
-  "needsSignIn" | "refresh" | "sealRefusal" | "sealedSignIn" | "signedInAgain"
+  "needsSignIn" | "refresh" | "sandboxRefusal" | "sandboxedSignIn" | "signedInAgain"
 > & {
   /** What installs a CLI where none is found: `CLAUDE_INSTALLER` unless named. */
   readonly installer?: Argv;
@@ -159,7 +159,7 @@ export const startLogin = async (
   };
   /**
    * What `step` answers, unless the setup is stopped first, which then ends without waiting for
-   * it. The step runs on: the pool's probe and seal check are every caller's, not this setup's. A
+   * it. The step runs on: the pool's probe and sandbox check are every caller's, not this setup's. A
    * command the stop ends answers first, so the stop is checked again once either has.
    */
   const unlessStopped = async <T>(step: Promise<T>): Promise<T> => {
@@ -179,8 +179,8 @@ export const startLogin = async (
   };
   try {
     let probes = await unlessStopped(runners.refresh());
-    // no CLI is found without the seal, so installing one would not help
-    const refusal = await unlessStopped(runners.sealRefusal());
+    // no CLI is found without the sandbox, so installing one would not help
+    const refusal = await unlessStopped(runners.sandboxRefusal());
     if (refusal !== null) {
       say({ message: refusal, type: "error" });
       return;
@@ -199,7 +199,7 @@ export const startLogin = async (
       const [installer, ...installerArgs] = runners.installer ?? CLAUDE_INSTALLER;
       // the founder's proxies may route the download, but no CA, .curlrc or bash startup file of
       // main's env answers for claude.ai or runs on the way
-      const installerEnv = unsealedEnv(process.env, {
+      const installerEnv = unsandboxedEnv(process.env, {
         PATH: SYSTEM_PATH,
         ...proxiesOf(process.env),
       });
@@ -223,7 +223,7 @@ export const startLogin = async (
       }
       say({ message: `Signing in to ${label(p)} — your browser will open…`, type: "progress" });
       const [cmd, ...args] = await unlessStopped(
-        runners.sealedSignIn(p.id, [p.bin, ...RUNNERS[p.id].loginArgs]),
+        runners.sandboxedSignIn(p.id, [p.bin, ...RUNNERS[p.id].loginArgs]),
       );
       const deadline = AbortSignal.timeout(deadlineMs);
       const code = await unlessStopped(

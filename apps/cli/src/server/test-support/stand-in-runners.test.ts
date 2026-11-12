@@ -8,8 +8,9 @@ import type { Argv } from "@repo/agent-driver/registry";
 import { RUNNER_IDS } from "@repo/domain/runners";
 import type { RunnerId } from "@repo/domain/runners";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { machineSeal, realPathOf, sealFor } from "../agents/machine-seal";
-import { inside, sealedCommand } from "../agents/seal";
+import { realPathOf, sandboxFor } from "@repo/sandbox/machine";
+import { inside, sandboxedCommand } from "@repo/sandbox/profile";
+import { sandboxOf } from "../agents/sandbox";
 import { runnerEnv } from "../agents/session";
 import { tempSave } from "./save";
 import { startStandInModel } from "./stand-in-model";
@@ -17,11 +18,11 @@ import type { StandInModel } from "./stand-in-model";
 import { bundledCli, isProviderEnv, standInRunnerEnv } from "./stand-in-runners";
 
 // The CLIs the adapters bundle, signed in to the stand-in model, as main's own probe finds them at
-// boot: as they are everywhere, and on a Mac under each runner's seal too, as boot starts them. The
+// boot: as they are everywhere, and on a Mac under each runner's sandbox too, as boot starts them. The
 // probe's env is main's (`runnerEnv`), so this also holds that a run keeps the stand-in's key,
 // though its name is a credential's.
 
-// the seal reads where the save is
+// the sandbox reads where the save is
 tempSave();
 
 /**
@@ -92,18 +93,18 @@ describe("the CLIs the adapters bundle, on the stand-in", () => {
   });
 
   it.runIf(process.platform === "darwin")(
-    "signs both in under each runner's seal, as boot looks for them",
+    "signs both in under each runner's sandbox, as boot looks for them",
     { timeout: 90_000 },
     async () => {
       const env = await standInRunnerEnv({
         model,
         runners: ["claude", "codex"],
-        scratch: path.join(scratch, "sealed"),
+        scratch: path.join(scratch, "sandboxed"),
       });
       asMainWith(env, home);
-      const seal = await machineSeal([]);
+      const sandbox = await sandboxOf([]);
       const probes = await probeRunners(runnerEnv, (runner, argv) =>
-        sealedCommand(seal, runner, argv),
+        sandboxedCommand(sandbox, runner, argv),
       );
       expect(readiness(probes)).toEqual([
         { authed: true, id: "claude", installed: true },
@@ -113,16 +114,16 @@ describe("the CLIs the adapters bundle, on the stand-in", () => {
     },
   );
 
-  it("leaves the signed-in runner's home writable by its runs, though the seal keeps the absent CLI's folder", async () => {
+  it("leaves the signed-in runner's home writable by its runs, though the sandbox keeps the absent CLI's folder", async () => {
     const left = path.join(scratch, "claude-alone");
     const env = await standInRunnerEnv({ model, runners: ["claude"], scratch: left });
     const claudeHome = env.CLAUDE_CONFIG_DIR ?? "";
-    const seal = await sealFor({
+    const sandbox = await sandboxFor({
       clis: [env.CLAUDE_BIN ?? "", env.CODEX_BIN ?? ""],
       closedPorts: [],
       env,
       home,
-      mainOnly: [],
+      hostOnly: [],
       pathDirs: [],
       save: path.join(scratch, "save"),
       // the homes sit in TMPDIR, which every run writes
@@ -132,7 +133,7 @@ describe("the CLIs the adapters bundle, on the stand-in", () => {
       writable: [],
     });
     const homes = [claudeHome, await realPathOf(claudeHome)];
-    const keptOverHome = seal.runsAsFounder.filter(({ path: kept }) =>
+    const keptOverHome = sandbox.runsAsFounder.filter(({ path: kept }) =>
       homes.some((at) => inside(kept, at)),
     );
     expect(keptOverHome).toEqual([]);

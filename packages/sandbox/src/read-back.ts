@@ -1,4 +1,4 @@
-/** A sealed command read back: its profile, the paths it hands over, and what it runs. */
+/** A sandboxed command read back: its profile, the paths it hands over, and what it runs. */
 export const readBack = (argv: readonly string[]) => {
   const [bin, flag, profile = "", ...rest] = argv;
   const params = new Map<string, string>();

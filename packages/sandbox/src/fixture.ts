@@ -1,10 +1,11 @@
-import type { Seal } from "../agents/seal";
-import { foundAcme, hire } from "./save";
+import type { Sandbox } from "./profile";
 
-export const SEAL: Seal = {
+/** A sandbox as `sandboxFor` resolves one, on a stand-in machine. */
+export const SANDBOX: Sandbox = {
   apiSocket: [],
   claudeProjects: { own: null, projects: "/Users/me/.claude/projects" },
   closedPorts: [9222],
+  label: null,
   namespaces: {
     claude: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-c" },
     codex: { match: "subpath", path: "/Users/me/.agent-browser/namespaces/idlebiz-x" },
@@ -38,8 +39,3 @@ export const SEAL: Seal = {
   unreadable: [{ match: "prefix", path: "/Users/me/.idlebiz/secrets.json" }],
   writable: [{ match: "subpath", path: "/Users/me/.idlebiz/company/products/ledger/workspace" }],
 };
-
-export const SKILLS = "/Applications/IdleBiz.app/Contents/Resources/skills";
-
-/** Acme, founded with Mae alone. */
-export const found = () => foundAcme([hire("Mae", "General Manager")]);

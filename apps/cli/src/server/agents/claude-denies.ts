@@ -75,7 +75,7 @@ export const deniesCommand = (rule: string, command: string): boolean => {
  * be refused before IdleBiz is asked, and the turn would still end as done. The files are the one
  * source of that tier read here, their deny lists unioned as claude merges them, and read even
  * where a source above them shadows them: the MDM profile, server-managed settings and a
- * `policyHelper` go unread (docs/seal.md's "What stays open").
+ * `policyHelper` go unread (docs/sandbox.md's "What stays open").
  */
 export const refuseDeniedTools = async (dir: string = MANAGED_DIR): Promise<void> => {
   const commands = TOOL_NAMES.map(commandOf);

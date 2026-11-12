@@ -3,7 +3,7 @@ import { contract } from "@repo/contract/contract";
 import { isOutOfBudget, spriteSeedFor } from "@repo/domain/domain";
 import { runnerPool } from "./agents/runner-pool";
 import { cancelLogin, generateCandidates, startLogin } from "./agents/onboarding";
-import { notingSeal } from "./agents/seal-check";
+import { notingSandbox } from "./agents/sandbox";
 import {
   haltForBudget,
   killBet,
@@ -161,10 +161,10 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       openFolder: os.save.openFolder.handler(async () => {
         await host().open({ kind: "path", target: rootDir() });
       }),
-      // the first report waits on the seal's check, so a refusal is in it
+      // the first report waits on the sandbox's check, so a refusal is in it
       report: os.save.report.handler(async () => {
-        const refusal = await runnerPool.sealRefusal();
-        return notingSeal(store.loadReport(), refusal);
+        const refusal = await runnerPool.sandboxRefusal();
+        return notingSandbox(store.loadReport(), refusal);
       }),
       reset: os.save.reset.handler(() => resetGame()),
     },

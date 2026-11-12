@@ -5,23 +5,32 @@ import { access, lstat, readdir, readlink, realpath } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { runnerBin } from "@repo/agent-driver/detect";
-import { DEV_PORT } from "@repo/contract/routes";
-import { RUNNER_IDS } from "@repo/domain/runners";
 import type { RunnerId } from "@repo/domain/runners";
-import { pagePorts } from "../page-server";
-import { rootDir } from "../paths";
-import { RefusalError } from "../refusal";
-import { secretsPath } from "../secrets";
-import { inside } from "./seal";
-import type { Reach, RunnerHome, Seal } from "./seal";
+import { inside } from "./profile";
+import type { Reach, RunnerHome, Sandbox } from "./profile";
+
+/** A folder no run may be handed to write: one outside the save, or reached through a symlink. */
+export type FolderRefusal =
+  | { kind: "outside-save"; folder: string }
+  | { kind: "linked"; folder: string; link: string };
+
+/** Thrown for a folder no sandbox can hand a run, which the host words for whoever asked. */
+export class FolderRefusedError extends Error {
+  readonly refusal: FolderRefusal;
+
+  constructor(refusal: FolderRefusal) {
+    super(`no sandbox writes ${refusal.folder}: ${refusal.kind}`);
+    this.name = "FolderRefusedError";
+    this.refusal = refusal;
+  }
+}
 
 /**
  * The founder's logins under HOME, which no run reads or writes. A file that holds a login is
- * sealed whole, even where a toolchain reads it on every build (`.npmrc`, `.m2/settings.xml`,
+ * sandboxed whole, even where a toolchain reads it on every build (`.npmrc`, `.m2/settings.xml`,
  * `.gradle/gradle.properties`); the caches and plugins beside it (`~/.m2/repository`,
  * `~/.pulumi/plugins`, the rest of `~/.gradle`) stay readable. So does `~/.yarnrc.yml`, yarn's
- * settings, where `yarn npm login` adds a token (docs/seal.md's "What stays open").
+ * settings, where `yarn npm login` adds a token (docs/sandbox.md's "What stays open").
  */
 const LOGINS = [
   ".ssh",
@@ -90,11 +99,11 @@ const LOGINS = [
 ];
 
 /**
- * Each runner's home, and what of it the seal treats apart from the rest, which no run writes; why
- * each is sealed so is docs/seal.md's "A run's seal". `state` is what its runs write, each a
+ * Each runner's home, and what of it the sandbox treats apart from the rest, which no run writes;
+ * why each is sandboxed so is docs/sandbox.md's "A run's sandbox". `state` is what its runs write, each a
  * prefix, since a CLI writes a file through a sibling it renames over it; one ending in a slash is
  * only that folder. claude's `projects/` is written only for the run's own folder
- * (`Seal.claudeProjects`). `account` is where the CLI records the founder's account, in the home
+ * (`Sandbox.claudeProjects`). `account` is where the CLI records the founder's account, in the home
  * and beside it in HOME, each with every name that starts with it, which only the sign-in writes.
  * `personal` is what of the founder's own its runs cannot read, in the home and in HOME, and
  * `absent` what they read as missing.
@@ -102,7 +111,7 @@ const LOGINS = [
 const RUNNER_HOMES = {
   claude: {
     absent: [],
-    // its MCP servers, user-wide and per project, start in the founder's own sessions, unsealed
+    // its MCP servers, user-wide and per project, start in the founder's own sessions, unsandboxed
     account: [".claude.json"],
     dir: ".claude",
     override: "CLAUDE_CONFIG_DIR",
@@ -191,16 +200,13 @@ const SCRATCH_SOCKETS = [
 
 /**
  * Where a terminal keeps, in the founder's TMPDIR, the shims it puts first on its own PATH: cmux's
- * `claude` and `codex` wrappers, one folder per panel. Main's PATH names none of them.
+ * `claude` and `codex` wrappers, one folder per panel. The host's PATH names none of them.
  */
 const TERMINAL_SHIMS = ["cmux-cli-shims"];
 
-// Chrome's DevTools port (a browser the founder debugs, signed in as them), node's inspector, and
-// Vite's dev server, which reads any file of the checkout to whoever asks (`/@fs`) and under
-// `pnpm dev:browser` signs a browser in to main's page: each answers anyone on loopback as the
-// founder. Main's own page port, which carries the founder's approve button, is closed beside them
-// (`pagePorts`).
-const CLOSED_PORTS = [9222, 9229, DEV_PORT];
+// Chrome's DevTools port (a browser the founder debugs, signed in as them) and node's inspector:
+// each answers anyone on loopback as the founder. The host closes its own beside them.
+const DEBUGGER_PORTS = [9222, 9229];
 
 /** The path Seatbelt sees for `file`: the real path of the deepest part that exists, the rest after it. */
 export const realPathOf = async (file: string): Promise<string> => {
@@ -299,7 +305,7 @@ const homeLinkTargets = async (home: string): Promise<string[]> => {
 
 /**
  * The run's own `folders`, each where the save resolves. Each must sit in the save with no
- * symlink from the save down to it: the seal allows the path it names, never where a link a run
+ * symlink from the save down to it: the sandbox allows the path it names, never where a link a run
  * could have left there leads.
  */
 const ownFolders = async (save: string, folders: readonly string[]): Promise<Reach[]> => {
@@ -309,17 +315,13 @@ const ownFolders = async (save: string, folders: readonly string[]): Promise<Rea
       const inSave = path.relative(save, folder);
       const parts = inSave.split(path.sep);
       if (inSave === "" || path.isAbsolute(inSave) || parts[0] === "..") {
-        throw new RefusalError(
-          `${folder} is no folder inside the save, so IdleBiz starts no run that writes it.`,
-        );
+        throw new FolderRefusedError({ folder, kind: "outside-save" });
       }
       for (let depth = 1; depth <= parts.length; depth += 1) {
         const at = path.join(save, ...parts.slice(0, depth));
         const stats = await lstat(at).catch(() => null);
         if (stats?.isSymbolicLink() === true) {
-          throw new RefusalError(
-            `IdleBiz starts no run that writes ${folder} while ${at} is a symlink, which would let it write where the link leads. Remove the link to go on.`,
-          );
+          throw new FolderRefusedError({ folder, kind: "linked", link: at });
         }
       }
       return { match: "subpath", path: path.join(realSave, inSave) };
@@ -408,21 +410,22 @@ export const browserNamespace = (
     .digest("hex")
     .slice(0, 8)}`;
 
-/** The agent-browser namespace `runner`'s runs under `seal` start their daemons in. */
-export const namespaceUnder = (seal: Seal, runner: RunnerId): string =>
-  path.basename(seal.namespaces[runner].path);
+/** The agent-browser namespace `runner`'s runs under `sandbox` start their daemons in. */
+export const namespaceUnder = (sandbox: Sandbox, runner: RunnerId): string =>
+  path.basename(sandbox.namespaces[runner].path);
 
 /** Where agent-browser keeps its daemons' sockets for a run, whatever the founder's env says. */
 export const browserSocketDir = (): string => path.join(homedir(), ".agent-browser");
 
-/** The seal of a run under `home`, resolved as it stands on disk now. */
-export const sealFor = async ({
+/** The sandbox of a run under `home`, resolved as it stands on disk now. */
+export const sandboxFor = async ({
   apiSocket = null,
   clis,
   closedPorts,
   env,
   home,
-  mainOnly,
+  label = null,
+  hostOnly,
   pathDirs,
   save,
   scratch,
@@ -433,27 +436,29 @@ export const sealFor = async ({
   home: string;
   /** Where every run writes besides its own folders. */
   scratch: readonly string[];
-  /** Folders a terminal runs the founder's programs from that main's PATH need not name. */
+  /** Folders a terminal runs the founder's programs from that the host's PATH need not name. */
   shims: readonly string[];
   /** Loopback ports whose listener would take orders from anyone, as the founder. */
   closedPorts: readonly number[];
-  /** Main's env, where a runner's home may have been moved. */
+  /** The host's env, where a runner's home may have been moved. */
   env: Readonly<Record<string, string | undefined>>;
-  /** What only main touches, with every name that starts with it: main writes a file through `<file>.tmp`. */
-  mainOnly: readonly string[];
-  /** The founder's ssh agent, when main's env names one. */
+  /** What only the host touches, with every name that starts with it: a file is written through `<file>.tmp`. */
+  hostOnly: readonly string[];
+  /** The founder's ssh agent, when the host's env names one. */
   sshAgent: string | null;
   /** The save, where a run writes only its own folders. */
   save: string;
-  /** Main's PATH, the login shell's folders and the installer's on it whether they exist yet or not. */
+  /** The host's PATH, the login shell's folders and the installer's on it whether they exist yet or not. */
   pathDirs: readonly string[];
-  /** The runner CLIs as main names them, a command on PATH or a path, which the founder runs unsealed. */
+  /** The runner CLIs as the host names them, a command on PATH or a path, which the founder runs unsandboxed. */
   clis: readonly string[];
   /** The run's own folders, each in the save, its working directory first. */
   writable: readonly string[];
-  /** The socket main answers this run's company tools on, when it is a run's seal. */
+  /** The socket the host answers this run's company tools on, when it is a run's sandbox. */
   apiSocket?: string | null;
-}): Promise<Seal> => {
+  /** What this run's denials report themselves as (`Sandbox.label`). */
+  label?: string | null;
+}): Promise<Sandbox> => {
   const realHome = await realPathOf(home);
   const under = (names: readonly string[]): Promise<Reach[]> =>
     reachesOf(names.map((name) => path.join(realHome, name)));
@@ -483,7 +488,7 @@ export const sealFor = async ({
     ...Object.values(namespaces),
     ...own,
   ];
-  // a relative folder names no fixed place to seal
+  // a relative folder names no fixed place to sandbox
   const onPathDirs = [...new Set(pathDirs.filter((dir) => path.isAbsolute(dir)))];
   const found = await Promise.all(clis.map((cli) => foundOn(cli, onPathDirs)));
   const runs = [...new Set([...found.flat(), ...(await linksIn(onPathDirs))])];
@@ -504,6 +509,7 @@ export const sealFor = async ({
       projects: path.join(claude.folder, "projects"),
     },
     closedPorts,
+    label,
     namespaces,
     preferences: path.join(realHome, "Library", "Preferences"),
     runners: homes,
@@ -515,36 +521,47 @@ export const sealFor = async ({
       ...(await reachesOf(SCRATCH_SOCKETS)),
       ...(sshAgent === null ? [] : await reachOf(sshAgent)),
     ],
-    unreadable: [...(await under(LOGINS)), ...(await reachesOf(mainOnly, "prefix"))],
+    unreadable: [...(await under(LOGINS)), ...(await reachesOf(hostOnly, "prefix"))],
     writable: own,
   };
 };
 
+/** What of a run's sandbox is the host's to say; the rest is this machine's. */
+export interface HostSandbox {
+  /** The host's state folder, where a run writes only its own folders. */
+  save: string;
+  /** The run's own folders, each in the save, its working directory first. */
+  writable: readonly string[];
+  /** The socket the host answers this run on, or null for a sandbox of no run. */
+  apiSocket: string | null;
+  /** The runner CLIs as the host names them, a command on PATH or a path. */
+  clis: readonly string[];
+  /** The host's own loopback ports, closed beside the debuggers'. */
+  closedPorts: readonly number[];
+  /** What only the host touches, with every name that starts with it. */
+  hostOnly: readonly string[];
+  /** What this run's denials report themselves as, or null for none. */
+  label: string | null;
+}
+
 /**
- * The seal of a run that writes `writable` and calls the company on `apiSocket`, resolved as this
- * machine stands now: its home, main's PATH and the CLIs on it. Each run resolves its own: a login that turns into a symlink after
- * boot is sealed where it leads from the next run on.
+ * The sandbox of a run, resolved as this machine stands now: its home, PATH and the CLIs on it.
+ * Each run resolves its own: a login that turns into a symlink after boot is sandboxed where it
+ * leads from the next run on.
  */
-export const machineSeal = async (
-  writable: readonly string[],
-  apiSocket: string | null = null,
-): Promise<Seal> => {
+export const machineSandbox = async (host: HostSandbox): Promise<Sandbox> => {
   const agent = process.env.SSH_AUTH_SOCK;
   const cache = await darwinUserCacheDir();
   // macOS's own libraries write its per-user temp folder whatever TMPDIR says
   const temps = [tmpdir(), path.join(path.dirname(cache), "T")];
-  return await sealFor({
-    apiSocket,
-    clis: RUNNER_IDS.map(runnerBin),
-    closedPorts: [...CLOSED_PORTS, ...pagePorts()],
+  return await sandboxFor({
+    ...host,
+    closedPorts: [...DEBUGGER_PORTS, ...host.closedPorts],
     env: process.env,
     home: homedir(),
-    mainOnly: [secretsPath()],
     pathDirs: (process.env.PATH ?? "").split(path.delimiter),
-    save: rootDir(),
     scratch: [...temps, cache, "/private/tmp"],
     shims: temps.flatMap((temp) => TERMINAL_SHIMS.map((name) => path.join(temp, name))),
     sshAgent: agent === undefined || agent === "" ? null : agent,
-    writable,
   });
 };

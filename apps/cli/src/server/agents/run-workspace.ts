@@ -3,7 +3,7 @@ import { lstat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { Company, Employee } from "@repo/domain/domain";
-import { SYSTEM_PATH, unsealedEnv } from "../lib/founder-env";
+import { SYSTEM_PATH, unsandboxedEnv } from "../lib/founder-env";
 import { report } from "../lib/report";
 import { toolCacheDir } from "../paths";
 
@@ -45,7 +45,7 @@ export const ensureRepository = async (workspace: string): Promise<void> => {
     try {
       await execFileAsync("/usr/bin/git", ["init", "--quiet"], {
         cwd: workspace,
-        env: unsealedEnv(process.env, { PATH: SYSTEM_PATH }),
+        env: unsandboxedEnv(process.env, { PATH: SYSTEM_PATH }),
       });
     } catch (error) {
       report("repository", error);
@@ -55,7 +55,7 @@ export const ensureRepository = async (workspace: string): Promise<void> => {
 
 /**
  * Who a run's commits name, since it cannot write git's config to say so. Nor do they sign:
- * the founder's global config may sign every commit and tag with keys the seal hides, which
+ * the founder's global config may sign every commit and tag with keys the sandbox hides, which
  * would fail each one.
  */
 export const gitIdentity = (emp: Employee, company: Company) => {

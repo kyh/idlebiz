@@ -6,8 +6,8 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
 
 The page reaches main over its contract and the runs reach it over the control plane: two doors,
 never one. The page's carries the founder's session cookie and answers on the page's own port,
-which the seal closes to every run; the control plane's is a unix socket main opens for each run,
-which only that run's seal reaches, and what it does is the run's.
+which the sandbox closes to every run; the control plane's is a unix socket main opens for each run,
+which only that run's sandbox reaches, and what it does is the run's.
 
 - **The page's API.** `packages/contract` declares every procedure the page calls of main (oRPC, one
   file per domain, `<domain>-contract.ts`, whose zod schemas are the inputs' types), and
@@ -36,7 +36,7 @@ which only that run's seal reaches, and what it does is the run's.
   one-time link, spent at its first use and dead unspent after five minutes, whose answer sets the
   page's session cookie (HttpOnly, SameSite=Strict, a secret minted per boot) and drops the nonce
   from the address (`server/page-session.ts`). The founder's approve button is on that port, so the
-  seal closes it to every run ([A run's seal](seal.md#a-runs-seal)); main answers only a request
+  sandbox closes it to every run ([A run's sandbox](sandbox.md#a-runs-sandbox)); main answers only a request
   naming 127.0.0.1 or localhost at its own port, since any other name is a page that rebound its own
   onto loopback; its calls and events need the session and the page's own origin (`Sec-Fetch-Site`,
   else `Origin`), since another loopback port is the same site and carries the cookie; and the
@@ -89,8 +89,8 @@ which only that run's seal reaches, and what it does is the run's.
   under a runner's prefix: the founder's own route is claude's settings `env` or codex's
   `config.toml`), a CA to trust under the names tools share (`SSL_CERT_*`, `*CA_BUNDLE*`,
   `*CA_CERT*`; each tool's own trust switches and registries still pass, [What stays
-  open](seal.md#what-stays-open)), `TMP` and `TEMP`. Every `homedir()` and `tmpdir()` of main's
-  reads these, its seal's and its save's among them, and the runs inherit them. When the system
+  open](sandbox.md#what-stays-open)), `TMP` and `TEMP`. Every `homedir()` and `tmpdir()` of main's
+  reads these, its sandbox's and its save's among them, and the runs inherit them. When the system
   cannot say who the founder is the app does not start, and a packaged main whose HOME or SHELL
   is not the account's refuses to boot (`identityRefusal`, `server/lib/founder-env.ts`).
 - **Main's lifetime.** Main boots on the hello; one that fails says where the log is, in a box, and

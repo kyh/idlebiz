@@ -1,8 +1,8 @@
 // Under a dev shell the page's files are Vite's, forwarded so the page keeps this origin while it
 // reloads in place.
 //
-// The founder's approve button is on this port. No employee run reaches it: the seal closes it to
-// every run (`pagePorts`, agents/machine-seal.ts). Of everyone else it answers only a request that
+// The founder's approve button is on this port. No employee run reaches it: the sandbox closes it to
+// every run (`pagePorts`, agents/sandbox.ts). Of everyone else it answers only a request that
 // names its own loopback host, and main's calls only for the page a handoff signed in, calling from
 // its own origin.
 
@@ -96,7 +96,7 @@ const DROPPED_HEADERS = new Set([
   "transfer-encoding",
 ]);
 
-/** Every port a page server of main's answers on, which the seal closes to every run. */
+/** Every port a page server of main's answers on, which the sandbox closes to every run. */
 const live = new Set<number>();
 
 export const pagePorts = (): readonly number[] => [...live];

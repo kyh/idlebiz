@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it, vi } from "vitest";
-import { found } from "../test-support/seal";
+import { found } from "../test-support/runs";
 import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { ensureRepository, gitIdentity } from "./run-workspace";
@@ -22,7 +22,7 @@ const root = freshSave();
 const execFileAsync = promisify(execFile);
 
 describe("gitIdentity", () => {
-  it("commits as the employee even where the founder signs every commit and tag with keys the seal hides", async () => {
+  it("commits as the employee even where the founder signs every commit and tag with keys the sandbox hides", async () => {
     const company = found();
     const mae = store.listEmployees().find((emp) => emp.name === "Mae");
     if (mae === undefined) {

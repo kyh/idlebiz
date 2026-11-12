@@ -36,7 +36,7 @@ It signs with the keychain's Developer ID (`APPLE_SIGNING_IDENTITY` names anothe
 stops, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack, for this Mac alone) and notarizes
 when `apps/desktop/.env` names the notary key by the id and issuer of its App Store Connect key
 (see `.env.example`), saying it did not when `.env` names none. The key's `.p8` sits in
-`~/.appstoreconnect/private_keys/` (`package.ts` reads it there alone), which the seal keeps from
+`~/.appstoreconnect/private_keys/` (`package.ts` reads it there alone), which the sandbox keeps from
 every run; never keep it in the checkout, which runs can read. `release:publish` packs as a
 release (`IDLEBIZ_RELEASE=1`), which stops unless the pack is both signed and notarized, then
 publishes the dmg as the release tagged `v<version>`, where the site's download link finds it, so
@@ -53,7 +53,7 @@ the update signs with a throwaway key of its own, below). That public half is al
 what turns the checks on, since a build packed without it asks GitHub for nothing, and the privacy
 policy (`apps/web/src/lib/agent/site-content.ts`) tells the founder what each check shows GitHub:
 that text is live on the site before the first release that sets the key, and an endpoint naming
-`{{current_version}}`, which would send the version, changes the policy in the same commit. The seal
+`{{current_version}}`, which would send the version, changes the policy in the same commit. The sandbox
 keeps `~/.tauri` from every run, as it keeps the notary key: whoever holds the key ships code to
 every install. Keep an offline copy of the key and its password: lose either and no installed app
 takes another update, since a new key reaches an install only by the founder downloading the app

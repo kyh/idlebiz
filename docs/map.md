@@ -45,15 +45,15 @@ is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
   which alone keeps the Mac awake, through `keep-awake.ts`), `founder-actions.ts` (what the
   founder hands the team, filed and queued through the scheduler), `company-actions.ts` (a change
   everyone hears about), `agents/` (runs: `runner-pool.ts` the `RunnerPool`, its runners, their
-  rests and each task's turn, `session.ts` an ACP session under its seal and every permission ask
+  rests and each task's turn, `session.ts` an ACP session under its sandbox and every permission ask
   it raises, `run-workspace.ts` the folders and env main readies a run, `ask-box.ts` its one ask
   of the founder), `control-plane.ts` (HTTP on a unix socket per run, which the agents' `idlebiz`
   command calls back into; `agent-launcher.ts` writes that command at boot),
   `tool-specs.ts` (every company tool, described once) and `tools/` (each bound to its
   implementation: `define.ts` the binding, the asks and the holds, then the team's, portfolio,
   Vercel, money and print tools), `refusal.ts`,
-  `agents/seal.ts` (the Seatbelt profile each run starts under), `agents/machine-seal.ts` (what
-  it seals on this machine), `agents/seal-check.ts` (its boot check),
+  `agents/sandbox.ts` (what of a run's sandbox is main's: the save, its keys' file, its ports, the
+  refusals' wording, the boot check's verdict and the denials it logs),
   `agents/bundled-skills.ts` (where IdleBiz's skills ship), `agents/claude-user-settings.ts`
   (what of the founder's claude settings a run still carries: its sign-in and model),
   `activity.ts` (the one publisher), `prompts/` (what employees are told), `lib/fs.ts`
@@ -106,6 +106,11 @@ is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
   usage, and classes failures (auth, access denied, usage limit, overload, context, other) with
   when a usage limit said it lifts; what each costs the runner (a sign-out, a rest) is the
   server's `heed`. Over domain, never imported by the page. Source-only, no build step.
+- `packages/sandbox` — the Seatbelt sandbox a run starts under: `profile.ts` the profile and
+  its command, `machine.ts` this machine's paths for it (the founder's logins, each runner's
+  home, PATH and the shims on it), `check.ts` the canary probe boot runs, `denials.ts` a run's
+  denies read back from the system log. Over domain, never imported by the page, and knows
+  nothing of main: main hands it the save, its keys' file and its ports. Source-only.
 - `packages/px-kit` — the pixel-UI design system as one stylesheet (palette, `@theme` tokens,
   VG5000, every `.px-*` class), imported by both apps after Tailwind.
 - `tools/e2e` — the Playwright suite over the built page and main (`src/harness.ts` launches them

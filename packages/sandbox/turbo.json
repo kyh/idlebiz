@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turborepo.org/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // The Mac suite runs real sandboxed processes against TMPDIR and the ssh-agent, which strict
+    // mode would strip, so the whole env reaches a run nothing replays.
+    "test": {
+      "cache": false,
+      "passThroughEnv": ["*"]
+    }
+  }
+}

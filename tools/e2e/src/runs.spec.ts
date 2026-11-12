@@ -16,19 +16,19 @@ import {
   keyShot,
   loggedActivity,
   readSecrets,
-  sealedRunsOrSkip,
+  sandboxedRunsOrSkip,
   test,
 } from "./harness";
 import type { Founded } from "./harness";
 import { NPCS_IN_OFFICE, NPC_ACTIVITY, STEP_OFFICE } from "./office-probe";
 
 // The run loop end to end, once on each runner: the claude or codex its adapter bundles runs real
-// turns sealed, which the stand-in model scripts (harness.ts), through the company's own tool, the
-// seal and onboarding. A test founds at $0 with autopilot off and raises the cap itself, so only
+// turns sandboxed, which the stand-in model scripts (harness.ts), through the company's own tool, the
+// sandbox and onboarding. A test founds at $0 with autopilot off and raises the cap itself, so only
 // the work it directs runs, and the root fixture holds it to the runs it scripts: each ended, none
 // failed, none signed in but the stand-in's.
 
-/** How long a sealed CLI may take to start and reach a scripted step, or end, on a loaded Mac. */
+/** How long a sandboxed CLI may take to start and reach a scripted step, or end, on a loaded Mac. */
 const A_RUN = 90_000;
 
 // a test waits on two runs one after the other at most, each up to A_RUN, beside a founding, two
@@ -185,7 +185,7 @@ for (const runner of RUNNER_IDS) {
     test.describe("one run", () => {
       test.use({ runs: 1 });
 
-      test("a directed employee runs one sealed turn and its line reaches #team", async ({
+      test("a directed employee runs one sandboxed turn and its line reaches #team", async ({
         launch,
         model,
         root,
@@ -264,14 +264,14 @@ for (const runner of RUNNER_IDS) {
         );
       });
 
-      test("the seal and custody hold inside a run", async ({ launch, model, root }) => {
+      test("the sandbox and custody hold inside a run", async ({ launch, model, root }) => {
         const founding = await launch();
         const founded = await foundCompany(founding.page);
         await founding.close();
         const engineer = engineerOf(founded);
         const secrets = path.join(root, "secrets.json");
         const planted = path.join(root, "company", "written-by-a-run");
-        const marker = "E2E-SEAL-1";
+        const marker = "E2E-SANDBOX-1";
         model.script(
           marker,
           [
@@ -302,7 +302,7 @@ for (const runner of RUNNER_IDS) {
         const end = sole(await runsEnded(root, 1), "run end");
         expect(end.payload.outcome).toEqual({ kind: "done" });
 
-        // the seal: the keys' file unreadable, the save unwritable but for the run's own folders
+        // the sandbox: the keys' file unreadable, the save unwritable but for the run's own folders
         const output = model.toolOutputs(marker).join("\n");
         expect(output).toMatch(/secrets\.json: Operation not permitted/u);
         expect(output).toMatch(/written-by-a-run: Operation not permitted/u);
@@ -339,7 +339,7 @@ for (const runner of RUNNER_IDS) {
         model.hires(null, CAST);
         const office = await launch();
         const { page } = office;
-        await sealedRunsOrSkip(page);
+        await sandboxedRunsOrSkip(page);
         // each of Chad's pages whole at once, so a step waits on nothing but what it asks
         await page.emulateMedia({ reducedMotion: "reduce" });
 
@@ -356,7 +356,7 @@ for (const runner of RUNNER_IDS) {
         const pitch = page.locator("textarea.ob-field");
         await pitch.fill("A tip jar for indie developers.");
         await pitch.press("Enter");
-        // casting is a turn of the runner's CLI, sealed, which the stand-in answers with CAST
+        // casting is a turn of the runner's CLI, sandboxed, which the stand-in answers with CAST
         await choose(page, "Sign them");
         // CAPS offers no $0, and autopilot is on from founding
         await choose(page, "$5");

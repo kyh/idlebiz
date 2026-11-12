@@ -256,7 +256,7 @@ describe("main's page server", () => {
     }
   });
 
-  it("names its port for the seal while it answers, and drops it once stopped", async () => {
+  it("names its port for the sandbox while it answers, and drops it once stopped", async () => {
     const server = await built();
     expect(pagePorts()).toContain(server.port);
     await server.stop();

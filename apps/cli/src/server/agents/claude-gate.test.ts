@@ -20,16 +20,16 @@ import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 import { sessionAgent } from "./session";
-import { machineSeal, realPathOf } from "./machine-seal";
-import { sealRuns } from "./seal-check";
+import { realPathOf } from "@repo/sandbox/machine";
+import { sandboxOf, sandboxRuns } from "./sandbox";
 import { tempSave } from "../test-support/save";
 import { STAND_IN_KEY, startStandInModel } from "../test-support/stand-in-model";
 import type { Move, StandInModel } from "../test-support/stand-in-model";
 
-// The real claude, driven through the app's claude-agent-acp inside the seal, by the stand-in
+// The real claude, driven through the app's claude-agent-acp inside the sandbox, by the stand-in
 // model on loopback (test-support/stand-in-model.ts): nothing is billed, and claude's config dir
 // is a scratch one whose settings turn claude's own sandbox on, as a founder's may. It proves the
-// session's flag-tier settings keep that sandbox off, so a command runs inside the seal instead of
+// session's flag-tier settings keep that sandbox off, so a command runs inside the sandbox instead of
 // failing to nest; that behind a gateway, where it runs in Manual, it asks IdleBiz first, and in
 // auto mode leaves a command to claude's own check; that it offers no plan mode, whose exit would
 // ask the founder to approve a plan; that no MCP server of the founder's starts; that the model is offered IdleBiz's skills and none of the founder's, nor
@@ -91,7 +91,7 @@ const standInAgent = (agent: AcpAgent): AcpAgent => {
   };
 };
 
-/** `make` with HOME at `home`, where the seal and the run's env look for the founder's files. */
+/** `make` with HOME at `home`, where the sandbox and the run's env look for the founder's files. */
 const asFounderAt = async <T>(home: string, make: () => Promise<T>): Promise<T> => {
   vi.stubEnv("HOME", home);
   try {
@@ -101,7 +101,7 @@ const asFounderAt = async <T>(home: string, make: () => Promise<T>): Promise<T> 
   }
 };
 
-describe.skipIf(!claudeRuns)("claude inside the seal", () => {
+describe.skipIf(!claudeRuns)("claude inside the sandbox", () => {
   let model: StandInModel;
   let base = "";
   let skills = "";
@@ -142,7 +142,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     });
     plantSkill(path.join(skills, ".agents", "skills"), "bundled-gate", "BUNDLED_SKILL_MARK");
     home = path.join(base, "home");
-    // where the founder's claude keeps its config, so the seal treats it as theirs
+    // where the founder's claude keeps its config, so the sandbox treats it as theirs
     configDir = path.join(home, ".claude");
     // main makes it before every claude run, which cannot
     mkdirSync(path.join(configDir, "projects"), { recursive: true });
@@ -188,13 +188,13 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   /** One turn making `next` in the mode main picks, unless `mode` names another, every ask answered `allow`. */
   const turnOf = async (next: Move, allow: boolean, mode?: string) => {
     model.script(TURN, [next]);
-    const state = await sealRuns();
-    if (state.kind !== "sealed") {
+    const state = await sandboxRuns();
+    if (state.kind !== "sandboxed") {
       throw new Error(state.reason);
     }
     const asks: ToolAsk[] = [];
     const made = await asFounderAt(home, async () =>
-      standInAgent(await sessionAgent("claude", await machineSeal([workspace]), skills, workspace)),
+      standInAgent(await sessionAgent("claude", await sandboxOf([workspace]), skills, workspace)),
     );
     const agent = mode === undefined ? made : { ...made, sessionMode: () => mode };
     const result = await runAcpTurn({
@@ -249,7 +249,7 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
   );
 
   it(
-    "runs what it was allowed, with no sandbox of its own to fail inside the seal",
+    "runs what it was allowed, with no sandbox of its own to fail inside the sandbox",
     { timeout: 60_000 },
     async () => {
       const { pushed, result } = await turn("git push origin main", true);
@@ -348,15 +348,15 @@ describe.skipIf(!claudeRuns)("claude inside the seal", () => {
     },
   );
 
-  it("runs each command inside the seal", { timeout: 60_000 }, async () => {
+  it("runs each command inside the sandbox", { timeout: 60_000 }, async () => {
     const secrets = path.join(root, "secrets.json");
-    writeFileSync(secrets, "sealed canary");
+    writeFileSync(secrets, "sandboxed canary");
     writeFileSync(path.join(workspace, "own.txt"), "the run's own");
     await turn(`cat own.txt; cat ${secrets}`, true);
     const output = outputs();
     expect(output).toContain("the run's own");
     expect(output).toContain("Operation not permitted");
-    expect(output).not.toContain("sealed canary");
+    expect(output).not.toContain("sandboxed canary");
   });
 
   it(

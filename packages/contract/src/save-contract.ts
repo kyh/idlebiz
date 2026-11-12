@@ -6,7 +6,7 @@ import type { Done } from "./done";
 
 export const saveContract = {
   openFolder: oc.output(type<Done>()),
-  /** What boot loaded and what it skipped, the seal's refusal among it. */
+  /** What boot loaded and what it skipped, the sandbox's refusal among it. */
   report: oc.output(type<LoadReport>()),
   /** Deletes the save and starts the app again. */
   reset: oc.output(type<Done>()),

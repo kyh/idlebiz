@@ -106,7 +106,7 @@ ${toolDocs(lead)}
   }
 
   // "<state>.<session id>.<signature>"
-  export function seal(state: "paid" | "processing", sessionId: string): string {
+  export function sandbox(state: "paid" | "processing", sessionId: string): string {
     return state + "." + sessionId + "." + sign(state + "." + sessionId);
   }
 
@@ -125,7 +125,7 @@ ${toolDocs(lead)}
 
   // app/unlock/route.ts
   import { NextResponse, type NextRequest } from "next/server";
-  import { COOKIE, checkout, opened, seal } from "../../lib/purchase";
+  import { COOKIE, checkout, opened, sandbox } from "../../lib/purchase";
 
   export async function GET(req: NextRequest) {
     const held = opened(req.cookies.get(COOKIE)?.value);
@@ -136,7 +136,7 @@ ${toolDocs(lead)}
     if (found === "refused") {
       res.cookies.delete(COOKIE);
     } else {
-      res.cookies.set(COOKIE, seal(found === "paid" ? "paid" : "processing", sessionId), {
+      res.cookies.set(COOKIE, sandbox(found === "paid" ? "paid" : "processing", sessionId), {
         httpOnly: true,
         maxAge: 31_536_000,
         sameSite: "lax",

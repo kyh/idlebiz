@@ -37,7 +37,7 @@ import { block, firstProduct, launch, recruit, stateOf, writeDead } from "../tes
 
 const root = freshSave();
 const asleep = { hold: () => {} };
-/** The app's own runner, whose seal no test has checked: its ticks start nothing. */
+/** The app's own runner, whose sandbox no test has checked: its ticks start nothing. */
 const scheduler = createScheduler(runnerPool, asleep, unaskedIntegrations);
 
 /** Stamp the save as another build would have written it. */

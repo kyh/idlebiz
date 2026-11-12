@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import { launchdAgentOf, SYSTEM_PATH, unsealedEnv } from "./founder-env";
+import { launchdAgentOf, SYSTEM_PATH, unsandboxedEnv } from "./founder-env";
 import { report } from "./report";
 
 // Finder's PATH omits CLI install locations. The packaged app prefers the login shell's PATH,
@@ -108,7 +108,7 @@ const loginShellPath = async (): Promise<string | null> => {
   const shell = loginShell();
   // the account's names, the fallback PATH and launchd's ssh agent, as a terminal's login starts
   // it: it would run what a ZDOTDIR, an exported function or a BASH_ENV in main's env names
-  const env = unsealedEnv(process.env, {
+  const env = unsandboxedEnv(process.env, {
     // oh-my-zsh otherwise checks for its own update over the network inside the budget
     DISABLE_AUTO_UPDATE: "true",
     PATH: process.env.PATH ?? SYSTEM_PATH,
@@ -136,7 +136,7 @@ const joined = (parts: readonly string[]): string =>
  * of them when the shell answers, which settles this within the shell's deadline whatever its
  * startup files do. The shell's folders, and the one onboarding installs Claude Code into, stay
  * whether they exist yet or not: the founder's terminal runs from them, so a run must not be the
- * one to make one inside a folder it writes, and every run's seal keeps what is on main's PATH.
+ * one to make one inside a folder it writes, and every run's sandbox keeps what is on main's PATH.
  */
 export const adoptShellPath = async (packaged: boolean): Promise<void> => {
   const current = (process.env.PATH ?? "").split(path.delimiter);

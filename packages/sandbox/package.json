@@ -1,0 +1,25 @@
+{
+  "name": "@repo/sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Seatbelt sandbox a coding agent's run starts under on macOS: the profile, this machine's paths, the boot check and the denials it reports",
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf .cache .turbo"
+  },
+  "dependencies": {
+    "@repo/domain": "workspace:*",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

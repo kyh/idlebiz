@@ -11,16 +11,16 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import type { RunnerId } from "@repo/domain/runners";
-import { SYSTEM_PATH, namedWith, proxiesOf, unsealedEnv } from "../lib/founder-env";
+import { SYSTEM_PATH, namedWith, proxiesOf, unsandboxedEnv } from "../lib/founder-env";
 import { teamNotesPrompt } from "../prompts/team-notes";
 import { RefusalError } from "../refusal";
 import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
 import { claudeUserSettings } from "./claude-user-settings";
 import { runEnv } from "./run-env";
 import { runTmpdir } from "./run-workspace";
-import { browserSocketDir, namespaceUnder } from "./machine-seal";
-import { sealedCommand } from "./seal";
-import type { Seal } from "./seal";
+import { browserSocketDir, namespaceUnder } from "@repo/sandbox/machine";
+import { sandboxedCommand } from "@repo/sandbox/profile";
+import type { Sandbox } from "@repo/sandbox/profile";
 import { TEAM_NOTES_MAX_BYTES, readTeamNotes } from "./team-notes";
 
 // The ACP adapters are this package's own dependencies, which the .app ships beside the bundle.
@@ -33,11 +33,11 @@ export const runnerEnv = (runner: RunnerId): Record<string, string> =>
 /**
  * What of main's env a runner's CLI gets to sign in: the account's names, main's PATH and the
  * founder's proxies, and the runner's own settings, never the rest of main's, which is launchd's in
- * the app. Its seal lets it open the browser and lacks the denies a run's has, so no variable a CLI
+ * the app. Its sandbox lets it open the browser and lacks the denies a run's has, so no variable a CLI
  * reads to run something on the way there (BROWSER) reaches it.
  */
 export const signInEnv = (runner: RunnerId) => ({
-  ...unsealedEnv(process.env, {
+  ...unsandboxedEnv(process.env, {
     PATH: process.env.PATH ?? SYSTEM_PATH,
     ...proxiesOf(process.env),
   }),
@@ -45,33 +45,33 @@ export const signInEnv = (runner: RunnerId) => ({
 });
 
 /**
- * Chrome's own sandbox is one more that cannot start inside the seal. No AGENT_BROWSER_PROFILE:
+ * Chrome's own sandbox is one more that cannot start inside the sandbox. No AGENT_BROWSER_PROFILE:
  * unset, each session's Chrome gets a fresh profile under TMPDIR, never the founder's, while one
  * fixed profile would keep every session but the first from starting, since Chrome locks it.
  * The namespace is that of the run's runner and folders, and so are its daemons: only such runs,
  * or a read made the way one of them would make it, ever start one there. A screenshot named no
  * path lands in the runs' temp folder, not agent-browser's own in HOME, which no run writes.
  */
-const browserEnv = (seal: Seal, runner: RunnerId) => ({
+const browserEnv = (sandbox: Sandbox, runner: RunnerId) => ({
   AGENT_BROWSER_ARGS: "--no-sandbox",
-  AGENT_BROWSER_NAMESPACE: namespaceUnder(seal, runner),
+  AGENT_BROWSER_NAMESPACE: namespaceUnder(sandbox, runner),
   AGENT_BROWSER_SCREENSHOT_DIR: path.join(runTmpdir(), "screenshots"),
   AGENT_BROWSER_SOCKET_DIR: browserSocketDir(),
 });
 
-/** The folder the daemons of `runner`'s runs under `seal` listen in, which a run cannot make: only write inside it. */
-export const makeBrowserNamespace = (seal: Seal, runner: RunnerId): void => {
-  mkdirSync(seal.namespaces[runner].path, { recursive: true });
+/** The folder the daemons of `runner`'s runs under `sandbox` listen in, which a run cannot make: only write inside it. */
+export const makeBrowserNamespace = (sandbox: Sandbox, runner: RunnerId): void => {
+  mkdirSync(sandbox.namespaces[runner].path, { recursive: true });
 };
 
 /**
- * `runner`'s agent under `seal`, for a task's session or a one-shot's alike. `setup` is where
+ * `runner`'s agent under `sandbox`, for a task's session or a one-shot's alike. `setup` is where
  * IdleBiz's skills are, and how the founder's claude signs in and which model it picks. `more`
  * joins the adapter's env over main's: codex's session config, or claude's user-settings env.
  */
 export const acpAgentFor = (
   runner: RunnerId,
-  seal: Seal,
+  sandbox: Sandbox,
   setup: SessionSetup,
   more: Record<string, string> = {},
 ): AcpAgent => {
@@ -80,7 +80,7 @@ export const acpAgentFor = (
   const env: AcpAgent["env"] = {
     ...runnerEnv(runner),
     ...more,
-    ...browserEnv(seal, runner),
+    ...browserEnv(sandbox, runner),
   };
   env[adapter.binEnvVar] = runnerBin(runner);
   if (runner === "claude") {
@@ -89,7 +89,10 @@ export const acpAgentFor = (
     env.BASH_DEFAULT_TIMEOUT_MS = String(DEPLOY_TIMEOUT_MS + 60_000);
   }
   return {
-    command: sealedCommand(seal, runner, [process.execPath, fromPackage.resolve(adapter.acpEntry)]),
+    command: sandboxedCommand(sandbox, runner, [
+      process.execPath,
+      fromPackage.resolve(adapter.acpEntry),
+    ]),
     env,
     readDirs: session.readDirs,
     sessionMeta: session.meta,
@@ -148,10 +151,10 @@ export const codexSessionConfig = (listed: string) => {
  * run's own, a CODEX_HOME in it included) and turned off by name.
  */
 export const codexSessionEnv = async (
-  seal: Seal,
+  sandbox: Sandbox,
   env: Record<string, string> = {},
 ): Promise<Record<string, string>> => {
-  const [bin, ...rest] = sealedCommand(seal, "codex", [
+  const [bin, ...rest] = sandboxedCommand(sandbox, "codex", [
     runnerBin("codex"),
     "mcp",
     "list",
@@ -172,33 +175,33 @@ export const codexSessionEnv = async (
 };
 
 /**
- * `runner`'s session under `seal`, loading the skills in `skills` and none of the founder's, nor
+ * `runner`'s session under `sandbox`, loading the skills in `skills` and none of the founder's, nor
  * any MCP server of theirs, but signing in as their CLI does, and handed the notes the team keeps
  * in `workspace`, where it works on a product.
  */
 export const sessionAgent = async (
   runner: RunnerId,
-  seal: Seal,
+  sandbox: Sandbox,
   skills: string,
   workspace: string | null,
 ): Promise<AcpAgent> => {
   if (runner === "codex") {
     const setup = { skills, teamNotes: null, userSettings: {} };
-    return acpAgentFor(runner, seal, setup, await codexSessionEnv(seal));
+    return acpAgentFor(runner, sandbox, setup, await codexSessionEnv(sandbox));
   }
-  const { env, settings } = await claudeUserSettings(seal.runners.claude.folder);
+  const { env, settings } = await claudeUserSettings(sandbox.runners.claude.folder);
   const notes = workspace === null ? null : await readTeamNotes(workspace);
   const setup = {
     skills,
     teamNotes: notes === null ? null : teamNotesPrompt(notes),
     userSettings: settings,
   };
-  return acpAgentFor(runner, seal, setup, env);
+  return acpAgentFor(runner, sandbox, setup, env);
 };
 
 /**
  * What answers a run's permission ask. The runner's own judge has decided what it could before
- * asking: what reaches IdleBiz runs, since the seal and custody are what hold a run. A widening
+ * asking: what reaches IdleBiz runs, since the sandbox and custody are what hold a run. A widening
  * of codex's own sandbox never does: once widened, nothing in the run would ask again.
  */
 export const permissionGate = (tool: ToolAsk): Promise<PermissionDecision> =>

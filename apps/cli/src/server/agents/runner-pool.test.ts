@@ -4,15 +4,16 @@ import path from "node:path";
 import { addUsage, zeroUsage } from "@repo/agent-driver/events";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthFlowEvent, RunOutcome } from "@repo/domain/domain";
-import type { Seal } from "./seal";
-import type { SealState } from "./seal-check";
-import { SEAL, SKILLS, found } from "../test-support/seal";
+import { SANDBOX } from "@repo/sandbox/fixture";
+import type { Sandbox } from "@repo/sandbox/profile";
+import type { SandboxState } from "./sandbox";
+import { SKILLS, found } from "../test-support/runs";
 import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { createRunnerPool, memoryAfter, outcomeOf, resumeIn } from "./runner-pool";
 import type { RunnerPoolDeps } from "./runner-pool";
 import { askBox } from "./ask-box";
-import { signInCommand } from "./seal";
+import { signInCommand } from "@repo/sandbox/profile";
 import { controlPlane } from "../control-plane";
 import { startLogin } from "./onboarding";
 
@@ -88,11 +89,11 @@ describe("outcomeOf", () => {
   });
 });
 
-/** A pool whose check holds, sealing runs with SEAL and keeping no rests, but for what `deps` say. */
+/** A pool whose check holds, sandboxing runs with SANDBOX and keeping no rests, but for what `deps` say. */
 const poolOf = (deps: Partial<RunnerPoolDeps> = {}) =>
   createRunnerPool({
-    checkSeal: () => Promise.resolve({ kind: "sealed" }),
-    resolveSeal: () => Promise.resolve(SEAL),
+    checkSandbox: () => Promise.resolve({ kind: "sandboxed" }),
+    resolveSandbox: () => Promise.resolve(SANDBOX),
     restFile: () => null,
     skills: () => SKILLS,
     ...deps,
@@ -236,7 +237,7 @@ describe("a rest the last launch left", () => {
 
     const restarted = poolOf({ restFile: () => file });
     restarted.init();
-    await restarted.sealRefusal();
+    await restarted.sandboxRefusal();
     expect(restarted.restingRunners()).toEqual({ claude: lifts });
   });
 
@@ -244,7 +245,7 @@ describe("a rest the last launch left", () => {
     writeFileSync(file, JSON.stringify({ claude: Date.now() - 1, codex: Date.now() + 60_000 }));
     const restarted = poolOf({ restFile: () => file });
     restarted.init();
-    await restarted.sealRefusal();
+    await restarted.sandboxRefusal();
     expect(Object.keys(restarted.restingRunners())).toEqual(["codex"]);
 
     writeFileSync(file, "{ not json");
@@ -339,19 +340,19 @@ const withoutClis = () => {
   });
 };
 
-describe("a seal the boot check refuses", () => {
+describe("a sandbox the boot check refuses", () => {
   withoutClis();
-  const refused: SealState = {
+  const refused: SandboxState = {
     kind: "refused",
     reason: "sandbox-exec timed out, so none will start.",
   };
-  const holding: SealState = { kind: "sealed" };
+  const holding: SandboxState = { kind: "sandboxed" };
 
   it("starts no run and says why, then checks again when the CLIs are looked for again", async () => {
     const verdicts = [refused, holding];
     let checks = 0;
     const pool = poolOf({
-      checkSeal: () => {
+      checkSandbox: () => {
         checks += 1;
         return Promise.resolve(verdicts[checks - 1] ?? holding);
       },
@@ -359,15 +360,18 @@ describe("a seal the boot check refuses", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       pool.init();
-      expect(pool.runsSealed()).toBe(false);
-      expect(await pool.sealRefusal()).toBe("sandbox-exec timed out, so none will start.");
-      expect(pool.runsSealed()).toBe(false);
-      expect(logged).toHaveBeenCalledWith("[seal]", "sandbox-exec timed out, so none will start.");
+      expect(pool.runsSandboxed()).toBe(false);
+      expect(await pool.sandboxRefusal()).toBe("sandbox-exec timed out, so none will start.");
+      expect(pool.runsSandboxed()).toBe(false);
+      expect(logged).toHaveBeenCalledWith(
+        "[sandbox]",
+        "sandbox-exec timed out, so none will start.",
+      );
 
       await pool.refresh();
 
-      expect(await pool.sealRefusal()).toBeNull();
-      expect(pool.runsSealed()).toBe(true);
+      expect(await pool.sandboxRefusal()).toBeNull();
+      expect(pool.runsSandboxed()).toBe(true);
       await pool.refresh();
       expect(checks).toBe(2);
     } finally {
@@ -378,16 +382,16 @@ describe("a seal the boot check refuses", () => {
 
 const onMac = process.platform === "darwin";
 
-/** Whether a pool whose check holds finds a CLI ready, each probe under the seal `resolveSeal` gives. */
-const anyRunnerUnder = async (resolveSeal: () => Promise<Seal>): Promise<boolean> => {
-  const pool = poolOf({ resolveSeal });
+/** Whether a pool whose check holds finds a CLI ready, each probe under the sandbox `resolveSandbox` gives. */
+const anyRunnerUnder = async (resolveSandbox: () => Promise<Sandbox>): Promise<boolean> => {
+  const pool = poolOf({ resolveSandbox });
   pool.init();
   return await pool.hasAnyRunner();
 };
 
-describe.skipIf(!onMac)("the seal a run starts under", () => {
+describe.skipIf(!onMac)("the sandbox a run starts under", () => {
   withoutClis();
-  // a claude that reads as installed only while the canary it tries is sealed from it
+  // a claude that reads as installed only while the canary it tries is sandboxed from it
   let canary = "";
   beforeEach(() => {
     canary = path.join(realpathSync(root), "canary");
@@ -397,34 +401,37 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
     writeFileSync(cli, `#!/bin/sh\n${script}\n`, { mode: 0o755 });
     process.env.CLAUDE_BIN = cli;
   });
-  const sealing = (): Seal => ({ ...SEAL, unreadable: [{ match: "subpath", path: canary }] });
+  const sandboxing = (): Sandbox => ({
+    ...SANDBOX,
+    unreadable: [{ match: "subpath", path: canary }],
+  });
 
-  it("finds a CLI only under its seal, and none with no seal", async () => {
-    expect(await anyRunnerUnder(() => Promise.resolve(sealing()))).toBe(true);
-    expect(await anyRunnerUnder(() => Promise.resolve({ ...SEAL, unreadable: [] }))).toBe(false);
+  it("finds a CLI only under its sandbox, and none with no sandbox", async () => {
+    expect(await anyRunnerUnder(() => Promise.resolve(sandboxing()))).toBe(true);
+    expect(await anyRunnerUnder(() => Promise.resolve({ ...SANDBOX, unreadable: [] }))).toBe(false);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      expect(await anyRunnerUnder(() => Promise.reject(new Error("no seal")))).toBe(false);
-      expect(logged).toHaveBeenCalledWith("[probe]", new Error("no seal"));
+      expect(await anyRunnerUnder(() => Promise.reject(new Error("no sandbox")))).toBe(false);
+      expect(logged).toHaveBeenCalledWith("[probe]", new Error("no sandbox"));
     } finally {
       logged.mockRestore();
     }
   });
 
-  it("signs a CLI in under its runner's seal, free to open the browser, and not at all while the seal is refused", async () => {
-    const sealed = poolOf({ resolveSeal: () => Promise.resolve(sealing()) });
-    sealed.init();
-    expect(await sealed.sealedSignIn("codex", ["codex", "login"])).toEqual(
-      signInCommand(sealing(), "codex", ["codex", "login"]),
+  it("signs a CLI in under its runner's sandbox, free to open the browser, and not at all while the sandbox is refused", async () => {
+    const sandboxed = poolOf({ resolveSandbox: () => Promise.resolve(sandboxing()) });
+    sandboxed.init();
+    expect(await sandboxed.sandboxedSignIn("codex", ["codex", "login"])).toEqual(
+      signInCommand(sandboxing(), "codex", ["codex", "login"]),
     );
     const refused = poolOf({
-      checkSeal: () => Promise.resolve({ kind: "refused", reason: "no sandbox-exec here." }),
-      resolveSeal: () => Promise.resolve(sealing()),
+      checkSandbox: () => Promise.resolve({ kind: "refused", reason: "no sandbox-exec here." }),
+      resolveSandbox: () => Promise.resolve(sandboxing()),
     });
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       refused.init();
-      await expect(refused.sealedSignIn("claude", ["claude", "auth", "login"])).rejects.toThrow(
+      await expect(refused.sandboxedSignIn("claude", ["claude", "auth", "login"])).rejects.toThrow(
         "no sandbox-exec here.",
       );
       expect(await refused.hasAnyRunner()).toBe(false);
@@ -433,15 +440,15 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
     }
   });
 
-  it("checks the seal only once main's PATH has settled, and starts no run before", async () => {
+  it("checks the sandbox only once main's PATH has settled, and starts no run before", async () => {
     const shellAnswered = Promise.withResolvers<null>();
     let checked = 0;
     const pool = poolOf({
-      checkSeal: () => {
+      checkSandbox: () => {
         checked += 1;
-        return Promise.resolve({ kind: "sealed" });
+        return Promise.resolve({ kind: "sandboxed" });
       },
-      resolveSeal: () => Promise.resolve(sealing()),
+      resolveSandbox: () => Promise.resolve(sandboxing()),
     });
     pool.init(
       (async () => {
@@ -450,29 +457,29 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
     );
     await Promise.resolve();
     expect(checked).toBe(0);
-    expect(pool.runsSealed()).toBe(false);
+    expect(pool.runsSandboxed()).toBe(false);
 
     shellAnswered.resolve(null);
 
-    expect(await pool.sealRefusal()).toBeNull();
+    expect(await pool.sandboxRefusal()).toBeNull();
     expect(checked).toBe(1);
-    expect(pool.runsSealed()).toBe(true);
+    expect(pool.runsSandboxed()).toBe(true);
   });
 
   it("is resolved again for every run, and none starts without one", async () => {
     let resolved = 0;
     const pool = poolOf({
-      resolveSeal: () => {
+      resolveSandbox: () => {
         resolved += 1;
         return resolved === 1
-          ? Promise.resolve(sealing())
-          : Promise.reject(new Error(`no seal ${resolved}`));
+          ? Promise.resolve(sandboxing())
+          : Promise.reject(new Error(`no sandbox ${resolved}`));
       },
     });
     pool.init();
     expect(await pool.hasAnyRunner()).toBe(true);
-    await expect(pool.completeOneShot("hire")).rejects.toThrow("no seal 2");
-    await expect(pool.completeOneShot("hire")).rejects.toThrow("no seal 3");
+    await expect(pool.completeOneShot("hire")).rejects.toThrow("no sandbox 2");
+    await expect(pool.completeOneShot("hire")).rejects.toThrow("no sandbox 3");
   });
 
   it("reads a runner whose login a turn found refused as signed out, however often its stored login is read again", async () => {
@@ -512,11 +519,11 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
   it("lets a task's run write only its own folders in the save, and the hiring one-shot none", async () => {
     const asked: (readonly string[])[] = [];
     const pool = poolOf({
-      resolveSeal: (writable) => {
+      resolveSandbox: (writable) => {
         asked.push(writable);
         return asked.length === 1
-          ? Promise.resolve(sealing())
-          : Promise.reject(new Error("no seal"));
+          ? Promise.resolve(sandboxing())
+          : Promise.reject(new Error("no sandbox"));
       },
     });
     pool.init();
@@ -532,13 +539,13 @@ describe.skipIf(!onMac)("the seal a run starts under", () => {
       asks: askBox(() => {}),
       call: () => Promise.reject(new Error("called a tool without a test asking for it")),
     };
-    await expect(pool.completeOneShot("hire")).rejects.toThrow("no seal");
-    // as at boot: a task's run opens its socket first, since its seal names it
+    await expect(pool.completeOneShot("hire")).rejects.toThrow("no sandbox");
+    // as at boot: a task's run opens its socket first, since its sandbox names it
     await controlPlane.start();
     try {
       await expect(
         pool.runTask(emp, company, task, () => {}, tools, new AbortController().signal),
-      ).rejects.toThrow("no seal");
+      ).rejects.toThrow("no sandbox");
     } finally {
       controlPlane.stop();
     }

@@ -91,7 +91,7 @@ build of `apps/web` is a second remote check. `pnpm knip` checks unused files, e
 dependencies.
 
 Its `test-macos` job runs what only a Mac can: clippy over the shell's macOS code, `pnpm test`
-with the seal and every gate suite (it installs `claude`, `codex` and `agent-browser` at versions
+with the sandbox and every gate suite (it installs `claude`, `codex` and `agent-browser` at versions
 pinned there, signed in to nothing, and fails before the tests if one does not answer
 `--version`, since a gate skips on a CLI it cannot run), and `pnpm smoke:desktop` on an ad-hoc
 pack ([Packaging and release](docs/packaging.md)). Its `update-macos` job runs `pnpm smoke:update`
@@ -126,7 +126,7 @@ first (each failure's file and line, its error, its artifacts and the end of mai
 base64) and `screens/*.png`, the key screenshots every run keeps; a failure's trace and screenshot
 sit in its test's folder. Its `trace.zip` unzips to `test.trace` and `*-trace.trace`, which hold
 the test's steps and the page's actions as one JSON event a line, and `resources/*.jpeg`, which
-are the page's frames. A failed run's artifact also holds `seal-denials.log`: what the seal
+are the page's frames. A failed run's artifact also holds `sandbox-denials.log`: what the sandbox
 refused under the runner's home or TMPDIR while the suite ran, each deny Seatbelt logged by
 process, operation and path, which a run's own output may not say; `test-macos` prints the same
 in its log when any of its steps fails.
@@ -162,11 +162,11 @@ it, and fails on any skip:
 
 - It needs Playwright's Chromium (`pnpm -F @repo/e2e exec playwright install chromium`, once).
 - Every test that founds a company (the office, the #team approval, the panels, Vercel,
-  Stripe and Printful key entry, sealing, the runs and onboarding) needs no login: every launch
+  Stripe and Printful key entry, sandboxing, the runs and onboarding) needs no login: every launch
   signs the `claude` and `codex` the adapters bundle in to a stand-in model on loopback
   (`idlebiz/stand-in-model`, `idlebiz/stand-in-runners`), and main inherits none of the
-  terminal's provider env. Founding still needs the macOS seal, so off a Mac each skips on the
-  seal's own refusal and only the title screen and the newer save run; on a Mac a CLI that does
+  terminal's provider env. Founding still needs the macOS sandbox, so off a Mac each skips on the
+  sandbox's own refusal and only the title screen and the newer save run; on a Mac a CLI that does
   not sign in fails the test.
 - It needs no network and no real account. Every launch starts main with
   `tools/e2e/src/stub-services.ts` preloaded, which answers Stripe, Vercel and Printful from
@@ -246,7 +246,7 @@ The third row is a hard gate, not a convenience: `renderer/ui/onboarding.tsx` ca
 `onboarding.hires`, which dispatches a real agent run (`server/agents/onboarding.ts`), and its
 flow (`renderer/ui/onboarding-flow.ts`) founds nothing when no hires come back. The fourth passes
 it with no login: casting and every run after it are turns of the CLIs the adapters bundle,
-sealed, on the stand-in model, so only a Mac founds there. The last is the e2e suite's, which
+sandboxed, on the stand-in model, so only a Mac founds there. The last is the e2e suite's, which
 founds through the page's API, and through the onboarding itself once per runner
 (`tools/e2e/src/runs.spec.ts`), with no login, on the stand-in model ([Verify a change
 end-to-end](#verify-a-change-end-to-end)). Use `IDLEBIZ_ROOT_DIR` for fixtures; there is no
@@ -274,18 +274,20 @@ No test needs a window or Phaser.
   `tempSave` or `freshSave` and founds Kai's Acme with `foundAcme` (`server/test-support/save.ts`):
   `server/paths.ts` reads the root when a path is asked for and refuses one before any save is
   open, so a test that opens none fails rather than writing the founder's.
-- On macOS main's suite also runs the seal on canary files under a stand-in home and on what
-  launchd, cfprefsd, the find pasteboard and a mount would do in this session for a run, each
-  undone after (`seal.mac.test.ts`), and main's login-shell probe on a stand-in home's startup files
-  (`shell-path.test.ts`). Where a `claude` or `codex` CLI is installed, the gate suites
+- `pnpm --filter @repo/sandbox test` renders the profile, and on macOS runs it on canary files
+  under a stand-in home and on what launchd, cfprefsd, the find pasteboard and a mount would do in
+  this session for a run, each undone after, and reads a run's denies back from the system log
+  (`machine.mac.test.ts`). Main's suite runs its own half on a Mac (`sandbox.mac.test.ts`: this
+  machine's sandbox, main's ports and refusals) and main's login-shell probe on a stand-in home's
+  startup files (`shell-path.test.ts`). Where a `claude` or `codex` CLI is installed, the gate suites
   (`server/agents/claude-gate.test.ts`, `codex-gate.test.ts`) drive the real CLI through the app's
-  ACP adapter, sealed, against a stand-in model on loopback, billing nothing, on a scratch config
+  ACP adapter, sandboxed, against a stand-in model on loopback, billing nothing, on a scratch config
   that never touches its login.
   They fail once a command nests a sandbox, an ask in Manual skips IdleBiz, codex asks at all, a
-  founder's MCP server starts, a command escapes the seal, or a run rewrites the founder's config;
-  claude's runs under founder settings that turn its sandbox on, and codex's checks that the seal
+  founder's MCP server starts, a command escapes the sandbox, or a run rewrites the founder's config;
+  claude's runs under founder settings that turn its sandbox on, and codex's checks that the sandbox
   refuses a patch moving a file into the save. Where `agent-browser` is installed, the real
-  agent-browser runs under a run's seal (`browser-gate.test.ts`). All skip elsewhere; CI's
+  agent-browser runs under a run's sandbox (`browser-gate.test.ts`). All skip elsewhere; CI's
   `test-macos` job runs every one, on the CLI versions its workflow pins, which move by hand.
 - `pnpm --filter @repo/agent-driver test` covers an ACP turn against stand-in agents
   (permissions, resume, teardown, how a turn ends, usage) and the failure classes.
@@ -295,8 +297,9 @@ No test needs a window or Phaser.
 - The root `pnpm test` runs every suite and `test:rust` through turbo, `TEST_CONCURRENCY` at a
   time (4 unless set), and replays any suite but main's whose inputs have not changed: main's gates
   run or skip on the CLIs this machine has. turbo hands every other suite only the env its config
-  names, and main's the shell's whole env, as `pnpm --filter idlebiz test` does, so `CLAUDE_BIN`,
-  `CODEX_BIN`, TMPDIR and `SSH_AUTH_SOCK` reach its gate and seal suites (`apps/cli/turbo.json`).
+  names, and main's and the sandbox's the shell's whole env, as `pnpm --filter idlebiz test` does,
+  so `CLAUDE_BIN`, `CODEX_BIN`, TMPDIR and `SSH_AUTH_SOCK` reach the gate and sandbox suites
+  (`apps/cli/turbo.json`, `packages/sandbox/turbo.json`).
 
 Drive anything requiring a window live instead, or cover it in the e2e suite.
 
@@ -351,6 +354,7 @@ packages/
   domain/        @repo/domain — the vocabulary both sides share, pure.
   contract/      @repo/contract — the page's API, contract-first.
   agent-driver/  @repo/agent-driver — the ACP runtime, over domain.
+  sandbox/       @repo/sandbox — the Seatbelt sandbox each run starts under, over domain.
   px-kit/        @repo/px-kit — the pixel UI kit both apps draw with.
 tools/
   e2e/           @repo/e2e — Playwright over the built page and main, through the dev host.
@@ -369,7 +373,7 @@ Each mechanic is described once, in its file under `docs/`, and read before it i
   goes, the replay.
 - [How a product earns](docs/earning.md): the business models, checking who paid, action cards.
 - [Runs](docs/runs.md): a run's env, login and team notes, failures and rests, IdleBiz's skills.
-- [The seal and what judges a run](docs/seal.md): what a run reads, writes and reaches, the
+- [The sandbox and what judges a run](docs/sandbox.md): what a run reads, writes and reaches, the
   runner's own judge, what stays open.
 - [Keys and what spends them](docs/keys.md): IdleBiz's keys, the signed tools, Vercel, Stripe,
   Printful, the order pump, retiring a product, a reset.
@@ -383,7 +387,7 @@ Each mechanic is described once, in its file under `docs/`, and read before it i
 
 - **sandbox-exec cannot nest.** Once a profile denies anything, applying another inside it fails
   (`sandbox_apply: Operation not permitted`), so any sandbox a runner or its tools start inside
-  the seal makes every command fail. claude's own is forced off in its flag-tier settings
+  ours makes every command fail. claude's own is forced off in its flag-tier settings
   (`packages/agent-driver/src/registry.ts`), whatever the founder's say. Runs start Chrome without
   its own (`AGENT_BROWSER_ARGS=--no-sandbox`). codex runs in `agent-full-access`, its one mode
   with no sandbox of its own. Both adapters and the ACP sdk are pinned exactly in the

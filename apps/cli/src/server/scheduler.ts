@@ -274,7 +274,7 @@ const finish = (runId: string, task: Task, emp: Employee, r: RunResult): TaskSta
 /** What the scheduler needs of the thing that runs employees; the real one is `runnerPool`. */
 export type EmployeeRunner = Pick<
   RunnerPool,
-  "runTask" | "restingRunner" | "signedIn" | "pickRunner" | "runsSealed"
+  "runTask" | "restingRunner" | "signedIn" | "pickRunner" | "runsSandboxed"
 >;
 
 /** What a task is filed with beside its brief and its assignee. */
@@ -405,7 +405,7 @@ class Scheduler {
       return;
     }
     const company = store.getCompany();
-    if (!company || !company.autopilot || !admit(company) || !this.runners.runsSealed()) {
+    if (!company || !company.autopilot || !admit(company) || !this.runners.runsSandboxed()) {
       return;
     }
     const employees = store.listEmployees();
@@ -507,12 +507,12 @@ class Scheduler {
   }
 
   /**
-   * Nothing starts until the seal holds: a run that cannot start sealed would fail, and spend one
+   * Nothing starts until the sandbox holds: a run that cannot start sandboxed would fail, and spend one
    * of its task's attempts, for nothing the task did. The work waits on the queue meanwhile.
    */
   tick(): void {
     const company = store.getCompany();
-    if (this.stopped || !company || !this.runners.runsSealed()) {
+    if (this.stopped || !company || !this.runners.runsSandboxed()) {
       return;
     }
     const queued = store.listQueuedTasks();

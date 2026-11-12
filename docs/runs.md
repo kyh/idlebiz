@@ -11,9 +11,9 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
   `OP_SESSION_` — and every URL with a login in it but a `*_PROXY`, except its runner's own login
   (`providerEnv` in `packages/agent-driver/src/registry.ts`; `runEnv` in
   `server/agents/run-env.ts`). AWS access keys sign for the whole account, so neither runner keeps
-  them, and the seal hides `~/.aws` (`LOGINS` in `machine-seal.ts`), so no AWS profile loads
+  them, and the sandbox hides `~/.aws` (`LOGINS` in `@repo/sandbox/machine`), so no AWS profile loads
   either: a founder on Bedrock signs in with `AWS_BEARER_TOKEN_BEDROCK` only. On Vertex,
-  `GOOGLE_APPLICATION_CREDENTIALS` must name a key file outside the sealed logins: gcloud's
+  `GOOGLE_APPLICATION_CREDENTIALS` must name a key file outside the sandboxed logins: gcloud's
   default credentials under `~/.config/gcloud` are hidden too.
 - **A claude session** loads no setting source (`settingSources: []`,
   `packages/agent-driver/src/registry.ts`): not the founder's user settings (their CLAUDE.md and
@@ -29,7 +29,7 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
   `server/agents/claude-user-settings.ts`): their settings' `env` (a Bedrock or Vertex switch, a
   gateway's URL and token), through `runEnv` as the shell's env goes, filtered alike, and the
   helpers claude runs for a key or a cloud login (`apiKeyHelper`, `awsAuthRefresh`,
-  `awsCredentialExport`, `gcpAuthRefresh`), which run sealed, so one that reads `~/.aws` or gcloud's
+  `awsCredentialExport`, `gcpAuthRefresh`), which run sandboxed, so one that reads `~/.aws` or gcloud's
   login fails as it did. So does the model they picked, with its effort (`model`, `effortLevel`,
   `modelSettings`, `alwaysThinkingEnabled`, `modelOverrides`), in the flag tier: claude would
   otherwise run its default, and claude-agent-acp, which reads their user settings, sets a model
@@ -39,13 +39,13 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
   start, and says which rule and file (`refuseDeniedTools` in `server/agents/claude-denies.ts`):
   `managed-settings.json` and the drop-ins of `managed-settings.d/`, which claude merges into one
   source, their deny lists unioned. The other sources of managed policy go unread
-  ([What stays open](seal.md#what-stays-open)), and since claude applies only the highest source
+  ([What stays open](sandbox.md#what-stays-open)), and since claude applies only the highest source
   that sets anything, a rule in the files refuses a run even where one of those shadows it.
 - **A codex session** loads the founder's codex config with every MCP server turned off by the
   name `codex mcp list` gives it, and apps, plugins and memories whole (`codexSessionEnv` in
   `server/agents/session.ts`): turning plugins off is also what keeps their plugins' skills out.
   One it cannot list refuses the run with codex's reason. No codex setting leaves all the
-  founder's own skills out, nor their instructions or rules, so the seal keeps a codex run from
+  founder's own skills out, nor their instructions or rules, so the sandbox keeps a codex run from
   reading them (their memories too), and IdleBiz's folder is handed to the session to read
   (`readDirs`). The codex gate test plants each of these and checks none reaches the model, and
   that a push their rules allow still asks.
@@ -57,13 +57,13 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
   character the cut would split. Main picks it as codex does, `AGENTS.override.md` in its place
   when there is one, and codex's session config pins what their config could change
   (`project_doc_fallback_filenames` empty, `project_doc_max_bytes` at the same 32 KiB), so both
-  runners read the same notes. Main reads it unsealed, so only a file of the workspace's own root:
+  runners read the same notes. Main reads it unsandboxed, so only a file of the workspace's own root:
   through a link only to a file beside it (the common `AGENTS.md` -> `CLAUDE.md`), never one
   leading further, where a folder on the way could turn into a link between resolving and opening,
   and never a hard link. The standing instructions say it is the team's word, not the founder's,
   and have every teammate keep it as a plain file, fold an override into it and leave a CLAUDE.md
   as `@AGENTS.md`, which the founder's own claude follows.
-- **Signed in.** A runner is signed in only if its login probe, run sealed as its runs are, says
+- **Signed in.** A runner is signed in only if its login probe, run sandboxed as its runs are, says
   so: a codex login kept in the Keychain reads as none (a codex run reaches no Keychain), and
   onboarding's sign-in says to keep it in a file. The work of a runner not signed in waits on the
   queue, spending no attempt (`signedIn` in `server/agents/runner-pool.ts`), until a sign-in finds

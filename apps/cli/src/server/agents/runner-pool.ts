@@ -34,11 +34,10 @@ import type { AskBox } from "./ask-box";
 import { bundledSkillsDir } from "./bundled-skills";
 import { refuseDeniedTools } from "./claude-denies";
 import { runTmpdir, toolCacheEnv, ensureRepository, gitIdentity } from "./run-workspace";
-import { machineSeal } from "./machine-seal";
-import { sealedCommand, signInCommand } from "./seal";
-import type { Seal } from "./seal";
-import { sealRuns } from "./seal-check";
-import type { SealState } from "./seal-check";
+import { sandboxedCommand, signInCommand } from "@repo/sandbox/profile";
+import type { Sandbox } from "@repo/sandbox/profile";
+import { sandboxOf, sandboxRuns } from "./sandbox";
+import type { SandboxState } from "./sandbox";
 import {
   acpAgentInstalled,
   makeBrowserNamespace,
@@ -122,7 +121,7 @@ export const memoryAfter = (
 
 /**
  * The session a run in `workspace` resumes. Only one begun there: claude resumes a session from
- * any folder but the seal lets a run write only its own folder's transcripts, so a turn resumed
+ * any folder but the sandbox lets a run write only its own folder's transcripts, so a turn resumed
  * elsewhere is never recorded and the next resume has forgotten it.
  */
 export const resumeIn = (session: RunSession | null, workspace: string): string | undefined =>
@@ -161,13 +160,18 @@ const usageRestUntil = (reportedReset: number | null): number =>
     : Math.min(reportedReset, Date.now() + MAX_USAGE_REST_MS);
 
 /**
- * What a pool checks and resolves the seal with, finds IdleBiz's skills in and keeps its runners'
+ * What a pool checks and resolves the sandbox with, finds IdleBiz's skills in and keeps its runners'
  * rests in: tests script them, the app checks and resolves this machine's, the bundled skills and
  * the company's state.
  */
 export interface RunnerPoolDeps {
-  checkSeal: () => Promise<SealState>;
-  resolveSeal: (writable: readonly string[], apiSocket: string | null) => Promise<Seal>;
+  checkSandbox: () => Promise<SandboxState>;
+  /** The sandbox of a run writing `writable`, calling on `apiSocket`, its denials labelled `label`. */
+  resolveSandbox: (
+    writable: readonly string[],
+    apiSocket: string | null,
+    label: string | null,
+  ) => Promise<Sandbox>;
   skills: () => string;
   /** null before a company is founded. */
   restFile: () => string | null;
@@ -177,12 +181,12 @@ export class RunnerPool {
   // Boot probes in the background; callers needing a definitive answer await probing.
   private probes: RunnerProbe[] = [];
   private probing: Promise<RunnerProbe[]> = Promise.resolve([]);
-  private sealing: Promise<SealState> = Promise.resolve({
+  private sandboxing: Promise<SandboxState> = Promise.resolve({
     kind: "refused",
-    reason: "IdleBiz has not sealed employee runs yet, so none will start.",
+    reason: "IdleBiz has not sandboxed employee runs yet, so none will start.",
   });
   /** What the latest settled check found; null before the first settles. */
-  private sealed: SealState | null = null;
+  private sandboxed: SandboxState | null = null;
   // runner -> epoch its limit lifts
   private readonly restingUntil = new Map<RunnerId, number>();
   // runner -> overloads and refusals of access in a row, each resting it twice as long as the one before
@@ -190,27 +194,27 @@ export class RunnerPool {
   // runners whose login a turn found refused; only a sign-in clears one, since its probe reads
   // the stored login, which a revoked token still is
   private readonly refusedLogins = new Set<RunnerId>();
-  private readonly checkSeal: RunnerPoolDeps["checkSeal"];
-  private readonly resolveSeal: RunnerPoolDeps["resolveSeal"];
+  private readonly checkSandbox: RunnerPoolDeps["checkSandbox"];
+  private readonly resolveSandbox: RunnerPoolDeps["resolveSandbox"];
   private readonly skills: RunnerPoolDeps["skills"];
   private readonly restFile: RunnerPoolDeps["restFile"];
 
-  constructor({ checkSeal, resolveSeal, restFile, skills }: RunnerPoolDeps) {
-    this.checkSeal = checkSeal;
-    this.resolveSeal = resolveSeal;
+  constructor({ checkSandbox, resolveSandbox, restFile, skills }: RunnerPoolDeps) {
+    this.checkSandbox = checkSandbox;
+    this.resolveSandbox = resolveSandbox;
     this.skills = skills;
     this.restFile = restFile;
   }
 
   /**
-   * Runs wait on the seal's check, and never start unsealed; a rest the last launch saw still
+   * Runs wait on the sandbox's check, and never start unsandboxed; a rest the last launch saw still
    * holds. The check, and the look for the CLIs after it, wait for `pathSettled`: both read PATH.
    */
   init(pathSettled: Promise<void> = Promise.resolve()): void {
     this.loadRest();
-    this.sealing = (async () => {
+    this.sandboxing = (async () => {
       await pathSettled;
-      return await this.settleSeal();
+      return await this.settleSandbox();
     })();
     this.probing = this.probe();
   }
@@ -245,24 +249,26 @@ export class RunnerPool {
   }
 
   /** A refusal is written to main's log as well as told to the founder. */
-  private async settleSeal(): Promise<SealState> {
-    const state = await this.checkSeal();
+  private async settleSandbox(): Promise<SandboxState> {
+    const state = await this.checkSandbox();
     if (state.kind === "refused") {
-      report("seal", state.reason);
+      report("sandbox", state.reason);
     }
-    this.sealed = state;
+    this.sandboxed = state;
     return state;
   }
 
   /**
-   * Each CLI is looked for under its runner's seal, as a run starts it, since the one on PATH
-   * could be a run's plant: with no seal, none is found.
+   * Each CLI is looked for under its runner's sandbox, as a run starts it, since the one on PATH
+   * could be a run's plant: with no sandbox, none is found.
    */
   private async probe(): Promise<RunnerProbe[]> {
     let probes: RunnerProbe[] = [];
     try {
-      const seal = await this.seal([]);
-      probes = await probeRunners(runnerEnv, (runner, argv) => sealedCommand(seal, runner, argv));
+      const sandbox = await this.sandbox([]);
+      probes = await probeRunners(runnerEnv, (runner, argv) =>
+        sandboxedCommand(sandbox, runner, argv),
+      );
     } catch (error) {
       // a refusal is reported where the check settles
       if (!(error instanceof RefusalError)) {
@@ -273,41 +279,44 @@ export class RunnerPool {
     return probes;
   }
 
-  /** `argv` as main starts `runner`'s CLI itself, to sign it in: under a seal of no folders, free to open the browser. */
-  async sealedSignIn(runner: RunnerId, argv: readonly string[]): Promise<Argv> {
-    return signInCommand(await this.seal([]), runner, argv);
+  /** `argv` as main starts `runner`'s CLI itself, to sign it in: under a sandbox of no folders, free to open the browser. */
+  async sandboxedSignIn(runner: RunnerId, argv: readonly string[]): Promise<Argv> {
+    return signInCommand(await this.sandbox([]), runner, argv);
   }
 
-  /** Look for the CLIs again, and check again a seal that refused runs: its probe can time out on a loaded boot. */
+  /** Look for the CLIs again, and check again a sandbox that refused runs: its probe can time out on a loaded boot. */
   refresh(): Promise<RunnerProbe[]> {
-    if (this.sealed?.kind === "refused") {
-      this.sealing = this.settleSeal();
+    if (this.sandboxed?.kind === "refused") {
+      this.sandboxing = this.settleSandbox();
     }
     this.probing = this.probe();
     return this.probing;
   }
 
-  /** Whether a run may start now: only once a check found the seal holding, which it then always does. */
-  runsSealed(): boolean {
-    return this.sealed?.kind === "sealed";
+  /** Whether a run may start now: only once a check found the sandbox holding, which it then always does. */
+  runsSandboxed(): boolean {
+    return this.sandboxed?.kind === "sandboxed";
   }
 
-  /** Why no run starts, once the latest check settles; null when runs start sealed. */
-  async sealRefusal(): Promise<string | null> {
-    const state = await this.sealing;
+  /** Why no run starts, once the latest check settles; null when runs start sandboxed. */
+  async sandboxRefusal(): Promise<string | null> {
+    const state = await this.sandboxing;
     return state.kind === "refused" ? state.reason : null;
   }
 
   /**
-   * The seal a run writing `writable` and calling the company on `apiSocket` starts under,
-   * resolved for that run once the check holds.
+   * The sandbox a run writing `writable` starts under, resolved for that run once the check holds:
+   * a run calls the company on its own socket and its denials name it.
    */
-  private async seal(writable: readonly string[], apiSocket: string | null = null): Promise<Seal> {
-    const state = await this.sealing;
+  private async sandbox(
+    writable: readonly string[],
+    run: { socket: string; label: string } | null = null,
+  ): Promise<Sandbox> {
+    const state = await this.sandboxing;
     if (state.kind === "refused") {
       throw new RefusalError(state.reason);
     }
-    return await this.resolveSeal(writable, apiSocket);
+    return await this.resolveSandbox(writable, run?.socket ?? null, run?.label ?? null);
   }
 
   async hasAnyRunner(): Promise<boolean> {
@@ -316,8 +325,8 @@ export class RunnerPool {
   }
 
   /**
-   * Whether `runner`'s CLI was last found signed in as its runs sign in, under its seal: one that
-   * is not (a codex login in the Keychain, which the seal closes to codex runs, reads so) would
+   * Whether `runner`'s CLI was last found signed in as its runs sign in, under its sandbox: one that
+   * is not (a codex login in the Keychain, which the sandbox closes to codex runs, reads so) would
    * only fail each attempt, so its employees' work waits until a sign-in finds it again.
    */
   signedIn(runner: RunnerId): boolean {
@@ -430,7 +439,7 @@ export class RunnerPool {
   async completeOneShot(prompt: string): Promise<string> {
     const runner = this.pickRunner(0);
     const res = await runAcpTurn({
-      agent: await sessionAgent(runner, await this.seal([]), this.skills(), null),
+      agent: await sessionAgent(runner, await this.sandbox([]), this.skills(), null),
       cwd: tmpdir(),
       idleTimeoutMs: 3 * 60_000,
       maxSessionMs: 5 * 60_000,
@@ -517,23 +526,26 @@ export class RunnerPool {
     // a run cannot make its own folders, only write in them
     mkdirSync(memory, { recursive: true });
     mkdirSync(runTmpdir(), { recursive: true });
-    // the run's own socket, which its seal alone lets it connect to: the boundary between runs
+    // the run's own socket, which its sandbox alone lets it connect to: the boundary between runs
     const handle = await controlPlane.registerRun(tools.call);
     let sawOutput = false;
     try {
-      const seal = await this.seal([run.workspace, ...addDirs], handle.socket);
+      const sandbox = await this.sandbox([run.workspace, ...addDirs], {
+        label: `${emp.id}/${run.taskId}`,
+        socket: handle.socket,
+      });
       if (emp.runner === "claude") {
         await refuseDeniedTools();
       }
-      makeBrowserNamespace(seal, emp.runner);
+      makeBrowserNamespace(sandbox, emp.runner);
       if (emp.runner === "claude") {
         // where claude keeps each folder's transcripts and memory, which a run cannot make
-        mkdirSync(seal.claudeProjects.projects, { recursive: true });
+        mkdirSync(sandbox.claudeProjects.projects, { recursive: true });
       }
       if (run.workspace !== company.workspaceDir) {
         await ensureRepository(run.workspace);
       }
-      const agent = await sessionAgent(emp.runner, seal, this.skills(), run.workspace);
+      const agent = await sessionAgent(emp.runner, sandbox, this.skills(), run.workspace);
       const res = await runAcpTurn({
         addDirs,
         agent,
@@ -585,14 +597,14 @@ export class RunnerPool {
 const activeRestFile = (): string | null => (store.getCompany() === null ? null : runnerRestFile());
 
 /**
- * A pool whose runs start only once `checkSeal` finds the seal holding, each under the seal
- * `resolveSeal` gives its own folders then; what `deps` leaves out is this machine's and the
+ * A pool whose runs start only once `checkSandbox` finds the sandbox holding, each under the sandbox
+ * `resolveSandbox` gives its own folders then; what `deps` leaves out is this machine's and the
  * company's.
  */
 export const createRunnerPool = (deps: Partial<RunnerPoolDeps> = {}): RunnerPool =>
   new RunnerPool({
-    checkSeal: sealRuns,
-    resolveSeal: machineSeal,
+    checkSandbox: sandboxRuns,
+    resolveSandbox: sandboxOf,
     restFile: activeRestFile,
     skills: bundledSkillsDir,
     ...deps,

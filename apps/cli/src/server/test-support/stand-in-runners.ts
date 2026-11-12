@@ -109,7 +109,7 @@ const execFileAsync = promisify(execFile);
 /**
  * `runner`'s CLI signed in to the stand-in at `url`, in a home of its own under `scratch`: its env.
  * claude takes the stand-in's key from its env, and a home with its account file already there,
- * which a sealed run cannot create. codex signs in once, here, unsealed, with nothing of main's
+ * which a sandboxed run cannot create. codex signs in once, here, unsandboxed, with nothing of main's
  * env: a setup step, never a run, and its login lands in a file, since codex runs are denied the
  * Keychain.
  */
@@ -156,7 +156,7 @@ const signedIn = async (
  * Main's env for runs on the stand-in `model`: each of `runners` is the CLI its adapter bundles,
  * signed in to the stand-in under `scratch`, and every other runner's CLI is a path that is not
  * there, so no CLI of the developer's is ever looked for. That path sits in a folder of its own:
- * the seal keeps the folder of every CLI main names from every run, as one the founder runs
+ * the sandbox keeps the folder of every CLI main names from every run, as one the founder runs
  * programs from, and the one beside the homes would keep the runners from their own state.
  */
 export const standInRunnerEnv = async ({

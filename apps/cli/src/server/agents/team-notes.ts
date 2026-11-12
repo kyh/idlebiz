@@ -28,10 +28,10 @@ const pickedIn = async (workspace: string): Promise<string | null> => {
 
 /**
  * The notes the team keeps at the root of `workspace`, picked as codex picks them, or null when
- * there are none or they are empty. Main reads them unsealed, and any run on the product can
+ * there are none or they are empty. Main reads them unsandboxed, and any run on the product can
  * write there, so only a file of the workspace's own root is read: through a link only to a file
  * beside it (`AGENTS.md` -> `CLAUDE.md`), never one leading elsewhere, where a folder on the way
- * could be swapped for a link between resolving and opening, nor a hard link to a file the seal
+ * could be swapped for a link between resolving and opening, nor a hard link to a file the sandbox
  * keeps from runs.
  */
 export const readTeamNotes = async (workspace: string): Promise<TeamNotes | null> => {

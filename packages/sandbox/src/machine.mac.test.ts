@@ -19,19 +19,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import type { RunnerId } from "@repo/domain/runners";
-import { browserNamespace, machineSeal, sealFor } from "./machine-seal";
-import { sealedCommand, signInCommand } from "./seal";
-import type { Seal } from "./seal";
-import { checkSeal, sealRuns } from "./seal-check";
-import type { SealProbe } from "./seal-check";
-import { startPageServer } from "../page-server";
-import { tempSave } from "../test-support/save";
-
-const root = tempSave();
+import { FolderRefusedError, browserNamespace, sandboxFor } from "./machine";
+import { sandboxedCommand, signInCommand } from "./profile";
+import type { Sandbox } from "./profile";
+import { checkSandbox } from "./check";
+import { watchDenials } from "./denials";
+import type { Denial } from "./denials";
+import type { SandboxProbe } from "./check";
 
 const onMac = process.platform === "darwin";
 
-// every test here starts real sealed processes, which take seconds each on a CI runner
+// every test here starts real sandboxed processes, which take seconds each on a CI runner
 vi.setConfig({ testTimeout: 30_000 });
 
 /** How `argv` exited, run as it stands. */
@@ -47,11 +45,11 @@ const outputOf = (argv: readonly string[], input = ""): string => {
 };
 
 /**
- * Whether a `runner` run under `sealed` starts a program at all: until it does, a canary that finds
+ * Whether a `runner` run under `sandboxed` starts a program at all: until it does, a canary that finds
  * nothing landed would pass on a profile that never compiled.
  */
-const startsUnder = (sealed: Seal, runner: RunnerId): boolean =>
-  exitOf(sealedCommand(sealed, runner, ["/usr/bin/true"])) === 0;
+const startsUnder = (sandboxed: Sandbox, runner: RunnerId): boolean =>
+  exitOf(sandboxedCommand(sandboxed, runner, ["/usr/bin/true"])) === 0;
 
 /** Every disk an `hdiutil attach` printed, for a cleanup to detach. */
 const disksIn = (printed: string): string[] =>
@@ -68,7 +66,7 @@ const pasteboardAnswers =
 
 /** A real probe of the checked command, its profile swapped for `profile`. */
 const under =
-  (profile: string): SealProbe =>
+  (profile: string): SandboxProbe =>
   (argv, env) =>
     Promise.resolve(
       spawnSync(argv[0] ?? "", [argv[1] ?? "", profile, ...argv.slice(3)], { env }).status,
@@ -114,7 +112,7 @@ const all = (files: readonly string[], outcome: string): Record<string, string> 
   Object.fromEntries(files.map((file) => [file, outcome]));
 
 describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => {
-  // home sits in a box of its own, so a rename the seal failed to stop is still cleaned up
+  // home sits in a box of its own, so a rename the sandbox failed to stop is still cleaned up
   let box = "";
   let home = "";
   const at = (file: string): string => path.join(home, file);
@@ -141,13 +139,13 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     at(".idlebiz/cache"),
     at(".idlebiz/company/shared"),
   ];
-  const seal = (more: Partial<Parameters<typeof sealFor>[0]> = {}): Promise<Seal> =>
-    sealFor({
+  const sandbox = (more: Partial<Parameters<typeof sandboxFor>[0]> = {}): Promise<Sandbox> =>
+    sandboxFor({
       clis: [],
       closedPorts: [],
       env: {},
       home,
-      mainOnly: [at(".idlebiz/secrets.json")],
+      hostOnly: [at(".idlebiz/secrets.json")],
       pathDirs: [],
       save: at(".idlebiz"),
       scratch: [at("tmp")],
@@ -159,10 +157,10 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   const tryAs = async (
     runner: "claude" | "codex",
     files: Attempts,
-    sealed: Promise<Seal> = seal(),
-    command: typeof sealedCommand = sealedCommand,
+    sandboxed: Promise<Sandbox> = sandbox(),
+    command: typeof sandboxedCommand = sandboxedCommand,
   ) => {
-    const argv = command(await sealed, runner, [
+    const argv = command(await sandboxed, runner, [
       process.execPath,
       "-e",
       TRY_FILES,
@@ -273,7 +271,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       ".cache/node/corepack/pnpm/9.0.0/bin/pnpm.cjs",
       "Library/Caches/ms-playwright/chromium/chrome",
       ".agent-browser/config.json",
-      // what a toolchain reads on every build, beside the logins sealed in its folder
+      // what a toolchain reads on every build, beside the logins sandboxed in its folder
       ".yarnrc.yml",
       ".m2/repository/org/a/a.jar",
       ".gradle/caches/modules-2/a.bin",
@@ -311,7 +309,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     });
   });
 
-  it("keeps each runner's own login and seals the other's, where a symlink leads too", async () => {
+  it("keeps each runner's own login and sandboxes the other's, where a symlink leads too", async () => {
     const codexLogin = plant(".codex/auth.json");
     const claudeDir = plant(".claude/settings.json");
     const claudeState = at(".claude.json");
@@ -335,7 +333,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       const claude = path.join(away, "claude");
       mkdirSync(codex);
       mkdirSync(claude);
-      const moved = seal({
+      const moved = sandbox({
         env: { CLAUDE_CONFIG_DIR: claude, CODEX_HOME: codex },
         scratch: [tmpdir()],
       });
@@ -356,7 +354,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     const claudeHome = plant(".claude/canary");
     const claudeAccount = plant(".claude.json");
     const codexLogin = plant(".codex/auth.json");
-    const moved = seal({
+    const moved = sandbox({
       env: { CLAUDE_CONFIG_DIR: at("stand-in/claude"), CODEX_HOME: at("stand-in/codex") },
     });
     expect(await tryAs("codex", { reads: [claudeHome, claudeAccount] }, moved)).toEqual(
@@ -554,7 +552,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   it("lets only the sign-in write claude's account file, whose MCP servers start in the founder's sessions", async () => {
     const account = [plant(".claude.json"), at(".claude.json.tmp.1.2")];
     expect(await tryAs("claude", { writes: account })).toEqual(all(account, "EPERM"));
-    expect(await tryAs("claude", { writes: account }, seal(), signInCommand)).toEqual(
+    expect(await tryAs("claude", { writes: account }, sandbox(), signInCommand)).toEqual(
       all(account, "written"),
     );
   });
@@ -635,19 +633,19 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       ...all([workspace, memory, cache, shared], "written"),
       [linked]: "EPERM",
     });
-    expect(await tryAs("claude", { writes: [workspace, memory] }, seal({ writable: [] }))).toEqual(
-      all([workspace, memory], "EPERM"),
-    );
+    expect(
+      await tryAs("claude", { writes: [workspace, memory] }, sandbox({ writable: [] })),
+    ).toEqual(all([workspace, memory], "EPERM"));
   });
 
   it("closes a save that sits in a scratch folder, as a test's does, but for the run's own folders", async () => {
     const save = at("tmp/save");
     const workspace = path.join(save, "company/products/ledger/workspace");
     mkdirSync(workspace, { recursive: true });
-    const sealed = seal({ save, writable: [workspace] });
+    const sandboxed = sandbox({ save, writable: [workspace] });
     const approvals = path.join(save, "company/approvals.json");
     const writes = [approvals, path.join(workspace, "index.html"), at("tmp/other.log")];
-    expect(await tryAs("codex", { writes }, sealed)).toEqual({
+    expect(await tryAs("codex", { writes }, sandboxed)).toEqual({
       ...all(writes, "written"),
       [approvals]: "EPERM",
     });
@@ -672,7 +670,15 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         plant(".idlebiz/company/products/ledger/workspace/.claude/settings.json"),
         at(".idlebiz/company/products/ledger/workspace/.claude/settings.local.json"),
         at(".idlebiz/company/agents/ann/memory/.codex"),
+        plant(".idlebiz/company/products/ledger/workspace/.vscode/settings.json"),
+        at(".idlebiz/company/products/ledger/workspace/.vscode/tasks.json"),
+        at(".idlebiz/company/products/ledger/workspace/web/.vscode/launch.json"),
+        plant(".idlebiz/company/products/ledger/workspace/.idea/workspace.xml"),
+        at(".idlebiz/company/products/ledger/workspace/.envrc"),
       ];
+      mkdirSync(at(".idlebiz/company/products/ledger/workspace/web/.vscode"), {
+        recursive: true,
+      });
       mkdirSync(at(".idlebiz/company/products/ledger/workspace/.git/objects/ab"), {
         recursive: true,
       });
@@ -687,6 +693,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         plant(".idlebiz/company/products/ledger/workspace/.claude/notes.md"),
         plant(".idlebiz/company/products/ledger/workspace/src/config"),
         plant(".idlebiz/company/products/ledger/workspace/hooks/use-x.ts"),
+        at(".idlebiz/company/products/ledger/workspace/.vscode/extensions.json"),
       ];
       const workspace = at(".idlebiz/company/products/ledger/workspace");
       // nor built anywhere else a run writes, to be moved in whole: a move is checked where it
@@ -719,6 +726,8 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
           moves: [
             [path.join(workspace, ".git"), path.join(workspace, "git-old")],
             [path.join(workspace, ".claude"), path.join(workspace, "claude-old")],
+            [path.join(workspace, ".vscode"), path.join(workspace, "vscode-old")],
+            [path.join(workspace, ".idea"), path.join(workspace, "idea-old")],
           ],
           writes: [...opened, ...work],
         }),
@@ -728,9 +737,55 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         [path.join(workspace, ".claude")]: "EPERM",
         [path.join(workspace, ".git")]: "EPERM",
         [path.join(workspace, ".git/alt")]: "EPERM",
+        [path.join(workspace, ".idea")]: "EPERM",
+        [path.join(workspace, ".vscode")]: "EPERM",
       });
     },
   );
+
+  it("reports each deny of a labelled run to whoever watches for its label", async () => {
+    const prefix = `sandbox-test-${process.pid}:`;
+    const seen: Denial[] = [];
+    const stop = watchDenials(prefix, (denial) => {
+      seen.push(denial);
+    });
+    try {
+      // the log streams only what lands after it starts
+      await sleep(1500);
+      const ssh = plant(".ssh/id_ed25519");
+      expect(await tryAs("codex", { reads: [ssh] }, sandbox({ label: `${prefix}ann/t1` }))).toEqual(
+        {
+          [ssh]: "EPERM",
+        },
+      );
+      await vi.waitFor(
+        () => {
+          expect(seen).toContainEqual({
+            label: "ann/t1",
+            operation: "file-read-data",
+            process: "node",
+            target: ssh,
+          });
+        },
+        { interval: 250, timeout: 10_000 },
+      );
+    } finally {
+      stop();
+    }
+  });
+
+  it("matches those names in any case, as the disk does", async () => {
+    const workspace = at(".idlebiz/company/products/ledger/workspace");
+    plant(".idlebiz/company/products/ledger/workspace/.git/config");
+    mkdirSync(path.join(workspace, ".claude"), { recursive: true });
+    const cased = [
+      path.join(workspace, ".GIT/config"),
+      path.join(workspace, ".Claude/Settings.local.json"),
+      path.join(workspace, ".MCP.json"),
+      path.join(workspace, ".EnvRC"),
+    ];
+    expect(await tryAs("claude", { writes: cased })).toEqual(all(cased, "EPERM"));
+  });
 
   it("lets a run commit, branch, merge, rebase, stash and gc in the repository main made, never changing its config", () => {
     const workspace = at(".idlebiz/company/products/ledger/workspace");
@@ -756,13 +811,13 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       "git gc -q",
     ].join(" && ");
     // xcrun, which /usr/bin/git runs through, caches in macOS's per-user temp folder whatever
-    // TMPDIR says, and a run's seal lets it write there
+    // TMPDIR says, and a run's sandbox lets it write there
     const darwinTemp = spawnSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], {
       encoding: "utf-8",
     }).stdout.trim();
-    return seal({ scratch: [at("tmp"), darwinTemp] }).then((sealed) => {
+    return sandbox({ scratch: [at("tmp"), darwinTemp] }).then((sandboxed) => {
       const run = (script: string) => {
-        const [bin, ...args] = sealedCommand(sealed, "codex", ["/bin/sh", "-c", script]);
+        const [bin, ...args] = sandboxedCommand(sandboxed, "codex", ["/bin/sh", "-c", script]);
         return spawnSync(bin, args, { cwd: workspace, encoding: "utf-8", env });
       };
       const done = run(`set -e; ${work}`);
@@ -781,12 +836,12 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     link("linked-save", "elsewhere/idlebiz/");
     const stale = plant("elsewhere/idlebiz/secrets.json.tmp");
     const named = at("linked-save/secrets.json.tmp");
-    const sealed = seal({
-      mainOnly: [at("linked-save/secrets.json")],
+    const sandboxed = sandbox({
+      hostOnly: [at("linked-save/secrets.json")],
       save: at("linked-save"),
       writable: [],
     });
-    expect(await tryAs("codex", { reads: [named, stale] }, sealed)).toEqual(
+    expect(await tryAs("codex", { reads: [named, stale] }, sandboxed)).toEqual(
       all([named, stale], "EPERM"),
     );
   });
@@ -796,7 +851,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     const shim = plant("tmp/shims/bin/claude");
     const tool = link(".local/bin/tool", "tmp/tools/bin/tool");
     const later = at("tmp/later/bin");
-    const sealed = seal({ pathDirs: [shims, at(".local/bin"), later, "node_modules/.bin"] });
+    const sandboxed = sandbox({ pathDirs: [shims, at(".local/bin"), later, "node_modules/.bin"] });
     const writes = [shim, path.join(shims, "codex"), tool, at("tmp/tools/bin/other")];
     expect(
       await tryAs(
@@ -806,7 +861,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
           moves: [[at("tmp/shims"), at("tmp/shims-old")]],
           writes: [...writes, at("tmp/free.log")],
         },
-        sealed,
+        sandboxed,
       ),
     ).toEqual({
       ...all(writes, "EPERM"),
@@ -814,7 +869,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       [at("tmp/shims")]: "EPERM",
       [later]: "EPERM",
     });
-    const { runsAsFounder } = await sealed;
+    const { runsAsFounder } = await sandboxed;
     expect(runsAsFounder.map(({ path: kept }) => kept)).toEqual(
       expect.arrayContaining([shims, at("tmp/tools/bin"), later]),
     );
@@ -824,7 +879,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   it("keeps a run from a terminal's shims in TMPDIR, which main's PATH does not name", async () => {
     const shim = plant("tmp/cmux-cli-shims/panel/claude");
     const panel = at("tmp/cmux-cli-shims/other");
-    const sealed = seal({ shims: [at("tmp/cmux-cli-shims")] });
+    const sandboxed = sandbox({ shims: [at("tmp/cmux-cli-shims")] });
     expect(
       await tryAs(
         "claude",
@@ -833,7 +888,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
           moves: [[at("tmp/cmux-cli-shims"), at("tmp/shims-old")]],
           writes: [shim, at("tmp/free.log")],
         },
-        sealed,
+        sandboxed,
       ),
     ).toEqual({
       [at("tmp/cmux-cli-shims")]: "EPERM",
@@ -844,14 +899,14 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     expect(readFileSync(shim, "utf-8")).toBe("canary");
   });
 
-  it("keeps a run from swapping a folder of its own for a link, so the next run's seal holds too", async () => {
+  it("keeps a run from swapping a folder of its own for a link, so the next run's sandbox holds too", async () => {
     const approvals = plant(".idlebiz/company/approvals.json");
     const memory = at(".idlebiz/company/agents/ann/memory");
     const cache = at(".idlebiz/cache");
     plant(".idlebiz/cache/npm/x");
     const swap = at(".idlebiz/company/products/ledger/workspace/swap");
     mkdirSync(swap);
-    const first = seal();
+    const first = sandbox();
     expect(await tryAs("codex", { removes: [memory, cache] }, first)).toEqual(
       all([memory, cache], "EPERM"),
     );
@@ -873,28 +928,32 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       [inMemory]: "linked",
     });
     const through = path.join(inMemory, "company/approvals.json");
-    expect(await tryAs("codex", { writes: [approvals, through] }, seal())).toEqual(
+    expect(await tryAs("codex", { writes: [approvals, through] }, sandbox())).toEqual(
       all([approvals, through], "EPERM"),
     );
   });
 
   it("starts no run whose folder is a link or lies outside the save", async () => {
-    await expect(seal()).resolves.toBeDefined();
+    await expect(sandbox()).resolves.toBeDefined();
     const ann = at(".idlebiz/company/agents/ann");
     const memory = path.join(ann, "memory");
     rmSync(memory, { recursive: true });
     symlinkSync(at(".idlebiz"), memory);
-    await expect(seal()).rejects.toThrow(`while ${memory} is a symlink`);
+    await expect(sandbox()).rejects.toMatchObject({
+      refusal: { folder: memory, kind: "linked", link: memory },
+    });
     rmSync(ann, { recursive: true });
     mkdirSync(at("elsewhere/ann"), { recursive: true });
     symlinkSync(at("elsewhere/ann"), ann);
-    await expect(seal()).rejects.toThrow(`while ${ann} is a symlink`);
+    await expect(sandbox()).rejects.toMatchObject({ refusal: { kind: "linked", link: ann } });
     for (const folder of [at("projects/app"), at(".idlebiz")]) {
-      await expect(seal({ writable: [folder] })).rejects.toThrow("no folder inside the save");
+      await expect(sandbox({ writable: [folder] })).rejects.toThrow(
+        new FolderRefusedError({ folder, kind: "outside-save" }),
+      );
     }
   });
 
-  it("keeps a run from starting an app through LaunchServices, which would run it unsealed", async () => {
+  it("keeps a run from starting an app through LaunchServices, which would run it unsandboxed", async () => {
     const app = at("tmp/Canary.app");
     const launched = at("tmp/launched");
     mkdirSync(path.join(app, "Contents/MacOS"), { recursive: true });
@@ -903,7 +962,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>canary</string>
-<key>CFBundleIdentifier</key><string>io.idlebiz.seal-canary.${process.pid}.${Date.now()}</string>
+<key>CFBundleIdentifier</key><string>io.idlebiz.sandbox-canary.${process.pid}.${Date.now()}</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 </dict></plist>
 `,
@@ -911,13 +970,13 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     writeFileSync(path.join(app, "Contents/MacOS/canary"), `#!/bin/sh\ntouch '${launched}'\n`, {
       mode: 0o755,
     });
-    const sealed = await seal();
+    const sandboxed = await sandbox();
     const argv = ["/usr/bin/open", "-g", "-n", app];
-    expect(exitOf(sealedCommand(sealed, "claude", argv))).not.toBe(0);
+    expect(exitOf(sandboxedCommand(sandboxed, "claude", argv))).not.toBe(0);
     await sleep(1500);
     expect(existsSync(launched)).toBe(false);
     // the control: the same open from a sign-in, which may open the browser, does start it
-    expect(exitOf(signInCommand(sealed, "claude", argv))).toBe(0);
+    expect(exitOf(signInCommand(sandboxed, "claude", argv))).toBe(0);
     // LaunchServices registers a bundle it has never seen before it starts it, which a cold runner can take seconds over
     for (let waited = 0; waited < 200 && !existsSync(launched); waited += 1) {
       await sleep(100);
@@ -926,17 +985,19 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   });
 
   it("lets a run list processes, as version managers do to find their shell", async () => {
-    const sealed = await seal();
+    const sandboxed = await sandbox();
     for (const runner of ["claude", "codex"] as const) {
-      expect(exitOf(sealedCommand(sealed, runner, ["/bin/ps", "-p", "1", "-o", "pid="]))).toBe(0);
+      expect(
+        exitOf(sandboxedCommand(sandboxed, runner, ["/bin/ps", "-p", "1", "-o", "pid="])),
+      ).toBe(0);
     }
   });
 
   it("keeps a run from the CLIs that drive other apps, which a sign-in may still run", async () => {
-    const sealed = await seal();
+    const sandboxed = await sandbox();
     const script = ["/usr/bin/osascript", "-e", "return 1"];
-    expect(exitOf(sealedCommand(sealed, "codex", script))).not.toBe(0);
-    expect(exitOf(signInCommand(sealed, "codex", script))).toBe(0);
+    expect(exitOf(sandboxedCommand(sandboxed, "codex", script))).not.toBe(0);
+    expect(exitOf(signInCommand(sandboxed, "codex", script))).toBe(0);
   });
 
   it("stops git's Keychain helper for every run", async () => {
@@ -950,31 +1011,31 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   it.skipIf(!pasteboardAnswers)(
     "keeps a run from the pasteboard, where a key the founder pastes sits, which a sign-in may still read",
     async () => {
-      const sealed = await seal();
+      const sandboxed = await sandbox();
       const held = outputOf(PASTE);
-      const canary = `idlebiz-seal-canary-${process.pid}-${Date.now()}`;
+      const canary = `idlebiz-sandbox-canary-${process.pid}-${Date.now()}`;
       outputOf(COPY, canary);
       try {
         for (const runner of ["claude", "codex"] as const) {
-          expect(startsUnder(sealed, runner)).toBe(true);
-          expect(outputOf(sealedCommand(sealed, runner, PASTE))).not.toContain(canary);
+          expect(startsUnder(sandboxed, runner)).toBe(true);
+          expect(outputOf(sandboxedCommand(sandboxed, runner, PASTE))).not.toContain(canary);
           // nor does it put its own in place of what the founder copied
-          outputOf(sealedCommand(sealed, runner, COPY), "planted");
+          outputOf(sandboxedCommand(sandboxed, runner, COPY), "planted");
         }
         expect(outputOf(PASTE)).toBe(canary);
         // the control: the same read from a sign-in does reach it
-        expect(outputOf(signInCommand(sealed, "claude", PASTE))).toBe(canary);
+        expect(outputOf(signInCommand(sandboxed, "claude", PASTE))).toBe(canary);
       } finally {
         outputOf(COPY, held);
       }
     },
   );
 
-  // launchd refuses a job from any sandboxed caller, a sign-in's too, so the control is unsealed:
+  // launchd refuses a job from any sandboxed caller, a sign-in's too, so the control is unsandboxed:
   // it shows this session starts jobs at all, without which the canary proves nothing
-  it("keeps a run from having launchd start a job, which runs unsealed", async ({ skip }) => {
-    const sealed = await seal();
-    const label = `io.idlebiz.seal-canary.${process.pid}.${Date.now()}`;
+  it("keeps a run from having launchd start a job, which runs unsandboxed", async ({ skip }) => {
+    const sandboxed = await sandbox();
+    const label = `io.idlebiz.sandbox-canary.${process.pid}.${Date.now()}`;
     const control = at("tmp/control");
     const submitted = at("tmp/submitted");
     const bootstrapped = at("tmp/bootstrapped");
@@ -1006,10 +1067,12 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       if (!existsSync(control)) {
         skip();
       }
-      expect(startsUnder(sealed, "claude")).toBe(true);
-      expect(startsUnder(sealed, "codex")).toBe(true);
-      outputOf(sealedCommand(sealed, "claude", submit));
-      outputOf(sealedCommand(sealed, "codex", ["/bin/launchctl", "bootstrap", domain, plist]));
+      expect(startsUnder(sandboxed, "claude")).toBe(true);
+      expect(startsUnder(sandboxed, "codex")).toBe(true);
+      outputOf(sandboxedCommand(sandboxed, "claude", submit));
+      outputOf(
+        sandboxedCommand(sandboxed, "codex", ["/bin/launchctl", "bootstrap", domain, plist]),
+      );
       await sleep(1500);
       expect(existsSync(submitted)).toBe(false);
       expect(existsSync(bootstrapped)).toBe(false);
@@ -1021,15 +1084,15 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   });
 
   // launchd hands what `launchctl setenv` sets to every app opened after it: IdleBiz's own shell,
-  // the founder's terminal. No rule of the seal's names a setenv, so this measures what launchd does
-  // with one from a sealed caller. The control is unsealed: it shows this session's launchd takes a
+  // the founder's terminal. No rule of the sandbox's names a setenv, so this measures what launchd does
+  // with one from a sandboxed caller. The control is unsandboxed: it shows this session's launchd takes a
   // setenv at all, without which the canary proves nothing. Unset either way, since the steps after
   // this suite share the domain.
   it("keeps a run from setting the env launchd hands the apps opened after it", async ({
     skip,
   }) => {
-    const sealed = await seal();
-    const name = `IDLEBIZ_SEAL_CANARY_${process.pid}_${Date.now()}`;
+    const sandboxed = await sandbox();
+    const name = `SANDBOX_CANARY_${process.pid}_${Date.now()}`;
     const canary = (verb: string, ...value: string[]): string =>
       outputOf(["/bin/launchctl", verb, name, ...value]).trim();
     try {
@@ -1039,8 +1102,8 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       }
       canary("unsetenv");
       for (const runner of ["claude", "codex"] as const) {
-        expect(startsUnder(sealed, runner)).toBe(true);
-        outputOf(sealedCommand(sealed, runner, ["/bin/launchctl", "setenv", name, runner]));
+        expect(startsUnder(sandboxed, runner)).toBe(true);
+        outputOf(sandboxedCommand(sandboxed, runner, ["/bin/launchctl", "setenv", name, runner]));
         expect(canary("getenv")).toBe("");
       }
     } finally {
@@ -1051,24 +1114,24 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   it("keeps a run from mounting devfs, whose files carry no provenance for LaunchServices to check", async ({
     skip,
   }) => {
-    const sealed = await seal();
+    const sandboxed = await sandbox();
     const mountpoint = realpathSync(mkdtempSync(path.join(tmpdir(), "idlebiz-mount-")));
     const mount = ["/sbin/mount", "-t", "devfs", "-o", "noowners", "devfs", mountpoint];
     try {
       for (const runner of ["claude", "codex"] as const) {
-        expect(startsUnder(sealed, runner)).toBe(true);
-        outputOf(sealedCommand(sealed, runner, mount));
+        expect(startsUnder(sandboxed, runner)).toBe(true);
+        outputOf(sandboxedCommand(sandboxed, runner, mount));
         expect(existsSync(path.join(mountpoint, "null"))).toBe(false);
       }
-      // the control: the same mount from a sign-in, whose seal denies no file-mount, does land; a
+      // the control: the same mount from a sign-in, whose sandbox denies no file-mount, does land; a
       // session whose user mounts no devfs skips, since there the canary proves nothing
-      outputOf(signInCommand(sealed, "claude", mount));
+      outputOf(signInCommand(sandboxed, "claude", mount));
       if (!existsSync(path.join(mountpoint, "null"))) {
         skip();
       }
     } finally {
       spawnSync("/sbin/umount", [mountpoint]);
-      // never recursive: through a mount the seal missed it would remove device nodes; and a
+      // never recursive: through a mount the sandbox missed it would remove device nodes; and a
       // folder still mounted over is left, never thrown over the failure that explains it
       spawnSync("/bin/rmdir", [mountpoint]);
     }
@@ -1077,7 +1140,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   it("keeps a run from laying an image it made over a folder the founder runs programs from", async ({
     skip,
   }) => {
-    const sealed = await seal();
+    const sandboxed = await sandbox();
     const bin = at(".local/bin");
     mkdirSync(bin, { recursive: true });
     plant("image/claude");
@@ -1088,12 +1151,12 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     try {
       const attach = ["/usr/bin/hdiutil", "attach", "-nobrowse", "-mountpoint", bin, image];
       for (const runner of ["claude", "codex"] as const) {
-        expect(startsUnder(sealed, runner)).toBe(true);
-        // diskarbitrationd mounts it, and checks its caller's seal for a folder the caller names
-        attached.push(...disksIn(outputOf(sealedCommand(sealed, runner, attach))));
+        expect(startsUnder(sandboxed, runner)).toBe(true);
+        // diskarbitrationd mounts it, and checks its caller's sandbox for a folder the caller names
+        attached.push(...disksIn(outputOf(sandboxedCommand(sandboxed, runner, attach))));
         expect(existsSync(path.join(bin, "claude"))).toBe(false);
       }
-      // the control is unsealed, whatever diskarbitrationd makes of a sandboxed caller: it shows
+      // the control is unsandboxed, whatever diskarbitrationd makes of a sandboxed caller: it shows
       // this session lays an image over a folder at all, without which the canary proves nothing
       attached.push(...disksIn(outputOf(attach)));
       if (!existsSync(path.join(bin, "claude"))) {
@@ -1108,19 +1171,19 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   }, 90_000);
 
   it("keeps a run from having cfprefsd write a preference, as a sign-in still could", async () => {
-    const sealed = await seal();
-    const domain = `io.idlebiz.seal-canary.${process.pid}.${Date.now()}`;
+    const sandboxed = await sandbox();
+    const domain = `io.idlebiz.sandbox-canary.${process.pid}.${Date.now()}`;
     const write = ["/usr/bin/defaults", "write", domain, "canary", "-string", "landed"];
     const read = () => outputOf(["/usr/bin/defaults", "read", domain, "canary"]).trim();
     try {
       for (const runner of ["claude", "codex"] as const) {
-        expect(startsUnder(sealed, runner)).toBe(true);
-        outputOf(sealedCommand(sealed, runner, write));
+        expect(startsUnder(sandboxed, runner)).toBe(true);
+        outputOf(sandboxedCommand(sandboxed, runner, write));
       }
       expect(read()).toBe("");
       // the control: cfprefsd writes for a caller allowed this or the plist's own write, and a
       // sign-in is denied only the second
-      outputOf(signInCommand(sealed, "claude", write));
+      outputOf(signInCommand(sandboxed, "claude", write));
       expect(read()).toBe("landed");
     } finally {
       spawnSync("/usr/bin/defaults", ["delete", domain]);
@@ -1171,15 +1234,15 @@ for (const target of targets) {
     const connect = async (
       runner: "claude" | "codex",
       targets: readonly string[],
-      more: Partial<Parameters<typeof sealFor>[0]> = {},
+      more: Partial<Parameters<typeof sandboxFor>[0]> = {},
       moves: readonly [string, string][] = [],
     ) => {
-      const sealed = await sealFor({
+      const sandboxed = await sandboxFor({
         clis: [],
         closedPorts: [],
         env: {},
         home: short,
-        mainOnly: [],
+        hostOnly: [],
         pathDirs: [],
         save: path.join(short, ".idlebiz"),
         scratch: [short, launchd],
@@ -1188,7 +1251,7 @@ for (const target of targets) {
         writable: [],
         ...more,
       });
-      const argv = sealedCommand(sealed, runner, [
+      const argv = sandboxedCommand(sandboxed, runner, [
         process.execPath,
         "-e",
         CONNECT,
@@ -1308,163 +1371,19 @@ for (const target of targets) {
   });
 
   it("passes the boot check, and fails it when the canary is readable, a stray write lands or the profile breaks", async () => {
-    const sealed = await seal();
-    expect(await checkSeal(sealed)).toBeNull();
-    expect(await checkSeal(sealed, under("(version 1)\n(allow default)"))).toContain(
-      "let a run read a file it seals",
-    );
+    const sandboxed = await sandbox();
+    expect(await checkSandbox(sandboxed)).toEqual({ kind: "holds" });
+    expect(await checkSandbox(sandboxed, under("(version 1)\n(allow default)"))).toEqual({
+      kind: "read-unreadable",
+    });
     expect(
-      await checkSeal(
-        sealed,
+      await checkSandbox(
+        sandboxed,
         under('(version 1)\n(allow default)\n(deny file-read* (regex #"/secrets\\.json$"))'),
       ),
-    ).toContain("let a run write outside its own folders");
-    expect(await checkSeal(sealed, under("(version 1)\n(allow nonsense)"))).toContain(
-      "could not start inside IdleBiz's sandbox",
-    );
-  });
-});
-
-describe.skipIf(!onMac)("sealRuns", () => {
-  let box = "";
-  const touched = ["HOME", "PATH", "CLAUDE_BIN", "CODEX_BIN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"];
-  const previous = Object.fromEntries(touched.map((key) => [key, process.env[key]]));
-  beforeEach(() => {
-    box = realpathSync(mkdtempSync(path.join(tmpdir(), "idlebiz-home-")));
-    process.env.PATH = path.join(box, "no-bin");
-    process.env.HOME = path.join(box, "home");
-    mkdirSync(path.join(box, "home"));
-    for (const key of ["CLAUDE_BIN", "CODEX_BIN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) {
-      // oxlint-disable-next-line typescript/no-dynamic-delete -- process.env stringifies an assigned undefined; delete is the only unset
-      delete process.env[key];
-    }
-  });
-  afterEach(() => {
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) {
-        // oxlint-disable-next-line typescript/no-dynamic-delete -- process.env stringifies an assigned undefined; delete is the only unset
-        delete process.env[key];
-      } else {
-        process.env[key] = value;
-      }
-    }
-    rmSync(box, { force: true, recursive: true });
-  });
-
-  it("seals this machine's runs with its home, its temp folders and the save, each where it resolves", async () => {
-    const home = path.join(box, "home");
-    mkdirSync(path.join(box, "dotfiles/claude"), { recursive: true });
-    symlinkSync(path.join(box, "dotfiles/claude"), path.join(home, ".claude"));
-    expect(await sealRuns()).toEqual({ kind: "sealed" });
-    const seal = await machineSeal([path.join(root, "company/products/ledger/workspace")]);
-    expect(seal.runners.claude.home).toEqual([
-      { match: "subpath", path: path.join(home, ".claude") },
-      { match: "subpath", path: path.join(box, "dotfiles/claude") },
-    ]);
-    expect(seal.runners.claude.state).toContainEqual({
-      match: "subpath",
-      path: path.join(box, "dotfiles/claude/sessions"),
+    ).toEqual({ kind: "wrote-outside" });
+    expect(await checkSandbox(sandboxed, under("(version 1)\n(allow nonsense)"))).toMatchObject({
+      kind: "failed",
     });
-    expect(seal.runners.claude.account).toEqual([
-      { match: "prefix", path: path.join(home, ".claude/.claude.json") },
-      { match: "prefix", path: path.join(box, "dotfiles/claude/.claude.json") },
-      { match: "prefix", path: path.join(home, ".claude.json") },
-    ]);
-    expect(seal.unreadable).toContainEqual({
-      match: "prefix",
-      path: path.join(realpathSync(root), "secrets.json"),
-    });
-    expect(seal.scratch).toEqual(
-      expect.arrayContaining([
-        { match: "subpath", path: "/private/tmp" },
-        { match: "subpath", path: realpathSync(tmpdir()) },
-      ]),
-    );
-    expect(seal.writable).toEqual([
-      {
-        match: "subpath",
-        path: path.join(realpathSync(root), "company/products/ledger/workspace"),
-      },
-    ]);
-    expect(seal.skillFolders).toEqual([
-      {
-        match: "subpath",
-        path: path.join(realpathSync(root), "company/products/ledger/workspace/.agents"),
-      },
-    ]);
-    expect(seal.runners.codex.personal).toEqual([
-      { match: "subpath", path: path.join(home, ".codex/skills") },
-      { match: "subpath", path: path.join(home, ".codex/AGENTS.md") },
-      { match: "subpath", path: path.join(home, ".codex/AGENTS.override.md") },
-      { match: "subpath", path: path.join(home, ".codex/memories") },
-      { match: "subpath", path: path.join(home, ".agents/skills") },
-    ]);
-    expect(seal.runners.claude.personal).toEqual([]);
-    expect(seal.runners.codex.absent).toEqual([
-      { match: "subpath", path: path.join(home, ".codex/rules") },
-    ]);
-    expect(seal.runners.claude.absent).toEqual([]);
-    expect(seal.closedPorts).toEqual([9222, 9229, 31_100]);
-    expect(seal.sockets).toEqual(
-      expect.arrayContaining(
-        [
-          "/private/tmp/cc-socks",
-          "/private/tmp/codex-browser-use",
-          "/private/tmp/com.openai.sky.CUAService",
-        ].map((at) => ({ match: "subpath", path: at })),
-      ),
-    );
-  });
-
-  it("closes the port main serves the window's page on, while it answers", async () => {
-    const page = await startPageServer({
-      handleRpc: () => Promise.resolve(false),
-      page: { kind: "dev", origin: "http://localhost:1" },
-    });
-    try {
-      const seal = await machineSeal([]);
-      expect(seal.closedPorts).toEqual([9222, 9229, 31_100, page.port]);
-    } finally {
-      await page.stop();
-    }
-    const after = await machineSeal([]);
-    expect(after.closedPorts).toEqual([9222, 9229, 31_100]);
-  });
-
-  it("finds a runner's home where the founder moved it, and keeps the one in HOME theirs", async () => {
-    const moved = path.join(box, "codex-home");
-    process.env.CODEX_HOME = moved;
-    const seal = await machineSeal([]);
-    expect(seal.runners.codex.home).toEqual([
-      { match: "subpath", path: moved },
-      { match: "subpath", path: path.join(box, "home", ".codex") },
-    ]);
-    expect(seal.runners.codex.state).toContainEqual({
-      match: "prefix",
-      path: path.join(moved, "auth.json"),
-    });
-  });
-
-  it("keeps the PATH folders that lie in a folder a run writes, and only those", async () => {
-    const shims = path.join(box, "shims");
-    mkdirSync(shims);
-    process.env.PATH = [shims, "/usr/bin", "node_modules/.bin"].join(path.delimiter);
-    const { runsAsFounder } = await machineSeal([]);
-    const kept = runsAsFounder.map(({ path: at }) => at);
-    expect(kept).toContain(shims);
-    expect(kept).toContain(path.join(realpathSync(tmpdir()), "cmux-cli-shims"));
-    expect(kept).not.toContain("/usr/bin");
-    expect(kept).not.toContain("node_modules/.bin");
-  });
-
-  it("resolves the home as it stands each time, so a login linked away since is sealed where it leads", async () => {
-    const home = path.join(box, "home");
-    const away = path.join(box, "external/aws");
-    mkdirSync(away, { recursive: true });
-    const before = await machineSeal([]);
-    symlinkSync(away, path.join(home, ".aws"));
-    const after = await machineSeal([]);
-    expect(before.unreadable).not.toContainEqual({ match: "subpath", path: away });
-    expect(after.unreadable).toContainEqual({ match: "subpath", path: away });
   });
 });

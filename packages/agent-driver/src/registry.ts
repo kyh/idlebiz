@@ -12,7 +12,7 @@ export interface RunnerAdapter {
   /**
    * The mode set every turn, from the run's whole env: fresh or resumed, a session starts in a
    * default the player's own settings may pick. The runner's own judge decides what a command may
-   * do where it can; the seal and custody are what hold a run either way.
+   * do where it can; the sandbox and custody are what hold a run either way.
    */
   sessionMode: (env: Readonly<Record<string, string>>) => string;
   /**
@@ -154,7 +154,7 @@ const claudeSession = ({ skills, teamNotes, userSettings }: SessionSetup): Sessi
 };
 
 /**
- * codex has no setting that leaves all the player's skills out: the seal keeps its runs from
+ * codex has no setting that leaves all the player's skills out: the sandbox keeps its runs from
  * reading them, and their plugins' are left out with plugins. codex-acp hands `.agents/skills` in
  * each folder a session is handed to codex as a skill root, so IdleBiz's folder is handed over.
  */
@@ -169,8 +169,8 @@ export const RUNNERS = {
     fallbackRates: { cachedInput: 0.3, input: 3, output: 15 },
     loginArgs: ["auth", "login"],
     // Bedrock's bearer token signs only for Bedrock, AWS access keys for the whole account, and
-    // the seal hides ~/.aws, so Bedrock is only that token; Vertex reads the path of Google's key
-    // file, which works only outside the sealed logins (not gcloud's default credentials)
+    // the sandbox hides ~/.aws, so Bedrock is only that token; Vertex reads the path of Google's key
+    // file, which works only outside the sandboxed logins (not gcloud's default credentials)
     providerEnv: [
       "ANTHROPIC_",
       "CLAUDE_",

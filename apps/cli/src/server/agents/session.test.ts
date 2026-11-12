@@ -7,14 +7,15 @@ import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import { RefusalError } from "../refusal";
 import { DEPLOY_TIMEOUT_MS } from "../tool-specs";
-import type { Seal } from "./seal";
+import { SANDBOX } from "@repo/sandbox/fixture";
+import { browserNamespace } from "@repo/sandbox/machine";
+import type { Sandbox } from "@repo/sandbox/profile";
+import { sandboxedCommand } from "@repo/sandbox/profile";
 import { TEAM_NOTES_MAX_BYTES } from "./team-notes";
-import { SEAL, SKILLS } from "../test-support/seal";
+import { SKILLS } from "../test-support/runs";
 import { freshSave } from "../test-support/save";
 import { acpAgentFor, codexSessionConfig, codexSessionEnv, permissionGate } from "./session";
 import { createRunnerPool } from "./runner-pool";
-import { browserNamespace } from "./machine-seal";
-import { sealedCommand } from "./seal";
 
 const root = freshSave();
 
@@ -38,15 +39,15 @@ describe("acpAgentFor", () => {
   it.each([
     ["claude", "claude-agent-acp"],
     ["codex", "codex-acp"],
-  ] as const)("starts a %s session inside that runner's seal", (runner, adapter) => {
-    const { command } = acpAgentFor(runner, SEAL, SETUP);
-    expect(command.slice(0, -2)).toEqual(sealedCommand(SEAL, runner, []));
+  ] as const)("starts a %s session inside that runner's sandbox", (runner, adapter) => {
+    const { command } = acpAgentFor(runner, SANDBOX, SETUP);
+    expect(command.slice(0, -2)).toEqual(sandboxedCommand(SANDBOX, runner, []));
     expect(command.slice(-2)).toEqual([process.execPath, expect.stringContaining(adapter)]);
   });
 
   it("starts agent-browser's Chrome without a sandbox of its own, in the daemons of its runner and folders", () => {
-    const codex = acpAgentFor("codex", SEAL, SETUP).env;
-    const claude = acpAgentFor("claude", SEAL, SETUP).env;
+    const codex = acpAgentFor("codex", SANDBOX, SETUP).env;
+    const claude = acpAgentFor("claude", SANDBOX, SETUP).env;
     expect(codex.AGENT_BROWSER_ARGS).toBe("--no-sandbox");
     expect(codex.AGENT_BROWSER_NAMESPACE).toBe("idlebiz-x");
     expect(claude.AGENT_BROWSER_NAMESPACE).toBe("idlebiz-c");
@@ -59,23 +60,23 @@ describe("acpAgentFor", () => {
   });
 
   it("saves a screenshot named no path in the runs' temp folder, which a run writes", () => {
-    expect(acpAgentFor("claude", SEAL, SETUP).env.AGENT_BROWSER_SCREENSHOT_DIR).toBe(
+    expect(acpAgentFor("claude", SANDBOX, SETUP).env.AGENT_BROWSER_SCREENSHOT_DIR).toBe(
       path.join(root, "cache", "tmp", "screenshots"),
     );
   });
 
   it("runs codex in the mode that sandboxes nothing itself", () => {
-    expect(acpAgentFor("codex", SEAL, SETUP).sessionMode({})).toBe("agent-full-access");
+    expect(acpAgentFor("codex", SANDBOX, SETUP).sessionMode({})).toBe("agent-full-access");
   });
 
   it("runs claude in auto mode, but Manual behind a gateway its check cannot pass", () => {
-    const { sessionMode } = acpAgentFor("claude", SEAL, SETUP);
+    const { sessionMode } = acpAgentFor("claude", SANDBOX, SETUP);
     expect(sessionMode({})).toBe("auto");
     expect(sessionMode({ ANTHROPIC_BASE_URL: "http://127.0.0.1:4000" })).toBe("default");
   });
 
   it("loads none of the founder's MCP servers or claude.ai connectors into a claude session", () => {
-    expect(acpAgentFor("claude", SEAL, SETUP).sessionMeta).toMatchObject({
+    expect(acpAgentFor("claude", SANDBOX, SETUP).sessionMeta).toMatchObject({
       claudeCode: {
         options: {
           settings: {
@@ -96,14 +97,14 @@ describe("acpAgentFor", () => {
       project_doc_fallback_filenames: [],
       project_doc_max_bytes: TEAM_NOTES_MAX_BYTES,
     });
-    expect(acpAgentFor("codex", SEAL, SETUP, off).env).toMatchObject(off);
+    expect(acpAgentFor("codex", SANDBOX, SETUP, off).env).toMatchObject(off);
   });
 
   it("starts no codex run whose MCP servers it could not list, and says why", async () => {
     expect(() => codexSessionConfig("Error: unknown flag --json")).toThrow(RefusalError);
     vi.stubEnv("CODEX_BIN", path.join(root, "no-codex"));
     try {
-      await expect(codexSessionEnv(SEAL)).rejects.toThrow(
+      await expect(codexSessionEnv(SANDBOX)).rejects.toThrow(
         /could not list your codex MCP servers to keep them out of the run \(.+\)/u,
       );
     } finally {
@@ -112,12 +113,12 @@ describe("acpAgentFor", () => {
   });
 
   it("lets a claude shell command run as long as a deploy may take to answer", () => {
-    const { BASH_DEFAULT_TIMEOUT_MS: timeout } = acpAgentFor("claude", SEAL, SETUP).env;
+    const { BASH_DEFAULT_TIMEOUT_MS: timeout } = acpAgentFor("claude", SANDBOX, SETUP).env;
     expect(Number(timeout)).toBeGreaterThan(DEPLOY_TIMEOUT_MS);
   });
 
   it("loads IdleBiz's skills into a claude session, and no settings, skills or plugins of the founder's or claude's own", () => {
-    const { readDirs, sessionMeta } = acpAgentFor("claude", SEAL, SETUP);
+    const { readDirs, sessionMeta } = acpAgentFor("claude", SANDBOX, SETUP);
     expect(sessionMeta).toMatchObject({
       claudeCode: {
         options: {
@@ -131,25 +132,25 @@ describe("acpAgentFor", () => {
   });
 
   it("hands a codex session IdleBiz's skills to read, beside the run's own folders", () => {
-    const { readDirs, sessionMeta } = acpAgentFor("codex", SEAL, SETUP);
+    const { readDirs, sessionMeta } = acpAgentFor("codex", SANDBOX, SETUP);
     expect(readDirs).toEqual([SKILLS]);
     expect(sessionMeta).toBeUndefined();
   });
 
   it("hands the team's notes to a claude session beside its system prompt, and none to codex, which reads them itself", () => {
     const setup = { ...SETUP, teamNotes: "# Team notes" };
-    expect(acpAgentFor("claude", SEAL, setup).sessionMeta).toMatchObject({
+    expect(acpAgentFor("claude", SANDBOX, setup).sessionMeta).toMatchObject({
       systemPrompt: { append: "# Team notes" },
     });
-    expect(acpAgentFor("claude", SEAL, SETUP).sessionMeta).not.toHaveProperty("systemPrompt");
-    expect(acpAgentFor("codex", SEAL, setup).sessionMeta).toBeUndefined();
+    expect(acpAgentFor("claude", SANDBOX, SETUP).sessionMeta).not.toHaveProperty("systemPrompt");
+    expect(acpAgentFor("codex", SANDBOX, setup).sessionMeta).toBeUndefined();
   });
 
   it("signs a claude session in, and picks its model, as the founder's settings did", () => {
     const userSettings = { apiKeyHelper: "~/bin/anthropic-key", model: "haiku" };
     const agent = acpAgentFor(
       "claude",
-      SEAL,
+      SANDBOX,
       { skills: SKILLS, teamNotes: null, userSettings },
       {
         AGENT_BROWSER_ARGS: "",
@@ -173,7 +174,7 @@ describe("acpAgentFor", () => {
   });
 
   it("keeps claude's own sandbox off, whatever the founder's settings say", () => {
-    expect(acpAgentFor("claude", SEAL, SETUP).sessionMeta).toMatchObject({
+    expect(acpAgentFor("claude", SANDBOX, SETUP).sessionMeta).toMatchObject({
       claudeCode: { options: { settings: { sandbox: { enabled: false } } } },
     });
   });
@@ -226,7 +227,7 @@ describe("the environment an agent is spawned with", () => {
   });
 
   it("holds none of IdleBiz's keys, even when main's own env has them", async () => {
-    const agent = acpAgentFor("claude", SEAL, SETUP);
+    const agent = acpAgentFor("claude", SANDBOX, SETUP);
     const { end, summary } = await runAcpTurn({
       agent: { ...agent, command: [process.execPath, "-e", ENV_NAMING_AGENT] },
       cwd,
@@ -256,10 +257,10 @@ describe("the environment an agent is spawned with", () => {
     process.env.CODEX_BIN = path.join(cwd, "no-codex");
 
     // the stand-in CLI writes what it saw where a run may write
-    const scratch: Seal["scratch"][number] = { match: "subpath", path: realpathSync(cwd) };
+    const scratch: Sandbox["scratch"][number] = { match: "subpath", path: realpathSync(cwd) };
     const pool = createRunnerPool({
-      checkSeal: () => Promise.resolve({ kind: "sealed" }),
-      resolveSeal: () => Promise.resolve({ ...SEAL, scratch: [scratch] }),
+      checkSandbox: () => Promise.resolve({ kind: "sandboxed" }),
+      resolveSandbox: () => Promise.resolve({ ...SANDBOX, scratch: [scratch] }),
     });
     pool.init();
     await pool.hasAnyRunner();

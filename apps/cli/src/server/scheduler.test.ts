@@ -65,7 +65,7 @@ const scripted = () => {
   const tools = new Map<string, RunTools>();
   const resting = new Set<string>();
   const signedOut = new Set<string>();
-  const seal = { holds: true };
+  const sandbox = { holds: true };
   let started = 0;
   const driver: EmployeeRunner = {
     pickRunner: () => "claude",
@@ -78,10 +78,10 @@ const scripted = () => {
         tools.set(emp.id, runTools);
         signal.addEventListener("abort", () => resolve(interrupted), { once: true });
       }),
-    runsSealed: () => seal.holds,
+    runsSandboxed: () => sandbox.holds,
     signedIn: (runner) => !signedOut.has(runner),
   };
-  return { driver, resting, running, seal, signedOut, started: () => started, tools };
+  return { driver, resting, running, sandbox, signedOut, started: () => started, tools };
 };
 
 const queue = (employeeId: string, priority: Task["priority"] = "medium") => {
@@ -335,12 +335,12 @@ describe("draining the queue", () => {
   });
 
   it("leaves capped work queued without spinning on its first task", () => {
-    const sealed = createScheduler(
+    const sandboxed = createScheduler(
       {
         pickRunner: () => "claude",
         restingRunner: () => null,
         runTask: () => Promise.reject(new Error("no run starts past the cap")),
-        runsSealed: () => true,
+        runsSandboxed: () => true,
         signedIn: () => true,
       },
       asleep,
@@ -354,7 +354,7 @@ describe("draining the queue", () => {
     store.claimTask(task.id, employee.id);
     store.claimTask(next.id, teammate.id);
 
-    sealed.tick();
+    sandboxed.tick();
 
     expect(store.getCompany()?.autopilot).toBe(false);
     expect(store.listQueuedTasks().map((queued) => queued.id)).toEqual([task.id, next.id]);
@@ -363,11 +363,11 @@ describe("draining the queue", () => {
   });
 });
 
-describe("a seal the boot check refuses", () => {
-  it("starts and files nothing, so no task spends an attempt, until the seal holds", () => {
+describe("a sandbox the boot check refuses", () => {
+  it("starts and files nothing, so no task spends an attempt, until the sandbox holds", () => {
     found();
-    const { driver, seal, started } = scripted();
-    seal.holds = false;
+    const { driver, sandbox, started } = scripted();
+    sandbox.holds = false;
     const drain = createScheduler(driver, asleep, unaskedIntegrations);
     const task = queue("priya");
 
@@ -381,7 +381,7 @@ describe("a seal the boot check refuses", () => {
     expect(store.getTask(task.id)).toMatchObject({ attempts: 0, state: { kind: "queued" } });
     expect(store.listOpenTasks()).toHaveLength(1);
 
-    seal.holds = true;
+    sandbox.holds = true;
     drain.start();
     drain.stop();
 

@@ -13,6 +13,7 @@ import { packageFile } from "../paths";
 import { activityEvents } from "./activity";
 import { writeAgentLauncher } from "./agent-launcher";
 import { runnerPool } from "./agents/runner-pool";
+import { logRunDenials } from "./agents/sandbox";
 import { setAutopilot } from "./company-actions";
 import { switchOffBeforeReset } from "./reset-links";
 import { controlPlane } from "./control-plane";
@@ -225,7 +226,7 @@ const pageSourceOf = (launch: Launch): PageSource => {
 const boot = async (launch: Launch): Promise<void> => {
   setHost(hostOver(peer), launch);
   // the packaged shell starts main as the account the user database names, whatever launchd's env
-  // says; main checks it before it writes anything, since the save, the seal and the sockets all
+  // says; main checks it before it writes anything, since the save, the sandbox and the sockets all
   // come from HOME, and the PATH the runs find their CLIs on from SHELL
   if (launch.packaged) {
     const refused = identityRefusal(homedir(), process.env.SHELL, userInfo());
@@ -240,9 +241,10 @@ const boot = async (launch: Launch): Promise<void> => {
   if (unreadableSecrets) {
     store.noteUnreadable("secrets", unreadableSecrets.file, unreadableSecrets.cause);
   }
-  // the runs' seal and the look for their CLIs read PATH, so they wait for the login shell's;
+  // the runs' sandbox and the look for their CLIs read PATH, so they wait for the login shell's;
   // the window does not
   runnerPool.init(adoptShellPath(launch.packaged));
+  logRunDenials();
   // the command the runs call the company's tools with: this node, on the CLI it was started from
   writeAgentLauncher(runBinDir(), process.execPath, packageFile("dist/index.js"));
   await controlPlane.start();
@@ -275,9 +277,9 @@ const boot = async (launch: Launch): Promise<void> => {
     broadcast("update", updateStatus());
   });
 
-  // the queue waits on the seal's check: drain it the moment that settles, not a tick later
+  // the queue waits on the sandbox's check: drain it the moment that settles, not a tick later
   void (async () => {
-    await runnerPool.sealRefusal();
+    await runnerPool.sandboxRefusal();
     guarded("drain queue", () => scheduler.tick());
   })();
 };

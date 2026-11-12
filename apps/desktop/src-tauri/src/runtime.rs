@@ -162,7 +162,7 @@ pub fn account() -> Result<Account, String> {
     Err("IdleBiz runs on macOS alone".to_owned())
 }
 
-/// macOS's per-user temp folder, as main reads its cache folder (`machine-seal.ts`): `getconf`
+/// macOS's per-user temp folder, as main reads its cache folder (`/sandbox/machine`): `getconf`
 /// reads no env.
 #[cfg(target_os = "macos")]
 fn user_temp_dir() -> Option<PathBuf> {
@@ -183,7 +183,7 @@ const fn user_temp_dir() -> Option<PathBuf> {
 
 /// The save the shell's arguments name, `--root=<dir>`: one token, so macOS opens no document by
 /// it, and an argument, which launchd cannot set and no run can pass (`open --args` is `lsopen`,
-/// which the seal denies). A restart keeps it.
+/// which the sandbox denies). A restart keeps it.
 pub fn root_arg<I>(args: I) -> Option<PathBuf>
 where
     I: IntoIterator<Item = OsString>,
@@ -208,7 +208,7 @@ fn root_of(arg: &OsStr) -> Option<PathBuf> {
 
 /// What only launchd could have set in a packaged launch's env: a developer's switch, a runner's
 /// model address, a CA to trust under the names tools share, or a temp folder. Each tool's own
-/// trust switches and registries pass, as `docs/seal.md`'s "What stays open" lists.
+/// trust switches and registries pass, as `docs/sandbox.md`'s "What stays open" lists.
 fn launchd_only(name: &str) -> bool {
     DEVELOPER_ONLY.contains(&name)
         || (name.ends_with("BASE_URL")
@@ -226,7 +226,7 @@ fn launchd_only(name: &str) -> bool {
 /// one's is launchd's, so main takes none of what only launchd could have set there, and takes who
 /// the founder is from the system: their home, shell and name, their temp folder, the system's
 /// PATH, and the save `--root=` named. Every `homedir()` and `tmpdir()` of main's reads these, its
-/// seal's among them, and main refuses a home or shell that is not the account's.
+/// sandbox's among them, and main refuses a home or shell that is not the account's.
 pub fn main_env<I>(inherited: I, packaged: Option<&Packaged>) -> BTreeMap<OsString, OsString>
 where
     I: IntoIterator<Item = (OsString, OsString)>,
@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn a_packaged_main_without_a_temp_folder_keeps_no_tmpdir() {
-        // node's `tmpdir()` then falls back to /tmp, which the seal already counts as scratch
+        // node's `tmpdir()` then falls back to /tmp, which the sandbox already counts as scratch
         let env = main_env(
             pairs(&["TMPDIR", "TMP", "TEMP", "PATH"]),
             Some(&kai(None, None)),

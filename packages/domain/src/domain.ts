@@ -532,7 +532,7 @@ export interface LoadSkip {
     | "bet"
     | "approvals"
     | "secrets"
-    | "seal";
+    | "sandbox";
   path: string;
   error: string;
   /** Written by a newer IdleBiz: updating the app opens it, and editing or moving it would lose what that build added. */

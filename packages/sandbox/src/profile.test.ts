@@ -2,14 +2,14 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { realPathOf, sealFor } from "./machine-seal";
-import { sealedCommand, signInCommand } from "./seal";
-import type { Seal } from "./seal";
-import { SEAL as SEAL_FIXTURE } from "../test-support/seal";
-import { readBack } from "../test-support/sealed-command";
+import { realPathOf, sandboxFor } from "./machine";
+import { sandboxedCommand, signInCommand } from "./profile";
+import type { Sandbox } from "./profile";
+import { SANDBOX as SANDBOX_FIXTURE } from "./fixture";
+import { readBack } from "./read-back";
 
-const SEAL: Seal = {
-  ...SEAL_FIXTURE,
+const SANDBOX: Sandbox = {
+  ...SANDBOX_FIXTURE,
   skillFolders: [],
   sockets: [],
   unreadable: [{ match: "subpath", path: "/Users/me/.idlebiz/secrets.json" }],
@@ -18,9 +18,11 @@ const SEAL: Seal = {
 
 const WORKSPACE = "/Users/me/.idlebiz/company/products/ledger/workspace";
 
-describe("sealedCommand", () => {
+describe("sandboxedCommand", () => {
   it("runs argv under sandbox-exec with the profile inline", () => {
-    const { bin, flag, profile, runs } = readBack(sealedCommand(SEAL, "claude", ["node", "a.js"]));
+    const { bin, flag, profile, runs } = readBack(
+      sandboxedCommand(SANDBOX, "claude", ["node", "a.js"]),
+    );
     expect([bin, flag]).toEqual(["/usr/bin/sandbox-exec", "-p"]);
     expect(profile).toMatch(/^\(version 1\)\n\(allow default\)/u);
     expect(runs).toEqual(["node", "a.js"]);
@@ -29,15 +31,15 @@ describe("sealedCommand", () => {
   it("hands every path over as a parameter, never quoted into the profile", () => {
     const odd = '/Users/me/we"ird) (allow file-read*';
     const { denied, profile } = readBack(
-      sealedCommand({ ...SEAL, unreadable: [{ match: "subpath", path: odd }] }, "claude", []),
+      sandboxedCommand({ ...SANDBOX, unreadable: [{ match: "subpath", path: odd }] }, "claude", []),
     );
     expect(profile).not.toContain('we"ird');
     expect(denied("file-read* file-write*")).toEqual([odd, "/Users/me/.codex"]);
   });
 
   it("denies every write, then allows each runner the scratch folders and its own state, never the other's", () => {
-    const claude = readBack(sealedCommand(SEAL, "claude", []));
-    const codex = readBack(sealedCommand(SEAL, "codex", []));
+    const claude = readBack(sandboxedCommand(SANDBOX, "claude", []));
+    const codex = readBack(sandboxedCommand(SANDBOX, "codex", []));
     for (const { lines } of [claude, codex]) {
       expect(lines.indexOf("(deny file-write*)")).toBeGreaterThan(-1);
       expect(lines.indexOf("(deny file-write*)")).toBeLessThan(
@@ -66,8 +68,8 @@ describe("sealedCommand", () => {
   });
 
   it("has codex runs find the founder's codex rules missing, and claude runs find none of codex's home", () => {
-    const codex = readBack(sealedCommand(SEAL, "codex", []));
-    const claude = readBack(sealedCommand(SEAL, "claude", []));
+    const codex = readBack(sandboxedCommand(SANDBOX, "codex", []));
+    const claude = readBack(sandboxedCommand(SANDBOX, "claude", []));
     const hidden = codex.lineOf("deny", "file-read* file-write*", "/Users/me/.codex/rules");
     expect(codex.lines[hidden]).toMatch(/\(with errno ENOENT\)\)$/u);
     expect(codex.lines.slice(hidden + 1).some((line) => line.includes("file-"))).toBe(false);
@@ -77,8 +79,8 @@ describe("sealedCommand", () => {
 
   it("closes the Keychain to codex runs whichever program asks, and leaves it to claude's", () => {
     const keychain = /\(deny mach-lookup \(global-name "com\.apple\.SecurityServer"\)/u;
-    const claude = readBack(sealedCommand(SEAL, "claude", [])).profile;
-    const codex = readBack(sealedCommand(SEAL, "codex", [])).profile;
+    const claude = readBack(sandboxedCommand(SANDBOX, "claude", [])).profile;
+    const codex = readBack(sandboxedCommand(SANDBOX, "codex", [])).profile;
     expect(codex).toMatch(keychain);
     expect(claude).not.toMatch(keychain);
     expect(`${claude}${codex}`).not.toContain("/usr/bin/security");
@@ -87,14 +89,14 @@ describe("sealedCommand", () => {
   it("closes the pasteboard, where the founder pastes a key, to every run whichever program asks, and leaves it to a sign-in", () => {
     const pasteboard = '(deny mach-lookup (global-name "com.apple.pasteboard.1"))';
     for (const runner of ["claude", "codex"] as const) {
-      expect(readBack(sealedCommand(SEAL, runner, [])).lines).toContain(pasteboard);
-      expect(readBack(signInCommand(SEAL, runner, [])).lines).not.toContain(pasteboard);
+      expect(readBack(sandboxedCommand(SANDBOX, runner, [])).lines).toContain(pasteboard);
+      expect(readBack(signInCommand(SANDBOX, runner, [])).lines).not.toContain(pasteboard);
     }
   });
 
   it("closes the save, reopens the run's own folders, then holds every later rule inside them", () => {
-    const seal: Seal = {
-      ...SEAL,
+    const sandbox: Sandbox = {
+      ...SANDBOX,
       claudeProjects: {
         own: "/Users/me/.claude/projects/-w",
         projects: "/Users/me/.claude/projects",
@@ -102,7 +104,7 @@ describe("sealedCommand", () => {
       runsAsFounder: [{ match: "subpath", path: "/private/tmp/shims" }],
       writable: [{ match: "subpath", path: WORKSPACE }],
     };
-    const { lineOf, lines, denied } = readBack(sealedCommand(seal, "claude", []));
+    const { lineOf, lines, denied } = readBack(sandboxedCommand(sandbox, "claude", []));
     const scratch = lineOf("allow", "file-write*", "/private/tmp");
     const save = lineOf("deny", "file-write*", "/Users/me/.idlebiz");
     const reopened = lineOf("allow", "file-write*", WORKSPACE);
@@ -122,7 +124,7 @@ describe("sealedCommand", () => {
     expect(ownProject).toBeGreaterThan(home);
     // what the founder's tools run on opening a folder holds in the run's own project too
     expect(ownProject).toBeLessThan(opened);
-    expect(readBack(sealedCommand(seal, "codex", [])).params).not.toContain(
+    expect(readBack(sandboxedCommand(sandbox, "codex", [])).params).not.toContain(
       "/Users/me/.claude/projects/-w",
     );
   });
@@ -130,24 +132,24 @@ describe("sealedCommand", () => {
   it("lets no run open anything through LaunchServices, and only a sign-in open the browser", () => {
     const opensNothing = "(deny lsopen)";
     for (const runner of ["claude", "codex"] as const) {
-      expect(readBack(sealedCommand(SEAL, runner, [])).lines).toContain(opensNothing);
-      expect(readBack(signInCommand(SEAL, runner, [])).lines).not.toContain(opensNothing);
+      expect(readBack(sandboxedCommand(SANDBOX, runner, [])).lines).toContain(opensNothing);
+      expect(readBack(signInCommand(SANDBOX, runner, [])).lines).not.toContain(opensNothing);
     }
   });
 
-  it("lets no run mount, have launchd start a job or have cfprefsd write a preference, each outside the seal", () => {
+  it("lets no run mount, have launchd start a job or have cfprefsd write a preference, each outside the sandbox", () => {
     const doneForIt = [
       "(deny file-mount file-unmount)",
       "(deny job-creation)",
       "(deny user-preference-write)",
     ];
     for (const runner of ["claude", "codex"] as const) {
-      const { lines } = readBack(sealedCommand(SEAL, runner, []));
+      const { lines } = readBack(sandboxedCommand(SANDBOX, runner, []));
       // whole operations, and no later rule names one, so none reopens inside a folder
       expect(lines.filter((line) => /file-mount|job-creation|user-preference/u.test(line))).toEqual(
         doneForIt,
       );
-      expect(readBack(signInCommand(SEAL, runner, [])).profile).not.toMatch(
+      expect(readBack(signInCommand(SANDBOX, runner, [])).profile).not.toMatch(
         /file-mount|job-creation|user-preference/u,
       );
     }
@@ -156,9 +158,9 @@ describe("sealedCommand", () => {
   it("connects to no socket but DNS's, syslog's, the run's own folders' and its runner's agent-browser namespace", () => {
     const agent = "/private/tmp/cc-socks";
     const { allowed, denied, lines, lineOf, profile } = readBack(
-      sealedCommand(
+      sandboxedCommand(
         {
-          ...SEAL,
+          ...SANDBOX,
           sockets: [{ match: "subpath", path: agent }],
           writable: [{ match: "subpath", path: WORKSPACE }],
         },
@@ -183,7 +185,7 @@ describe("sealedCommand", () => {
   it("lets a run connect to its own line to the company, and names no other run's", () => {
     const own = "/Users/me/.idlebiz/.run/0123456789ab";
     const { allowed, denied } = readBack(
-      sealedCommand({ ...SEAL, apiSocket: [{ match: "subpath", path: own }] }, "codex", []),
+      sandboxedCommand({ ...SANDBOX, apiSocket: [{ match: "subpath", path: own }] }, "codex", []),
     );
     expect(allowed("network-outbound")).toEqual([
       "/Users/me/.agent-browser/namespaces/idlebiz-x",
@@ -192,14 +194,29 @@ describe("sealedCommand", () => {
     // the save, the socket's folder, stays closed to its writes
     expect(denied("file-write*")).toContain("/Users/me/.idlebiz");
     expect(allowed("file-write*")).not.toContain(own);
-    expect(readBack(sealedCommand(SEAL, "codex", [])).allowed("network-outbound")).toEqual([
+    expect(readBack(sandboxedCommand(SANDBOX, "codex", [])).allowed("network-outbound")).toEqual([
       "/Users/me/.agent-browser/namespaces/idlebiz-x",
     ]);
   });
 
+  it("has every deny report the run's label, a parameter apart from the paths, and none without one", () => {
+    const labelled = readBack(
+      sandboxedCommand({ ...SANDBOX, label: 'run:ann/t") (allow default' }, "claude", []),
+    );
+    const denies = labelled.lines.filter((line) => line.startsWith("(deny "));
+    expect(denies.length).toBeGreaterThan(10);
+    for (const line of denies) {
+      expect(line).toMatch(/ \(with message \(param "LABEL"\)\)\)$/u);
+    }
+    expect(labelled.profile).not.toContain("run:ann");
+    const argv = sandboxedCommand({ ...SANDBOX, label: "run:ann/t" }, "claude", ["true"]);
+    expect(argv.slice(-3)).toEqual(["-D", "LABEL=run:ann/t", "true"]);
+    expect(readBack(sandboxedCommand(SANDBOX, "claude", [])).profile).not.toContain("with message");
+  });
+
   it("leaves out a rule with nothing to reach, which would reach everything", () => {
-    const bare: Seal = {
-      ...SEAL,
+    const bare: Sandbox = {
+      ...SANDBOX,
       closedPorts: [],
       runners: {
         claude: {
@@ -223,9 +240,9 @@ describe("sealedCommand", () => {
       scratch: [],
       unreadable: [],
     };
-    const { lines } = readBack(sealedCommand(bare, "claude", []));
-    // each on purpose: lsopen whole, since an app LaunchServices starts runs unsealed; mounts,
-    // launchd's jobs and cfprefsd's writes whole, since each lands outside the seal whichever
+    const { lines } = readBack(sandboxedCommand(bare, "claude", []));
+    // each on purpose: lsopen whole, since an app LaunchServices starts runs unsandboxed; mounts,
+    // launchd's jobs and cfprefsd's writes whole, since each lands outside the sandbox whichever
     // program asks; writes whole, since a run writes only where a later rule allows it
     expect(lines.filter((line) => /^\((?:allow|deny) [\w* -]+\)$/u.test(line))).toEqual([
       "(allow default)",
@@ -250,13 +267,13 @@ describe("a runner's home moved out of HOME", () => {
     rmSync(box, { force: true, recursive: true });
   });
 
-  const sealMoving = (env: Record<string, string>): Promise<Seal> =>
-    sealFor({
+  const sandboxMoving = (env: Record<string, string>): Promise<Sandbox> =>
+    sandboxFor({
       clis: [],
       closedPorts: [],
       env,
       home,
-      mainOnly: [],
+      hostOnly: [],
       pathDirs: [],
       save: path.join(home, ".idlebiz"),
       scratch: [path.join(box, "tmp")],
@@ -267,43 +284,43 @@ describe("a runner's home moved out of HOME", () => {
 
   it("keeps the one in HOME, account file and all, from the other runner's runs, and opens none of it", async () => {
     const moved = path.join(box, "stand-in/claude");
-    const seal = await sealMoving({ CLAUDE_CONFIG_DIR: moved });
+    const sandbox = await sandboxMoving({ CLAUDE_CONFIG_DIR: moved });
     const usual = [path.join(home, ".claude"), path.join(home, ".claude.json")];
-    expect(seal.runners.claude.home).toEqual([
+    expect(sandbox.runners.claude.home).toEqual([
       { match: "subpath", path: moved },
       { match: "subpath", path: path.join(home, ".claude") },
       { match: "prefix", path: path.join(home, ".claude.json") },
     ]);
-    expect(seal.runners.claude.account).toEqual([
+    expect(sandbox.runners.claude.account).toEqual([
       { match: "prefix", path: path.join(moved, ".claude.json") },
     ]);
-    expect(readBack(sealedCommand(seal, "codex", [])).denied("file-read* file-write*")).toEqual(
-      expect.arrayContaining([moved, ...usual]),
-    );
+    expect(
+      readBack(sandboxedCommand(sandbox, "codex", [])).denied("file-read* file-write*"),
+    ).toEqual(expect.arrayContaining([moved, ...usual]));
     // a claude run writes none of it, and its sign-in records the login in the moved home alone
-    expect(readBack(sealedCommand(seal, "claude", [])).denied("file-write*")).toEqual(
+    expect(readBack(sandboxedCommand(sandbox, "claude", [])).denied("file-write*")).toEqual(
       expect.arrayContaining(usual),
     );
-    const signIn = readBack(signInCommand(seal, "claude", [])).allowed("file-write*");
+    const signIn = readBack(signInCommand(sandbox, "claude", [])).allowed("file-write*");
     expect(signIn).toContain(path.join(moved, ".claude.json"));
     expect(signIn).not.toContain(path.join(home, ".claude.json"));
   });
 
   it("keeps codex's from claude's runs too, and names a home moved to where it was once", async () => {
     const moved = path.join(box, "stand-in/codex");
-    const seal = await sealMoving({
+    const sandbox = await sandboxMoving({
       CLAUDE_CONFIG_DIR: path.join(home, ".claude"),
       CODEX_HOME: moved,
     });
-    expect(seal.runners.codex.home).toEqual([
+    expect(sandbox.runners.codex.home).toEqual([
       { match: "subpath", path: moved },
       { match: "subpath", path: path.join(home, ".codex") },
     ]);
-    expect(readBack(sealedCommand(seal, "claude", [])).denied("file-read* file-write*")).toEqual(
-      expect.arrayContaining([moved, path.join(home, ".codex")]),
-    );
+    expect(
+      readBack(sandboxedCommand(sandbox, "claude", [])).denied("file-read* file-write*"),
+    ).toEqual(expect.arrayContaining([moved, path.join(home, ".codex")]));
     // moved to its own folder, claude keeps its account file there, so the one beside it is theirs
-    expect(seal.runners.claude.home).toEqual([
+    expect(sandbox.runners.claude.home).toEqual([
       { match: "subpath", path: path.join(home, ".claude") },
       { match: "prefix", path: path.join(home, ".claude.json") },
     ]);
@@ -313,19 +330,21 @@ describe("a runner's home moved out of HOME", () => {
     const dotfiles = path.join(box, "dotfiles/claude");
     mkdirSync(dotfiles, { recursive: true });
     symlinkSync(dotfiles, path.join(home, ".claude"));
-    const seal = await sealMoving({ CLAUDE_CONFIG_DIR: dotfiles });
+    const sandbox = await sandboxMoving({ CLAUDE_CONFIG_DIR: dotfiles });
     const theirs = path.join(home, ".claude.json");
-    expect(seal.runners.claude.home).toEqual([
+    expect(sandbox.runners.claude.home).toEqual([
       { match: "subpath", path: dotfiles },
       { match: "prefix", path: theirs },
     ]);
-    expect(seal.runners.claude.account).toEqual([
+    expect(sandbox.runners.claude.account).toEqual([
       { match: "prefix", path: path.join(dotfiles, ".claude.json") },
     ]);
-    expect(readBack(sealedCommand(seal, "codex", [])).denied("file-read* file-write*")).toContain(
+    expect(
+      readBack(sandboxedCommand(sandbox, "codex", [])).denied("file-read* file-write*"),
+    ).toContain(theirs);
+    expect(readBack(sandboxedCommand(sandbox, "claude", [])).denied("file-write*")).toContain(
       theirs,
     );
-    expect(readBack(sealedCommand(seal, "claude", [])).denied("file-write*")).toContain(theirs);
   });
 });
 

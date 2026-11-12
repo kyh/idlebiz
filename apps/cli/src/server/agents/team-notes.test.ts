@@ -63,9 +63,9 @@ describe("readTeamNotes", () => {
   });
 
   it("never reads through a link a run left in its place to anything but a file beside it, nor a hard link", async () => {
-    const sealed = path.join(box, "id_ed25519");
-    writeFileSync(sealed, "PRIVATE KEY");
-    symlinkSync(sealed, notes());
+    const sandboxed = path.join(box, "id_ed25519");
+    writeFileSync(sandboxed, "PRIVATE KEY");
+    symlinkSync(sandboxed, notes());
     expect(await readTeamNotes(workspace)).toBeNull();
     rmSync(notes());
     mkdirSync(path.join(workspace, "docs"));
@@ -73,7 +73,7 @@ describe("readTeamNotes", () => {
     symlinkSync("docs/notes.md", notes());
     expect(await readTeamNotes(workspace)).toBeNull();
     rmSync(notes());
-    linkSync(sealed, notes());
+    linkSync(sandboxed, notes());
     expect(await readTeamNotes(workspace)).toBeNull();
   });
 

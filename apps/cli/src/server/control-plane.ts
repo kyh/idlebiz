@@ -14,10 +14,10 @@ import { BadRequestError, errorMessage } from "@repo/domain/errors";
 import { parseJson } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
 
-// Each run's own line back to the company: an HTTP server on a unix socket only that run's seal
-// lets it connect to (`apiSocket` in agents/seal.ts). What the tools are and do lives in
+// Each run's own line back to the company: an HTTP server on a unix socket only that run's sandbox
+// lets it connect to (`apiSocket` in agents/sandbox.ts). What the tools are and do lives in
 // tool-specs.ts and tools/; this only carries the call. Why the socket, not the bearer, names the
-// caller: docs/seal.md, "A run's seal".
+// caller: docs/sandbox.md, "A run's sandbox".
 
 /** Answers one call of the tool `name`: how it ended, in prose the agent reads. */
 export type ToolCaller = (name: ToolName, raw: JsonValue) => Promise<ToolOutcome>;
@@ -25,7 +25,7 @@ export type ToolCaller = (name: ToolName, raw: JsonValue) => Promise<ToolOutcome
 interface RunHandle {
   /** Run-scoped env for the agent process: the socket its API answers on and its bearer token. */
   env: { IDLEBIZ_API_SOCKET: string; IDLEBIZ_RUN_TOKEN: string };
-  /** The socket's path, which the run's seal lets it connect to and no other run's. */
+  /** The socket's path, which the run's sandbox lets it connect to and no other run's. */
   socket: string;
   /** Close the socket and invalidate the token. Call after the run settles. */
   release: () => void;

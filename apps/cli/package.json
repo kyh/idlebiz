@@ -37,6 +37,7 @@
     "@repo/agent-driver": "workspace:*",
     "@repo/contract": "workspace:*",
     "@repo/domain": "workspace:*",
+    "@repo/sandbox": "workspace:*",
     "@types/node": "catalog:",
     "citty": "^0.2.2",
     "ignore": "^7.0.14",

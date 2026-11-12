@@ -3,7 +3,7 @@
 One program, two kinds of verb.
 
 **`idlebiz serve` IS the game's server**, main: it owns the save under `~/.idlebiz`, the keys
-and the runs, starts the employees' `claude` / `codex` sessions sealed, answers the company's
+and the runs, starts the employees' `claude` / `codex` sessions sandboxed, answers the company's
 tools on the control plane, and serves the office page the window shows, on loopback. The
 desktop shell runs it as its one child and speaks to it over its stdio (`src/server/relay/`);
 nothing else in the repo runs a server. The server loads only for `serve`
@@ -30,5 +30,5 @@ The rest is told once, in the repo's [AGENTS.md](../../AGENTS.md) and `docs/`:
 - the build (`pnpm --filter idlebiz build`) and `src/dev-host/`: [Map](../../docs/map.md);
 - what the .app ships of this package, and why only the ACP adapters are `dependencies`:
   [Packaging and release](../../docs/packaging.md);
-- the suites (`pnpm --filter idlebiz test`), the seal's and the gates' on macOS among them:
+- the suites (`pnpm --filter idlebiz test`), the sandbox's and the gates' on macOS among them:
   [Tests](../../AGENTS.md#tests).

@@ -62,18 +62,21 @@ orient a reader and link into them, never telling a mechanic again.
 ## Security
 
 - **Two boundaries hold a run**, since a run is a real CLI session running as the founder's OS
-  user: the Seatbelt seal decides what it reads, writes and reaches on this machine, and custody
+  user: the Seatbelt sandbox decides what it reads, writes and reaches on this machine, and custody
   keeps IdleBiz's keys in main and runs every step that spends them there, once the founder signs
   off.
-- **The seal allows by default and denies by name**: a run hosts Chrome, claude, codex and node
+- **The sandbox allows by default and denies by name**: a run hosts Chrome, claude, codex and node
   toolchains, whose system needs move with each macOS, and a profile that denied by default would
   break runs an update later. So each rule that closes something is held by a test: its line in
-  `seal.test.ts`, a canary a Mac runs, or both. No library seals so: sandbox-runtime and
+  `profile.test.ts`, a canary a Mac runs, or both. No library sandboxes so: sandbox-runtime and
   Sandcastle deny by default, let every run reach the Keychain and take no rule of ours.
 - **The runner's own judge, never a policy of ours**: claude's auto mode and codex's own asks
   decide what a command may do. A command list is a tripwire a script walks past, and a third
   boundary it is not, so IdleBiz keeps none.
-- **No run starts unsealed**: the seal is one boundary, and also what makes a run's socket its own.
+- **The sandbox is a package of its own** (`@repo/sandbox`) that knows nothing of main: main hands
+  it the save, its keys' file and its ports, so the boundary is read, changed and tested alone.
+- **No run starts unsandboxed**: the sandbox is one boundary, and also what makes a run's socket
+  its own.
 - **Who calls the company is the socket, not a secret**: any run can read a teammate's env, token
   included, but never reach its socket, so no teammate calls lead-only tools as the lead.
 - **Keys stay in main; what spends them runs there.** No key reaches a run's env; a step that needs
@@ -82,18 +85,18 @@ orient a reader and link into them, never telling a mechanic again.
   process of the founder's sets the env of every app opened after it, so the packaged shell gives
   main the account's HOME, SHELL and user, macOS's TMPDIR and the system PATH, its save only from
   `--root=` and none of a developer's switches, and the login shell, the installer and `git init`
-  main starts outside a seal start on the account's names, the locale and what each is handed
-  (`unsealedEnv`), never main's env whole.
+  main starts outside a sandbox start on the account's names, the locale and what each is handed
+  (`unsandboxedEnv`), never main's env whole.
 - **A run signs in as the founder's CLI, on the model they picked, and loads nothing else of
   theirs**: their MCP servers and connectors act signed in as the founder, and a project's settings
   are what a run could write for the next to load.
 - **Nothing pushes code.** The founder pushes by hand from a fresh clone: git inside a workspace
-  obeys what a run left there, unsealed, as the founder.
+  obeys what a run left there, unsandboxed, as the founder.
 - **The updater's key is a login**: `~/.tauri/idlebiz.key` signs every update the installed app
-  takes, so whoever holds it ships code to every install. The seal keeps it from every run, as it
+  takes, so whoever holds it ships code to every install. The sandbox keeps it from every run, as it
   keeps the notary key, and it never sits in the checkout.
 - **What the boundaries leave open is listed**, on purpose or for want of a rule, in
-  `docs/seal.md`'s "What stays open".
+  `docs/sandbox.md`'s "What stays open".
 
 ## Code
 
@@ -117,7 +120,7 @@ orient a reader and link into them, never telling a mechanic again.
   it, and its `postToRoom` is the room's only writer, so the room agents read and #team hold the
   same lines and no office news reads as the founder's word.
 - **Two doors, never one.** The page reaches main over its contract and the runs over the control
-  plane: the page's door carries the founder's session cookie on a port the seal closes to every
+  plane: the page's door carries the founder's session cookie on a port the sandbox closes to every
   run.
 - **The page's API is a contract** (`packages/contract`): declare the zod schema, never a parallel
   type. The page and main ship in one app, so it may break freely.
@@ -166,8 +169,8 @@ orient a reader and link into them, never telling a mechanic again.
 
 ## The repo
 
-- **No sandbox runs inside the seal**: sandbox-exec cannot nest, so claude's, codex's and Chrome's
-  own are off.
+- **No runner's own sandbox runs inside ours**: sandbox-exec cannot nest, so claude's, codex's
+  and Chrome's own are off.
 - **One main per save**: boot claims the save before it reads it, so a second main refuses rather
   than run each task twice.
 - **An update lands between runs**: it replaces the server main loads as it goes and the launcher
@@ -179,7 +182,7 @@ orient a reader and link into them, never telling a mechanic again.
   would need another to publish one from. A fix in one is ported to the others by hand, to what
   `docs/app.md`'s "What the siblings share" lists.
 - **An agent verifies the app with no login and no bill**: the suites drive the CLIs the adapters
-  bundle, sealed, against a stand-in model on loopback; only the model is replaced, its every
+  bundle, sandboxed, against a stand-in model on loopback; only the model is replaced, its every
   switch is one the packaged shell drops, and CI's Mac jobs fail where a test would skip.
 - **An update is held end to end** on two ad-hoc test packs from a loopback feed under a throwaway
   key: a test pack's feed and pubkey live only in the config `package.ts` writes for it, never in

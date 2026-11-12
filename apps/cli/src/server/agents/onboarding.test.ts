@@ -35,8 +35,8 @@ const signedOutClaude = (argv: Argv) => {
   return {
     needsSignIn: (p: RunnerProbe): boolean => p.installed && !p.authed,
     refresh: (): Promise<RunnerProbe[]> => Promise.resolve([probe()]),
-    sealRefusal: (): Promise<string | null> => Promise.resolve(null),
-    sealedSignIn: (): Promise<Argv> => Promise.resolve(argv),
+    sandboxRefusal: (): Promise<string | null> => Promise.resolve(null),
+    sandboxedSignIn: (): Promise<Argv> => Promise.resolve(argv),
     signedInAgain: (): void => {
       authed = true;
     },

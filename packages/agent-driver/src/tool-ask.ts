@@ -8,13 +8,13 @@ export type ToolAsk =
   | { kind: "mcp"; server: string | null }
   /** codex asking to widen its own sandbox (request_permissions): once widened, later commands run inside it without asking. */
   | { kind: "sandbox" }
-  /** A file edit by the agent's own tool: claude's Write and Edit, codex's patch. The run's seal decides where it may write. */
+  /** A file edit by the agent's own tool: claude's Write and Edit, codex's patch. The run's sandbox decides where it may write. */
   | { kind: "edit" }
   /** codex asking to let a command it does not name reach an http(s) host; it gives no other protocol a URL. `host` is null when the URL will not parse. */
   | { kind: "network"; host: string | null }
   /** A read of the web by the agent's own tool (claude's WebFetch and WebSearch). */
   | { kind: "fetch" }
-  /** A read of files by the agent's own tool (claude's Read, Grep and Glob). The run's seal decides what it may read. */
+  /** A read of files by the agent's own tool (claude's Read, Grep and Glob). The run's sandbox decides what it may read. */
   | { kind: "read" }
   /** Anything else, known by nothing but its title. */
   | { kind: "unknown"; title: string };

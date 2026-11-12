@@ -1,4 +1,4 @@
-// Who the founder is, and the env main hands what it starts outside a run's seal. Main's own env is
+// Who the founder is, and the env main hands what it starts outside a run's sandbox. Main's own env is
 // launchd's in the packaged app, which any process of the founder's sets for every app opened after
 // it (`launchctl setenv`).
 
@@ -31,12 +31,12 @@ const picked = (env: Env, keep: (name: string) => boolean): Record<string, strin
   );
 
 /**
- * What a program main starts outside a run's seal starts from: the account's names, the locale and
+ * What a program main starts outside a run's sandbox starts from: the account's names, the locale and
  * `extra`, never main's env whole, in which ZDOTDIR moves a shell's startup files, BASH_ENV and
  * exported functions run in bash, GIT_TEMPLATE_DIR copies hooks, DEVELOPER_DIR picks xcrun's tools
  * and CURL_HOME a .curlrc.
  */
-export const unsealedEnv = (env: Env, extra: Readonly<Record<string, string>>) => ({
+export const unsandboxedEnv = (env: Env, extra: Readonly<Record<string, string>>) => ({
   ...picked(env, (name) => ACCOUNT_NAMES.some((kept) => kept === name)),
   ...extra,
 });
@@ -45,8 +45,8 @@ export const unsealedEnv = (env: Env, extra: Readonly<Record<string, string>>) =
 export const proxiesOf = (env: Env): Record<string, string> =>
   picked(env, (name) => PROXY.test(name));
 
-// launchd's own ssh agent, in a folder the seal keeps every run from making or writing
-// (`AGENT_SOCKET_WRITES`, seal.ts)
+// launchd's own ssh agent, in a folder the sandbox keeps every run from making or writing
+// (`AGENT_SOCKET_WRITES`, sandbox.ts)
 const LAUNCHD_AGENT = /^\/private\/tmp\/com\.apple\.launchd\.[^/]+\/Listeners$/u;
 
 /**
@@ -66,7 +66,7 @@ export const namedWith = (env: Env, prefixes: readonly string[]): Record<string,
 /**
  * Why a packaged main refuses the HOME and SHELL it was started with, or null when they are the
  * account's, as the user database says: the shell hands it the account's, so any other means it
- * did not, and the save, the seal and the PATH the runs find their CLIs on all come from them.
+ * did not, and the save, the sandbox and the PATH the runs find their CLIs on all come from them.
  */
 export const identityRefusal = (
   home: string,
@@ -74,7 +74,7 @@ export const identityRefusal = (
   account: { readonly homedir: string; readonly shell: string | null },
 ): string | null => {
   if (home !== account.homedir) {
-    return `IdleBiz was started with ${home} as your home folder, but macOS says yours is ${account.homedir}: it opens a save and seals runs only under the home folder that is yours.`;
+    return `IdleBiz was started with ${home} as your home folder, but macOS says yours is ${account.homedir}: it opens a save and sandboxes runs only under the home folder that is yours.`;
   }
   const started = shell ?? "";
   const yours = account.shell ?? "";

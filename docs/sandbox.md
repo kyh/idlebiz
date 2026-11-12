@@ -1,19 +1,21 @@
-# The seal and what judges a run
+# The sandbox and what judges a run
 
 Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the decisions.
 
-## A run's seal
+## A run's sandbox
 
-Every run starts sealed. `acpAgentFor` starts each ACP session, a task's or the hiring
-one-shot's, under `/usr/bin/sandbox-exec -p` with a profile `server/agents/seal.ts` renders per
-run, every path a `-D` parameter. Each run resolves its own (`machineSeal`,
-`server/agents/machine-seal.ts`), so a path that became a symlink since boot is sealed where it
-leads from the next run on.
+Every run starts sandboxed. `acpAgentFor` starts each ACP session, a task's or the hiring
+one-shot's, under `/usr/bin/sandbox-exec -p` with a profile `@repo/sandbox/profile` renders per
+run, every path a `-D` parameter. Each run resolves its own (`machineSandbox` in
+`@repo/sandbox/machine`, which main's `sandboxOf` in `server/agents/sandbox.ts` hands the save, its
+keys' file and its own ports), so a path that became a symlink since boot is sandboxed where it
+leads from the next run on. The package knows nothing of main: a folder it cannot hand a run comes
+back as a `FolderRefusedError`, which main words for the founder.
 
 - _Reads_ are open but for the founder's logins (`LOGINS`: ssh, gh, npm, netrc, git credentials,
   cloud, infrastructure and deploy CLIs, database clients' saved passwords, package registries'
   and model hubs' publish logins, App Store Connect's notary keys, the updater's signing key,
-  browser and chat-app profiles, agent-browser's saved logins; a file that holds one is sealed
+  browser and chat-app profiles, agent-browser's saved logins; a file that holds one is sandboxed
   whole, even where a toolchain reads it on every build, and the caches and plugins beside it
   stay readable), `secrets.json` with every name that starts with it, the other runner's home
   (and, where `CLAUDE_CONFIG_DIR` or `CODEX_HOME` moved it, as the e2e suite's stand-ins do, the
@@ -29,7 +31,7 @@ leads from the next run on.
   `with errno ENOENT`) rather than refused: codex refuses to start a session on a rules folder it
   cannot read. The admin's `/etc/codex/rules` still loads, and so would a trusted project's
   `.codex/rules`, but no run makes a `.codex` folder.
-- _Writes_ are denied by default. A run writes its own folders (`Seal.writable`: its workspace,
+- _Writes_ are denied by default. A run writes its own folders (`Sandbox.writable`: its workspace,
   the shared one, its memory, the save's `cache/`), its runner's state in its home (`state` in
   `RUNNER_HOMES`, a list of names: sessions, logs, caches, databases, codex's refreshed login;
   claude's transcripts and memory of the run's own folder only; a CLI upgrade that writes a new
@@ -52,17 +54,19 @@ leads from the next run on.
   folder above it there, and, anywhere, what the founder's tools run on opening a folder: in
   `.git/` everything but what git writes as it stages, commits, branches, stashes, merges, rebases
   and gcs (so no config, hooks, `commondir`, `worktrees/`, `modules/` or alternates),
-  `.claude/settings*.json`, `.mcp.json`, `.codex/`, and the `.git`/`.claude` folders themselves.
+  `.claude/settings*.json`, `.mcp.json`, `.codex/`, an editor's `.vscode/{tasks,launch,settings}.json`
+  and `.idea/`, direnv's `.envrc`, and the `.git`, `.claude`, `.vscode` and `.idea` folders
+  themselves. Each name matches in any case, as the disk does (`.GIT/config` is `.git/config`).
   Seatbelt checks a moved folder where it lands, never what it carries, so these hold in TMPDIR and
-  `cache/` too. Nor is `.agents` written in any of the run's own folders (`Seal.skillFolders`),
+  `cache/` too. Nor is `.agents` written in any of the run's own folders (`Sandbox.skillFolders`),
   where codex finds skills in its working directory and in each folder it is handed, so no run
   leaves one for the next.
 - Nor does a run write claude's account file (`account` in `RUNNER_HOMES`: `~/.claude.json` with
   every name that starts with it, or the one in `CLAUDE_CONFIG_DIR`), its backups or the legacy
   `.config.json` claude reads in its place: the MCP servers named there, user-wide or per project,
-  start in the founder's own sessions, unsealed. claude runs without writing it; only the sign-in,
+  start in the founder's own sessions, unsandboxed. claude runs without writing it; only the sign-in,
   which records the login there, does.
-- Seatbelt matches the path a symlink leads to, never the link, so each sealed path is named
+- Seatbelt matches the path a symlink leads to, never the link, so each sandboxed path is named
   where it is and where it resolves. A run's own folders are allowed only where the save
   resolves: a run whose folder, or any folder between it and the save, is a symlink does not start
   (`ownFolders`), and no run removes, moves or replaces one of its own folders. Main makes them
@@ -72,7 +76,7 @@ leads from the next run on.
   `GIT_AUTHOR_*`/`GIT_COMMITTER_*`.
 - _Reach_: a run connects to no unix socket but DNS's, syslog's, its own folders', its line to the
   company (`apiSocket`, below) and its agent-browser namespace (`browserNamespace`, keyed by save,
-  runner and the run's own folders, since a daemon keeps the seal and working directory of the run
+  runner and the run's own folders, since a daemon keeps the sandbox and working directory of the run
   that started it and idles past it): no ssh, gpg or 1Password agent, container engine, app
   `SingletonSocket` (which hands the running app a URL), claude's or the codex app's sockets, the
   founder's own agent-browser daemons or those of the other runner or of runs with other folders.
@@ -88,8 +92,8 @@ leads from the next run on.
   (`file-mount`, `file-unmount`, which the kernel checks; a remount, `file-mount-update`, is not
   denied, since no list before macOS 15 names it and the profile must compile on the floor),
   nor has diskarbitrationd mount one over a folder the run names, the one mount it checks against
-  its caller's seal (`file-mount`): no `hdiutil attach -mountpoint`, so no `.dmg` a run would pack
-  through a mount at a folder of its own either. Each would run or land outside the seal, as the
+  its caller's sandbox (`file-mount`): no `hdiutil attach -mountpoint`, so no `.dmg` a run would pack
+  through a mount at a folder of its own either. Each would run or land outside the sandbox, as the
   founder. The Apple Event CLIs (`osascript`, `osacompile`, `automator`, `shortcuts`) and
   git's Keychain helper do not run; no setuid program runs but `/bin/ps`, which fnm needs; no run
   reaches the pasteboard, where a key the founder pastes sits, and a codex run no Keychain (each a
@@ -101,23 +105,29 @@ leads from the next run on.
   Runs are processes of the founder's own user, so any run can read another's env (`ps -E`, or the
   `KERN_PROCARGS2` sysctl, which needs no setuid program, so keeping `/bin/ps` would not close it),
   its bearer token included, and a token alone would let a teammate call lead-only tools as the
-  lead. So a run's seal lets it connect to its own socket (`Seal.apiSocket`) and names no other
+  lead. So a run's sandbox lets it connect to its own socket (`Sandbox.apiSocket`) and names no other
   run's, in folders no run writes (the save, HOME), and each socket's server binds the run it was
   made for: a token presented on another run's socket is refused. The bearer stays as a second
-  check. Without the seal neither isolates a run: a socket's mode admits every process of the
+  check. Without the sandbox neither isolates a run: a socket's mode admits every process of the
   founder's user, which every run is. The `idlebiz` command a run types reads
   `IDLEBIZ_API_SOCKET` and `IDLEBIZ_RUN_TOKEN` (`commands/tools.ts`) and calls on that socket
   alone, never on a relative path, which would reach whatever listens in the run's own folders; no
   loopback port answers for the company. A socket closes as its run settles, so a call from a
   process the run left behind finds nothing; boot sweeps what a crash left.
-- _Checked before use._ Boot runs `checkSeal`, no model call: under each runner's profile a canary
+- _Reported._ Every deny of a task's run carries its label (`Sandbox.label`, `<employee>/<task>`,
+  as a `(with message …)` the kernel logs beside the deny), and main reads them back from the
+  system log while it runs (`watchDenials` in `@repo/sandbox/denials`, `log stream`, which needs no
+  privilege for the user's own processes) into its log as
+  `[sandbox] run <label>: <process> denied <operation> <path>`. A probe's and a sign-in's go
+  unlabelled.
+- _Checked before use._ Boot runs `checkSandbox`, no model call: under each runner's profile a canary
   must be unreadable, a file where no rule allows a write must not be made, and the runtime must
   start. Until it holds the scheduler starts nothing and autopilot files nothing; a refusal is
   listed in Settings beside what boot skipped, and a CLI sign-in retry checks again. Main starts a
-  runner's CLI itself only sealed as that runner: its version and login probes, `codex mcp list`,
-  and the sign-in (`sealedSignIn`, the only one that may open the browser or write claude's
-  account file). Of what main starts outside a seal, three programs would run what their env
-  names, so each starts on an env of its own, never main's whole (`unsealedEnv`,
+  runner's CLI itself only sandboxed as that runner: its version and login probes, `codex mcp list`,
+  and the sign-in (`sandboxedSignIn`, the only one that may open the browser or write claude's
+  account file). Of what main starts outside a sandbox, three programs would run what their env
+  names, so each starts on an env of its own, never main's whole (`unsandboxedEnv`,
   `server/lib/founder-env.ts`): the account's HOME, USER, LOGNAME, SHELL and TMPDIR, the locale,
   and a PATH it is given. They are the login-shell PATH probe (`adoptShellPath`, the packaged
   app's alone: a dev launch keeps its terminal's PATH), which starts the account's shell on the
@@ -130,7 +140,7 @@ leads from the next run on.
   it open the browser, starts from the same names with main's PATH, the proxies and its runner's
   provider settings (`signInEnv`). So no `ZDOTDIR`, `BASH_ENV`, exported function,
   `GIT_TEMPLATE_DIR` or `DEVELOPER_DIR` steers them, and no run writes the startup files or git
-  config under the account's home that they still read. The seal's check waits on the probe,
+  config under the account's home that they still read. The sandbox's check waits on the probe,
   never boot, so no run starts on a PATH short of the shell's.
 - Main's own writes: `atomicWrite` makes each `.tmp` anew (`wx`), so nothing main writes lands
   through a planted link. Never set `AGENT_BROWSER_PROFILE` for runs: one fixed profile locks
@@ -146,11 +156,11 @@ what it can; IdleBiz writes no rules of its own over commands:
   runs and refuses what it takes for harm. Behind a gateway at `ANTHROPIC_BASE_URL`, which may not
   pass that check through, every checked action would be refused, so there it runs in Manual and
   asks. The session sets no ask rule, since one forces a prompt even in auto mode.
-- codex runs in `agent-full-access`: no sandbox of its own can start inside the seal, and its auto
+- codex runs in `agent-full-access`: no sandbox of its own can start inside ours, and its auto
   review judges only what that sandbox would stop, so it asks nothing. Its runs find none of the
-  founder's `~/.codex/rules` ([A run's seal](#a-runs-seal)).
+  founder's `~/.codex/rules` ([A run's sandbox](#a-runs-sandbox)).
 - Whatever ask reaches IdleBiz is allowed (`permissionGate` in `server/agents/session.ts`): the
-  seal and custody are what hold a run, and a step that spends IdleBiz's keys is a signed tool,
+  sandbox and custody are what hold a run, and a step that spends IdleBiz's keys is a signed tool,
   signed for once by the founder ([Keys and what spends them](keys.md)). The one refusal is codex
   asking to widen its own sandbox: once widened, nothing in the run would ask again. A deny rule of
   the session's own (`mcp__*`, plan mode) refuses before anything asks. Both runners' wire formats
@@ -164,30 +174,30 @@ On purpose or for want of a rule:
 
 - the network: a run can send what it reads anywhere;
 - every other service a run reaches over mach: the profile allows what it does not deny by name,
-  so a service that acts for its caller without checking the caller's seal acts for a run as the
+  so a service that acts for its caller without checking the caller's sandbox acts for a run as the
   founder, until it is found and denied as the Keychain's and the pasteboard's are;
 - what diskarbitrationd does for a run but mount over a folder the run names: it checks the
-  caller's seal only there, and who owns the disk otherwise, so an image a run attaches mounts
+  caller's sandbox only there, and who owns the disk otherwise, so an image a run attaches mounts
   under `/Volumes`, and a run can unmount or eject the founder's own volumes (`diskutil unmount`
   or `eject`, `hdiutil detach`);
 - a remount of a filesystem the founder's user mounted (`mount -u`, `file-mount-update`): no
   operation list before macOS 15 names it, and a name the floor's sandbox does not know fails the
   whole profile, so it waits on the floor;
 - the environment launchd hands the apps the founder opens later (`launchctl setenv`, which no
-  rule of the seal's names): a `NODE_OPTIONS` there loads a file into their node, a `ZDOTDIR` runs
+  rule of the sandbox's names): a `NODE_OPTIONS` there loads a file into their node, a `ZDOTDIR` runs
   one in their next terminal's shell, and a `CODEX_HOME` points their own codex at another home.
-  A canary holds that launchd takes no setenv from a run (`seal.mac.test.ts`), so it is code a run
+  A canary holds that launchd takes no setenv from a run (`@repo/sandbox`'s `machine.mac.test.ts`), so it is code a run
   leaves for the founder to run, a workspace's script, that could set one. IdleBiz's packaged app
   takes from it neither who the founder is nor its save, its runners' CLIs, homes or model
   addresses ([Main's env](app.md#the-page-the-shell-and-main)), and none of the programs it starts
-  outside a seal that would run what an env names takes it ([A run's seal](#a-runs-seal)). It
+  outside a sandbox that would run what an env names takes it ([A run's sandbox](#a-runs-sandbox)). It
   still takes the rest, and its runs with it: proxies, which alone see hostnames and can withhold
   traffic but cannot read TLS; what a run's own tools read to pick a registry or whom to trust
   (`npm_config_registry`, `npm_config_strict_ssl`, `npm_config_cafile`, `GIT_SSL_NO_VERIFY`,
   `GIT_SSL_CAINFO`, `PIP_CERT`, `CARGO_HTTP_CAINFO`, `CURL_HOME`…), with which a proxy or
   registry set there reads and rewrites a run's package and git traffic, and so what a product
   ships; a runner's other settings (`ANTHROPIC_API_KEY`, a Bedrock switch: another account
-  billed, inside the seal); and `SSH_AUTH_SOCK`, whose path no run may then write (one in a
+  billed, inside the sandbox); and `SSH_AUTH_SOCK`, whose path no run may then write (one in a
   workspace denies its team writes there). A development launch takes its terminal's whole,
   which is launchd's when the terminal app started after the setenv;
 - the shell's own env, which is launchd's: the updater runs `touch` on launchd's PATH (an update
@@ -202,13 +212,13 @@ On purpose or for want of a rule:
   process a run left behind that listens there first makes the next launch hand over to it and
   quit;
 - a login store a variable moves (`GH_CONFIG_DIR`, `AWS_SHARED_CREDENTIALS_FILE`, `GNUPGHOME`,
-  `DOCKER_CONFIG`, `KUBECONFIG`, `XDG_CONFIG_HOME`…): `LOGINS` seals each where it is by default,
+  `DOCKER_CONFIG`, `KUBECONFIG`, `XDG_CONFIG_HOME`…): `LOGINS` sandboxes each where it is by default,
   so one the founder, or launchd's env, moved is read where it went;
 - reads across HOME outside the login stores (another project's `.env`, transcripts, a clipboard
   manager's history, `~/.yarnrc.yml`, yarn's settings, where `yarn npm login` adds a token), this
   checkout's `apps/desktop/.env` included: it names the notary key by id and issuer, which sign
-  nothing without the `.p8` the seal keeps in `~/.appstoreconnect/private_keys`, and holds the
-  updater key's password, which signs nothing without `~/.tauri/idlebiz.key`, sealed as well;
+  nothing without the `.p8` the sandbox keeps in `~/.appstoreconnect/private_keys`, and holds the
+  updater key's password, which signs nothing without `~/.tauri/idlebiz.key`, sandboxed as well;
 - to claude runs, which share the founder's login, the Keychain: claude reads its login there, so
   a token the founder's `gh` or git keeps there, and what a run does with it (a push over https),
   is guarded only by auto mode's classifier, and behind a gateway by nothing;
@@ -230,6 +240,6 @@ On purpose or for want of a rule:
   and a debugger listening on a port other than 9222 or 9229 takes its orders;
 - the founder's git run inside a workspace (push from a fresh clone);
 - of the folders the founder's terminal runs programs from in TMPDIR or `/private/tmp`, only
-  those on main's PATH and the known terminal shims are sealed: any other (another terminal's or
+  those on main's PATH and the known terminal shims are sandboxed: any other (another terminal's or
   version manager's shims, a folder added to their PATH after IdleBiz started) is writable by
   runs.

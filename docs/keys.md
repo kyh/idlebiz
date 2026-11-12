@@ -2,14 +2,14 @@
 
 Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the decisions.
 
-**Keys.** The keys IdleBiz holds live in `~/.idlebiz/secrets.json`, which the seal keeps from
+**Keys.** The keys IdleBiz holds live in `~/.idlebiz/secrets.json`, which the sandbox keeps from
 every run. They are IdleBiz's own: main reads each where it uses it (`getSecret` in
 `server/secrets.ts`) and exports none into any env, so no employee holds `STRIPE_SECRET_KEY` or
 `VERCEL_TOKEN`. A key is named only by its constant there, or by a set_env value's `ENV/` name,
 so a misspelt name fails typecheck rather than reading as no key.
 
 - Each value is also sealed with a key the macOS Keychain keeps for IdleBiz (service "IdleBiz",
-  account "sealing-key": 32 random bytes, base64, made on the first launch that finds none,
+  account "sandboxing-key": 32 random bytes, base64, made on the first launch that finds none,
   `src-tauri/src/keychain.rs`), since a claude run can still reach the Keychain. The shell reads
   it with no prompt, being the signed app that made it, and hands it main at hello as
   `sealingKey`; main never reaches the Keychain. It seals with AES-256-GCM, a random nonce and the
@@ -29,8 +29,8 @@ so a misspelt name fails typecheck rather than reading as no key.
   app's keys read as absent there and one entered there is written plain for the app to seal. Use
   `IDLEBIZ_ROOT_DIR`.
 - Those keys never reach a run by the founder's hand either: no run reaches the pasteboard a key is
-  pasted through ([A run's seal](seal.md#a-runs-seal); a clipboard manager's history on disk is read
-  as any file is, [What stays open](seal.md#what-stays-open)), and an action's reply, a question's
+  pasted through ([A run's sandbox](sandbox.md#a-runs-sandbox); a clipboard manager's history on disk is read
+  as any file is, [What stays open](sandbox.md#what-stays-open)), and an action's reply, a question's
   answer, a room message and an order card's note holding one are refused (`refuseHeldKey` in
   `server/company-actions.ts`; an order card's also refuses anything shaped like a Stripe key), and
   so is `set_env` given one. Both also refuse any Stripe secret key (`sk_`, `holdsStripeSecretKey`),
@@ -256,12 +256,12 @@ whose card the founder settled), and each paid order whose card still waits on t
 delivery, one IdleBiz cannot send).
 
 **Nothing pushes code.** The founder pushes by hand from a fresh clone
-(`git clone --no-local <workspace>`), never with git inside the workspace: the seal keeps a run
+(`git clone --no-local <workspace>`), never with git inside the workspace: the sandbox keeps a run
 from git's config and hooks there, but git still obeys what a run leaves in the folder (a rebase's
-todo list, a `.gitattributes`), unsealed, as the founder. A clone runs only upload-pack there,
+todo list, a `.gitattributes`), unsandboxed, as the founder. A clone runs only upload-pack there,
 which runs nothing its config names since git stopped lazy-fetching a partial clone's missing
 objects (2.45.1; 2.39.4 and the other backports). The prompts and the questions IdleBiz asks the
 founder say so. No rule of IdleBiz's holds a shell `git push`: on a codex run git finds no login,
 but on a claude run it reaches a credential helper that reads the Keychain (gh's), so it can push
 over https as the founder, judged only by auto mode's classifier
-([What judges a run](seal.md#what-judges-a-run)).
+([What judges a run](sandbox.md#what-judges-a-run)).

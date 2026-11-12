@@ -1,14 +1,17 @@
 import path from "node:path";
-import type { Argv } from "@repo/agent-driver/registry";
 import { RUNNER_IDS } from "@repo/domain/runners";
 import type { RunnerId } from "@repo/domain/runners";
 
 // macOS's own: one found on PATH could be anything.
 export const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 
+/** A command line: the program, then its arguments. */
+export type Command = readonly [program: string, ...args: string[]];
+
 /**
  * What the founder's own tools run from a folder the moment they open it: git's (a shell prompt
- * runs git status there), claude's project settings and MCP servers, codex's project config.
+ * runs git status there), claude's project settings and MCP servers, codex's project config, an
+ * editor's tasks, launch and workspace settings (VS Code's and its forks', JetBrains'), direnv's.
  * Held wherever a run writes, not only in its own folders: a folder is checked where it moves
  * to, never what it carries, so one built in TMPDIR and moved into a workspace would bring them
  * along. In a repository's folder a run writes only what git writes as it stages, commits,
@@ -21,6 +24,9 @@ const OPENED_AS_FOUNDER = [
   String.raw`(regex #"/\.git/objects/info/(http-)?alternates")`,
   String.raw`(regex #"/\.claude/settings[^/]*$")`,
   String.raw`(regex #"/\.mcp\.json$")`,
+  String.raw`(regex #"/\.vscode/(tasks|launch|settings)\.json$")`,
+  String.raw`(regex #"/\.idea/")`,
+  String.raw`(regex #"/\.envrc$")`,
 ];
 
 const PROJECT_CODEX = String.raw`(regex #"/\.codex(/|$)")`;
@@ -28,7 +34,7 @@ const PROJECT_CODEX = String.raw`(regex #"/\.codex(/|$)")`;
 // codex's own home is named so too: inside it, only a `.codex` below it is a project's.
 const CODEX_IN_CODEX_HOME = String.raw`(regex #"/\.codex/(.+/)?\.codex(/|$)")`;
 
-const HOLDING_FOLDERS = String.raw`(regex #"/\.(git|claude)$")`;
+const HOLDING_FOLDERS = String.raw`(regex #"/\.(git|claude|vscode|idea)$")`;
 
 // Where node CLIs keep their preferences (the `conf` package's folder on macOS), with no env to
 // move it: create-next-app saves its answers there, and its atomic write retries a refusal until
@@ -67,11 +73,11 @@ export interface RunnerHome {
 }
 
 /**
- * What an employee run is sealed with, on this machine. A run writes only where it is allowed
- * to; Seatbelt matches the path a symlink leads to, not the link, so each path reached through
- * one is named at both ends.
+ * The sandbox a run starts under, on this machine. A run writes only where it is allowed to;
+ * Seatbelt matches the path a symlink leads to, not the link, so each path reached through one is
+ * named at both ends.
  */
-export interface Seal {
+export interface Sandbox {
   /** No run reads or writes these: the founder's logins and IdleBiz's own keys. */
   unreadable: readonly Reach[];
   /** Where every run writes besides its own folders: TMPDIR, the per-user cache, /private/tmp. */
@@ -93,8 +99,8 @@ export interface Seal {
   sockets: readonly Reach[];
   /**
    * The run's own line to the company, a socket main listens on in a folder no run writes (the
-   * save's or HOME's): this run connects to it, and no other run's seal names it, so no run calls
-   * as another (control-plane.ts). Empty for a seal of no run, a probe's or a sign-in's.
+   * save's or HOME's): this run connects to it, and no other run's sandbox names it, so no run calls
+   * as another. Empty for a sandbox of no run, a probe's or a sign-in's.
    */
   apiSocket: readonly Reach[];
   /**
@@ -118,11 +124,16 @@ export interface Seal {
    * there resume and load: a claude run writes only its working directory's, when it has one.
    */
   claudeProjects: { projects: string; own: string | null };
+  /**
+   * What each deny reports itself as in the system log, where `watchDenials` reads it back: who
+   * ran into it. Null for a sandbox no one watches, a probe's or a sign-in's.
+   */
+  label: string | null;
 }
 
-// A sealed process cannot exec a setuid program, and /bin/ps is one: version managers (fnm) walk
+// A sandboxed process cannot exec a setuid program, and /bin/ps is one: version managers (fnm) walk
 // the process tree with it, and claude's shell snapshot runs them. It only reads.
-// git's Keychain helper signs as the founder with no file to seal.
+// git's Keychain helper signs as the founder with no file to sandbox.
 // A run connects to no socket but its own folders' and its line to the company (a later rule),
 // DNS's and syslog's: the founder's
 // TMPDIR and /tmp are full of what answers as the founder, from each Chromium or Electron app's
@@ -140,7 +151,7 @@ const BASE_PROFILE = String.raw`(version 1)
 const AGENT_SOCKET_WRITES = String.raw`(deny file-write* (regex #"^/private/(tmp|var/run)/com\.apple\.launchd\.[^/]+(/Listeners)?$"))
 (deny file-write-unlink (regex #"/ssh-[^/]+(/agent\.[0-9]+)?$"))`;
 
-// The CLIs that drive other apps by Apple Event: one told to run a command runs it unsealed. A
+// The CLIs that drive other apps by Apple Event: one told to run a command runs it unsandboxed. A
 // program a run builds can still send one; macOS asks the founder before IdleBiz controls an app.
 const SCRIPTING_CLIS = String.raw`(deny process-exec (literal "/usr/bin/osascript") (literal "/usr/bin/osacompile") (literal "/usr/bin/automator") (literal "/usr/bin/shortcuts"))`;
 
@@ -152,7 +163,7 @@ const KEYCHAIN = String.raw`(deny mach-lookup (global-name "com.apple.SecuritySe
 // enters a key by pasting it, and the runs work on while it sits there.
 const PASTEBOARD = String.raw`(deny mach-lookup (global-name "com.apple.pasteboard.1"))`;
 
-// What the system does for a run outside the seal, as the founder: a filesystem mounted over a
+// What the system does for a run outside the sandbox, as the founder: a filesystem mounted over a
 // folder the founder runs programs from (the kernel checks a run's own mount and unmount;
 // diskarbitrationd checks only a mount at a folder its caller names, as `hdiutil attach
 // -mountpoint` asks, and who owns the disk for the rest), a job launchd starts, and a preference
@@ -166,13 +177,13 @@ const DONE_FOR_IT = [
 ];
 
 /**
- * Who is sealed: an employee run, or the founder's CLI sign-in. A run asks LaunchServices to open
- * nothing, launchd to start nothing, diskarbitrationd to mount nothing over a folder it names and
- * cfprefsd to write nothing, and mounts nothing itself, since what they start or write is outside
- * the seal as the founder; it reads no pasteboard and writes no account file. The sign-in opens
- * the browser it signs in through and records the login it makes.
+ * Who is sandboxed: an employee run, or the founder's CLI sign-in. A run asks LaunchServices to
+ * open nothing, launchd to start nothing, diskarbitrationd to mount nothing over a folder it names
+ * and cfprefsd to write nothing, and mounts nothing itself, since what they start or write is
+ * outside the sandbox as the founder; it reads no pasteboard and writes no account file. The
+ * sign-in opens the browser it signs in through and records the login it makes.
  */
-type Sealed = "run" | "sign-in";
+type Confined = "run" | "sign-in";
 
 // A rule with no filter reaches everything, so one with nothing to reach is left out.
 const rule =
@@ -203,11 +214,11 @@ const foldersUpTo = (root: string, at: string): string[] => {
 };
 
 const commandUnder = (
-  seal: Seal,
+  sandbox: Sandbox,
   runner: RunnerId,
-  sealed: Sealed,
+  confined: Confined,
   argv: readonly string[],
-): Argv => {
+): Command => {
   // Each path is a parameter, never quoted into the profile's source.
   const params: string[] = [];
   const param = (value: string): string => `(param "P${params.push(value) - 1}")`;
@@ -215,19 +226,19 @@ const commandUnder = (
   const literal = (at: string): string => `(literal ${param(at)})`;
   const other = RUNNER_IDS.filter((id) => id !== runner);
   const unreadable = [
-    ...seal.unreadable,
-    ...seal.runners[runner].personal,
-    ...other.flatMap((id) => [...seal.runners[id].home, ...seal.runners[id].account]),
+    ...sandbox.unreadable,
+    ...sandbox.runners[runner].personal,
+    ...other.flatMap((id) => [...sandbox.runners[id].home, ...sandbox.runners[id].account]),
   ];
-  const { account, home, state } = seal.runners[runner];
-  const { own } = seal.claudeProjects;
+  const { account, home, state } = sandbox.runners[runner];
+  const { own } = sandbox.claudeProjects;
   const ownProject: Reach[] =
     runner === "claude" && own !== null ? [{ match: "subpath", path: own }] : [];
-  const scratch = [...seal.scratch, seal.namespaces[runner]];
+  const scratch = [...sandbox.scratch, sandbox.namespaces[runner]];
   // what the runner writes in its home; the sign-in records the login too
-  const inHome = [...state, ...ownProject, ...(sealed === "sign-in" ? account : [])];
-  const roots = [...scratch, ...inHome, ...seal.writable];
-  const kept = seal.runsAsFounder;
+  const inHome = [...state, ...ownProject, ...(confined === "sign-in" ? account : [])];
+  const roots = [...scratch, ...inHome, ...sandbox.writable];
+  const kept = sandbox.runsAsFounder;
   // A folder above a kept path, moved, would carry it out from under its rule; made where there
   // is none yet, as a link or a folder moved in, it would put the run's own files under it.
   const above = [
@@ -237,26 +248,26 @@ const commandUnder = (
       ),
     ),
   ];
-  const codexHome = seal.runners.codex.folder;
+  const codexHome = sandbox.runners.codex.folder;
   const projectCodex =
     path.basename(codexHome) === ".codex"
       ? `(require-all ${PROJECT_CODEX} (require-not (require-all ${reach({ match: "subpath", path: codexHome })} (require-not ${CODEX_IN_CODEX_HOME}))))`
       : PROJECT_CODEX;
   const profile = [
     BASE_PROFILE,
-    ...(sealed === "run" ? ["(deny lsopen)", ...DONE_FOR_IT, SCRIPTING_CLIS, PASTEBOARD] : []),
+    ...(confined === "run" ? ["(deny lsopen)", ...DONE_FOR_IT, SCRIPTING_CLIS, PASTEBOARD] : []),
     ...(runner === "codex" ? [KEYCHAIN] : []),
     "(deny file-write*)",
     DEV_NODES,
     ...allow("file-write*", scratch.map(reach)),
-    `(allow file-write* (require-all (prefix ${param(`${seal.preferences}${path.sep}`)}) ${NODE_PREFERENCES}))`,
+    `(allow file-write* (require-all (prefix ${param(`${sandbox.preferences}${path.sep}`)}) ${NODE_PREFERENCES}))`,
     // Either may sit in TMPDIR, as a test's do: of the save a run writes only its own folders, of
     // its runner's home only the state.
-    ...deny("file-write*", [...seal.save, ...home].map(reach)),
-    ...allow("file-write*", [...seal.writable, ...inHome].map(reach)),
+    ...deny("file-write*", [...sandbox.save, ...home].map(reach)),
+    ...allow("file-write*", [...sandbox.writable, ...inHome].map(reach)),
     // Seatbelt obeys the last rule a path matches: every rule from here on holds inside the
     // folders allowed above.
-    ...deny("file-write*", [...kept, ...seal.sockets, ...seal.skillFolders].map(reach)),
+    ...deny("file-write*", [...kept, ...sandbox.sockets, ...sandbox.skillFolders].map(reach)),
     `(deny file-write* (require-any ${[...OPENED_AS_FOUNDER, projectCodex].join(" ")}))`,
     // nor is either folder they sit in removed, moved or made, which would carry them out from
     // under the rules above
@@ -264,31 +275,53 @@ const commandUnder = (
     // A subpath reaches the folder itself, which a run could otherwise remove and leave a link
     // in place of, for the next run to write through.
     ...deny("file-write-create file-write-unlink", [
-      ...seal.writable.map(({ path: at }) => literal(at)),
+      ...sandbox.writable.map(({ path: at }) => literal(at)),
       ...above.map(literal),
     ]),
     AGENT_SOCKET_WRITES,
     ...deny("file-read* file-write*", unreadable.map(reach)),
-    ...hide(seal.runners[runner].absent.map(reach)),
+    ...hide(sandbox.runners[runner].absent.map(reach)),
     ...allow(
       "network-outbound",
-      [...seal.writable, seal.namespaces[runner], ...seal.apiSocket].map(
+      [...sandbox.writable, sandbox.namespaces[runner], ...sandbox.apiSocket].map(
         (at) => `(remote unix-socket ${reach(at)})`,
       ),
     ),
     ...deny(
       "network-outbound",
-      seal.closedPorts.map((port) => `(remote tcp "localhost:${port}")`),
+      sandbox.closedPorts.map((port) => `(remote tcp "localhost:${port}")`),
     ),
-  ].join("\n");
-  const defines = params.flatMap((value, at) => ["-D", `P${at}=${value}`]);
-  return [SANDBOX_EXEC, "-p", profile, ...defines, ...argv];
+  ];
+  const { label } = sandbox;
+  // the label is a parameter of its own, apart from the paths a rule names
+  const reported =
+    label === null
+      ? profile
+      : profile
+          .join("\n")
+          .split("\n")
+          .map((line) =>
+            line.startsWith("(deny ")
+              ? `${line.slice(0, -1)} (with message (param "LABEL")))`
+              : line,
+          );
+  const defines = [
+    ...params.flatMap((value, at) => ["-D", `P${at}=${value}`]),
+    ...(label === null ? [] : ["-D", `LABEL=${label}`]),
+  ];
+  return [SANDBOX_EXEC, "-p", reported.join("\n"), ...defines, ...argv];
 };
 
 /** `argv` as a `runner` run starts it: under the profile, with this machine's paths. */
-export const sealedCommand = (seal: Seal, runner: RunnerId, argv: readonly string[]): Argv =>
-  commandUnder(seal, runner, "run", argv);
+export const sandboxedCommand = (
+  sandbox: Sandbox,
+  runner: RunnerId,
+  argv: readonly string[],
+): Command => commandUnder(sandbox, runner, "run", argv);
 
-/** A runner's sign-in, sealed as its runs are but free to open the browser it signs in through and record the login. */
-export const signInCommand = (seal: Seal, runner: RunnerId, argv: readonly string[]): Argv =>
-  commandUnder(seal, runner, "sign-in", argv);
+/** A runner's sign-in, sandboxed as its runs are but free to open the browser it signs in through and record the login. */
+export const signInCommand = (
+  sandbox: Sandbox,
+  runner: RunnerId,
+  argv: readonly string[],
+): Command => commandUnder(sandbox, runner, "sign-in", argv);

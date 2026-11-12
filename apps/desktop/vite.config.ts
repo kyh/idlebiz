@@ -199,7 +199,7 @@ const startStandIn = async (
   const { isProviderEnv, standInRunnerEnv } = await ssr.runner.import<typeof StandInRunnersModule>(
     "idlebiz/stand-in-runners",
   );
-  // outside the save, which a run's seal closes to it, and gone with this server however it ends:
+  // outside the save, which a run's sandbox closes to it, and gone with this server however it ends:
   // vite exits on a TERM without waiting on `close`, and a Ctrl-C ends it with no exit event, so
   // the interrupt clears it first, then takes its course
   const scratch = await mkdtemp(path.join(tmpdir(), "idlebiz-stand-in-"));

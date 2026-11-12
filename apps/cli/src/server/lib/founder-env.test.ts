@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { identityRefusal, launchdAgentOf, namedWith, proxiesOf, unsealedEnv } from "./founder-env";
+import {
+  identityRefusal,
+  launchdAgentOf,
+  namedWith,
+  proxiesOf,
+  unsandboxedEnv,
+} from "./founder-env";
 
 // what a `launchctl setenv` could have left in main's env, beside the account's own
 const LAUNCHD = {
@@ -32,18 +38,18 @@ const ACCOUNT = {
   __CF_USER_TEXT_ENCODING: "0x1F5:0x0:0x0",
 } as const;
 
-describe("unsealedEnv", () => {
+describe("unsandboxedEnv", () => {
   it("keeps the account's names, the locale and what it is handed, and nothing else of main's", () => {
     const env = { ...LAUNCHD, ...ACCOUNT, ANTHROPIC_API_KEY: "sk-ant", PATH: "/private/tmp/p" };
 
-    expect(unsealedEnv(env, { PATH: "/usr/bin:/bin" })).toEqual({
+    expect(unsandboxedEnv(env, { PATH: "/usr/bin:/bin" })).toEqual({
       ...ACCOUNT,
       PATH: "/usr/bin:/bin",
     });
   });
 
   it("leaves out a name main's env does not hold", () => {
-    expect(unsealedEnv({ HOME: "/Users/kai", USER: undefined }, {})).toEqual({
+    expect(unsandboxedEnv({ HOME: "/Users/kai", USER: undefined }, {})).toEqual({
       HOME: "/Users/kai",
     });
   });
@@ -105,7 +111,7 @@ describe("identityRefusal", () => {
 
   it("refuses a HOME that is not the account's", () => {
     expect(identityRefusal("/private/tmp/h", "/bin/zsh", kai)).toBe(
-      "IdleBiz was started with /private/tmp/h as your home folder, but macOS says yours is /Users/kai: it opens a save and seals runs only under the home folder that is yours.",
+      "IdleBiz was started with /private/tmp/h as your home folder, but macOS says yours is /Users/kai: it opens a save and sandboxes runs only under the home folder that is yours.",
     );
   });
 

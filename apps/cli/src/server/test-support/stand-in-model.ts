@@ -11,7 +11,7 @@ import { foundingTeamPrompt } from "../prompts/onboarding";
 
 // `idlebiz/stand-in-model`, for the gate suites, the e2e suite and `IDLEBIZ_STAND_IN=1 pnpm
 // dev:browser`: the model both CLIs call, on loopback, so a real claude or codex, through the app's
-// adapter and inside the seal, runs a turn a test scripts, and nothing is billed. claude's Messages
+// adapter and inside the sandbox, runs a turn a test scripts, and nothing is billed. claude's Messages
 // wire and codex's Responses wire are described here once, so a CLI that changes either fails
 // every suite that drives it together.
 

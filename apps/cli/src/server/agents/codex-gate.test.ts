@@ -17,16 +17,15 @@ import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { readTeamNotes } from "./team-notes";
 import { acpAgentFor, codexSessionEnv } from "./session";
-import { machineSeal } from "./machine-seal";
-import { sealRuns } from "./seal-check";
+import { sandboxOf, sandboxRuns } from "./sandbox";
 import { tempSave } from "../test-support/save";
 import { startStandInModel } from "../test-support/stand-in-model";
 import type { Move, StandInModel } from "../test-support/stand-in-model";
 
-// The real codex, driven through the app's codex-acp inside the seal, by the stand-in model on
+// The real codex, driven through the app's codex-acp inside the sandbox, by the stand-in model on
 // loopback (test-support/stand-in-model.ts): nothing is billed, and codex's home is a scratch
 // one. It proves codex, whose own sandbox is off, asks IdleBiz nothing and runs each command inside
-// the seal, loads no rule of the founder's, starts no MCP server of theirs,
+// the sandbox, loads no rule of the founder's, starts no MCP server of theirs,
 // offers the model IdleBiz's skills and none of the founder's (their plugins' included), nor
 // their instructions or memories, but the workspace's AGENTS.md once, whole, and picked as main
 // picks it for a claude run, leaves no skill for a later run, and runs, but cannot rewrite, the
@@ -49,7 +48,7 @@ const plantSkill = (skills: string, name: string, marker: string): void => {
   );
 };
 
-/** `make` with HOME at `home`, where the seal and the run's env look for the founder's files. */
+/** `make` with HOME at `home`, where the sandbox and the run's env look for the founder's files. */
 const asFounderAt = async <T>(home: string, make: () => Promise<T>): Promise<T> => {
   vi.stubEnv("HOME", home);
   try {
@@ -59,7 +58,7 @@ const asFounderAt = async <T>(home: string, make: () => Promise<T>): Promise<T> 
   }
 };
 
-describe.skipIf(!codexRuns)("codex inside the seal", () => {
+describe.skipIf(!codexRuns)("codex inside the sandbox", () => {
   let model: StandInModel;
   let base = "";
   let skills = "";
@@ -90,7 +89,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     });
     plantSkill(path.join(skills, ".agents", "skills"), "bundled-gate", "BUNDLED_SKILL_MARK");
     home = path.join(base, "home");
-    // where the founder's codex keeps its config, so the seal treats it as theirs
+    // where the founder's codex keeps its config, so the sandbox treats it as theirs
     codexHome = path.join(home, ".codex");
     mkdirSync(codexHome, { recursive: true });
     writeFileSync(
@@ -165,19 +164,19 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   /** One turn of `next`, and every ask it raised. */
   const turn = async (next: Move) => {
     model.script(TURN, [next]);
-    const state = await sealRuns();
-    if (state.kind !== "sealed") {
+    const state = await sandboxRuns();
+    if (state.kind !== "sandboxed") {
       throw new Error(state.reason);
     }
     const asks: ToolAsk[] = [];
     const agent = await asFounderAt(home, async () => {
-      const seal = await machineSeal([workspace]);
+      const sandbox = await sandboxOf([workspace]);
       const setup = { skills, teamNotes: null, userSettings: {} };
       return acpAgentFor(
         "codex",
-        seal,
+        sandbox,
         setup,
-        await codexSessionEnv(seal, { CODEX_HOME: codexHome }),
+        await codexSessionEnv(sandbox, { CODEX_HOME: codexHome }),
       );
     });
     const result = await runAcpTurn({
@@ -199,7 +198,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   };
 
   it(
-    "runs a command asking IdleBiz nothing, with no sandbox of its own to fail inside the seal",
+    "runs a command asking IdleBiz nothing, with no sandbox of its own to fail inside the sandbox",
     { timeout: 60_000 },
     async () => {
       const { asks, pushed, result } = await turn({
@@ -285,9 +284,9 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
     expect(existsSync(path.join(workspace, ".agents"))).toBe(false);
   });
 
-  it("runs each command inside the seal", { timeout: 60_000 }, async () => {
+  it("runs each command inside the sandbox", { timeout: 60_000 }, async () => {
     const secrets = path.join(root, "secrets.json");
-    writeFileSync(secrets, "sealed canary");
+    writeFileSync(secrets, "sandboxed canary");
     const outside = path.join(root, "outside.txt");
     const cmd = `cat ${secrets} > read.txt; echo x > ${outside}; touch ran`;
     const { result } = await turn({ command: cmd, kind: "shell" });
@@ -298,7 +297,7 @@ describe.skipIf(!codexRuns)("codex inside the seal", () => {
   });
 
   it(
-    "makes a patch asking nothing, and the seal refuses one that moves a file into the save",
+    "makes a patch asking nothing, and the sandbox refuses one that moves a file into the save",
     { timeout: 60_000 },
     async () => {
       const approvals = path.join(root, "company", "approvals.json");

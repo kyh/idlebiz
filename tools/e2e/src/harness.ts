@@ -227,7 +227,7 @@ export const test = base.extend<Fixtures & Options>({
     const root = await mkdtemp(path.join(tmpdir(), "idlebiz-e2e-"));
     try {
       await provide(root);
-      // one that skipped, on the seal's refusal, did so before it ran any of them
+      // one that skipped, on the sandbox's refusal, did so before it ran any of them
       const scripted = testInfo.status === "skipped" ? 0 : runs;
       const { ended, started } = await runsLogged(root);
       if (scripted !== "settled") {
@@ -258,7 +258,7 @@ export const test = base.extend<Fixtures & Options>({
   runners: [["claude", "codex"], { option: true }],
   runs: [0, { option: true }],
   standIn: async ({ model, runners }, provide) => {
-    // outside the save, which a run's seal closes to it
+    // outside the save, which a run's sandbox closes to it
     const scratch = await mkdtemp(path.join(tmpdir(), "idlebiz-e2e-runners-"));
     try {
       await provide(await standInRunnerEnv({ model, runners, scratch }));
@@ -327,16 +327,16 @@ const claudeManaged = (): boolean =>
   );
 
 /**
- * Skips a test that needs runs where none starts sealed: off a Mac, on the seal's own refusal, and
+ * Skips a test that needs runs where none starts sandboxed: off a Mac, on the sandbox's own refusal, and
  * on a Mac whose claude has managed settings. On a Mac a CLI the stand-in does not sign in fails
  * it.
  */
-export const sealedRunsOrSkip = async (page: Page): Promise<void> => {
+export const sandboxedRunsOrSkip = async (page: Page): Promise<void> => {
   const api = await apiOf(page);
-  // the first report waits on the seal's check, so a refusal is in it
+  // the first report waits on the sandbox's check, so a refusal is in it
   const report = await api.save.report();
-  const sealing = report.skipped.find(({ kind }) => kind === "seal");
-  test.skip(process.platform !== "darwin" && sealing !== undefined, sealing?.error);
+  const sandboxing = report.skipped.find(({ kind }) => kind === "sandbox");
+  test.skip(process.platform !== "darwin" && sandboxing !== undefined, sandboxing?.error);
   test.skip(
     claudeManaged(),
     `claude's managed settings in ${CLAUDE_MANAGED} outrank the stand-in's sign-in on this Mac`,
@@ -344,19 +344,19 @@ export const sealedRunsOrSkip = async (page: Page): Promise<void> => {
   const auth = await api.agents.hasAuth();
   expect(
     auth.ok,
-    `the stand-in's CLIs did not sign in under the seal: hasAuth ${JSON.stringify(auth)}, the save's report ${JSON.stringify(report)}, and main's log is attached as "main"`,
+    `the stand-in's CLIs did not sign in under the sandbox: hasAuth ${JSON.stringify(auth)}, the save's report ${JSON.stringify(report)}, and main's log is attached as "main"`,
   ).toBe(true);
 };
 
 /**
  * Found a company over the page's API with a hand-written team, on the CLIs the stand-in signs in
- * (founding picks each hire's CLI); it skips as `sealedRunsOrSkip` does. The $0 cap is what keeps
+ * (founding picks each hire's CLI); it skips as `sandboxedRunsOrSkip` does. The $0 cap is what keeps
  * it free: the scheduler checks the budget before it spawns anything, so no run can start even on
  * a tick that lands before autopilot is off. The window that founded it never learns of it:
  * relaunch to see it.
  */
 export const foundCompany = async (page: Page): Promise<Founded> => {
-  await sealedRunsOrSkip(page);
+  await sandboxedRunsOrSkip(page);
   const api = await apiOf(page);
   const company = await api.onboarding.found({
     budget: { capUsd: 0, mode: "capped" },

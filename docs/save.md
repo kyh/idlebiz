@@ -109,7 +109,7 @@ answers is shaped once (`ToolAnswerSchema`) for both ends.
   bundle main was started from on main's own node, first on each run's PATH, outside every folder a
   run writes. The verb sends its request to the control plane its run was handed
   (`IDLEBIZ_API_SOCKET`, `IDLEBIZ_RUN_TOKEN`), over that run's own unix socket only
-  ([A run's seal](seal.md#a-runs-seal) says why the socket names the caller). `-` reads the request
+  ([A run's sandbox](sandbox.md#a-runs-sandbox) says why the socket names the caller). `-` reads the request
   from stdin, and `idlebiz <tool> --help` prints the tool's doc. It sends the request as its
   shortest JSON (`encodeRequest`), however the agent spaced or escaped it: that is what the control
   plane's 64 KiB limit weighs and set_env's 60 KiB value limit counts, so a value set_env takes fits

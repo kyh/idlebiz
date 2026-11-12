@@ -51,8 +51,8 @@ const MINIMUM_MACOS = "13.5";
 // the archive the installed app updates from, beside the dmg in each release (release-feed.ts)
 const ARCHIVE_NAME = archiveName(version);
 // the key that signs each release's archive, made once with
-// `pnpm -F @repo/desktop tauri signer generate -w ~/.tauri/idlebiz.key`: under HOME, where the seal
-// keeps it from every run (`LOGINS` in apps/cli/src/server/agents/machine-seal.ts), never in the
+// `pnpm -F @repo/desktop tauri signer generate -w ~/.tauri/idlebiz.key`: under HOME, where the sandbox
+// keeps it from every run (`LOGINS` in packages/sandbox/src/machine.ts), never in the
 // checkout, since whoever holds it ships code to every install
 const UPDATER_KEY = path.join(homedir(), ".tauri", "idlebiz.key");
 
@@ -73,8 +73,8 @@ interface Notary {
   APPLE_API_KEY_PATH: string;
 }
 
-// one of the folders Apple's altool searches for an App Store Connect key, which the seal keeps
-// from every run (`LOGINS` in apps/cli/src/server/agents/machine-seal.ts): no path is
+// one of the folders Apple's altool searches for an App Store Connect key, which the sandbox keeps
+// from every run (`LOGINS` in packages/sandbox/src/machine.ts): no path is
 // configurable, since a key anywhere else, the checkout included, is one any run can read
 const NOTARY_KEYS = path.join(homedir(), ".appstoreconnect", "private_keys");
 const ENV_NAMES = new Set(["APPLE_API_ISSUER", "APPLE_API_KEY"]);
