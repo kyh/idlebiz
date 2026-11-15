@@ -23,11 +23,11 @@
     "verify": "pnpm typecheck && pnpm lint && pnpm knip && pnpm format && pnpm test && pnpm build"
   },
   "devDependencies": {
-    "knip": "^6.43.0",
+    "knip": "^6.45.1",
     "oxfmt": "^0.74.0",
-    "oxlint": "^1.89.0",
-    "oxlint-tsgolint": "^7.0.2005",
-    "turbo": "^2.11.10",
+    "oxlint": "^1.93.0",
+    "oxlint-tsgolint": "^7.0.2007",
+    "turbo": "^2.11.11",
     "typescript": "catalog:",
     "ultracite": "^8.0.0"
   },
