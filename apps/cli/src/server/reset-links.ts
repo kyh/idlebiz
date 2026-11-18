@@ -15,26 +15,29 @@ const linksInMaking = new Set<Promise<void>>();
  * the call that ends it. A reset waits for each before it switches off the company's links, and
  * refuses a new one: a link Stripe makes once the save is gone would take money nothing records.
  */
-export const makingPaymentLink = (): (() => void) => {
+export const makingPaymentLink = () => {
   if (resetting) {
     throw new RefusalError(
       "Nothing was made: the founder is resetting the company, and the save that would record a payment link is being deleted.",
     );
   }
+
   const made: PromiseWithResolvers<void> = Promise.withResolvers();
   linksInMaking.add(made.promise);
-  return () => {
+
+  return (() => {
     linksInMaking.delete(made.promise);
     made.resolve();
-  };
+  }) satisfies () => void;
 };
 
-/** Why a live link still takes money once the save is gone, or null once Stripe switched it off. */
-const switchedOffForReset = async (link: LinkCore, key: string | null): Promise<string | null> => {
+const switchedOffForReset = async (link: LinkCore, key: string | null) => {
   if (key === null) {
     return "IdleBiz has no Stripe key it can use";
   }
+
   const done = await switchOffPaymentLink(key, link.id);
+
   return done.kind === "off" ? null : done.reason;
 };
 
@@ -46,30 +49,38 @@ const switchedOffForReset = async (link: LinkCore, key: string | null): Promise<
  * hand (links left on, paid prints Printful never confirmed and the founder has not settled, paid
  * orders whose card is still open), or null when nothing is left.
  */
-export const switchOffBeforeReset = async (): Promise<string | null> => {
+export const switchOffBeforeReset = async () => {
   resetting = true;
   await Promise.all(linksInMaking);
+
   if (store.getCompany() === null) {
     return null;
   }
+
   const key = getSecret(STRIPE_SECRET_KEY);
   const leftOn: string[] = [];
+
   for (const { link } of store.paymentLinks()) {
     if (!link.livemode || link.state.kind === "switched-off") {
       continue;
     }
+
     const why = await switchedOffForReset(link, key);
+
     if (why !== null) {
       leftOn.push(`${JSON.stringify(link.name)} ${link.url} (${link.id}): ${why}`);
     }
   }
+
   const paid = store.listOrders().filter((o) => o.livemode);
+
   const openCards = store
     .listOpenTasks()
     .flatMap((t) => (t.origin === "order" && t.state.kind === "blocked" ? [t] : []));
-  const cardOf = (o: Order): string | undefined =>
+
+  const cardOf = (o: Order) =>
     openCards.find(({ subject }) => subject.kind === "order" && subject.orderId === o.id)?.title;
-  // A held sale whose card the founder settled is theirs already: they refunded or placed it.
+
   const unsent = paid.flatMap((o) =>
     o.kind === "sale" &&
     o.stage.kind !== "confirmed" &&
@@ -79,17 +90,22 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
         ]
       : [],
   );
+
   const waiting = paid.flatMap((o) => {
     const card = cardOf(o);
+
     if (card === undefined || (o.kind === "sale" && o.stage.kind !== "confirmed")) {
       return [];
     }
+
     const what = o.kind === "link" ? `${JSON.stringify(o.name)}, ` : "";
     const owed = o.kind === "link" && o.delivery !== null ? `, owed: ${o.delivery}` : "";
+
     return [
       `${card}: ${what}${o.email ?? "no email"}, checkout ${o.sessionId}, paid ${formatUsd(o.collectedCents / 100)}${owed}`,
     ];
   });
+
   const left = [
     ...(leftOn.length === 0
       ? []
@@ -107,5 +123,6 @@ export const switchOffBeforeReset = async (): Promise<string | null> => {
           `These paid orders still wait on you, as their cards said: deliver or settle each one, or refund it in Stripe. ${waiting.join("; ")}.`,
         ]),
   ];
+
   return left.length === 0 ? null : left.join("\n\n");
 };

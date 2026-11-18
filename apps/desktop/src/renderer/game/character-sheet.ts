@@ -1,7 +1,3 @@
-// A character's sheet as the office draws it: the frame it stands in, where the origin and
-// the soles sit, what a seated bust covers, and what its anims are called. Which frame is
-// which is @repo/domain/character-frame. No Phaser here, so the seat oracle and the movement
-// math can be unit-tested; loading the sheet into a scene is characters.ts.
 import {
   CHAR_ORIGIN_Y,
   FRAME_H,
@@ -12,7 +8,7 @@ import {
 import type { Dir, SitSide } from "@repo/domain/character-frame";
 
 /** Standing frame index for a direction (first frame of that direction's strip). */
-export const idleFrame = (dir: Dir): number => WALK_START[dir];
+export const idleFrame = (dir: Dir) => WALK_START[dir];
 
 /**
  * The frame region drawn while seated. The pack's own seated workers are head-and-
@@ -28,7 +24,7 @@ export const SEAT_CROP = {
 } as const;
 
 /** The origin that draws a sprite `rise` px up the screen from where it stands. */
-export const risenOriginY = (rise: number): number => CHAR_ORIGIN_Y + rise / FRAME_H;
+export const risenOriginY = (rise: number) => CHAR_ORIGIN_Y + rise / FRAME_H;
 
 /** Silhouette of that bust around its origin — what a seat tests for overlap. */
 export const BUST = {
@@ -42,12 +38,13 @@ export interface CharacterAnims {
   readonly sit: Readonly<Record<SitSide, string>>;
 }
 
-export const characterAnims = (key: string): CharacterAnims => ({
-  sit: { left: `${key}-sit-left`, right: `${key}-sit-right` },
-  walk: {
-    down: `${key}-walk-down`,
-    left: `${key}-walk-left`,
-    right: `${key}-walk-right`,
-    up: `${key}-walk-up`,
-  },
-});
+export const characterAnims = (key: string) =>
+  ({
+    sit: { left: `${key}-sit-left`, right: `${key}-sit-right` },
+    walk: {
+      down: `${key}-walk-down`,
+      left: `${key}-walk-left`,
+      right: `${key}-walk-right`,
+      up: `${key}-walk-up`,
+    },
+  }) satisfies CharacterAnims;

@@ -7,15 +7,12 @@ import { runEnv } from "./run-env";
 import { parseJson } from "@repo/domain/json";
 
 const UserSettings = ClaudeUserSettingsSchema.extend({
-  // claude reads a number or a boolean there as its text
   env: z
     .record(z.string(), z.union([z.string(), z.number(), z.boolean()]).transform(String))
     .default({}),
 });
 
-/** What of the founder's claude user settings a run's session is started with. */
-export interface FounderClaudeSettings {
-  /** Their settings' env, as a run gets their shell's: less every name `runEnv` keeps from it. */
+interface FounderClaudeSettings {
   env: Record<string, string>;
   settings: ClaudeUserSettings;
 }
@@ -29,19 +26,27 @@ const NONE: FounderClaudeSettings = { env: {}, settings: {} };
  * model and effort they picked. Nothing when `configDir` holds no settings claude could read
  * either.
  */
-export const claudeUserSettings = async (configDir: string): Promise<FounderClaudeSettings> => {
+export const claudeUserSettings = async (configDir: string) => {
   let settings: z.infer<typeof UserSettings>;
+
   try {
     const parsed = UserSettings.safeParse(
       parseJson(await readFile(path.join(configDir, "settings.json"), "utf-8")),
     );
+
     if (!parsed.success) {
       return NONE;
     }
+
     settings = parsed.data;
   } catch {
     return NONE;
   }
+
   const { env, ...named } = settings;
-  return { env: runEnv(env, RUNNERS.claude.providerEnv), settings: named };
+
+  return {
+    env: runEnv(env, RUNNERS.claude.providerEnv),
+    settings: named,
+  } satisfies FounderClaudeSettings;
 };

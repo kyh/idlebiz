@@ -36,13 +36,11 @@ export interface KeptEnvValue {
 
 type ProductRef = Pick<Product, "id">;
 
-// Kept per project, not per product: the founder may rebind the product to a live project of
-// theirs, whose variable of the same name set_env never set.
-const keptKey = ({ id }: ProductRef, projectId: string, name: string): EnvSecretName =>
-  `${ENV_PREFIX}${id}/${encodeURIComponent(projectId)}/${name}`;
+const keptKey = ({ id }: ProductRef, projectId: string, name: string) =>
+  `${ENV_PREFIX}${id}/${encodeURIComponent(projectId)}/${name}` satisfies EnvSecretName;
 
 /** Whether set_env set `name` on the product's project before, even a value this launch cannot open. */
-export const teamSetEnv = (product: ProductRef, projectId: string, name: string): boolean =>
+export const teamSetEnv = (product: ProductRef, projectId: string, name: string) =>
   hasSecret(keptKey(product, projectId, name));
 
 /** Keep a value Vercel now holds, both as the team's name to replace and for the deploy guard. */
@@ -51,7 +49,7 @@ export const keepEnvValue = async (
   projectId: string,
   name: string,
   value: string,
-): Promise<void> => {
+) => {
   await setSecret(keptKey(product, projectId, name), value);
 };
 
@@ -62,9 +60,10 @@ export const keepEnvValue = async (
  * trusts the name, not the framework: a prefix the product's framework does not read (`VITE_` in
  * a Next.js app) leaves its value server-only and unguarded.
  */
-export const unshippableEnvValues = (): KeptEnvValue[] =>
-  [...secretsUnder(ENV_PREFIX)].flatMap(([key, value]) => {
+export const unshippableEnvValues = () =>
+  [...secretsUnder(ENV_PREFIX)].flatMap<KeptEnvValue>(([key, value]) => {
     const [product, project, name, ...rest] = key.split("/");
+
     return product === undefined ||
       project === undefined ||
       name === undefined ||
@@ -79,7 +78,7 @@ export const unshippableEnvValues = (): KeptEnvValue[] =>
  * `value` or is held in it. The deploy guard reads only the folder, never what a build inlines,
  * so this is all that stands between a kept key and every visitor.
  */
-export const serverOnlyValueIn = (value: string): KeptEnvValue | null =>
+export const serverOnlyValueIn = (value: string) =>
   unshippableEnvValues().find(
     (kept) =>
       (kept.value.length >= MIN_SECRET_LENGTH && value.includes(kept.value)) ||
@@ -89,6 +88,7 @@ export const serverOnlyValueIn = (value: string): KeptEnvValue | null =>
 const ENV_TIMEOUT_MS = 10_000;
 
 const Answer = z.object({ failed: z.array(z.object({ error: VercelSaid })).default([]) });
+
 const Listed = z.object({
   envs: z.array(
     z.object({
@@ -100,31 +100,25 @@ const Listed = z.object({
   ),
 });
 
-const envRoute = ({ projectId }: VercelBinding): string =>
+const envRoute = ({ projectId }: VercelBinding) =>
   `/v10/projects/${encodeURIComponent(projectId)}/env`;
 
-/**
- * Whether the variable a call whose answer was lost sent now stands on the project, changed
- * since `startedAt`: without this a create Vercel made reads as never made, so the team could
- * never replace it and the deploy guard would never learn its value. Judged on Vercel's own
- * clock (its Date header, less how long the call took here), so a skewed clock here never
- * claims the founder's variable; the header's whole seconds only ever make it stricter.
- */
-const landedSince = async (
-  { binding, name, token }: EnvRequest,
-  startedAt: number,
-): Promise<boolean> => {
+const landedSince = async ({ binding, name, token }: EnvRequest, startedAt: number) => {
   try {
     const res = await vercelCall(
       envRoute(binding),
       { teamId: binding.teamId, token },
       { signal: AbortSignal.timeout(ENV_TIMEOUT_MS) },
     );
+
     const vercelNow = Date.parse(res.headers.get("date") ?? "");
+
     if (Number.isNaN(vercelNow)) {
       return false;
     }
+
     const since = vercelNow - (Date.now() - startedAt);
+
     return Listed.parse(await res.json()).envs.some(
       (env) =>
         env.key === name &&
@@ -139,7 +133,7 @@ const landedSince = async (
   }
 };
 
-const reasonOf = (said: z.infer<typeof VercelSaid>, { token, value }: EnvRequest): string =>
+const reasonOf = (said: z.infer<typeof VercelSaid>, { token, value }: EnvRequest) =>
   vercelSays(said, [value, "[the value]"], [token, "[the token]"]);
 
 /**
@@ -152,6 +146,7 @@ const reasonOf = (said: z.infer<typeof VercelSaid>, { token, value }: EnvRequest
 export const setVercelEnv: EnvSetter = async (req) => {
   const { binding, name, replaces, token, value } = req;
   const startedAt = Date.now();
+
   try {
     const res = await vercelCall(
       envRoute(binding),
@@ -171,7 +166,9 @@ export const setVercelEnv: EnvSetter = async (req) => {
         signal: AbortSignal.timeout(ENV_TIMEOUT_MS),
       },
     );
+
     const [failed] = Answer.parse(await res.json()).failed;
+
     return failed === undefined
       ? { ok: true }
       : { error: `Vercel turned it down: ${reasonOf(failed.error, req)}`, ok: false };
@@ -181,8 +178,10 @@ export const setVercelEnv: EnvSetter = async (req) => {
         ? { ok: true }
         : { error: errorMessage(error), ok: false };
     }
+
     const said = vercelRefusalOf(error);
     const why = said === null ? "" : `: ${reasonOf(said, req)}`;
+
     return { error: `Vercel turned it down (${error.status})${why}`, ok: false };
   }
 };

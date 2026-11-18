@@ -6,7 +6,5 @@ export type Said = Extract<ActivityEvent, { message: string }>;
 const TRAIL_LENGTH = 3;
 
 /** What an employee did lately, under what they last said. */
-export const trailOf = (
-  mine: readonly ActivityEvent[],
-  latest: ActivityEvent | undefined,
-): Said[] => mine.filter((a): a is Said => a !== latest && "message" in a).slice(-TRAIL_LENGTH);
+export const trailOf = (mine: readonly ActivityEvent[], latest: ActivityEvent | undefined) =>
+  mine.filter((a): a is Said => a !== latest && "message" in a).slice(-TRAIL_LENGTH);

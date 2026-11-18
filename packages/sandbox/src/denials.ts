@@ -13,12 +13,10 @@ export interface Denial {
 
 const LogEvent = z.object({ eventMessage: z.string() });
 
-// The kernel's line, then the deny's message (`Sandbox.label`) on the next.
 const DENY =
   /^Sandbox: (?<process>.+)\(\d+\) deny\(\d+\) (?<operation>\S+) ?(?<target>[^\n]*)\n(?<message>.+)$/su;
 
-/** The log event a line holds, or null for the header `log stream` prints first. */
-const eventOf = (line: string): z.output<typeof LogEvent> | null => {
+const eventOf = (line: string) => {
   try {
     return LogEvent.safeParse(parseJson(line)).data ?? null;
   } catch {
@@ -27,18 +25,20 @@ const eventOf = (line: string): z.output<typeof LogEvent> | null => {
 };
 
 /** A Sandbox log event as a denial whose label starts with `prefix`, or null for any other line. */
-export const denialOf = (line: string, prefix: string): Denial | null => {
+export const denialOf = (line: string, prefix: string) => {
   const event = eventOf(line);
   const groups = event === null ? undefined : DENY.exec(event.eventMessage)?.groups;
+
   if (groups?.message?.startsWith(prefix) !== true) {
     return null;
   }
+
   return {
     label: groups.message.slice(prefix.length),
     operation: groups.operation ?? "",
     process: groups.process ?? "",
     target: groups.target ?? "",
-  };
+  } satisfies Denial | null;
 };
 
 /**
@@ -46,7 +46,7 @@ export const denialOf = (line: string, prefix: string): Denial | null => {
  * (`log stream`, which any user may read for their own processes). Stops with the host: the
  * returned function, or the host's exit.
  */
-export const watchDenials = (prefix: string, onDenial: (denial: Denial) => void): (() => void) => {
+export const watchDenials = (prefix: string, onDenial: (denial: Denial) => void) => {
   const stream = spawn(
     "/usr/bin/log",
     [
@@ -58,21 +58,24 @@ export const watchDenials = (prefix: string, onDenial: (denial: Denial) => void)
     ],
     { stdio: ["ignore", "pipe", "ignore"] },
   );
-  const stop = (): void => {
+
+  const stop = () => {
     stream.kill();
   };
+
   process.once("exit", stop);
   stream.unref();
-  // a log that will not start (no `log` off a Mac) reports nothing, and the runs go on
   stream.once("error", stop);
   createInterface({ input: stream.stdout }).on("line", (line) => {
     const denial = denialOf(line, prefix);
+
     if (denial !== null) {
       onDenial(denial);
     }
   });
-  return () => {
+
+  return (() => {
     process.off("exit", stop);
     stop();
-  };
+  }) satisfies () => void;
 };

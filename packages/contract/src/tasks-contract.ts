@@ -1,5 +1,3 @@
-// The company's work: the list, the shipping log, and the founder's answers, actions and sign-offs.
-
 import { oc, type } from "@orpc/contract";
 import { z } from "zod";
 import { ActionReplySchema, OPEN_TASK_STATUSES } from "@repo/domain/domain";

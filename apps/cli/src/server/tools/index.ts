@@ -1,5 +1,5 @@
 import type { JsonValue } from "@repo/domain/json";
-import type { ToolName, ToolOutcome } from "../tool-specs";
+import type { ToolName } from "../tool-specs";
 import type { RunContext, Tool } from "./define";
 import { MONEY_TOOLS } from "./money";
 import { PORTFOLIO_TOOLS } from "./portfolio";
@@ -16,5 +16,5 @@ const TOOLS = {
 } satisfies Record<ToolName, Tool>;
 
 /** Call the tool `name` with whatever the agent sent. */
-export const callTool = (ctx: RunContext, name: ToolName, raw: JsonValue): Promise<ToolOutcome> =>
+export const callTool = (ctx: RunContext, name: ToolName, raw: JsonValue) =>
   TOOLS[name](ctx, name, raw);

@@ -1,5 +1,3 @@
-// The CLIs employees run on: whether any is signed in, a sign-in, and who waits on one.
-
 import { oc, type } from "@orpc/contract";
 import type { RestingRunners } from "@repo/domain/domain";
 import type { RunnerId } from "@repo/domain/runners";

@@ -1,3 +1,4 @@
+import { unreachable } from "@repo/domain/errors";
 import rawLayout from "@/renderer/game/office-design.json";
 import { DEPTH, objectDepth } from "@/renderer/game/office-depth";
 import { walkGridOf } from "@/renderer/game/office-grid";
@@ -34,36 +35,29 @@ export interface Office {
   readonly placements: readonly OfficeObjectPlacement[];
 }
 
-/**
- * Spacing between two neighbours in a flat stack. Small enough that a band of
- * STACK_STEP⁻¹ objects (a million) still cannot reach the band above it, so no
- * decal can ever climb out of the ground band or paint over a speech bubble.
- */
 const STACK_STEP = 1e-3;
 
-/**
- * Where a placed object draws, given its position in the paint-ordered array.
- *
- * The ground and overhead bands are flat stacks: they have no floor line, so they
- * paint in file order and `index` alone separates them. Only the entity band
- * y-sorts — furniture and actors share it, sorting on floor contact.
- */
-const depthFor = (obj: OfficeObjectDef, index: number): number => {
+const depthFor = (obj: OfficeObjectDef, index: number) => {
   switch (obj.layer) {
     case "floor": {
       return DEPTH.ground + STACK_STEP * (index + 1);
     }
+
     case "overhead": {
       return DEPTH.overhead + STACK_STEP * (index + 1);
     }
+
     case "object": {
       return objectDepth(obj.anchorY);
     }
-    // no default
+
+    default: {
+      return unreachable(obj);
+    }
   }
 };
 
-const placementsOf = (objects: OfficeLayoutData["objects"]): readonly OfficeObjectPlacement[] =>
+const placementsOf = (objects: OfficeLayoutData["objects"]) =>
   objects.map((obj, index) => ({
     depth: depthFor(obj, index),
     flipX: obj.flipX ?? false,
@@ -74,15 +68,15 @@ const placementsOf = (objects: OfficeLayoutData["objects"]): readonly OfficeObje
     y: obj.y,
   }));
 
-/** The layout as the scene reads it: the walk grid and the paint-ordered placements. */
-const officeOf = (layout: OfficeLayoutData): Office => ({
-  door: layout.door,
-  grid: walkGridOf(layout),
-  placements: placementsOf(layout.objects),
-  pois: layout.pois,
-  seats: layout.seats,
-  spawn: layout.spawn,
-});
+const officeOf = (layout: OfficeLayoutData) =>
+  ({
+    door: layout.door,
+    grid: walkGridOf(layout),
+    placements: placementsOf(layout.objects),
+    pois: layout.pois,
+    seats: layout.seats,
+    spawn: layout.spawn,
+  }) satisfies Office;
 
 /** The one office there is, frozen in office-design.json. */
 export const OFFICE: Office = officeOf(officeLayoutSchema.parse(rawLayout));

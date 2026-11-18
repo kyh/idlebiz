@@ -3,16 +3,17 @@
  * log file (`initLog`), so this is what a Finder-launched app leaves behind.
  */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- a caught value has no narrower honest type
-export const report = (where: string, error: unknown): void => {
+export const report = (where: string, error: unknown) => {
   console.error(`[${where}]`, error);
 };
 
 /** Run a step whose fault must not stop the work after it: the fault is reported, and the caller goes on with null. */
-export const guarded = <T>(where: string, step: () => T): T | null => {
+export const guarded = <T>(where: string, step: () => T) => {
   try {
     return step();
   } catch (error) {
     report(where, error);
+
     return null;
   }
 };

@@ -48,33 +48,33 @@ import {
 } from "@repo/domain/domain";
 import type { Budget, BusinessTypeId } from "@repo/domain/domain";
 import { founderChoices } from "@repo/domain/character-seed";
-import { errorMessage } from "@repo/domain/errors";
+import { errorMessage, unreachable } from "@repo/domain/errors";
 import type { HireProposal } from "@repo/domain/hire";
 
-/**
- * A script read a page at a time: Enter skips the typing, then turns the page,
- * and only past the last page does it reach the step's prompt. The page is
- * keyed by the script, so a new one starts on page one.
- */
 const useScript = (key: string, pages: readonly string[]) => {
   const [page, setPage] = useKeyedState(key, 0);
   const last = page >= pages.length - 1;
   const writer = useTypewriter(pages[page] ?? "");
   const promptOpen = last && writer.done;
-  /** Returns true once there is nothing left to read. */
-  const advance = (): boolean => {
+
+  const advance = () => {
     if (!writer.done) {
       writer.skip();
+
       return false;
     }
+
     if (last) {
       return true;
     }
+
     setPage(page + 1);
+
     return false;
   };
-  /** Straight to the last page, for players who have heard the speech. */
+
   const skip = () => setPage(pages.length - 1);
+
   return { advance, done: writer.done, last, promptOpen, shown: writer.shown, skip };
 };
 
@@ -123,7 +123,6 @@ const Textbox = ({
   </div>
 );
 
-/** What a step asks for once its page is read: a line of text, a pitch, or a sign-in. */
 type Prompt =
   | { kind: "text"; value: string; placeholder: string; onChange: (v: string) => void }
   | { kind: "pitch"; value: string; placeholder: string; onChange: (v: string) => void }
@@ -155,6 +154,7 @@ const PromptField = ({
         />
       );
     }
+
     case "text": {
       return (
         <input
@@ -166,6 +166,7 @@ const PromptField = ({
         />
       );
     }
+
     case "pitch": {
       return (
         <textarea
@@ -178,7 +179,10 @@ const PromptField = ({
         />
       );
     }
-    // no default
+
+    default: {
+      return unreachable(prompt);
+    }
   }
 };
 
@@ -234,35 +238,39 @@ const promptFor = (
     setCompanyName: (v: string) => void;
     setPitch: (v: string) => void;
   },
-): Prompt | null => {
+) => {
   switch (step) {
     case "auth": {
-      return { kind: "auth" };
+      return { kind: "auth" } satisfies Prompt | null;
     }
+
     case "founder": {
       return {
         kind: "text",
         onChange: form.setFounderName,
         placeholder: "Ada",
         value: form.founderName,
-      };
+      } satisfies Prompt | null;
     }
+
     case "company": {
       return {
         kind: "text",
         onChange: form.setCompanyName,
         placeholder: "Acme AI",
         value: form.companyName,
-      };
+      } satisfies Prompt | null;
     }
+
     case "pitch": {
       return {
         kind: "pitch",
         onChange: form.setPitch,
         placeholder: businessTypeById(form.biz ?? "custom").pitchPlaceholder,
         value: form.pitch,
-      };
+      } satisfies Prompt | null;
     }
+
     case "title":
     case "intro":
     case "look":
@@ -272,14 +280,13 @@ const promptFor = (
     case "finalize": {
       return null;
     }
-    // no default
+
+    default: {
+      return unreachable(step);
+    }
   }
 };
 
-/**
- * Pointer-only: a focused button answers Enter itself, so an arrow that kept
- * focus after a click would turn Enter into "next look". ← → browse instead.
- */
 const LookArrow = ({ side, onClick }: { side: "l" | "r"; onClick: () => void }) => (
   <button
     type="button"
@@ -316,6 +323,7 @@ const Encounter = ({
   const pickingLook = step === "look";
   const team = step === "team" ? flow.team : null;
   const showingPanel = team?.kind === "cast" || step === "budget";
+
   return (
     <div className="ob-stage" data-look={pickingLook}>
       <OfficeBackdrop />
@@ -366,8 +374,6 @@ export const Onboarding = () => {
   const [biz, setBiz] = useState<BusinessTypeId | null>(null);
   const [pitch, setPitch] = useState("");
   const [capIndex, setCapIndex] = useState(DEFAULT_CAP_INDEX);
-  // Once founded the company is on disk and main refuses a second founding, so
-  // only reading it back is retried; the office opens once the page holds it.
   const opening = useSubmission(companyFounded);
   const scene = sceneOf(flow);
   const [cursor, setCursor] = useKeyedState(scene, 0);
@@ -376,12 +382,10 @@ export const Onboarding = () => {
 
   useModal();
 
-  // each look fetched as soon as it is on offer, so browsing them is instant
   for (const seed of LOOKS) {
     preload(sheetUrl(seed), { as: "image" });
   }
 
-  // a beat on "Connected ✓" before the founder's own step
   const { auth, login } = useAuthFlow(() =>
     window.setTimeout(() => dispatch({ kind: "signed-in" }), 700),
   );
@@ -389,13 +393,6 @@ export const Onboarding = () => {
   const mission = missionFromPitch(pitch);
   const script = useScript(scene, scriptFor(flow, founderName, companyName, mission !== null));
 
-  // Casting and founding stay off useSubmission: the flow holds how each went.
-  // A submission's failure stays until its next submit, so a failed cast would
-  // still show after "Rewrite the pitch", and an action would hold the founding
-  // screen until main answered. Each call follows the flow into the step that
-  // names it, so every way there (Enter, either menu) makes it once.
-
-  /** Ask a real CLI to cast a founding team for this pitch. Costs money. */
   const cast = useEffectEvent(async () => {
     try {
       const hires = await api.onboarding.hires({
@@ -403,11 +400,13 @@ export const Onboarding = () => {
         companyName: companyName.trim(),
         mission,
       });
+
       dispatch({ hires, kind: "cast" });
     } catch (error) {
       dispatch({ kind: "cast-failed", message: errorMessage(error) });
     }
   });
+
   const casting = step === "team" && flow.team.kind === "casting";
   useEffect(() => {
     if (casting) {
@@ -417,6 +416,7 @@ export const Onboarding = () => {
 
   const found = useEffectEvent(async (hires: HireProposal[]) => {
     const budget: Budget = capUsd === null ? { mode: "infinite" } : { capUsd, mode: "capped" };
+
     try {
       await api.onboarding.found({
         budget,
@@ -429,10 +429,13 @@ export const Onboarding = () => {
       });
     } catch (error) {
       dispatch({ kind: "found-failed", message: errorMessage(error) });
+
       return;
     }
+
     opening.submit();
   });
+
   const founding = step === "finalize" ? flow.hires : null;
   useEffect(() => {
     if (founding) {
@@ -447,8 +450,7 @@ export const Onboarding = () => {
   const nextLook = () => setLook((i) => (i + 1) % looks);
   const prevLook = () => setLook((i) => (i + looks - 1) % looks);
 
-  /** The choice window under the current step, if it has one. */
-  const menuFor = (): Menu | null => {
+  const menuFor = () => {
     switch (flow.step) {
       case "look": {
         return {
@@ -456,22 +458,25 @@ export const Onboarding = () => {
           items: LOOK_ITEMS,
           pick: (i) => (i === 0 ? forward() : nextLook()),
           setCursor,
-        };
+        } satisfies Menu | null;
       }
+
       case "biztype": {
         return {
           cursor,
           items: BIZ_ITEMS,
           pick: (i) => {
             const b = BUSINESS_TYPES[i];
+
             if (b) {
               setBiz(b.id);
               forward();
             }
           },
           setCursor,
-        };
+        } satisfies Menu | null;
       }
+
       case "team": {
         if (flow.team.kind === "cast") {
           return {
@@ -479,20 +484,22 @@ export const Onboarding = () => {
             items: CAST_ITEMS,
             pick: (i) => (i === 0 ? forward() : dispatch({ kind: "recast" })),
             setCursor,
-          };
+          } satisfies Menu | null;
         }
+
         if (flow.team.kind === "failed") {
           return {
             cursor,
             items: FAILED_ITEMS,
             pick: (i) => dispatch({ kind: i === 0 ? "recast" : "rewrite" }),
             setCursor,
-          };
+          } satisfies Menu | null;
         }
+
         return null;
       }
+
       case "budget": {
-        // the cursor is the answer itself, so it outlives the step
         return {
           cursor: capIndex,
           items: CAP_ITEMS,
@@ -501,14 +508,22 @@ export const Onboarding = () => {
             forward();
           },
           setCursor: setCapIndex,
-        };
+        } satisfies Menu | null;
       }
+
       case "finalize": {
         if (opening.submission.kind !== "failed") {
           return null;
         }
-        return { cursor, items: OPEN_FAILED_ITEMS, pick: () => opening.submit(), setCursor };
+
+        return {
+          cursor,
+          items: OPEN_FAILED_ITEMS,
+          pick: () => opening.submit(),
+          setCursor,
+        } satisfies Menu | null;
       }
+
       case "title":
       case "intro":
       case "auth":
@@ -517,48 +532,59 @@ export const Onboarding = () => {
       case "pitch": {
         return null;
       }
-      // no default
+
+      default: {
+        return unreachable(flow);
+      }
     }
   };
+
   const menu = script.promptOpen ? menuFor() : null;
 
-  /** Enter, once the page is read: the step's own confirm. */
   const confirm = () => {
     if (menu) {
       menu.pick(menu.cursor);
+
       return;
     }
+
     if (step === "auth") {
-      // logging-in already has a browser open; signed-in moves on by itself
       if (auth.phase === "signed-out" || auth.phase === "login-failed") {
         login();
       }
+
       return;
     }
+
     forward();
   };
 
-  // Enter is the A button: it skips the typing, turns the page, then confirms.
-  // The arrows move the menu cursor or cycle the looks; Escape rewinds.
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (e.isComposing) {
       return;
     }
+
     if (e.key === "Escape") {
       back();
+
       return;
     }
+
     if (step === "title") {
       if (e.key === "Enter") {
         forward();
       }
+
       return;
     }
+
     if (e.key === "Tab" && !script.last) {
       e.preventDefault();
       script.skip();
+
       return;
     }
+
     if (step === "look") {
       if (e.key === "ArrowRight") {
         nextLook();
@@ -566,34 +592,40 @@ export const Onboarding = () => {
         prevLook();
       }
     }
-    // a newline in the pitch is Shift+Enter
+
     const newline = document.activeElement?.tagName === "TEXTAREA" && e.shiftKey;
+
     if (e.key !== "Enter" || newline) {
       return;
     }
-    // a focused button answers its own Enter, and cancelling the keydown would
-    // swallow its click. Not the dialogue box: its click confirms only the intro.
+
     if (e.target instanceof HTMLButtonElement && !e.target.classList.contains("ob-box-text")) {
       return;
     }
+
     e.preventDefault();
+
     if (script.advance()) {
       confirm();
     }
   });
+
   useEffect(() => {
     window.addEventListener("keydown", onKey);
+
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   const problem =
     failureOf(flow) ?? (opening.submission.kind === "failed" ? opening.submission.message : null);
-  // Enter on the intro's last page waits for the probe; say so instead of doing nothing
+
   const hint =
     step === "intro" && auth.phase === "checking"
       ? "Checking your CLI…"
       : hintFor(step, look, looks, capUsd);
+
   const seed = LOOKS[look] ?? DEFAULT_FOUNDER_SEED;
+
   const prompt = promptFor(step, {
     biz,
     companyName,
@@ -639,7 +671,6 @@ export const Onboarding = () => {
             done={script.done}
             last={script.last}
             onAdvance={() => {
-              // a click on the text is the A button too, short of confirming a form
               if (script.advance() && step === "intro") {
                 confirm();
               }

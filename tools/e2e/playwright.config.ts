@@ -10,13 +10,9 @@ const anywhere: PlaywrightTestConfig = {
   tsconfig: "./tsconfig.json",
 };
 
-// On CI (CI's e2e-macos) a run leaves what an agent reads after it with no window: results.json,
-// SUMMARY.md, the key screenshots, and a failure's trace and screenshot. A retry classes a failure
-// as flaky and records a second trace, but never turns it green.
 const onCi: PlaywrightTestConfig = {
   failOnFlakyTests: true,
   forbidOnly: true,
-  // under the step's own 25 minutes, so the reporters still write what they hold
   globalTimeout: 20 * 60_000,
   reporter: [
     ["list"],

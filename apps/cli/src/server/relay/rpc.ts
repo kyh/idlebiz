@@ -1,7 +1,3 @@
-// JSON-RPC 2.0, one message per line, requests both ways. Every message is parsed by the schema of
-// the method it names where it lands; a line that is no message goes to `stray`, never a reason
-// to stop.
-
 import { z } from "zod";
 import { errorMessage } from "@repo/domain/errors";
 import { jsonValueSchema } from "@repo/domain/json";
@@ -25,30 +21,21 @@ interface Message {
 }
 
 export interface PeerOptions {
-  // writes one message, without its newline
   write: (line: string) => void;
-  // a line that is no message, or answers nothing asked
   stray: (line: string) => void;
-  // a listener that threw: said, never thrown on into whatever read the line
   failed: (method: string, reason: string) => void;
 }
 
-// `M` is the methods either end may name (`RELAY_METHODS` between the shell and main), so a
-// misspelt one does not compile
 export interface Peer<M extends string = string> {
-  // answers the other end's requests for `method`, whose params `schema` parses
   handle: <P>(
     method: M,
     schema: z.ZodType<P>,
     handler: (params: P) => JsonValue | Promise<JsonValue>,
   ) => void;
-  // hears the other end's notifications for `method`; params `schema` refuses are stray
   on: <P>(method: M, schema: z.ZodType<P>, listener: (params: P) => void) => void;
   request: <R>(method: M, params: JsonValue, schema: z.ZodType<R>) => Promise<R>;
   notify: (method: M, params: JsonValue) => void;
-  // one line the other end wrote
   receive: (line: string) => void;
-  // the other end is gone: every request in flight fails with `reason`, and so does the next
   close: (reason: string) => void;
 }
 
@@ -60,29 +47,33 @@ interface Waiting {
 const parsedLine = (line: string) => {
   try {
     const parsed = lineSchema.safeParse(JSON.parse(line));
+
     return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
 };
 
-export const createPeer = <M extends string = string>(options: PeerOptions): Peer<M> => {
+export const createPeer = <M extends string = string>(options: PeerOptions) => {
   const handlers = new Map<string, (params: JsonValue | undefined) => Promise<JsonValue>>();
   const listeners = new Map<string, (params: JsonValue | undefined) => boolean>();
   const pending = new Map<number, Waiting>();
   let nextId = 0;
   let closed: string | null = null;
 
-  const send = (message: Message): void => {
+  const send = (message: Message) => {
     options.write(JSON.stringify({ jsonrpc: VERSION, ...message }));
   };
 
   const answer = async (id: number, method: string, params: JsonValue | undefined) => {
     const handler = handlers.get(method);
+
     if (handler === undefined) {
       send({ error: { code: METHOD_NOT_FOUND, message: `no method ${method}` }, id });
+
       return;
     }
+
     try {
       send({ id, result: await handler(params) });
     } catch (error) {
@@ -93,9 +84,11 @@ export const createPeer = <M extends string = string>(options: PeerOptions): Pee
   return {
     close(reason) {
       closed = reason;
+
       for (const waiting of pending.values()) {
         waiting.reject(new Error(reason));
       }
+
       pending.clear();
     },
     handle(method, schema, handler) {
@@ -109,6 +102,7 @@ export const createPeer = <M extends string = string>(options: PeerOptions): Pee
     on(method, schema, listener) {
       listeners.set(method, (params) => {
         const parsed = schema.safeParse(params ?? null);
+
         if (parsed.success) {
           try {
             listener(parsed.data);
@@ -116,32 +110,41 @@ export const createPeer = <M extends string = string>(options: PeerOptions): Pee
             options.failed(method, errorMessage(error));
           }
         }
+
         return parsed.success;
       });
     },
     receive(line) {
       const message = parsedLine(line);
+
       if (message === null) {
         options.stray(line);
+
         return;
       }
+
       const { error, id, method, params, result } = message;
+
       if (method !== undefined) {
         if (id !== undefined) {
           void answer(id, method, params);
         } else if (listeners.get(method)?.(params) !== true) {
           options.stray(line);
         }
+
         return;
       }
+
       const waiting = id === undefined ? undefined : pending.get(id);
+
       if (id === undefined || waiting === undefined) {
         options.stray(line);
+
         return;
       }
+
       pending.delete(id);
-      // exactly one of the two, as JSON-RPC and the shell's own parser have it: an answer with
-      // neither is no success, whatever the asker's schema would make of a null
+
       if (error !== undefined && result === undefined) {
         waiting.reject(new Error(error.message));
       } else if (error === undefined && result !== undefined) {
@@ -156,12 +159,14 @@ export const createPeer = <M extends string = string>(options: PeerOptions): Pee
       if (closed !== null) {
         throw new Error(closed);
       }
+
       nextId += 1;
       const id = nextId;
       const { promise, reject, resolve } = Promise.withResolvers<JsonValue>();
       pending.set(id, { reject, resolve });
       send({ id, method, params });
+
       return schema.parse(await promise);
     },
-  };
+  } satisfies Peer<M>;
 };

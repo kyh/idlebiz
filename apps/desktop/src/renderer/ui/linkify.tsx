@@ -2,33 +2,28 @@ import type { ReactNode } from "react";
 import { api } from "@/renderer/api";
 import { ASSET_TOKEN } from "@/renderer/ui/asset-token";
 
-// Renders agent text with clickable assets: URLs open in the browser, and
-// anything that looks like a file path opens with the OS default app (guarded
-// server-side to stay inside shared/ or a product's workspace).
-
-const openAsset = async (token: string): Promise<void> => {
+const openAsset = async (token: string) => {
   if (/^https?:\/\//u.test(token)) {
     window.open(token, "_blank");
+
     return;
   }
-  try {
-    await api.company.openPath({ rel: token });
-  } catch {
-    // a path main refuses is dropped on purpose; the text stays as it was
-  }
+
+  await api.company.openPath({ rel: token }).catch(() => null);
 };
 
 /** One line/paragraph of agent text with URLs + file paths made clickable. */
 export const RichText = ({ text }: { text: string }) => {
   const parts: ReactNode[] = [];
   let last = 0;
-  // matchAll, not exec: exec advances ASSET_TOKEN.lastIndex, and mutating
-  // module-level state during render breaks on a re-entrant render.
+
   for (const m of text.matchAll(ASSET_TOKEN)) {
     const [token] = m;
+
     if (m.index > last) {
       parts.push(text.slice(last, m.index));
     }
+
     parts.push(
       <button
         type="button"
@@ -46,8 +41,10 @@ export const RichText = ({ text }: { text: string }) => {
     );
     last = m.index + token.length;
   }
+
   if (last < text.length) {
     parts.push(text.slice(last));
   }
+
   return parts;
 };

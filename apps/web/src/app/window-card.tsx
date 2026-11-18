@@ -3,6 +3,16 @@
 import { useCallback, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 
+const capturePointer = (target: Element, pointerId: number) => {
+  try {
+    target.setPointerCapture(pointerId);
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export const WindowCard = ({
   titlebar,
   children,
@@ -11,6 +21,7 @@ export const WindowCard = ({
   children: ReactNode;
 }) => {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -24,6 +35,7 @@ export const WindowCard = ({
       if (e.button !== 0 && e.pointerType === "mouse") {
         return;
       }
+
       dragRef.current = {
         baseX: offset.x,
         baseY: offset.y,
@@ -31,20 +43,19 @@ export const WindowCard = ({
         startX: e.clientX,
         startY: e.clientY,
       };
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch {
-        // synthetic/secondary pointers can't always be captured — drag still works
-      }
+
+      capturePointer(e.currentTarget, e.pointerId);
     },
     [offset],
   );
 
   const onPointerMove = useCallback((e: PointerEvent<HTMLDivElement>) => {
     const d = dragRef.current;
+
     if (!d || d.pointerId !== e.pointerId) {
       return;
     }
+
     setOffset({ x: d.baseX + (e.clientX - d.startX), y: d.baseY + (e.clientY - d.startY) });
   }, []);
 

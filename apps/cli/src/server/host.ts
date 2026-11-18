@@ -1,8 +1,3 @@
-// Every message of the relay either way is named in RELAY_METHODS and shaped by a schema here. The
-// shell's end (src-tauri/src/protocol.rs) compiles against none of it, so both ends are pinned to
-// one sample of each method (src-tauri/tests/fixtures/relay): `host.test.ts` parses each with its
-// schema here, and `cargo test` reads each into the shell's types.
-
 import { z } from "zod";
 import type { Peer } from "./relay/rpc";
 import { LAUNCH_AT_LOGIN } from "@repo/domain/domain";
@@ -28,34 +23,32 @@ export const RELAY_METHODS = [
   "host.vaultSet",
   "host.vaultDelete",
 ] as const;
+
 export type RelayMethod = (typeof RELAY_METHODS)[number];
 
 export const launchSchema = z.strictObject({
-  // a launch at login starts in the menu bar
   openedAtLogin: z.boolean(),
   packaged: z.boolean(),
-  // Vite's dev server, whose files main hands the page in place of the built ones, so it reloads in
-  // place: `tauri dev`'s and `pnpm dev:browser`'s. Null in a packaged app, which serves what it ships
   pageDevUrl: z.string().nullable(),
-  // the vault's keys as the Keychain holds them, and the name of each it would not give; null in
-  // dev, which keeps its keys in a file, or when the Keychain would not list them
   vault: z
     .strictObject({ keys: z.record(z.string(), z.string()), refused: z.array(z.string()) })
     .nullable(),
 });
+
 export type Launch = z.infer<typeof launchSchema>;
+
 /** The hello as the shell writes it. */
 export type LaunchHello = z.input<typeof launchSchema>;
 
 /** What main answers the shell's `handoff`: a link into its page, and the origin it is on. */
 export const handoffSchema = z.strictObject({ handoffUrl: z.string(), origin: z.string() });
+
 export type Handoff = z.infer<typeof handoffSchema>;
 
-// what the shell says of its one window: blurred, minimized, hidden (closing it hides it: the
-// office lives on in the menu bar, and the dock goes with it), or shown again
 export const windowSchema = z.strictObject({
   state: z.enum(["blurred", "minimized", "hidden", "shown"]),
 });
+
 export type WindowChange = z.infer<typeof windowSchema>;
 
 /** A click on the menu-bar icon's autopilot item, with the state its label promised. */
@@ -66,9 +59,11 @@ export const messageBoxSchema = z.strictObject({
   kind: z.enum(["info", "warning", "error"]),
   message: z.string(),
 });
+
 type MessageBox = z.infer<typeof messageBoxSchema>;
 
 export const copyTextSchema = z.strictObject({ text: z.string() });
+
 type CopyText = z.infer<typeof copyTextSchema>;
 
 /** What main asks the system to open: a URL in the browser, a file or folder in Finder. */
@@ -76,21 +71,22 @@ export const openingSchema = z.strictObject({
   kind: z.enum(["path", "reveal", "url"]),
   target: z.string(),
 });
+
 type Opening = z.infer<typeof openingSchema>;
 
-// reads the login item, or sets it first
 export const loginItemSchema = z.strictObject({ on: z.boolean().nullable() });
+
 type LoginItem = z.infer<typeof loginItemSchema>;
 
 export const launchAtLoginSchema = z.enum(LAUNCH_AT_LOGIN);
 
 export const noteSchema = z.strictObject({ body: z.string(), title: z.string() });
+
 type Note = z.infer<typeof noteSchema>;
 
 const trayItemSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("open"), label: z.string() }),
   z.strictObject({ kind: z.literal("status"), label: z.string() }),
-  // `on` is what a click sets: what the label said when the menu was drawn
   z.strictObject({
     enabled: z.boolean(),
     kind: z.literal("autopilot"),
@@ -98,35 +94,38 @@ const trayItemSchema = z.discriminatedUnion("kind", [
     on: z.boolean(),
   }),
   z.strictObject({ kind: z.literal("separator") }),
-  // a click tells main `update`, and main installs the release it offers
   z.strictObject({ kind: z.literal("update"), label: z.string() }),
   z.strictObject({ kind: z.literal("quit"), label: z.string() }),
 ]);
+
 export type TrayItem = z.infer<typeof trayItemSchema>;
 
-// the menu-bar icon as main sees it: its title beside the icon, its tooltip and its menu
 export const trayModelSchema = z.strictObject({
   items: z.array(trayItemSchema),
   title: z.string(),
   tooltip: z.string(),
 });
+
 type TrayModel = z.infer<typeof trayModelSchema>;
 
 export const keepAwakeSchema = z.strictObject({ on: z.boolean() });
+
 type KeepAwake = z.infer<typeof keepAwakeSchema>;
 
-// a release newer than this build, as the shell finds it on the release feed; none is null
 export const releaseSchema = z.strictObject({ version: z.string() });
+
 type Release = z.infer<typeof releaseSchema>;
 
-// keeps a key in the vault under its name, or forgets it
 export const vaultSetSchema = z.strictObject({ name: z.string(), value: z.string() });
+
 type VaultSet = z.infer<typeof vaultSetSchema>;
+
 export const vaultDeleteSchema = z.strictObject({ name: z.string() });
+
 type VaultDelete = z.infer<typeof vaultDeleteSchema>;
 
-// installs the release main offered, by its version: one the feed has moved past is refused
 export const installUpdateSchema = z.strictObject({ version: z.string() });
+
 type InstallUpdate = z.infer<typeof installUpdateSchema>;
 
 export interface Host {
@@ -134,60 +133,56 @@ export interface Host {
   copyText: (text: string) => Promise<void>;
   open: (opening: Opening) => Promise<void>;
   notify: (note: Note) => void;
-  // what macOS answers is read back, never assumed
   loginItem: (on: boolean | null) => Promise<LaunchAtLogin>;
   tray: (model: TrayModel) => void;
   keepAwake: (on: boolean) => void;
-  // ends main and starts the app again: what a reset does once the save is gone
   relaunch: () => void;
-  // the newest release on the feed, when it is newer than this build
   checkUpdate: () => Promise<Release | null>;
-  // downloads `version` and answers; then the shell stops main, installs it and starts the app again
   installUpdate: (version: string) => Promise<void>;
-  // the Keychain's: answers once it keeps the change, and refuses with why it would not
   vaultSet: (name: string, value: string) => Promise<void>;
   vaultDelete: (name: string) => Promise<void>;
 }
 
-export const hostOver = (peer: Peer<RelayMethod>): Host => ({
-  checkUpdate: async () => await peer.request("host.checkUpdate", null, releaseSchema.nullable()),
-  copyText: async (text) => {
-    await peer.request("host.copyText", { text } satisfies CopyText, z.null());
-  },
-  installUpdate: async (version) => {
-    await peer.request("host.installUpdate", { version } satisfies InstallUpdate, z.null());
-  },
-  keepAwake: (on) => {
-    peer.notify("host.keepAwake", { on } satisfies KeepAwake);
-  },
-  loginItem: async (on) =>
-    await peer.request("host.loginItem", { on } satisfies LoginItem, launchAtLoginSchema),
-  messageBox: async (box) => {
-    await peer.request("host.messageBox", box, z.null());
-  },
-  notify: (note) => {
-    peer.notify("host.notify", note);
-  },
-  open: async (opening) => {
-    await peer.request("host.open", opening, z.null());
-  },
-  relaunch: () => {
-    peer.notify("host.relaunch", null);
-  },
-  tray: (model) => {
-    peer.notify("host.tray", model);
-  },
-  vaultDelete: async (name) => {
-    await peer.request("host.vaultDelete", { name } satisfies VaultDelete, z.null());
-  },
-  vaultSet: async (name, value) => {
-    await peer.request("host.vaultSet", { name, value } satisfies VaultSet, z.null());
-  },
-});
+export const hostOver = (peer: Peer<RelayMethod>) =>
+  ({
+    checkUpdate: async () => await peer.request("host.checkUpdate", null, releaseSchema.nullable()),
+    copyText: async (text) => {
+      await peer.request("host.copyText", { text } satisfies CopyText, z.null());
+    },
+    installUpdate: async (version) => {
+      await peer.request("host.installUpdate", { version } satisfies InstallUpdate, z.null());
+    },
+    keepAwake: (on) => {
+      peer.notify("host.keepAwake", { on } satisfies KeepAwake);
+    },
+    loginItem: async (on) =>
+      await peer.request("host.loginItem", { on } satisfies LoginItem, launchAtLoginSchema),
+    messageBox: async (box) => {
+      await peer.request("host.messageBox", box, z.null());
+    },
+    notify: (note) => {
+      peer.notify("host.notify", note);
+    },
+    open: async (opening) => {
+      await peer.request("host.open", opening, z.null());
+    },
+    relaunch: () => {
+      peer.notify("host.relaunch", null);
+    },
+    tray: (model) => {
+      peer.notify("host.tray", model);
+    },
+    vaultDelete: async (name) => {
+      await peer.request("host.vaultDelete", { name } satisfies VaultDelete, z.null());
+    },
+    vaultSet: async (name, value) => {
+      await peer.request("host.vaultSet", { name, value } satisfies VaultSet, z.null());
+    },
+  }) satisfies Host;
 
 let current: { host: Host; launch: Launch } | null = null;
 
-export const setHost = (host: Host, launch: Launch): void => {
+export const setHost = (host: Host, launch: Launch) => {
   current = { host, launch };
 };
 
@@ -195,9 +190,10 @@ const required = () => {
   if (current === null) {
     throw new Error("main has no host yet: it asked before the shell said hello");
   }
+
   return current;
 };
 
-export const host = (): Host => required().host;
+export const host = () => required().host;
 
-export const launch = (): Launch => required().launch;
+export const launch = () => required().launch;

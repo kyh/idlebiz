@@ -1,6 +1,3 @@
-// What the app does for the page that a page cannot: the clipboard, the login item, its updates
-// and its log.
-
 import { oc, type } from "@orpc/contract";
 import { z } from "zod";
 import type { LaunchAtLogin, UpdateStatus } from "@repo/domain/domain";

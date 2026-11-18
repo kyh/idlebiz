@@ -5,6 +5,7 @@ import { Curtain } from "@/renderer/ui/curtain";
 
 export const AuthGate = () => {
   const { auth, login } = useAuthFlow();
+
   return (
     <Curtain>
       <AlertDialog.Title className="mb-3 text-sm leading-relaxed text-fg">

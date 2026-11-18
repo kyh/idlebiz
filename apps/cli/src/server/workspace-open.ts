@@ -2,13 +2,6 @@ import { execFileSync } from "node:child_process";
 import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 
-/**
- * What the OS may open outright from an agent-written workspace: folders
- * without an extension and things you read, unless a symlink, a Finder alias,
- * the Finder bundle bit or a per-file OpenWith sends the click somewhere else.
- * Anything else — a .command, a binary, an installer — is revealed in Finder
- * instead, so a one-click execute can never be authored into the team room.
- */
 const READABLE = new Set([
   ".md",
   ".txt",
@@ -35,13 +28,12 @@ const READABLE = new Set([
   ".cjs",
 ]);
 
-// LaunchServices follows Finder aliases, launches folders with the bundle bit (both flagged in FinderInfo) and honours per-file OpenWith; realpath sees none of them.
 const LAUNCH_OVERRIDES = new Set(["com.apple.FinderInfo", "com.apple.LaunchServices.OpenWith"]);
 
-/** Whether LaunchServices may open `real` with something other than what its name says; true when unsure. */
-const redirectsLaunch = (real: string): boolean => {
+const redirectsLaunch = (real: string) => {
   try {
     const names = execFileSync("/usr/bin/xattr", [real], { encoding: "utf-8" }).split("\n");
+
     return names.some((name) => LAUNCH_OVERRIDES.has(name));
   } catch {
     return true;
@@ -53,7 +45,7 @@ export interface Opening {
   path: string;
 }
 
-const realOf = (p: string): string | null => {
+const realOf = (p: string) => {
   try {
     return realpathSync.native(p);
   } catch {
@@ -67,19 +59,21 @@ const realOf = (p: string): string | null => {
  * Finder flags or an OpenWith redirect it. Each root is tried in turn; null
  * when `rel` is missing under all of them or its real path leaves every one.
  */
-export const judgeOpening = (roots: readonly string[], rel: string): Opening | null => {
+export const judgeOpening = (roots: readonly string[], rel: string) => {
   for (const root of roots) {
     const base = realOf(root);
     const real = base === null ? null : realOf(path.resolve(base, rel === "" ? "." : rel));
+
     if (base !== null && real !== null && (real === base || real.startsWith(base + path.sep))) {
-      // A folder is a bundle the OS launches when it has a bundle extension (.app, .workflow…) or the FinderInfo bundle bit.
       const opens =
         (statSync(real).isDirectory()
           ? path.extname(real) === ""
           : READABLE.has(path.extname(real).toLowerCase())) && !redirectsLaunch(real);
-      return { kind: opens ? "open" : "reveal", path: real };
+
+      return { kind: opens ? "open" : "reveal", path: real } satisfies Opening | null;
     }
   }
+
   return null;
 };
 
@@ -89,15 +83,19 @@ export const judgeOpening = (roots: readonly string[], rel: string): Opening | n
  * re-rooted from its workspace/ or shared/, under the root whose folder and parent it names
  * first, so a same-named file of another product never opens in its place.
  */
-export const judgeAgentPath = (roots: readonly string[], token: string): Opening | null => {
+export const judgeAgentPath = (roots: readonly string[], token: string) => {
   const asWritten = judgeOpening(roots, token);
   const root = path.isAbsolute(token) ? /\/(?:workspace|shared)\//u.exec(token) : null;
+
   if (asWritten !== null || root === null) {
     return asWritten;
   }
+
   const named = token.slice(0, root.index + root[0].length);
-  const names = (dir: string): boolean =>
+
+  const names = (dir: string) =>
     named.endsWith(`/${path.basename(path.dirname(dir))}/${path.basename(dir)}/`);
+
   return judgeOpening(
     [...roots.filter(names), ...roots.filter((dir) => !names(dir))],
     token.slice(named.length),

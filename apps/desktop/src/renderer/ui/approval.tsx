@@ -11,15 +11,16 @@ interface Approval {
 
 /** The founder's answer to one held command, wherever its card is shown: the task resumes
  *  either way. */
-export const useApproval = (taskId: string): Approval => {
+export const useApproval = (taskId: string) => {
   const { submission, submit } = useSubmission(async (approved: boolean) => {
     await api.tasks.resolveApproval({ approved, taskId });
   });
+
   return {
     decide: submit,
     decided: submission.kind === "sending" || submission.kind === "sent",
     submission,
-  };
+  } satisfies Approval;
 };
 
 export const ApprovalButtons = ({ decided, decide }: Omit<Approval, "submission">) => (

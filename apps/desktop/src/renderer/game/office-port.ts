@@ -42,11 +42,7 @@ export interface Office {
   };
 }
 
-export const tell = <K extends Message>(
-  game: Office,
-  message: K,
-  payload: OfficeMessages[K],
-): void => {
+export const tell = <K extends Message>(game: Office, message: K, payload: OfficeMessages[K]) => {
   game.events.emit(message, payload);
 };
 
@@ -55,9 +51,10 @@ export const hear = <K extends Message>(
   game: Office,
   message: K,
   heard: (payload: OfficeMessages[K]) => void,
-): (() => void) => {
+) => {
   game.events.on(message, heard);
-  return () => {
+
+  return (() => {
     game.events.off(message, heard);
-  };
+  }) satisfies () => void;
 };

@@ -17,15 +17,13 @@ export const PhaserGame = ({ onGame }: { onGame?: (game: Phaser.Game | null) => 
       backgroundColor: "#12141c",
       parent: containerRef.current,
       pixelArt: true,
-      // dev-only: lets CDP/snapshot tooling capture the WebGL canvas for visual QA
       render: { preserveDrawingBuffer: import.meta.env.DEV },
       roundPixels: true,
       scale: { height: "100%", mode: Scale.RESIZE, width: "100%" },
       type: AUTO,
     });
+
     game.scene.add("office", OfficeScene, true);
-    // The CDP handle, set here rather than waiting for the scene: under headless
-    // automation the boot stalls before create() and the probe has to kick it.
     window.__game = game;
     handOff(game);
 

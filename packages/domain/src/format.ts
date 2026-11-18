@@ -1,12 +1,10 @@
-// Reuse Intl instances; display times in the founder's local zone.
-
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const dateFmt = new Intl.DateTimeFormat();
 
 /** "4:30 PM" from an epoch-ms timestamp. */
-export const formatTime = (epoch: number): string => timeFmt.format(epoch);
+export const formatTime = (epoch: number) => timeFmt.format(epoch);
 
-export const formatDate = (epoch: number): string => dateFmt.format(epoch);
+export const formatDate = (epoch: number) => dateFmt.format(epoch);
 
 const compactFmt = new Intl.NumberFormat(undefined, {
   maximumFractionDigits: 1,
@@ -14,21 +12,18 @@ const compactFmt = new Intl.NumberFormat(undefined, {
 });
 
 /** "1.2k", "3.4M" — a scoreboard number. */
-export const formatCompact = (n: number): string => compactFmt.format(n);
+export const formatCompact = (n: number) => compactFmt.format(n);
 
 /** "$12.34" — money the founder is spending, always to the cent. */
-export const formatUsd = (usd: number): string => `$${usd.toFixed(2)}`;
+export const formatUsd = (usd: number) => `$${usd.toFixed(2)}`;
 
 /** "$12.34" from 1234: Stripe and Printful count money in cents. */
-export const formatCents = (cents: number): string => formatUsd(cents / 100);
+export const formatCents = (cents: number) => formatUsd(cents / 100);
 
-export const napLabel = (until: number): string => `☕ resting til ${formatTime(until)}`;
+export const napLabel = (until: number) => `☕ resting til ${formatTime(until)}`;
 
 /** When the office wakes: the earliest of the runners' usage-limit resets still ahead. */
-export const earliestReset = (
-  resting: Readonly<Partial<Record<string, number>>>,
-  now: number,
-): number | undefined =>
+export const earliestReset = (resting: Readonly<Partial<Record<string, number>>>, now: number) =>
   Object.values(resting)
     .filter((t): t is number => t !== undefined && t > now)
     .toSorted((a, b) => a - b)[0];
@@ -37,26 +32,35 @@ export const earliestReset = (
  * "usage $3.20": what the runs would have cost at API prices. It is not a bill: a subscription
  * pays for the same runs with its own limits.
  */
-export const usageLabel = (usd: number): string => `usage ${formatUsd(usd)}`;
+export const usageLabel = (usd: number) => `usage ${formatUsd(usd)}`;
 
 /** "3 runs", "1 question" — a count with its noun, the locale's plural rules. */
-export const plural = (n: number, noun: string): string =>
+export const plural = (n: number, noun: string) =>
   `${n} ${noun}${new Intl.PluralRules().select(n) === "one" ? "" : "s"}`;
 
-const unitFmt = (unit: "minute" | "hour" | "day"): Intl.NumberFormat =>
-  new Intl.NumberFormat(undefined, { style: "unit", unit, unitDisplay: "long" });
+const unitFmt = (unit: "minute" | "hour" | "day") =>
+  new Intl.NumberFormat(undefined, {
+    style: "unit",
+    unit,
+    unitDisplay: "long",
+  }) satisfies Intl.NumberFormat;
+
 const away = { day: unitFmt("day"), hour: unitFmt("hour"), minute: unitFmt("minute") };
 
 /** "45 minutes", "3 hours", "2 days" — how long the founder was away, in the largest unit that fits. */
-export const formatAway = (ms: number): string => {
+export const formatAway = (ms: number) => {
   const minutes = Math.round(ms / 60_000);
+
   if (minutes < 60) {
     return away.minute.format(minutes);
   }
+
   const hours = Math.round(minutes / 60);
+
   return hours < 48 ? away.hour.format(hours) : away.day.format(Math.round(hours / 24));
 };
 
 const listFmt = new Intl.ListFormat(undefined, { style: "long", type: "conjunction" });
+
 /** "Mira, Bo and Ada". */
-export const formatNames = (names: readonly string[]): string => listFmt.format(names);
+export const formatNames = (names: readonly string[]) => listFmt.format(names);

@@ -1,15 +1,7 @@
-// The page's content security policy: main stamps it on the page it serves the window
-// (apps/cli/src/server/page-server.ts), and the dev server writes it into the page Vite answers in
-// its place (apps/desktop/vite.config.ts).
-// The page loads nothing but its own files and calls nothing but main on its own origin.
-
 const DIRECTIVES: readonly (readonly [string, string])[] = [
   ["default-src", "'self'"],
   ["script-src", "'self'"],
-  // React's style attributes, and Phaser's runtime styles, are not noncible
   ["style-src", "'self' 'unsafe-inline'"],
-  // Phaser draws its own default textures from data: URLs and hands each image it loads to the
-  // page as a blob: one
   ["img-src", "'self' data: blob:"],
   ["connect-src", "'self'"],
   ["object-src", "'none'"],
@@ -25,11 +17,13 @@ export interface PolicyOptions {
   meta?: boolean;
 }
 
-export const pagePolicy = ({ connect = [], meta = false }: PolicyOptions = {}): string =>
-  DIRECTIVES.filter(([directive]) => !(meta && directive === "frame-ancestors"))
-    .map(([directive, sources]) =>
-      directive === "connect-src"
-        ? `${directive} ${[sources, ...connect].join(" ")}`
-        : `${directive} ${sources}`,
-    )
-    .join("; ");
+export const pagePolicy = ({ connect = [], meta = false }: PolicyOptions = {}) =>
+  DIRECTIVES.flatMap(([directive, sources]) => {
+    if (meta && directive === "frame-ancestors") {
+      return [];
+    }
+
+    return directive === "connect-src"
+      ? [`${directive} ${[sources, ...connect].join(" ")}`]
+      : [`${directive} ${sources}`];
+  }).join("; ");

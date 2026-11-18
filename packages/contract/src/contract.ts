@@ -1,5 +1,3 @@
-// Both ends ship in one app, so the page's API may break freely: nothing here is versioned.
-
 import { asyncIteratorObject, oc } from "@orpc/contract";
 import { agentsContract } from "./agents-contract";
 import { appContract } from "./app-contract";

@@ -5,13 +5,15 @@ import { api } from "@/renderer/api";
 import { Failure } from "@/renderer/ui/failure";
 import type { Task } from "@repo/domain/domain";
 
-const submitLabel = (submission: Submission): string => {
+const submitLabel = (submission: Submission) => {
   if (submission.kind === "sent") {
     return "Sent ✓";
   }
+
   if (submission.kind === "sending") {
     return "Sending…";
   }
+
   return "Answer";
 };
 
@@ -25,14 +27,17 @@ export const AnswerForm = ({
   onSent?: () => void;
 }) => {
   const [answer, setAnswer] = useState("");
+
   const { submission, submit } = useSubmission(async (text: string) => {
     await api.tasks.answer({ answer: text, taskId: task.id });
     onSent?.();
   });
+
   const disabled = submission.kind === "sending" || submission.kind === "sent";
 
   const send = () => {
     const text = answer.trim();
+
     if (text && !disabled) {
       submit(text);
     }

@@ -1,6 +1,3 @@
-// What the approval card says about a signed tool's call, by the rule that held it.
-// Data only, so the renderer names a hold without bundling the tool that raised it.
-
 /** Every rule that holds a signed tool's call for the founder. A saved ask names one, so retiring one breaks the saves still asking under it. */
 export const HOLD_RULE_IDS = ["deploy", "payments"] as const;
 
@@ -15,15 +12,12 @@ const HOLD_RULES = {
 export const APPROVAL_SCOPE = "Approving covers exactly this, once.";
 
 /** What the card says a held ask's rule holds. */
-export const describeRule = (rule: HoldRuleId): string => HOLD_RULES[rule];
+export const describeRule = (rule: HoldRuleId) => HOLD_RULES[rule];
 
-// A direction override or a zero-width character in the key would let the card show one
-// command while the founder signs another, so each is shown by its code point. A newline
-// starts another command, so it shows as a mark that a literal one cannot fake, then a break.
 const HIDDEN = /[\p{Cc}\p{Cf}⏎]/gu;
 
 /** A held ask's key as its card shows it: every control or format character named, none obeyed. */
-export const shownKey = (key: string): string =>
+export const shownKey = (key: string) =>
   key.replaceAll(HIDDEN, (char) =>
     char === "\n"
       ? "⏎\n"

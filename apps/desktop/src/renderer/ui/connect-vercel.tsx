@@ -11,23 +11,22 @@ import { awaitsVercelToken, lookupFor, problemOf } from "@/renderer/ui/vercel-lo
 import type { Product } from "@repo/domain/domain";
 import type { VercelProject } from "@repo/domain/integrations";
 
-// One token serves every product, so a product is bound with the saved one
-// unless the founder pastes another.
 const PickProject = ({ product, onClose }: { product: Product; onClose: () => void }) => {
   const productId = product.id;
   const [token, setToken] = useState("");
   const [cursor, setCursor] = useState(0);
   const [asked, setAsked] = useState<{ token?: string }>({});
-  // dropped once the picker moves past it, so a token asked for again is read again
   const listing = useQuery(orpc.vercel.projects.queryOptions({ gcTime: 0, input: asked }));
   const lookup = lookupFor(listing, asked.token);
-  const ask = (given: string): void => {
+
+  const ask = (given: string) => {
     if (given === asked.token) {
       void listing.refetch();
     } else {
       setAsked({ token: given });
     }
   };
+
   const connecting = useSubmission(
     async ({ project, given }: { project: VercelProject; given: string | undefined }) => {
       await connectVercel({
@@ -40,14 +39,17 @@ const PickProject = ({ product, onClose }: { product: Product; onClose: () => vo
       onClose();
     },
   );
+
   const saving = useSubmission(async (given: string) => {
     await api.vercel.saveToken({ productId, token: given });
     onClose();
   });
+
   const busy =
     lookup.state === "loading" ||
     connecting.submission.kind === "sending" ||
     saving.submission.kind === "sending";
+
   const pasted = lookup.state === "loaded" ? lookup.token : undefined;
 
   const saved = lookup.state === "loaded" && lookup.token === undefined;
@@ -94,6 +96,7 @@ const PickProject = ({ product, onClose }: { product: Product; onClose: () => vo
               })),
               pick: (i) => {
                 const project = lookup.projects[i];
+
                 if (project) {
                   connecting.submit({ given: lookup.token, project });
                 }
@@ -131,8 +134,6 @@ const PickProject = ({ product, onClose }: { product: Product; onClose: () => vo
   );
 };
 
-/** The founder names the product an ask left unnamed: a guess would feed that
- *  product's users bets another project's visitors. */
 const ChooseProduct = ({
   products,
   onChoose,
@@ -141,6 +142,7 @@ const ChooseProduct = ({
   onChoose: (productId: string) => void;
 }) => {
   const [cursor, setCursor] = useState(0);
+
   if (products.length === 0) {
     return (
       <div className="text-sm leading-snug text-fg">
@@ -148,6 +150,7 @@ const ChooseProduct = ({
       </div>
     );
   }
+
   return (
     <div className="space-y-3">
       <div className="text-sm leading-snug text-fg">
@@ -162,6 +165,7 @@ const ChooseProduct = ({
           })),
           pick: (i) => {
             const product = products[i];
+
             if (product) {
               onChoose(product.id);
             }
@@ -174,7 +178,6 @@ const ChooseProduct = ({
   );
 };
 
-// The token also powers product metrics and the team's deployments.
 export const ConnectVercel = ({
   productId,
   onClose,
@@ -198,10 +201,13 @@ export const ConnectVercel = ({
       </Modal>
     );
   }
+
   const product = products.find((p) => p.id === target);
+
   if (!product) {
     return null;
   }
+
   return (
     <Modal title="Connect Vercel" subtitle={product.name} width="lg" onClose={onClose}>
       <div className="space-y-3">

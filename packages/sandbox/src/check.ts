@@ -34,31 +34,34 @@ const Exited = z.object({ code: z.number() });
 const runProbe: SandboxProbe = async ([bin, ...args], env) => {
   try {
     await execFileAsync(bin, args, { env, timeout: PROBE_TIMEOUT_MS });
+
     return 0;
   } catch (error) {
     const exited = Exited.safeParse(error);
+
     return exited.success ? exited.data.code : null;
   }
 };
 
-// Exit 0 only when the canary cannot be read (3 when it can) and a new file beside it, where no
-// rule allows a write, cannot be made (5 when it can).
 const CANARIES = `const fs = require("node:fs");
 const [canary, fresh] = process.argv.slice(1);
 try { fs.readFileSync(canary); process.exit(3); } catch (error) { if (error.code !== "EPERM") process.exit(4); }
 try { fs.writeFileSync(fresh, "x", { flag: "wx" }); process.exit(5); } catch (error) { process.exit(error.code === "EPERM" ? 0 : 6); }`;
 
-const checkOf = (code: number | null): SandboxCheck => {
+const checkOf = (code: number | null) => {
   if (code === null) {
-    return { kind: "unavailable" };
+    return { kind: "unavailable" } satisfies SandboxCheck;
   }
+
   if (code === 0) {
-    return { kind: "holds" };
+    return { kind: "holds" } satisfies SandboxCheck;
   }
+
   if (code === 3) {
-    return { kind: "read-unreadable" };
+    return { kind: "read-unreadable" } satisfies SandboxCheck;
   }
-  return code === 5 ? { kind: "wrote-outside" } : { code, kind: "failed" };
+
+  return (code === 5 ? { kind: "wrote-outside" } : { code, kind: "failed" }) satisfies SandboxCheck;
 };
 
 /**
@@ -67,19 +70,19 @@ const checkOf = (code: number | null): SandboxCheck => {
  * runtime the ACP adapters run on must start. The canaries sit in TMPDIR, so the probe's profile
  * leaves out the scratch folders every run writes. Free: nothing here asks a model.
  */
-export const checkSandbox = async (
-  sandbox: Sandbox,
-  probe: SandboxProbe = runProbe,
-): Promise<SandboxCheck> => {
+export const checkSandbox = async (sandbox: Sandbox, probe: SandboxProbe = runProbe) => {
   const dir = await realpath(await mkdtemp(path.join(tmpdir(), "sandbox-check-")));
+
   try {
     const canary = path.join(dir, "vault.json");
     await writeFile(canary, "canary");
+
     const probed: Sandbox = {
       ...sandbox,
       scratch: [],
       unreadable: [...sandbox.unreadable, { match: "subpath", path: canary }],
     };
+
     const codes = await Promise.all(
       RUNNER_IDS.map((runner) =>
         probe(
@@ -94,7 +97,10 @@ export const checkSandbox = async (
         ),
       ),
     );
-    return codes.map(checkOf).find((check) => check.kind !== "holds") ?? { kind: "holds" };
+
+    return (codes.map(checkOf).find((check) => check.kind !== "holds") ?? {
+      kind: "holds",
+    }) satisfies SandboxCheck;
   } finally {
     await rm(dir, { force: true, recursive: true });
   }

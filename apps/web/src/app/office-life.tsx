@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode, Ref } from "react";
 import { cn } from "cn";
 
-// Game sprites render at 1.5x.
 const LINES = [
   "ship it",
   "standup in 5",
@@ -18,7 +17,6 @@ const LINES = [
   "just one more fix",
 ];
 
-// delivered on arrival when the visitor clicks somewhere on the card
 const CORPORATE_LINES = [
   "per my last email",
   "let's circle back",
@@ -33,12 +31,11 @@ const CORPORATE_LINES = [
 ];
 
 type Row = "down" | "left" | "right" | "up";
+
 const ROW_Y = { down: 0, left: -96, right: -192, up: -288 } satisfies Record<Row, number>;
-// px/s at 1.5x
 const SPEED = 64;
 const NPC_W = 48;
 const NPC_H = 96;
-// chair seat inside desk.png (natural 52x96, drawn at 1.5x)
 const SEAT_X = 39;
 const SEAT_Y = 114;
 
@@ -57,14 +54,14 @@ interface Pose {
   bubble: string | null;
 }
 
-const pick = <T,>(arr: readonly T[]): T | null =>
-  arr[Math.floor(Math.random() * arr.length)] ?? null;
+const pick = <T,>(arr: readonly T[]) => arr[Math.floor(Math.random() * arr.length)] ?? null;
 
-const rowToward = (dx: number, dy: number): Row => {
+const rowToward = (dx: number, dy: number) => {
   if (Math.abs(dx) > Math.abs(dy)) {
-    return dx < 0 ? "left" : "right";
+    return (dx < 0 ? "left" : "right") satisfies Row;
   }
-  return dy < 0 ? "up" : "down";
+
+  return (dy < 0 ? "up" : "down") satisfies Row;
 };
 
 const Desk = ({ ref, raised }: { ref: Ref<HTMLImageElement>; raised: boolean }) => (
@@ -129,7 +126,9 @@ export const OfficeLife = ({ title }: { title: ReactNode }) => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       return;
     }
+
     const overlay = overlayRef.current;
+
     if (!overlay) {
       return;
     }
@@ -143,6 +142,7 @@ export const OfficeLife = ({ title }: { title: ReactNode }) => {
       x: 60,
       y: overlay.clientHeight * 0.35,
     };
+
     let timer: number | null = null;
 
     const applyPose = (next: Pose) => {
@@ -154,13 +154,15 @@ export const OfficeLife = ({ title }: { title: ReactNode }) => {
       timer = window.setTimeout(fn, ms);
     };
 
-    const spotIn = (el: HTMLElement | null, dx: number, dy: number): Point | null => {
+    const spotIn = (el: HTMLElement | null, dx: number, dy: number) => {
       if (!el) {
         return null;
       }
+
       const o = overlay.getBoundingClientRect();
       const r = el.getBoundingClientRect();
-      return { x: r.left - o.left + dx, y: r.top - o.top + dy };
+
+      return { x: r.left - o.left + dx, y: r.top - o.top + dy } satisfies Point | null;
     };
 
     const walk = (tx: number, ty: number, done: () => void) => {
@@ -190,22 +192,27 @@ export const OfficeLife = ({ title }: { title: ReactNode }) => {
       later(ms, done);
     };
 
-    // feet on the chair, so the chair and desk draw over the body
-    const sitAtDesk = (done: () => void): boolean => {
+    const sitAtDesk = (done: () => void) => {
       const seat = spotIn(deskRef.current, SEAT_X - NPC_W / 2, SEAT_Y - (NPC_H - 8));
+
       if (!seat) {
         return false;
       }
+
       walk(seat.x, seat.y, () => idle("up", 4200 + Math.random() * 3600, { sitting: true }, done));
+
       return true;
     };
 
-    const waterBreak = (done: () => void): boolean => {
+    const waterBreak = (done: () => void) => {
       const spot = spotIn(coolerRef.current, -3, 20);
+
       if (!spot) {
         return false;
       }
+
       walk(spot.x, spot.y, () => idle("up", 2400 + Math.random() * 1600, {}, done));
+
       return true;
     };
 
@@ -228,9 +235,9 @@ export const OfficeLife = ({ title }: { title: ReactNode }) => {
       );
     };
 
-    // a prop missing from the DOM turns its routine into a wander
     const tick = () => {
       const roll = Math.random();
+
       if (roll < 0.25) {
         if (sitAtDesk(tick)) {
           return;
@@ -241,28 +248,33 @@ export const OfficeLife = ({ title }: { title: ReactNode }) => {
         }
       } else if (roll < 0.68) {
         mutter(tick);
+
         return;
       }
+
       wander(tick);
     };
 
-    // click anywhere non-interactive on the card: the employee reports there,
-    // says something corporate, then goes back to their routine
     const cardEl = overlay.closest(".px-window");
     const card = cardEl instanceof HTMLElement ? cardEl : overlay.parentElement;
+
     const onCardClick = (e: MouseEvent) => {
       if (!(e.target instanceof Element)) {
         return;
       }
+
       if (e.target.closest("a, button, [role='button']")) {
         return;
       }
+
       const o = overlay.getBoundingClientRect();
       const tx = Math.min(Math.max(e.clientX - o.left - NPC_W / 2, 4), o.width - NPC_W - 4);
       const ty = Math.min(Math.max(e.clientY - o.top - (NPC_H - 12), 4), o.height - NPC_H - 4);
+
       if (timer !== null) {
         window.clearTimeout(timer);
       }
+
       setMarker({ x: e.clientX - o.left, y: e.clientY - o.top });
       walk(tx, ty, () => {
         setMarker(null);
@@ -271,14 +283,17 @@ export const OfficeLife = ({ title }: { title: ReactNode }) => {
         );
       });
     };
+
     card?.addEventListener("click", onCardClick);
 
     applyPose(current);
     later(600, tick);
+
     return () => {
       if (timer !== null) {
         window.clearTimeout(timer);
       }
+
       card?.removeEventListener("click", onCardClick);
     };
   }, []);

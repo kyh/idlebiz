@@ -3,20 +3,13 @@ import type { NextRequest } from "next/server";
 
 import { negotiateMediaType, notAcceptableBody, withVaryAccept } from "@/lib/agent/accept";
 
-/**
- * Markdown content negotiation: one URL, two representations. Server
- * Components always render HTML, so Markdown-preferring requests are rewritten
- * to `/api/markdown/*` before the page renders.
- * <https://acceptmarkdown.com/recipes/nextjs>
- */
-
-const applyVary = (response: NextResponse): NextResponse => {
+const applyVary = (response: NextResponse) => {
   response.headers.set("Vary", withVaryAccept(response.headers.get("Vary")));
+
   return response;
 };
 
-// React's own transport (`Accept: text/x-component`, Server Actions): never negotiate it.
-const isFlightRequest = (request: NextRequest): boolean =>
+const isFlightRequest = (request: NextRequest) =>
   (request.headers.get("accept") ?? "").toLowerCase().includes("text/x-component") ||
   request.headers.has("next-action");
 
@@ -32,6 +25,7 @@ export const proxy = (request: NextRequest) => {
     const url = request.nextUrl.clone();
     const { pathname } = request.nextUrl;
     url.pathname = `/api/markdown${pathname === "/" ? "" : pathname}`;
+
     return applyVary(NextResponse.rewrite(url));
   }
 

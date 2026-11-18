@@ -6,7 +6,6 @@ import { standingInstructions } from "../prompts/instructions";
 import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
-/** `description` is the package's one-line summary for other readers of the format; this app reads `title`. */
 const EmployeeDocSchema = z.object({
   body: z.string(),
   fields: packageFields("agent").extend({ description: z.string() }),
@@ -21,7 +20,7 @@ const EmployeeDocSchema = z.object({
   }),
 });
 
-export const employeeBody = (e: Employee, co: Company, products: readonly Product[]): string =>
+export const employeeBody = (e: Employee, co: Company, products: readonly Product[]) =>
   standingInstructions({
     company: co,
     employee: e,
@@ -30,32 +29,30 @@ export const employeeBody = (e: Employee, co: Company, products: readonly Produc
     products,
   });
 
-export const employeeToDoc = (
-  e: Employee,
-  co: Company,
-  products: readonly Product[],
-): z.input<typeof EmployeeDocSchema> => ({
-  body: employeeBody(e, co, products),
-  fields: {
-    description: e.title || e.role,
-    kind: "agent",
-    name: e.name,
-    schema: PACKAGE_SCHEMA,
-    slug: e.id,
-  },
-  metadata: {
-    createdAt: e.createdAt,
-    deskIndex: e.deskIndex,
-    persona: e.persona,
-    role: e.role,
-    runner: e.runner,
-    spriteSeed: e.spriteSeed,
-    title: e.title,
-  },
-});
+export const employeeToDoc = (e: Employee, co: Company, products: readonly Product[]) =>
+  ({
+    body: employeeBody(e, co, products),
+    fields: {
+      description: e.title || e.role,
+      kind: "agent",
+      name: e.name,
+      schema: PACKAGE_SCHEMA,
+      slug: e.id,
+    },
+    metadata: {
+      createdAt: e.createdAt,
+      deskIndex: e.deskIndex,
+      persona: e.persona,
+      role: e.role,
+      runner: e.runner,
+      spriteSeed: e.spriteSeed,
+      title: e.title,
+    },
+  }) satisfies z.input<typeof EmployeeDocSchema>;
 
-export const docToEmployee = (doc: FrontmatterDoc): Employee => {
+export const docToEmployee = (doc: FrontmatterDoc) => {
   const { fields, metadata: m } = decodeDoc(EmployeeDocSchema, doc);
+
   return {
     createdAt: m.createdAt,
     deskIndex: m.deskIndex,
@@ -71,5 +68,5 @@ export const docToEmployee = (doc: FrontmatterDoc): Employee => {
     spriteSeed: m.spriteSeed,
     status: "idle",
     title: m.title,
-  };
+  } satisfies Employee;
 };

@@ -19,31 +19,21 @@ import type { ToolAsk } from "./tool-ask";
 import type { AgentEvent, AgentUsage } from "./events";
 import type { Argv } from "./registry";
 
-// One ACP turn. Owns subprocess teardown and watchdogs, and bills what `usageMeter` counts;
-// adapters own the CLI wire formats.
-
-/** Keep only the tail of stderr — used solely for final error reporting. */
 const STDERR_TAIL_MAX = 16_000;
 
-/** Human-friendly duration for watchdog messages ("45m", "3s"). */
-const fmtMs = (ms: number): string =>
+const fmtMs = (ms: number) =>
   ms >= 60_000 ? `${Math.round(ms / 60_000)}m` : `${Math.round(ms / 1000)}s`;
 
-/** Longer than the 2s both adapters give their CLI after stdin closes before signalling it. */
 const TEARDOWN_GRACE_MS = 5000;
 
-/** How long an exited agent's pipes get to close: its own children can hold them open for good. */
 const EXIT_CLOSE_GRACE_MS = 250;
 
-/** How long a dropped connection waits for the agent's exit, which says why it died. */
 const DROPPED_CONNECTION_GRACE_MS = 1000;
 
-/** How a client declares codex-acp's typed session failures (the JetBrains AIR extension). */
 const TYPED_FAILURES: ClientCapabilities = {
   _meta: { jetbrains: { air: { capabilities: ["sessionFailure"], version: 1 } } },
 };
 
-/** A declared typed failure, as it rides on the prompt response that ends the turn. */
 const SessionFailureMeta = z.object({
   jetbrains: z.object({
     air: z.object({
@@ -76,7 +66,7 @@ export interface AcpAgent {
   env: Record<string, string>;
 }
 
-export interface PermissionDecision {
+interface PermissionDecision {
   allow: boolean;
 }
 
@@ -143,70 +133,81 @@ export interface AcpTurnResult {
   usage: AgentUsage;
 }
 
-/**
- * How a turn ends on a failure of class `failure`: a usage limit with when the provider said it
- * lifts, on the rate limit it `reported` or in its `error`'s words.
- */
-const endOf = (failure: FailureClass, error: string, reported: number | null): TurnFailure =>
-  failure === "usage-limit"
+const endOf = (failure: FailureClass, error: string, reported: number | null) =>
+  (failure === "usage-limit"
     ? { class: failure, error, kind: "failed", reportedReset: liftsAt(error, reported) }
-    : { class: failure, error, kind: "failed" };
+    : { class: failure, error, kind: "failed" }) satisfies TurnFailure;
 
-/**
- * How a turn ends on the typed failure its agent reported, or null when it reported none. A
- * warning is one the turn got past.
- */
-const failureEnd = (meta: PromptResponse["_meta"], reported: number | null): TurnFailure | null => {
+const failureEnd = (meta: PromptResponse["_meta"], reported: number | null) => {
   const parsed = SessionFailureMeta.safeParse(meta);
+
   if (!parsed.success || parsed.data.jetbrains.air.sessionFailure.severity !== "error") {
     return null;
   }
+
   const { actions, category, details, title } = parsed.data.jetbrains.air.sessionFailure;
   const error = details === undefined ? title : `${title}\n${details}`;
+
   return endOf(classOfTypedFailure({ actions, category, text: error }), error, reported);
 };
 
-/** What an agent wrote to stderr, read only when its turn fails: kept as chunks, bounded, joined then. */
 const stderrTail = () => {
   const chunks: Buffer[] = [];
   let bytes = 0;
+
   return {
-    keep: (chunk: Buffer): void => {
+    keep: (chunk: Buffer) => {
       chunks.push(chunk);
       bytes += chunk.length;
+
       while (bytes > 2 * STDERR_TAIL_MAX && chunks.length > 1) {
         bytes -= chunks.shift()?.length ?? 0;
       }
     },
-    text: (): string => Buffer.concat(chunks).toString().slice(-STDERR_TAIL_MAX).trim(),
+    text: () => Buffer.concat(chunks).toString().slice(-STDERR_TAIL_MAX).trim(),
   };
 };
 
-/** Every agent spawned whose process group has not been killed yet, its leader alive or not. */
 const unkilled = new Set<ChildProcess>();
 
-// Even once the leader is gone: codex-acp dies on SIGTERM without stopping its app-server,
-// and a group's id cannot be reused while any member of it lives. Once only: after that it can.
-const killGroup = (child: ChildProcess): void => {
+const killGroup = (child: ChildProcess) => {
   if (!unkilled.delete(child) || child.pid === undefined) {
-    return;
+    return false;
   }
+
   try {
     process.kill(-child.pid, "SIGKILL");
+
+    return true;
   } catch {
-    /* group already gone */
+    return false;
   }
 };
 
-const leaderExit = async (child: ChildProcess): Promise<void> => {
+const letGo = (ending: ChildProcess) => {
+  try {
+    ending.stdin?.destroy();
+    ending.stdout?.destroy();
+    ending.stderr?.destroy();
+
+    if (!ending.killed) {
+      ending.kill("SIGTERM");
+    }
+
+    ending.unref();
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const leaderExit = async (child: ChildProcess) => {
   if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) {
     return;
   }
-  try {
-    await once(child, "exit");
-  } catch {
-    /* it reported an error instead: nothing left to wait for */
-  }
+
+  await once(child, "exit").catch(() => null);
 };
 
 /**
@@ -214,21 +215,23 @@ const leaderExit = async (child: ChildProcess): Promise<void> => {
  * stop, waits up to `graceMs` for them to shut down, then kills every agent's process group. A
  * group whose leader has exited is not waited on, since nothing is left in it to stop the rest.
  */
-export const endAllAgents = async (graceMs = TEARDOWN_GRACE_MS): Promise<void> => {
+export const endAllAgents = async (graceMs = TEARDOWN_GRACE_MS) => {
   for (const child of unkilled) {
     if (!child.killed) {
       child.kill("SIGTERM");
     }
   }
+
   await Promise.race([Promise.all([...unkilled].map(leaderExit)), delay(graceMs)]);
+
   for (const child of unkilled) {
     killGroup(child);
   }
 };
 
-export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
+export const runAcpTurn = (opts: AcpTurnOptions) =>
   // oxlint-disable-next-line promise/avoid-new -- wraps a callback API (child process and ACP client events)
-  new Promise((resolve) => {
+  new Promise<AcpTurnResult>((resolve) => {
     let child: ChildProcess | undefined;
     let settled = false;
     const ended = new AbortController();
@@ -241,73 +244,70 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     let lastMessage = "";
     let pending = "";
 
-    // ACP has no message-end marker. Flush prose before a tool call or at turn end.
-    const flushMessage = (): void => {
+    const flushMessage = () => {
       const text = pending.trim();
       pending = "";
+
       if (!text) {
         return;
       }
+
       lastMessage = text;
       opts.onEvent({ text, type: "message_end" });
     };
 
-    const settle = (res: AcpTurnResult): void => {
+    const settle = (res: AcpTurnResult) => {
       if (settled) {
         return;
       }
+
       settled = true;
       ended.abort();
+
       if (idleTimer) {
         clearTimeout(idleTimer);
       }
+
       if (sessionTimer) {
         clearTimeout(sessionTimer);
       }
-      // Both adapters tear down their CLI and its tools on stdin EOF or SIGTERM; an
-      // immediate SIGKILL would skip the CLI's cleanup of its own detached tool groups.
-      // The group kill is only for an agent that is still wedged after the grace period.
+
       if (child) {
         const ending = child;
-        try {
-          ending.stdin?.destroy();
-          ending.stdout?.destroy();
-          ending.stderr?.destroy();
-          if (!ending.killed) {
-            ending.kill("SIGTERM");
-          }
-          ending.unref();
-        } catch {
-          /* already gone */
-        }
+
+        letGo(ending);
+
         const backstop = setTimeout(
           () => killGroup(ending),
           opts.teardownGraceMs ?? TEARDOWN_GRACE_MS,
         );
+
         backstop.unref();
       }
+
       resolve(res);
     };
 
-    /** A turn that died mid-flight still spent what it spent. */
-    const result = (end: AcpTurnEnd): AcpTurnResult => ({
-      end,
-      resumed,
-      sessionId,
-      summary: lastMessage,
-      usage: usage.total(),
-    });
-    /** A failure no agent reported (a watchdog, a crash, a refused spawn): only the task's. */
-    const failed = (error: string): AcpTurnResult =>
-      result({ class: "other", error, kind: "failed" });
+    const result = (end: AcpTurnEnd) =>
+      ({
+        end,
+        resumed,
+        sessionId,
+        summary: lastMessage,
+        usage: usage.total(),
+      }) satisfies AcpTurnResult;
 
-    const pokeIdle = (): void => {
+    const failed = (error: string) => result({ class: "other", error, kind: "failed" });
+
+    const pokeIdle = () => {
       if (opts.idleTimeoutMs <= 0 || settled) {
         return;
       }
+
       if (idleTimer) {
         clearTimeout(idleTimer);
       }
+
       idleTimer = setTimeout(() => {
         settle(failed(`no output for ${fmtMs(opts.idleTimeoutMs)} — treating the agent as hung`));
       }, opts.idleTimeoutMs);
@@ -317,10 +317,10 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     const [bin, ...args] = opts.agent.command;
 
     let spawned: ChildProcessByStdio<Writable, Readable, Readable>;
+
     try {
       spawned = spawn(bin, args, {
         cwd: opts.cwd,
-        // its own process group, so the backstop can reach the CLI it runs
         detached: true,
         env: { ...opts.agent.env, ...opts.env },
         signal: opts.signal,
@@ -329,26 +329,29 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
       child = spawned;
     } catch (error) {
       settle(failed(`failed to spawn ${bin}: ${errorMessage(error)}`));
+
       return;
     }
+
     unkilled.add(spawned);
 
     const { stdin, stdout, stderr } = spawned;
-    // Node's adapters hear each pipe's errors: one mid-turn fails the turn in its own words, and one
-    // once the turn has ended reaches nothing that still awaits
     const output: WritableStream<Uint8Array> = Writable.toWeb(stdin);
     const input: ReadableStream<Uint8Array> = Readable.toWeb(stdout);
     stderr.on("data", (d: Buffer) => {
       pokeIdle();
       agentStderr.keep(d);
     });
-    const died = (code: number | null): void =>
+
+    const died = (code: number | null) =>
       settle(failed(agentStderr.text() || `${bin} exited with code ${code} mid-turn`));
+
     child.on("error", (err: Error) => settle(failed(`${bin}: ${err.message}`)));
     child.on("close", died);
     child.on("exit", (code) => setTimeout(() => died(code), EXIT_CLOSE_GRACE_MS).unref());
 
     pokeIdle();
+
     if (opts.maxSessionMs > 0) {
       sessionTimer = setTimeout(() => {
         settle(failed(`exceeded the ${fmtMs(opts.maxSessionMs)} session limit — killed`));
@@ -357,41 +360,49 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
     }
 
     const toolTitles = new Map<string, string>();
+
     const app = client({ name: "idlebiz" })
       .onRequest("session/request_permission", async (ctx) => {
         if (settled) {
           return { outcome: { outcome: "cancelled" } };
         }
+
         pokeIdle();
         const { toolCall } = ctx.params;
+
         const tool = toolAskOf({
           kind: toolCall.kind,
           meta: ctx.params._meta,
           rawInput: toolCall.rawInput,
           title: toolCall.title ?? toolTitles.get(toolCall.toolCallId),
         });
+
         const decision = await opts.onPermission(tool, ended.signal);
-        // Match protocol kinds, not adapter-specific ids. Only one-command approval:
-        // an allow_always would outlive the founder's signature.
-        const pick = (kind: string): string | undefined =>
-          ctx.params.options.find((o) => o.kind === kind)?.optionId;
+
+        const pick = (kind: string) => ctx.params.options.find((o) => o.kind === kind)?.optionId;
+
         const optionId = decision.allow
           ? pick("allow_once")
           : (pick("reject_once") ?? pick("reject_always"));
+
         if (optionId === undefined) {
           return { outcome: { outcome: "cancelled" } };
         }
+
         return { outcome: { optionId, outcome: "selected" } };
       })
       .onNotification("session/update", (ctx) => {
         pokeIdle();
         const { update } = ctx.params;
+
         if (update.sessionUpdate === "agent_message_chunk") {
           if (update.content.type === "text") {
             pending += update.content.text;
           }
+
           return;
         }
+
         if (update.sessionUpdate === "tool_call") {
           toolTitles.set(update.toolCallId, update.title);
           flushMessage();
@@ -400,16 +411,17 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
             title: update.title,
             type: "tool_start",
           });
+
           return;
         }
+
         usage.onUpdate(update);
       });
 
     const stream = ndJsonStream(output, input);
-    const turn = async (): Promise<void> => {
+
+    const turn = async () => {
       const { failure, stopReason } = await app.connectWith(stream, async (agent) => {
-        // Required before anything else. claude's adapter tolerates its
-        // absence; codex's answers every later call with "Not initialized".
         const init = await agent.request("initialize", {
           clientCapabilities: opts.agent.typedFailures ? TYPED_FAILURES : {},
           clientInfo: { name: "idlebiz", version: "1" },
@@ -420,87 +432,94 @@ export const runAcpTurn = (opts: AcpTurnOptions): Promise<AcpTurnResult> =>
           additionalDirectories: [...(opts.addDirs ?? []), ...(opts.agent.readDirs ?? [])],
           cwd: opts.cwd,
         };
+
         if (opts.agent.sessionMeta !== undefined) {
           scope._meta = opts.agent.sessionMeta;
         }
 
-        // Resume without replaying history; a rejected session id falls back to fresh.
-        const resume = async (): Promise<string | undefined> => {
+        const resume = async () => {
           if (
             opts.resumeSessionId === undefined ||
             !init.agentCapabilities?.sessionCapabilities?.resume
           ) {
-            return undefined;
+            return;
           }
-          try {
-            await agent.request("session/resume", { ...scope, sessionId: opts.resumeSessionId });
-            return opts.resumeSessionId;
-          } catch {
-            return undefined;
-          }
+
+          const answered = await agent
+            .request("session/resume", { ...scope, sessionId: opts.resumeSessionId })
+            .then(() => true)
+            .catch(() => false);
+
+          return answered ? opts.resumeSessionId : undefined;
         };
+
         const resumedId = await resume();
         resumed = resumedId !== undefined;
 
-        const startFresh = async (): Promise<string> => {
+        const startFresh = async () => {
           const created = await agent.request("session/new", { ...scope, mcpServers: [] });
+
           return created.sessionId;
         };
+
         sessionId = resumedId ?? (await startFresh());
 
-        // Fresh or resumed, a session starts in a default mode the player's settings may pick, so
-        // this runs every turn, and a mode that cannot be set fails the turn before it prompts.
         await agent.request("session/set_mode", {
           modeId: opts.agent.sessionMode({ ...opts.agent.env, ...opts.env }),
           sessionId,
         });
 
         usage.startPrompt();
+
         const res = await agent.request("session/prompt", {
           prompt: [{ text: opts.prompt(resumed), type: "text" }],
           sessionId,
         });
+
         flushMessage();
         usage.onResponse(res.usage);
+
         return {
           failure: failureEnd(res._meta, usage.rateLimitReset()),
           stopReason: res.stopReason,
         };
       });
+
       if (failure !== null) {
-        // a synthetic failure's title is generic; codex-acp logs the throw behind it on stderr. A
-        // failure of the runner's keeps only the provider's words, which the founder is shown.
         const tail =
           failure.class === "other" || failure.class === "context" ? agentStderr.text() : "";
+
         settle(result(tail ? { ...failure, error: `${failure.error}\n${tail}` } : failure));
+
         return;
       }
+
       if (stopReason === "end_turn") {
         settle(result({ kind: "completed" }));
+
         return;
       }
+
       const tail = agentStderr.text();
       const error = tail ? `agent stopped: ${stopReason}\n${tail}` : `agent stopped: ${stopReason}`;
-      // a turn cut off at the output cap is unfinished, and its session's failure, as claude's
-      // `max_output_tokens` errorKind is. claude-agent-acp reports one as this stop reason, ahead
-      // of any error its result carries: recheck that whenever the adapter is bumped.
+      // WARNING: claude-agent-acp reports the output cap as this stop reason; recheck on each adapter bump.
       settle(
         stopReason === "max_tokens"
           ? result({ class: "context", error, kind: "failed" })
           : failed(error),
       );
     };
+
     void (async () => {
       try {
         await turn();
       } catch (error) {
         if (error instanceof RequestError) {
-          // only the agent's own rejection is read: a watchdog's or a crash's text never is
           settle(result(endOf(classOfRequestError(error), error.message, usage.rateLimitReset())));
+
           return;
         }
-        // Anything else is the connection dropping, and a dying agent drops it before its exit
-        // can report the stderr that says why: that report wins unless no exit follows.
+
         setTimeout(() => settle(failed(errorMessage(error))), DROPPED_CONNECTION_GRACE_MS).unref();
       }
     })();

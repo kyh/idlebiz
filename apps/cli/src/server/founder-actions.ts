@@ -1,8 +1,3 @@
-// What the founder hands the team from the page: a word in the room, a request to one employee, an
-// answer, a sign-off, an assignment, and a connection that resumes the work waiting on it. Each files
-// or queues work through the scheduler, which only runs it; a change everyone should hear about
-// still goes through company-actions.
-
 import * as store from "./store/store";
 import { postToRoom, refuseHeldKey, settleOrderCard } from "./company-actions";
 import { stripeInTestMode } from "./metrics";
@@ -17,29 +12,29 @@ import { RefusalError } from "./refusal";
 import type { Scheduler } from "./scheduler";
 import type { VercelConnection } from "./vercel-connect";
 import { resolveMentions } from "@repo/domain/domain";
-import type { ActionReply, IntegrationAsk, IntegrationKind, Task } from "@repo/domain/domain";
+import type { ActionReply, IntegrationAsk, IntegrationKind } from "@repo/domain/domain";
 
 /** The scheduler's doors for new work: queue a task that exists, or file one and queue it. */
 type Queue = Pick<Scheduler, "enqueue" | "file">;
 
 export const founderActions = (queue: Queue) => {
-  const assign = (taskId: string, employeeId: string): Task => {
+  const assign = (taskId: string, employeeId: string) => {
     const queued = queue.enqueue(taskId, employeeId);
+
     if (!queued) {
       throw new RefusalError("task is not assignable");
     }
+
     return queued;
   };
 
-  /**
-   * Coalesce identical requests still waiting for the same employee. Filed even at the budget
-   * cap, as `enqueue` claims: the founder's word waits for the cap to be raised, never lost.
-   */
-  const wakeEmployee = (employeeId: string, brief: TaskBrief): void => {
+  const wakeEmployee = (employeeId: string, brief: TaskBrief) => {
     const emp = store.getEmployee(employeeId);
+
     if (!emp) {
       return;
     }
+
     const waiting = store
       .openTasksFor(employeeId)
       .some(
@@ -47,6 +42,7 @@ export const founderActions = (queue: Queue) => {
           t.description === brief.description &&
           (t.state.kind === "queued" || t.state.kind === "todo"),
       );
+
     if (!waiting) {
       queue.file(emp, brief, {
         origin: "founder",
@@ -56,104 +52,112 @@ export const founderActions = (queue: Queue) => {
     }
   };
 
-  /** Whole-token @slug or @first-name mentions wake the addressed employees. */
-  const founderMessage = (text: string): void => {
+  const founderMessage = (text: string) => {
     refuseHeldKey(text);
     postToRoom({ kind: "founder" }, text);
+
     for (const employeeId of resolveMentions(text, store.listEmployees())) {
       wakeEmployee(employeeId, founderPing(text));
     }
   };
 
-  /** Direct requests wake the employee without relying on mention parsing. */
-  const directEmployee = (employeeId: string, instruction: string): void => {
+  const directEmployee = (employeeId: string, instruction: string) => {
     const emp = store.getEmployee(employeeId);
+
     if (!emp) {
       throw new RefusalError(`no employee ${employeeId}`);
     }
+
     refuseHeldKey(instruction);
     postToRoom({ kind: "founder" }, `@${emp.id} ${instruction}`, emp.id);
     wakeEmployee(employeeId, founderPing(instruction));
   };
 
-  const resumeBlocked = (taskId: string, answer: string, whenNotBlocked: string): Task => {
+  const resumeBlocked = (taskId: string, answer: string, whenNotBlocked: string) => {
     refuseHeldKey(answer);
     const continuation = store.resolveBlockedWithAnswer(taskId, answer);
+
     if (!continuation || !continuation.assigneeId) {
       throw new RefusalError(whenNotBlocked);
     }
+
     return assign(continuation.id, continuation.assigneeId);
   };
 
-  const answerQuestion = (taskId: string, answer: string): Task =>
+  const answerQuestion = (taskId: string, answer: string) =>
     resumeBlocked(taskId, answer, "task is not awaiting an answer");
 
-  const resolveAction = (taskId: string, reply: ActionReply): Task => {
+  const resolveAction = (taskId: string, reply: ActionReply) => {
     const task = store.getTask(taskId);
+
     if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "action") {
       throw new RefusalError("task is not awaiting an action");
     }
+
     if (task.origin === "order") {
       return settleOrderCard(taskId, reply);
     }
+
     return resumeBlocked(taskId, actionAnswer(reply), "could not resume the task");
   };
 
-  const resolveApproval = (taskId: string, approved: boolean): Task => {
+  const resolveApproval = (taskId: string, approved: boolean) => {
     const task = store.getTask(taskId);
+
     if (!task || task.state.kind !== "blocked" || task.state.ask.type !== "approval") {
       throw new RefusalError("task is not awaiting an approval");
     }
+
     const { ask } = task.state;
     const continuation = store.resolveBlockedWithAnswer(taskId, approvalAnswer(approved, ask));
+
     if (!continuation?.assigneeId) {
       throw new RefusalError("could not resume the task");
     }
-    // Record before the continuation can start: its retry is held again, and must find the
-    // sign-off already there.
+
     if (approved) {
       store.grantApproval(continuation.id, ask.command);
     }
+
     return assign(continuation.id, continuation.assigneeId);
   };
 
-  const resumeAsks = (answers: (ask: IntegrationAsk) => boolean): void => {
+  const resumeAsks = (answers: (ask: IntegrationAsk) => boolean) => {
     if (!store.getCompany()) {
       return;
     }
+
     for (const task of store.listOpenTasks()) {
       const st = task.state;
+
       if (st.kind !== "blocked" || st.ask.type !== "integration") {
         continue;
       }
+
       if (!answers(st.ask)) {
         continue;
       }
+
       const continuation = store.resolveBlockedWithAnswer(
         task.id,
         integrationConnectedAnswer(st.ask.integration),
       );
+
       if (continuation?.assigneeId) {
         queue.enqueue(continuation.id, continuation.assigneeId);
       }
     }
   };
 
-  /** Resume every ask waiting on `kind`, which the founder has just connected. */
-  const resumeIntegrationAsks = (kind: Exclude<IntegrationKind, "vercel">): void => {
-    // A test-mode key counts no money: a run resumed on it for revenue finds the same test mode
-    // and asks again.
+  const resumeIntegrationAsks = (kind: Exclude<IntegrationKind, "vercel">) => {
     if (kind === "stripe" && stripeInTestMode()) {
       return;
     }
+
     resumeAsks((ask) => ask.integration === kind);
   };
 
-  /**
-   * Resume the Vercel asks `connection` answers: every one for the first token, else those about
-   * its product and any that named none. Another product's ask waits on that product's binding.
-   */
-  const resumeVercelAsks = (connection: VercelConnection): void => {
+  const resumeVercelAsks = (connection: VercelConnection) => {
     resumeAsks(
       (ask) =>
         ask.integration === "vercel" &&

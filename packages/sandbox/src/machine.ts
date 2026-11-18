@@ -25,13 +25,6 @@ export class FolderRefusedError extends Error {
   }
 }
 
-/**
- * The founder's logins under HOME, which no run reads or writes. A file that holds a login is
- * sandboxed whole, even where a toolchain reads it on every build (`.npmrc`, `.m2/settings.xml`,
- * `.gradle/gradle.properties`); the caches and plugins beside it (`~/.m2/repository`,
- * `~/.pulumi/plugins`, the rest of `~/.gradle`) stay readable. So does `~/.yarnrc.yml`, yarn's
- * settings, where `yarn npm login` adds a token (docs/sandbox.md's "What stays open").
- */
 const LOGINS = [
   ".ssh",
   ".config/gh",
@@ -83,7 +76,6 @@ const LOGINS = [
   ".config/op",
   ".config/github-copilot",
   ".appstoreconnect",
-  // the updater's signing key: whoever holds it ships code to every installed IdleBiz
   ".tauri",
   ".agent-browser/auth",
   ".agent-browser/.encryption-key",
@@ -98,20 +90,9 @@ const LOGINS = [
   "Library/Cookies",
 ];
 
-/**
- * Each runner's home, and what of it the sandbox treats apart from the rest, which no run writes;
- * why each is sandboxed so is docs/sandbox.md's "A run's sandbox". `state` is what its runs write, each a
- * prefix, since a CLI writes a file through a sibling it renames over it; one ending in a slash is
- * only that folder. claude's `projects/` is written only for the run's own folder
- * (`Sandbox.claudeProjects`). `account` is where the CLI records the founder's account, in the home
- * and beside it in HOME, each with every name that starts with it, which only the sign-in writes.
- * `personal` is what of the founder's own its runs cannot read, in the home and in HOME, and
- * `absent` what they read as missing.
- */
 const RUNNER_HOMES = {
   claude: {
     absent: [],
-    // its MCP servers, user-wide and per project, start in the founder's own sessions, unsandboxed
     account: [".claude.json"],
     dir: ".claude",
     override: "CLAUDE_CONFIG_DIR",
@@ -141,7 +122,6 @@ const RUNNER_HOMES = {
     account: [],
     dir: ".codex",
     override: "CODEX_HOME",
-    // its own skills are installed in `skills/.system`, and go with the rest
     personal: {
       home: ["skills", "AGENTS.md", "AGENTS.override.md", "memories"],
       user: [".agents/skills"],
@@ -156,7 +136,6 @@ const RUNNER_HOMES = {
       "rollout-migrations/",
       "history.jsonl",
       "session_index.jsonl",
-      // refreshed as a run signs in
       "auth.json",
       "installation_id",
       "version.json",
@@ -164,7 +143,6 @@ const RUNNER_HOMES = {
       "internal_storage.json",
       ".sandbox_migration",
       ".personality_migration",
-      // its databases, each with its -wal and -shm
       "state_",
       "logs_",
       "queue_",
@@ -185,12 +163,6 @@ const RUNNER_HOMES = {
   }
 >;
 
-/**
- * Sockets in the scratch folders of what acts as the founder, which a run could otherwise remove
- * and listen in place of: podman's machine sockets in TMPDIR, claude's sessions, which take
- * messages from each other, the codex app's browser tool, which drives the founder's Chrome, and
- * OpenAI's computer-use service.
- */
 const SCRATCH_SOCKETS = [
   path.join(tmpdir(), "podman"),
   "/private/tmp/cc-socks",
@@ -198,156 +170,144 @@ const SCRATCH_SOCKETS = [
   "/private/tmp/com.openai.sky.CUAService",
 ];
 
-/**
- * Where a terminal keeps, in the founder's TMPDIR, the shims it puts first on its own PATH: cmux's
- * `claude` and `codex` wrappers, one folder per panel. The host's PATH names none of them.
- */
 const TERMINAL_SHIMS = ["cmux-cli-shims"];
 
-// Chrome's DevTools port (a browser the founder debugs, signed in as them) and node's inspector:
-// each answers anyone on loopback as the founder. The host closes its own beside them.
 const DEBUGGER_PORTS = [9222, 9229];
 
 /** The path Seatbelt sees for `file`: the real path of the deepest part that exists, the rest after it. */
-export const realPathOf = async (file: string): Promise<string> => {
+export const realPathOf: (file: string) => Promise<string> = async (file) => {
   try {
     return await realpath(file);
   } catch {
     const parent = path.dirname(file);
+
     return parent === file ? file : path.join(await realPathOf(parent), path.basename(file));
   }
 };
 
-/** `named`, and where it leads when a symlink on its way points somewhere else. */
-const reachOf = async (named: string, match: Reach["match"] = "subpath"): Promise<Reach[]> => {
+const reachOf = async (named: string, match: Reach["match"] = "subpath") => {
   const resolved = await realPathOf(named);
-  return [named, ...(resolved === named ? [] : [resolved])].map((at): Reach => ({
-    match,
-    path: at,
-  }));
+
+  return [named, ...(resolved === named ? [] : [resolved])].map(
+    (at) =>
+      ({
+        match,
+        path: at,
+      }) satisfies Reach,
+  );
 };
 
-const reachesOf = async (
-  paths: readonly string[],
-  match: Reach["match"] = "subpath",
-): Promise<Reach[]> => {
+const reachesOf = async (paths: readonly string[], match: Reach["match"] = "subpath") => {
   const reaches = await Promise.all(paths.map((at) => reachOf(at, match)));
+
   return reaches.flat();
 };
 
-/** Whether `file` is there and can be run. */
-const runnable = async (file: string): Promise<boolean> => {
+const runnable = async (file: string) => {
   try {
     await access(file, constants.X_OK);
+
     return true;
   } catch {
     return false;
   }
 };
 
-/**
- * What spawning `command` with `pathDirs` as PATH may run: itself when it names a path, else
- * every copy on PATH, not just the first, since a shim found first can run the next one.
- */
-const foundOn = async (command: string, pathDirs: readonly string[]): Promise<string[]> => {
+const foundOn = async (command: string, pathDirs: readonly string[]) => {
   if (command.includes(path.sep)) {
     return [path.resolve(command)];
   }
+
   const files = pathDirs.map((dir) => path.join(dir, command));
   const runs = await Promise.all(files.map(runnable));
+
   return files.filter((_file, at) => runs[at] === true);
 };
 
-// as the kernel gives up on a chain of symlinks
 const MAX_LINKS = 32;
 
-/** `file`, then each path its symlinks lead through, as each link names it. */
-const linkChain = async (file: string): Promise<string[]> => {
+const linkChain = async (file: string) => {
   const chain = [file];
   let at = file;
+
   while (chain.length <= MAX_LINKS) {
     const target = await readlink(at).catch(() => null);
+
     if (target === null) {
       break;
     }
+
     at = path.resolve(path.dirname(at), target);
     chain.push(at);
   }
+
   return chain;
 };
 
-/** Every symlink in `folders`: a program on PATH, wherever it leads. */
-const linksIn = async (folders: readonly string[]): Promise<string[]> => {
+const linksIn = async (folders: readonly string[]) => {
   const links = await Promise.all(
     folders.map(async (folder) => {
       const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
+
       return entries
         .filter((entry) => entry.isSymbolicLink())
         .map((entry) => path.join(folder, entry.name));
     }),
   );
+
   return links.flat();
 };
 
-/**
- * Where each symlink in a runner's home, or in a folder there, leads: a dotfile manager links the
- * founder's settings, instructions and skills in from elsewhere, maybe a folder a run writes.
- */
-const homeLinkTargets = async (home: string): Promise<string[]> => {
+const homeLinkTargets = async (home: string) => {
   const entries = await readdir(home, { withFileTypes: true }).catch(() => []);
+
   const folders = entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => path.join(home, entry.name));
+
   const links = await linksIn([home, ...folders]);
   const chains = await Promise.all(links.map(linkChain));
+
   return chains.flatMap((chain) => chain.slice(1));
 };
 
-/**
- * The run's own `folders`, each where the save resolves. Each must sit in the save with no
- * symlink from the save down to it: the sandbox allows the path it names, never where a link a run
- * could have left there leads.
- */
-const ownFolders = async (save: string, folders: readonly string[]): Promise<Reach[]> => {
+const ownFolders = async (save: string, folders: readonly string[]) => {
   const realSave = await realPathOf(save);
+
   return await Promise.all(
-    folders.map(async (folder): Promise<Reach> => {
+    folders.map(async (folder) => {
       const inSave = path.relative(save, folder);
       const parts = inSave.split(path.sep);
+
       if (inSave === "" || path.isAbsolute(inSave) || parts[0] === "..") {
         throw new FolderRefusedError({ folder, kind: "outside-save" });
       }
+
       for (let depth = 1; depth <= parts.length; depth += 1) {
         const at = path.join(save, ...parts.slice(0, depth));
         const stats = await lstat(at).catch(() => null);
+
         if (stats?.isSymbolicLink() === true) {
           throw new FolderRefusedError({ folder, kind: "linked", link: at });
         }
       }
-      return { match: "subpath", path: path.join(realSave, inSave) };
+
+      return { match: "subpath", path: path.join(realSave, inSave) } satisfies Reach;
     }),
   );
 };
 
-/**
- * A runner's home, and the state in it its runs write, each where it is named and where it leads:
- * a dotfile manager may link any of it in from elsewhere. Moved by `override`, the account file
- * sits only in it, else beside it in HOME too. A moved home leaves the one in HOME the founder's
- * own CLI keeps, account file and all, still theirs: it stays in `home`, which the other runner's
- * runs read none of and this runner's write none of.
- */
 const runnerHomeOf = async (
   home: string,
   runner: RunnerId,
   env: Readonly<Record<string, string | undefined>>,
-): Promise<RunnerHome> => {
+) => {
   const { absent, account, dir, override, personal, state } = RUNNER_HOMES[runner];
   const moved = env[override];
   const inHome = moved === undefined || moved === "";
   const usual = path.join(home, dir);
   const folder = inHome ? usual : path.resolve(moved);
-  // the account file in HOME is the founder's whenever the home is moved, even to where the one in
-  // HOME leads: the runner then keeps its own in the moved folder, and `accounts` names only that
+
   const leftBehind = inHome
     ? []
     : [
@@ -357,6 +317,7 @@ const runnerHomeOf = async (
           "prefix",
         )),
       ];
+
   const states = await Promise.all(
     state.map((name) =>
       name.endsWith("/")
@@ -364,10 +325,12 @@ const runnerHomeOf = async (
         : reachOf(path.join(folder, name), "prefix"),
     ),
   );
+
   const accounts = account.flatMap((name) => [
     path.join(folder, name),
     ...(inHome ? [path.join(home, name)] : []),
   ]);
+
   return {
     absent: await reachesOf(absent.map((name) => path.join(folder, name))),
     account: await reachesOf(accounts, "prefix"),
@@ -378,18 +341,17 @@ const runnerHomeOf = async (
       ...personal.user.map((name) => path.join(home, name)),
     ]),
     state: states.flat(),
-  };
+  } satisfies RunnerHome;
 };
 
-/** Where claude keeps `cwd`'s transcripts and memory. */
-const claudeProjectOf = (claudeHome: string, cwd: string): string =>
+const claudeProjectOf = (claudeHome: string, cwd: string) =>
   path.join(claudeHome, "projects", cwd.replaceAll(/[^a-zA-Z0-9]/gu, "-"));
 
 const execFileAsync = promisify(execFile);
 
-/** macOS's per-user cache folder (DARWIN_USER_CACHE_DIR), where its own libraries write. */
-const darwinUserCacheDir = async (): Promise<string> => {
+const darwinUserCacheDir = async () => {
   const { stdout } = await execFileAsync("/usr/bin/getconf", ["DARWIN_USER_CACHE_DIR"]);
+
   return path.resolve(stdout.trim());
 };
 
@@ -400,22 +362,18 @@ const darwinUserCacheDir = async (): Promise<string> => {
  * working directory, however long it outlives the run. Short: the daemon's socket path under it
  * must fit in 103 bytes.
  */
-export const browserNamespace = (
-  save: string,
-  runner: RunnerId,
-  folders: readonly string[],
-): string =>
+export const browserNamespace = (save: string, runner: RunnerId, folders: readonly string[]) =>
   `idlebiz-${createHash("sha256")
     .update([save, runner, ...folders].join("\0"))
     .digest("hex")
     .slice(0, 8)}`;
 
 /** The agent-browser namespace `runner`'s runs under `sandbox` start their daemons in. */
-export const namespaceUnder = (sandbox: Sandbox, runner: RunnerId): string =>
+export const namespaceUnder = (sandbox: Sandbox, runner: RunnerId) =>
   path.basename(sandbox.namespaces[runner].path);
 
 /** Where agent-browser keeps its daemons' sockets for a run, whatever the founder's env says. */
-export const browserSocketDir = (): string => path.join(homedir(), ".agent-browser");
+export const browserSocketDir = () => path.join(homedir(), ".agent-browser");
 
 /** The sandbox of a run under `home`, resolved as it stands on disk now. */
 export const sandboxFor = async ({
@@ -458,29 +416,36 @@ export const sandboxFor = async ({
   apiSocket?: string | null;
   /** What this run's denials report themselves as (`Sandbox.label`). */
   label?: string | null;
-}): Promise<Sandbox> => {
+}) => {
   const realHome = await realPathOf(home);
-  const under = (names: readonly string[]): Promise<Reach[]> =>
+
+  const under = (names: readonly string[]) =>
     reachesOf(names.map((name) => path.join(realHome, name)));
+
   const [claude, codex] = await Promise.all([
     runnerHomeOf(realHome, "claude", env),
     runnerHomeOf(realHome, "codex", env),
   ]);
+
   const homes = { claude, codex };
   const scratchReaches = await reachesOf([...new Set(scratch)]);
   const own = await ownFolders(save, writable);
   const [cwd] = own;
   const folders = own.map(({ path: at }) => at);
-  const namespaceOf = (runner: RunnerId): Reach => ({
-    match: "subpath",
-    path: path.join(
-      realHome,
-      ".agent-browser",
-      "namespaces",
-      browserNamespace(save, runner, folders),
-    ),
-  });
+
+  const namespaceOf = (runner: RunnerId) =>
+    ({
+      match: "subpath",
+      path: path.join(
+        realHome,
+        ".agent-browser",
+        "namespaces",
+        browserNamespace(save, runner, folders),
+      ),
+    }) satisfies Reach;
+
   const namespaces = { claude: namespaceOf("claude"), codex: namespaceOf("codex") };
+
   const roots = [
     ...scratchReaches,
     ...claude.state,
@@ -488,20 +453,23 @@ export const sandboxFor = async ({
     ...Object.values(namespaces),
     ...own,
   ];
-  // a relative folder names no fixed place to sandbox
+
   const onPathDirs = [...new Set(pathDirs.filter((dir) => path.isAbsolute(dir)))];
   const found = await Promise.all(clis.map((cli) => foundOn(cli, onPathDirs)));
   const runs = [...new Set([...found.flat(), ...(await linksIn(onPathDirs))])];
   const chains = await Promise.all(runs.map(linkChain));
   const programs = chains.flat().map((at) => path.dirname(at));
   const linked = await Promise.all([claude.folder, codex.folder].map(homeLinkTargets));
+
   const candidates = await reachesOf([
     ...new Set([...onPathDirs, ...programs, ...shims, ...linked.flat()]),
   ]);
-  const inRoot = ({ path: at }: Reach): boolean =>
+
+  const inRoot = ({ path: at }: Reach) =>
     roots.some((root) =>
       root.match === "prefix" ? at.startsWith(root.path) : inside(root.path, at),
     );
+
   return {
     apiSocket: apiSocket === null ? [] : await reachOf(apiSocket),
     claudeProjects: {
@@ -523,7 +491,7 @@ export const sandboxFor = async ({
     ],
     unreadable: [...(await under(LOGINS)), ...(await reachesOf(hostOnly, "prefix"))],
     writable: own,
-  };
+  } satisfies Sandbox;
 };
 
 /** What of a run's sandbox is the host's to say; the rest is this machine's. */
@@ -549,11 +517,11 @@ export interface HostSandbox {
  * Each run resolves its own: a login that turns into a symlink after boot is sandboxed where it
  * leads from the next run on.
  */
-export const machineSandbox = async (host: HostSandbox): Promise<Sandbox> => {
+export const machineSandbox = async (host: HostSandbox) => {
   const agent = process.env.SSH_AUTH_SOCK;
   const cache = await darwinUserCacheDir();
-  // macOS's own libraries write its per-user temp folder whatever TMPDIR says
   const temps = [tmpdir(), path.join(path.dirname(cache), "T")];
+
   return await sandboxFor({
     ...host,
     closedPorts: [...DEBUGGER_PORTS, ...host.closedPorts],

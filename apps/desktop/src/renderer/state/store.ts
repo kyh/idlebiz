@@ -2,7 +2,6 @@ import { useMemo, useSyncExternalStore } from "react";
 import type { QueryKey } from "@tanstack/react-query";
 import type { ActivityEvent } from "@repo/domain/activity";
 import type { AuthFlowEvent, Budget, Company, Employee, Task } from "@repo/domain/domain";
-import type { Digest } from "@repo/domain/digest";
 import { api, orpc } from "@/renderer/api";
 import { hearMain, listen } from "@/renderer/page-events";
 import { reportFault } from "@/renderer/report-fault";
@@ -29,9 +28,6 @@ import {
   warm,
 } from "@/renderer/state/queries";
 
-// What the window holds of its own: what it heard of main's events, and where the founder is in
-// it. Main's state is in the query cache (queries.ts); this applies main's events to it.
-
 interface State {
   /** Main's events as heard, the newest last, to the last few hundred. */
   activity: ActivityEvent[];
@@ -51,37 +47,42 @@ let state: State = {
   modalOpen: false,
   talkingTo: null,
 };
+
 const listeners = new Set<() => void>();
 
-const set = (patch: Partial<State>): void => {
+const set = (patch: Partial<State>) => {
   state = { ...state, ...patch };
+
   for (const l of listeners) {
     l();
   }
 };
-const subscribe = (l: () => void): (() => void) => {
+
+const subscribe = (l: () => void) => {
   listeners.add(l);
-  return () => listeners.delete(l);
+
+  return (() => listeners.delete(l)) satisfies () => void;
 };
 
 /**
  * Subscribe to one value in the store. The component re-renders only when it
  * changes — so select a field, not a fresh object.
  */
-export const useStore = <T>(selector: (s: State) => T): T => {
-  const select = (): T => selector(state);
+export const useStore = <T>(selector: (s: State) => T) => {
+  const select = () => selector(state);
+
   return useSyncExternalStore(subscribe, select, select);
 };
 
 /** What #team shows, newest last: the room as main keeps it, and the news heard since the window opened. */
-export const useFeed = (): FeedLine[] => {
+export const useFeed = () => {
   const heard = useStore((s) => s.feed);
   const { messages } = useRoom();
+
   return useMemo(() => joinFeed(heard, roomLines(messages)), [heard, messages]);
 };
 
-// Scene startup can finish after an overlay mounted; replay the current keyboard state.
-const syncModal = (): void => {
+const syncModal = () => {
   if (state.game) {
     tell(state.game, "ui-modal", state.modalOpen);
   }
@@ -89,25 +90,25 @@ const syncModal = (): void => {
 
 let stopHearingInputReady: (() => void) | null = null;
 
-export const setGame = (game: Office | null): void => {
+export const setGame = (game: Office | null) => {
   stopHearingInputReady?.();
   set({ game });
   stopHearingInputReady = game ? hear(game, "office-input-ready", syncModal) : null;
   syncModal();
 };
 
-export const setTalkingTo = (employeeId: string | null): void => {
+export const setTalkingTo = (employeeId: string | null) => {
   set({ talkingTo: employeeId });
 };
 
 /** Toggle Phaser keyboard so typing in overlays doesn't move the player. */
-export const setModalOpen = (open: boolean): void => {
+export const setModalOpen = (open: boolean) => {
   set({ modalOpen: open });
   syncModal();
 };
 
 /** Ask main again for what the window waits on to open, failing as the first of those reads fails. */
-export const refresh = async (): Promise<void> => {
+export const refresh = async () => {
   await Promise.all(
     BOOT_QUERIES.map(({ queryKey }) =>
       queryClient.refetchQueries({ queryKey }, { throwOnError: true }),
@@ -119,18 +120,18 @@ export const refresh = async (): Promise<void> => {
  * A company was just founded: its team and their work are read, then the company, so the window
  * opens on all of them at once, and the office rebuilds around the same answers.
  */
-export const companyFounded = async (): Promise<void> => {
+export const companyFounded = async () => {
   await Promise.all([
     read({ ...employeesQuery, staleTime: 0 }),
     read({ ...openTasksQuery, staleTime: 0 }),
   ]);
   await read({ ...companyQuery, staleTime: 0 });
+
   if (state.game) {
     tell(state.game, "company-ready", null);
   }
 };
 
-/** The window showed main unreachable since the office last booted on main's answers. */
 let unreached = false;
 
 /**
@@ -138,56 +139,56 @@ let unreached = false;
  * reach it, by a retry or by a resync, the office boots again on those answers: its own reads
  * failed with the window's, or never ran, and nothing else starts it again.
  */
-export const bootShown = (kind: Boot["kind"]): void => {
+export const bootShown = (kind: Boot["kind"]) => {
   if (kind === "unreachable") {
     unreached = true;
+
     return;
   }
+
   if (kind === "loading" || !unreached) {
     return;
   }
+
   unreached = false;
+
   if (state.game) {
     tell(state.game, "company-ready", null);
   }
 };
 
-// ---- actions ---------------------------------------------------------------
-
-const withCompany = async (act: () => Promise<void>): Promise<void> => {
+const withCompany = async (act: () => Promise<void>) => {
   if (held(companyQuery)) {
     await act();
   }
 };
-// main answers a change with the company after it, newer than any read asked for before it
-const updateCompany = (call: () => Promise<Company>): Promise<void> =>
+
+const updateCompany = (call: () => Promise<Company>) =>
   withCompany(async () => {
     await setAnswer(companyQuery.queryKey, await call());
   });
 
-const productsMoved = async (): Promise<void> => {
+const productsMoved = async () => {
   await queryClient.invalidateQueries({ queryKey: orpc.products.key() });
 };
 
-export const createProduct = (name: string, description: string): Promise<void> =>
+export const createProduct = (name: string, description: string) =>
   withCompany(async () => {
     await api.products.create({ description, name });
     await productsMoved();
   });
 
-export const setAutopilot = (running: boolean): Promise<void> =>
+export const setAutopilot = (running: boolean) =>
   updateCompany(() => api.company.setAutopilot({ running }));
 
-export const setBudget = (budget: Budget): Promise<void> =>
-  updateCompany(() => api.company.setBudget({ budget }));
+export const setBudget = (budget: Budget) => updateCompany(() => api.company.setBudget({ budget }));
 
-export const resetSpend = (): Promise<void> => updateCompany(() => api.company.resetSpend());
+export const resetSpend = () => updateCompany(() => api.company.resetSpend());
 
 /** What happened since the founder last looked; asking is the look. */
-export const digest = (): Promise<Digest | null> =>
-  held(companyQuery) ? api.company.takeDigest() : Promise.resolve(null);
+export const digest = () => (held(companyQuery) ? api.company.takeDigest() : Promise.resolve(null));
 
-export const setMaxAgents = (maxAgents: number): Promise<void> =>
+export const setMaxAgents = (maxAgents: number) =>
   updateCompany(() => api.company.setMaxAgents({ maxAgents }));
 
 export const connectVercel = async (input: {
@@ -197,26 +198,28 @@ export const connectVercel = async (input: {
   projectId: string;
   projectName: string;
   teamId?: string | undefined;
-}): Promise<void> => {
+}) => {
   await api.vercel.connect(input);
   await productsMoved();
 };
 
-export const disconnectVercel = async (productId: string): Promise<void> => {
+export const disconnectVercel = async (productId: string) => {
   await api.vercel.disconnect({ productId });
   await productsMoved();
 };
 
-export const directEmployee = async (employeeId: string, instruction: string): Promise<void> => {
+export const directEmployee = async (employeeId: string, instruction: string) => {
   const text = instruction.trim();
+
   if (!text) {
     return;
   }
+
   await api.employees.direct({ employeeId, instruction: text });
 };
 
 /** Founder posts in the team channel; @first-name wakes that employee. */
-export const sendFounderChat = (text: string): Promise<void> =>
+export const sendFounderChat = (text: string) =>
   withCompany(async () => {
     if (text.trim()) {
       await api.team.post({ text: text.trim() });
@@ -224,88 +227,87 @@ export const sendFounderChat = (text: string): Promise<void> =>
   });
 
 /** Revive a dead-lettered / failed task: re-assign it (the claim resets retries). */
-export const retryTask = async (task: Task): Promise<void> => {
+export const retryTask = async (task: Task) => {
   if (!task.assigneeId) {
     return;
   }
+
   await api.tasks.assign({ employeeId: task.assigneeId, taskId: task.id });
 };
 
-// ---- activity --------------------------------------------------------------
-
-// The roster can lack a hire even after the refetch their event asked for: a
-// patch that landed meanwhile cancelled that refetch.
-const findHire = async (employeeId: string): Promise<Employee | undefined> => {
-  const isHire = (emp: Employee): boolean => emp.id === employeeId;
+const findHire = async (employeeId: string) => {
+  const isHire = (emp: Employee) => emp.id === employeeId;
   const found = held(employeesQuery)?.find(isHire);
+
   if (found) {
     return found;
   }
-  try {
-    const roster = await read({ ...employeesQuery, staleTime: 0 });
-    return roster.find(isHire);
-  } catch {
-    // they appear in the office when it next boots
-    return undefined;
-  }
+
+  const roster = await read({ ...employeesQuery, staleTime: 0 }).catch(() => null);
+
+  return roster?.find(isHire);
 };
 
-// Surgical: the one employee walks in or out, no scene rebuild.
-const walkThroughDoor = async (roster: { employeeId: string; hired: boolean }): Promise<void> => {
+const walkThroughDoor = async (roster: { employeeId: string; hired: boolean }) => {
   if (!state.game) {
     return;
   }
+
   if (!roster.hired) {
     tell(state.game, "despawn-employee", roster.employeeId);
+
     return;
   }
+
   const hire = await findHire(roster.employeeId);
-  // the office may have been torn down while main answered
   const { game } = state;
+
   if (hire && game) {
     tell(game, "spawn-employee", hire);
   }
 };
 
-const refetch = async (queryKeys: readonly QueryKey[]): Promise<void> => {
+const refetch = async (queryKeys: readonly QueryKey[]) => {
   await Promise.all(queryKeys.map((queryKey) => queryClient.invalidateQueries({ queryKey })));
 };
 
-const onActivity = async (e: ActivityEvent): Promise<void> => {
+const onActivity = async (e: ActivityEvent) => {
   const step = reduceActivity(state, e);
   set(step.heard);
-  // the event is newer than any answer still in flight, which must not undo it
+
   if (step.patch.employees) {
     await patchAnswer(employeesQuery.queryKey, step.patch.employees);
   }
+
   if (step.patch.resting) {
     await patchAnswer(restingQuery.queryKey, step.patch.resting);
   }
+
   await refetch(step.refetch);
+
   if (step.recheckAuth) {
     await refetch([authQuery.queryKey]);
   }
+
   if (step.roster) {
     await walkThroughDoor(step.roster);
   }
 };
 
-// Events heard and not yet applied to the window's answers, and who waits until none are: the
-// office acts on an event the moment it is heard, the window's answers only once its patch lands.
 let applying = 0;
 let onApplied: (() => void)[] = [];
 
-const allApplied = (): Promise<void> =>
-  applying === 0
+const allApplied = () =>
+  (applying === 0
     ? Promise.resolve()
     : // oxlint-disable-next-line promise/avoid-new -- settled by the last event still being applied
       new Promise((resolve) => {
         onApplied.push(resolve);
-      });
+      })) satisfies Promise<void>;
 
-/** For main's event stream, which awaits nothing: a failure is logged, and the next event or refetch catches up. */
-const onActivityInBackground = async (e: ActivityEvent): Promise<void> => {
+const onActivityInBackground = async (e: ActivityEvent) => {
   applying += 1;
+
   try {
     await onActivity(e);
   } catch (error) {
@@ -313,9 +315,11 @@ const onActivityInBackground = async (e: ActivityEvent): Promise<void> => {
     reportFault("activity", error);
   } finally {
     applying -= 1;
+
     if (applying === 0) {
       const waiting = onApplied;
       onApplied = [];
+
       for (const resolve of waiting) {
         resolve();
       }
@@ -323,8 +327,7 @@ const onActivityInBackground = async (e: ActivityEvent): Promise<void> => {
   }
 };
 
-/** A login finished, so a CLI is signed in; a runner whose sign-in failed beside one that is ready stays signed out. */
-const signedIn = async (): Promise<void> => {
+const signedIn = async () => {
   await setAnswer(authQuery.queryKey, {
     ok: true,
     signedOut: held(authQuery)?.signedOut ?? [],
@@ -332,32 +335,26 @@ const signedIn = async (): Promise<void> => {
   await refetch([authQuery.queryKey]);
 };
 
-// ---- lifecycle -------------------------------------------------------------
-
-/**
- * Everything an event could have moved, asked for again: the page may have missed any of them.
- * The office took who is in and what they do from those events alone, so once the roster and the
- * tasks are read again it is told to set itself right by them.
- */
-const resync = async (): Promise<void> => {
+const resync = async () => {
   await refetch(EVERYTHING);
+
   if (!held(companyQuery)) {
     return;
   }
+
   try {
     await Promise.all([read(employeesQuery), read(openTasksQuery)]);
   } catch {
-    // main went away again: the next stream's resync reads them
     return;
   }
-  // an event the reopened stream brought may have moved the office already: it is set right by
-  // answers that hold that event too, never by ones its patch has yet to reach
+
   await allApplied();
-  // the office may have been torn down while main answered
   const { game } = state;
+
   if (!game) {
     return;
   }
+
   try {
     tell(game, "resynced", null);
   } catch (error) {
@@ -367,12 +364,13 @@ const resync = async (): Promise<void> => {
 };
 
 let initialized = false;
-export const initStore = (): void => {
+
+export const initStore = () => {
   if (initialized) {
     return;
   }
+
   initialized = true;
-  // an integration ask in the inbox words its button by it
   void warm(stripeKeyQuery);
   listen("activity", (e) => {
     void onActivityInBackground(e);

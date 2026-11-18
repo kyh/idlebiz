@@ -1,14 +1,8 @@
-// The founder's Vercel: the token, and which project each product deploys to.
-
 import { oc, type } from "@orpc/contract";
 import { z } from "zod";
 import type { VercelListing } from "@repo/domain/integrations";
 import type { Done } from "./done";
 
-/**
- * A Vercel token the founder pasted. Left out, the saved one is used: it serves every product, so
- * replacing it for one could cut another off.
- */
 const VercelTokenSchema = z.string().trim().min(1);
 
 export const connectInput = z.object({
@@ -18,6 +12,7 @@ export const connectInput = z.object({
   teamId: z.string().optional(),
   token: VercelTokenSchema.optional(),
 });
+
 export const saveTokenInput = z.object({ productId: z.string(), token: VercelTokenSchema });
 
 export const vercelContract = {

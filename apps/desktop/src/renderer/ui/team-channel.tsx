@@ -1,3 +1,4 @@
+import { unreachable } from "@repo/domain/errors";
 import { useEffect, useRef, useState } from "react";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { useCompany, useEmployees, usePendingAsks } from "@/renderer/state/queries";
@@ -14,7 +15,6 @@ import { describeRule, shownKey } from "@repo/domain/hold-rules";
 import type { HoldRuleId } from "@repo/domain/hold-rules";
 import { cn } from "cn";
 
-// The teammate says in the room that a command waits on the founder, so the answer sits beside it.
 const HeldCommand = ({
   taskId,
   by,
@@ -27,6 +27,7 @@ const HeldCommand = ({
   rule: HoldRuleId;
 }) => {
   const { submission, decided, decide } = useApproval(taskId);
+
   return (
     <div className={cn("px-inset p-2 text-xs leading-snug", decided && "opacity-50")}>
       <div className="text-warn">
@@ -41,24 +42,29 @@ const HeldCommand = ({
   );
 };
 
-/** What a teammate is waiting on the founder for, after their name; the card to answer it is in the inbox. */
-const askLine = (ask: BlockedAsk): string => {
+const askLine = (ask: BlockedAsk) => {
   switch (ask.type) {
     case "question": {
       return `asks: ${ask.question}`;
     }
+
     case "action": {
       return `needs you to: ${ask.action}`;
     }
+
     case "integration": {
       return ask.integration === "stripe"
         ? "needs a Stripe key"
         : `needs ${INTEGRATION_LABELS[ask.integration]} connected`;
     }
+
     case "approval": {
       return `needs your sign-off: ${describeRule(ask.rule)}`;
     }
-    // no default
+
+    default: {
+      return unreachable(ask);
+    }
   }
 };
 
@@ -72,6 +78,7 @@ const RoomRow = ({
   if (from.kind === "office") {
     return <div className="text-fg-dim">{text}</div>;
   }
+
   return (
     <div>
       {from.kind === "founder" ? (
@@ -99,6 +106,7 @@ const NewsRow = ({
         </div>
       );
     }
+
     case "runner.resting": {
       return e.payload.cause === "access-denied" ? (
         <div className="line-clamp-2 text-fg-dim">
@@ -111,12 +119,15 @@ const NewsRow = ({
         </div>
       );
     }
+
     case "org.hired": {
       return <div className="text-fg-dim">🤝 {e.payload.name} joined the team</div>;
     }
+
     case "org.released": {
       return <div className="text-fg-dim">👋 {e.payload.name} left the team</div>;
     }
+
     case "run.ask": {
       return (
         <div className="line-clamp-2 text-fg-dim">
@@ -124,7 +135,10 @@ const NewsRow = ({
         </div>
       );
     }
-    // no default
+
+    default: {
+      return unreachable(e);
+    }
   }
 };
 
@@ -135,25 +149,25 @@ export const TeamChannel = () => {
   const company = useCompany();
   const modalOpen = useStore((s) => s.modalOpen);
   const [draft, setDraft] = useState("");
+
   const { submission, submit } = useSubmission(async (text: string) => {
     await sendFounderChat(text);
     setDraft("");
   });
+
   const [focused, setFocused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // keyed on the newest line, not the count — the feed is capped, so the
-  // length stops changing once it fills and auto-scroll would die there.
   const newest = newestOf(feed);
-  // hide while a dialogue/modal is up — a half-covered window reads as broken
   const shown = company !== null && !modalOpen;
 
-  // and on every showing too: the feed comes back as a new box, scrolled to its top
   useEffect(() => {
     if (newest === null || !shown) {
       return;
     }
+
     const el = scrollRef.current;
+
     if (el) {
       el.scrollTo({ top: el.scrollHeight });
     }
@@ -163,17 +177,17 @@ export const TeamChannel = () => {
     return null;
   }
 
-  const nameOf = (id: string): string => employeeName(employees, id, "team");
+  const nameOf = (id: string) => employeeName(employees, id, "team");
+
   const held = pendingAsks.flatMap((t) =>
     t.state.ask.type === "approval"
       ? [{ command: t.state.ask.command, rule: t.state.ask.rule, t }]
       : [],
   );
 
-  // The field goes readOnly while a send is in flight, never disabled: a disabled
-  // field drops focus, and the office takes the keys the founder types next.
   const send = () => {
     const text = draft.trim();
+
     if (text && submission.kind !== "sending") {
       submit(text);
     }

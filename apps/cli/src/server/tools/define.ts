@@ -75,10 +75,6 @@ export interface RunContext extends Integrations {
 /** A tool ready to be called, by its name, with whatever the agent sent. */
 export type Tool = (ctx: RunContext, name: ToolName, raw: JsonValue) => Promise<ToolOutcome>;
 
-/**
- * A call held for the founder, worded like a refusal as the sentence the agent reads: what it
- * asked is not turned down, but waits on their answer.
- */
 class HeldError extends Error {
   constructor(message: string) {
     super(message);
@@ -93,39 +89,44 @@ class HeldError extends Error {
  * the agent should read, are refused; a hold for the founder is held. A body that does not parse
  * is the caller's error. A fault answers too, so the run can go on, but is reported.
  */
-export const define =
-  <B extends z.ZodType>(
-    spec: ToolSpec<B>,
-    run: (ctx: RunContext, body: z.infer<B>) => string | Promise<string>,
-  ): Tool =>
-  async (ctx, name, raw) => {
+export const define = <B extends z.ZodType>(
+  spec: ToolSpec<B>,
+  run: (ctx: RunContext, body: z.infer<B>) => string | Promise<string>,
+) =>
+  (async (ctx, name, raw) => {
     if (spec.leadOnly !== null && !isLead(ctx.company, ctx.employee)) {
       return { kind: "refused", text: spec.leadOnly };
     }
+
     const body = spec.body.safeParse(raw);
+
     if (!body.success) {
       throw new BadRequestError(z.prettifyError(body.error));
     }
+
     try {
       return { kind: "done", text: await run(ctx, body.data) };
     } catch (error) {
       if (error instanceof HeldError) {
         return { kind: "held", text: error.message };
       }
+
       if (error instanceof RefusalError) {
         return { kind: "refused", text: error.message };
       }
+
       report(`tool ${name}`, error);
+
       return { kind: "fault", text: errorMessage(error) };
     }
-  };
+  }) satisfies Tool;
 
-export const post = (ctx: RunContext, text: string, to: string | null = null): void => {
+export const post = (ctx: RunContext, text: string, to: string | null = null) => {
   postToRoom({ id: ctx.employee.id, kind: "employee" }, text, to);
 };
 
 /** The product a tool means: the one it names, else the run's own, else the one waited on longest. */
-export const productFor = (ctx: RunContext, named: string | undefined): string | null =>
+export const productFor = (ctx: RunContext, named: string | undefined) =>
   named ?? ctx.run.productId ?? store.attentionProduct()?.id ?? null;
 
 const UNSENT =
@@ -135,10 +136,11 @@ const UNSENT =
  * Leave the founder `ask` and answer `sent`. Only a run's first ask reaches them, so one that
  * does not is refused, after `why` it was needed.
  */
-export const askFounder = (ctx: RunContext, ask: BlockedAsk, sent: string, why = ""): string => {
+export const askFounder = (ctx: RunContext, ask: BlockedAsk, sent: string, why = "") => {
   if (!ctx.asks.raise(ask)) {
     throw new RefusalError(`${why} ${UNSENT}`.trim());
   }
+
   return sent;
 };
 
@@ -156,10 +158,11 @@ export const holdOnFounder = (
  * Spend the founder's sign-off on `action` in this task, or ask them for it and
  * hold the call. The action is the approval's key, so it reads as what is signed.
  */
-export const requireSignOff = (ctx: RunContext, action: string, rule: HoldRuleId): void => {
+export const requireSignOff = (ctx: RunContext, action: string, rule: HoldRuleId) => {
   if (store.consumeApproval(ctx.run.taskId, action)) {
     return;
   }
+
   const held = `Held for the founder's sign-off on "${action}".`;
   holdOnFounder(
     ctx,

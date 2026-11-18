@@ -10,9 +10,8 @@ import { useModal } from "@/renderer/ui/modal";
  */
 export const Curtain = ({ children }: { children: ReactNode }) => {
   useModal();
-  // focus rests on the window itself, not on its button, so nothing looks pressed on open
   const popup = useRef<HTMLDivElement>(null);
-  // .px-battle sets position on the popup, so the viewport around it does the centring
+
   return (
     <AlertDialog.Root open>
       <AlertDialog.Portal>

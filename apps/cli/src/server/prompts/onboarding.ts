@@ -15,15 +15,17 @@ export const foundingTeamPrompt = (
   companyName: string,
   mission: string | null,
   businessType: BusinessTypeId,
-): string => {
+) => {
   const typeHint =
     businessType === "custom"
       ? ""
       : `\nBusiness type: ${businessTypeById(businessType).label}. ${HIRE_HINTS[businessType]}`;
+
   const pitch =
     mission === null
       ? "Pitch: none. The founder left what to build to the team, so the lead picks the first product and the team tries it: cast people who can choose one, build it and find its buyers."
       : `Pitch: ${mission}`;
+
   return `You are casting the founding team of a startup for a business-sim game.
 
 Company: ${companyName}

@@ -14,27 +14,29 @@ export class BootGate<T> {
   private state: GateState<T> = { kind: "shut" };
 
   /** Start holding; whatever an earlier boot held is dropped. */
-  boot(): void {
+  boot() {
     this.state = { held: [], kind: "booting" };
   }
 
   /** Run what the boot held, in order, and everything after as it comes. */
-  open(target: T): void {
+  open(target: T) {
     if (this.state.kind !== "booting") {
       return;
     }
+
     const { held } = this.state;
     this.state = { kind: "open", target };
+
     for (const op of held) {
       op(target);
     }
   }
 
-  shut(): void {
+  shut() {
     this.state = { kind: "shut" };
   }
 
-  run(op: Op<T>): void {
+  run(op: Op<T>) {
     if (this.state.kind === "booting") {
       this.state.held.push(op);
     } else if (this.state.kind === "open") {

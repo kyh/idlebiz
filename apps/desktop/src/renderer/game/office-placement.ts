@@ -1,10 +1,3 @@
-// Who sits where, as a pure function.
-//
-// Planning the whole roster at once, against the previous plan, gives stable
-// seats (nobody is shuffled to make room) and a definite answer for overflow
-// (null: they stand, rather than never appearing). The scene's director turns
-// the plan's diffs into walking.
-
 /** An employee as the planner sees them: identity plus the desk they were hired into. */
 export interface SeatedEmployee {
   readonly id: string;
@@ -27,19 +20,22 @@ export const planSeats = (
   seatCount: number,
   employees: readonly SeatedEmployee[],
   previous: SeatPlan,
-): SeatPlan => {
+) => {
   const plan = new Map<string, number | null>();
   const taken = new Set<number>();
-  const claim = (id: string, seat: number): void => {
+
+  const claim = (id: string, seat: number) => {
     plan.set(id, seat);
     taken.add(seat);
   };
 
   for (const emp of employees) {
     const prior = previous.get(emp.id);
+
     if (prior === undefined || prior === null) {
       continue;
     }
+
     if (prior < seatCount && !taken.has(prior)) {
       claim(emp.id, prior);
     }
@@ -49,29 +45,35 @@ export const planSeats = (
     if (plan.has(emp.id)) {
       continue;
     }
+
     if (seatCount === 0) {
       plan.set(emp.id, null);
       continue;
     }
-    // the index is read back from a markdown file: a hand edit can make it anything
+
     const hired = Number.isFinite(emp.deskIndex) ? Math.trunc(emp.deskIndex) : 0;
     const preferred = ((hired % seatCount) + seatCount) % seatCount;
+
     if (!taken.has(preferred)) {
       claim(emp.id, preferred);
       continue;
     }
+
     let free: number | null = null;
+
     for (let i = 0; i < seatCount; i += 1) {
       if (!taken.has(i)) {
         free = i;
         break;
       }
     }
+
     if (free === null) {
       plan.set(emp.id, null);
     } else {
       claim(emp.id, free);
     }
   }
+
   return plan;
 };

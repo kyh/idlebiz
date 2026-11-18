@@ -1,13 +1,13 @@
 import { useSyncExternalStore } from "react";
 
-// The subscription and snapshot share one MediaQueryList.
 const query = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-const subscribe = (onStoreChange: () => void): (() => void) => {
+const subscribe = (onStoreChange: () => void) => {
   query.addEventListener("change", onStoreChange);
-  return () => query.removeEventListener("change", onStoreChange);
+
+  return (() => query.removeEventListener("change", onStoreChange)) satisfies () => void;
 };
 
-const getSnapshot = (): boolean => query.matches;
+const getSnapshot = () => query.matches;
 
-export const useReducedMotion = (): boolean => useSyncExternalStore(subscribe, getSnapshot);
+export const useReducedMotion = () => useSyncExternalStore(subscribe, getSnapshot);

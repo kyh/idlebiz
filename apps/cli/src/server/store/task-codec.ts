@@ -1,3 +1,4 @@
+import { unreachable } from "@repo/domain/errors";
 import { z } from "zod";
 import {
   ActionAskSchema,
@@ -15,58 +16,72 @@ import type { FrontmatterDoc } from "./frontmatter";
 const QUESTION_ESCAPE = "[ask] ";
 const ACTION_PREFIX = "[action] ";
 
-/** An action's fields, kept as JSON behind its prefix: its instructions and draft are free text. */
 const ActionFieldsSchema = ActionAskSchema.omit({ type: true });
 
-// TASK.md stores a human-editable scalar. A question that starts with "[" is escaped so an
-// agent's text can never read back as an approval, a connect ask or an action.
-const serializeBlockedAsk = (a: BlockedAsk): string => {
+const serializeBlockedAsk = (a: BlockedAsk) => {
   switch (a.type) {
     case "question": {
       return a.question.startsWith("[") ? `${QUESTION_ESCAPE}${a.question}` : a.question;
     }
+
     case "action": {
       const { action, draft, instructions } = a;
+
       return `${ACTION_PREFIX}${JSON.stringify({ action, draft, instructions })}`;
     }
+
     case "approval": {
       return `[approve:${a.rule}] ${a.command}`;
     }
+
     case "integration": {
       return `[connect:${a.integration}] ${a.reason}`;
     }
-    // no default
+
+    default: {
+      return unreachable(a);
+    }
   }
 };
 
-/** An ask as `serializeBlockedAsk` wrote it; a bracketed line it never writes is refused, never read as a question. */
-const parseBlockedAsk = (s: string, productId: string | null): BlockedAsk => {
+const parseBlockedAsk = (s: string, productId: string | null) => {
   if (!s.startsWith("[")) {
-    return { question: s, type: "question" };
+    return { question: s, type: "question" } satisfies BlockedAsk;
   }
+
   if (s.startsWith(QUESTION_ESCAPE)) {
-    return { question: s.slice(QUESTION_ESCAPE.length), type: "question" };
+    return { question: s.slice(QUESTION_ESCAPE.length), type: "question" } satisfies BlockedAsk;
   }
+
   if (s.startsWith(ACTION_PREFIX)) {
     return {
       ...ActionFieldsSchema.parse(parseJson(s.slice(ACTION_PREFIX.length))),
       type: "action",
-    };
+    } satisfies BlockedAsk;
   }
+
   const approval = /^\[approve:(?<rule>[a-z-]+)\]\s*(?<command>[\s\S]*)$/u.exec(s)?.groups;
   const rule = HOLD_RULE_IDS.find((id) => id === approval?.rule);
+
   if (rule !== undefined && approval?.command !== undefined) {
-    return { command: approval.command.trim(), rule, type: "approval" };
+    return { command: approval.command.trim(), rule, type: "approval" } satisfies BlockedAsk;
   }
+
   const connect = /^\[connect:(?<kind>[a-z-]+)\]\s*(?<reason>[\s\S]*)$/u.exec(s)?.groups;
   const integration = INTEGRATION_KINDS.find((k) => k === connect?.kind);
+
   if (integration === undefined || connect?.reason === undefined) {
     throw new Error(`an ask this build does not write: ${JSON.stringify(s)}`);
   }
-  return { integration, productId, reason: connect.reason.trim(), type: "integration" };
+
+  return {
+    integration,
+    productId,
+    reason: connect.reason.trim(),
+    type: "integration",
+  } satisfies BlockedAsk;
 };
 
-/** The fields every task carries; a null one gets no line. */
 const TaskFieldsSchema = z.object({
   answers: z.string().optional(),
   assigneeId: z.string().optional(),
@@ -78,7 +93,6 @@ const TaskFieldsSchema = z.object({
   productId: z.string().optional(),
 });
 
-/** Each state's own fields, flat beside its status line so a TASK.md stays hand-editable. */
 const TaskStatusSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("todo") }),
   z.object({
@@ -100,7 +114,6 @@ const TaskStatusSchema = z.discriminatedUnion("status", [
   z.object({ lastError: z.string(), status: z.literal("dead") }),
 ]);
 
-/** Why a task exists; an order card also names what it is about, as JSON, which dedupe and Done both go by. */
 const TaskProvenanceSchema = z.discriminatedUnion("origin", [
   z.object({ origin: z.enum(TASK_ORIGINS).exclude(["order"]) }),
   z.object({
@@ -115,117 +128,149 @@ const TaskDocSchema = z.object({
   metadata: TaskFieldsSchema.and(TaskStatusSchema).and(TaskProvenanceSchema),
 });
 
-const statusFields = (st: TaskState): z.input<typeof TaskStatusSchema> => {
+const statusFields = (st: TaskState) => {
   switch (st.kind) {
     case "todo": {
-      return { status: "todo" };
+      return { status: "todo" } satisfies z.input<typeof TaskStatusSchema>;
     }
+
     case "queued": {
       return {
         lastError: st.lastError ?? undefined,
         nextAttemptAt: st.nextAttemptAt ?? undefined,
         status: "queued",
-      };
+      } satisfies z.input<typeof TaskStatusSchema>;
     }
+
     case "running": {
-      return { runId: st.runId, status: "running" };
+      return { runId: st.runId, status: "running" } satisfies z.input<typeof TaskStatusSchema>;
     }
+
     case "blocked": {
       return {
         askProduct: st.ask.type === "integration" ? (st.ask.productId ?? undefined) : undefined,
         blockedQuestion: serializeBlockedAsk(st.ask),
         status: "blocked",
         summary: st.summary ?? undefined,
-      };
+      } satisfies z.input<typeof TaskStatusSchema>;
     }
+
     case "done": {
-      return { status: "done", summary: st.summary ?? undefined };
+      return { status: "done", summary: st.summary ?? undefined } satisfies z.input<
+        typeof TaskStatusSchema
+      >;
     }
+
     case "superseded": {
-      return { status: "superseded", supersededBy: st.by };
+      return { status: "superseded", supersededBy: st.by } satisfies z.input<
+        typeof TaskStatusSchema
+      >;
     }
+
     case "settled": {
-      return { status: "settled" };
+      return { status: "settled" } satisfies z.input<typeof TaskStatusSchema>;
     }
+
     case "dropped": {
-      return { dropReason: st.reason, status: "dropped" };
+      return { dropReason: st.reason, status: "dropped" } satisfies z.input<
+        typeof TaskStatusSchema
+      >;
     }
+
     case "dead": {
-      return { lastError: st.lastError, status: "dead" };
+      return { lastError: st.lastError, status: "dead" } satisfies z.input<typeof TaskStatusSchema>;
     }
-    // no default
+
+    default: {
+      return unreachable(st);
+    }
   }
 };
 
-const provenanceFields = (t: Task): z.input<typeof TaskProvenanceSchema> =>
-  t.origin === "order"
+const provenanceFields = (t: Task) =>
+  (t.origin === "order"
     ? { origin: t.origin, subject: JSON.stringify(t.subject) }
-    : { origin: t.origin };
+    : { origin: t.origin }) satisfies z.input<typeof TaskProvenanceSchema>;
 
-const taskProvenance = (m: z.output<typeof TaskProvenanceSchema>): TaskProvenance =>
-  m.origin === "order" ? { origin: m.origin, subject: m.subject } : { origin: m.origin };
+const taskProvenance = (m: z.output<typeof TaskProvenanceSchema>) =>
+  (m.origin === "order"
+    ? { origin: m.origin, subject: m.subject }
+    : { origin: m.origin }) satisfies TaskProvenance;
 
-const taskState = (m: z.output<typeof TaskStatusSchema>): TaskState => {
+const taskState = (m: z.output<typeof TaskStatusSchema>) => {
   switch (m.status) {
     case "todo": {
-      return { kind: "todo" };
+      return { kind: "todo" } satisfies TaskState;
     }
+
     case "queued": {
       return {
         kind: "queued",
         lastError: m.lastError ?? null,
         nextAttemptAt: m.nextAttemptAt ?? null,
-      };
+      } satisfies TaskState;
     }
+
     case "running": {
-      return { kind: "running", runId: m.runId };
+      return { kind: "running", runId: m.runId } satisfies TaskState;
     }
+
     case "blocked": {
       return {
         ask: parseBlockedAsk(m.blockedQuestion, m.askProduct ?? null),
         kind: "blocked",
         summary: m.summary ?? null,
-      };
+      } satisfies TaskState;
     }
+
     case "done": {
-      return { kind: "done", summary: m.summary ?? null };
+      return { kind: "done", summary: m.summary ?? null } satisfies TaskState;
     }
+
     case "superseded": {
-      return { by: m.supersededBy, kind: "superseded" };
+      return { by: m.supersededBy, kind: "superseded" } satisfies TaskState;
     }
+
     case "settled": {
-      return { kind: "settled" };
+      return { kind: "settled" } satisfies TaskState;
     }
+
     case "dropped": {
-      return { kind: "dropped", reason: m.dropReason };
+      return { kind: "dropped", reason: m.dropReason } satisfies TaskState;
     }
+
     case "dead": {
-      return { kind: "dead", lastError: m.lastError };
+      return { kind: "dead", lastError: m.lastError } satisfies TaskState;
     }
-    // no default
+
+    default: {
+      return unreachable(m);
+    }
   }
 };
 
-export const taskToDoc = (t: Task): z.input<typeof TaskDocSchema> => ({
-  body: t.description ? `${t.description}\n` : "",
-  fields: { kind: "task", name: t.title, schema: PACKAGE_SCHEMA, slug: t.id },
-  metadata: {
-    answers: t.answers ?? undefined,
-    assigneeId: t.assigneeId ?? undefined,
-    attempts: t.attempts,
-    betId: t.betId ?? undefined,
-    completedAt: t.completedAt ?? undefined,
-    createdAt: t.createdAt,
-    priority: t.priority,
-    productId: t.productId ?? undefined,
-    ...statusFields(t.state),
-    ...provenanceFields(t),
-  },
-});
+export const taskToDoc = (t: Task) =>
+  ({
+    body: t.description ? `${t.description}\n` : "",
+    fields: { kind: "task", name: t.title, schema: PACKAGE_SCHEMA, slug: t.id },
+    metadata: {
+      answers: t.answers ?? undefined,
+      assigneeId: t.assigneeId ?? undefined,
+      attempts: t.attempts,
+      betId: t.betId ?? undefined,
+      completedAt: t.completedAt ?? undefined,
+      createdAt: t.createdAt,
+      priority: t.priority,
+      productId: t.productId ?? undefined,
+      ...statusFields(t.state),
+      ...provenanceFields(t),
+    },
+  }) satisfies z.input<typeof TaskDocSchema>;
 
-export const docToTask = (doc: FrontmatterDoc): Task => {
+export const docToTask = (doc: FrontmatterDoc) => {
   const { body, fields, metadata: m } = decodeDoc(TaskDocSchema, doc);
   const description = body.trim();
+
   return {
     answers: m.answers ?? null,
     assigneeId: m.assigneeId ?? null,
@@ -240,5 +285,5 @@ export const docToTask = (doc: FrontmatterDoc): Task => {
     state: taskState(m),
     title: fields.name,
     ...taskProvenance(m),
-  };
+  } satisfies Task;
 };

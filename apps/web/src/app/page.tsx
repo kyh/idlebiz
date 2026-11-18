@@ -20,7 +20,6 @@ interface Download {
   version: string | null;
 }
 
-// fallback for every failure mode: API down or rate-limited, no .dmg on the release
 const RELEASES_PAGE: Download = {
   url: `https://github.com/${GITHUB_REPO}/releases`,
   version: null,
@@ -37,7 +36,7 @@ const MacLogoIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const getLatestRelease = async (): Promise<Download> => {
+const getLatestRelease = async () => {
   "use cache";
   cacheLife("hours");
 
@@ -45,21 +44,24 @@ const getLatestRelease = async (): Promise<Download> => {
     const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
       headers: { Accept: "application/vnd.github+json" },
     });
+
     if (!res.ok) {
       return RELEASES_PAGE;
     }
 
     const data: unknown = await res.json();
     const release = releaseSchema.safeParse(data);
+
     if (!release.success) {
       return RELEASES_PAGE;
     }
 
     const dmg = release.data.assets.find((a) => a.name.endsWith(".dmg"));
+
     return {
       url: dmg?.browser_download_url ?? RELEASES_PAGE.url,
       version: release.data.tag_name ?? null,
-    };
+    } satisfies Download;
   } catch {
     return RELEASES_PAGE;
   }

@@ -1,4 +1,5 @@
 import { siteConfig } from "@/lib/site-config";
+import { unreachable } from "@/lib/unreachable";
 
 import {
   gettingStarted,
@@ -10,48 +11,52 @@ import {
 } from "@/lib/agent/site-content";
 import type { LinkItem, ProseBlock, ProsePage, Run } from "@/lib/agent/site-content";
 
-/** A page of this site gets its full URL; an in-page anchor, mail and other sites stay as written. */
-const absoluteUrl = (href: string): string =>
-  href.startsWith("/") ? `${siteConfig.url}${href}` : href;
+const absoluteUrl = (href: string) => (href.startsWith("/") ? `${siteConfig.url}${href}` : href);
 
-const renderList = (items: LinkItem[]): string =>
+const renderList = (items: LinkItem[]) =>
   items
     .map((item) => {
       const label = item.href ? `[${item.label}](${absoluteUrl(item.href)})` : `**${item.label}**`;
+
       return item.text ? `- ${label}: ${item.text}` : `- ${label}`;
     })
     .join("\n");
 
-const renderRun = (run: Run): string => {
+const renderRun = (run: Run) => {
   if (isPlainRun(run)) {
     return run;
   }
+
   if (run.kind === "strong") {
     return `**${run.text}**`;
   }
+
   return `[${run.text}](${absoluteUrl(run.href)})`;
 };
 
-const renderRuns = (runs: Run[]): string => runs.map((run) => renderRun(run)).join("");
+const renderRuns = (runs: Run[]) => runs.map((run) => renderRun(run)).join("");
 
-/** One GFM table row; a pipe inside a cell is escaped so it cannot split the cell. */
-const tableRow = (cells: string[]): string =>
+const tableRow = (cells: string[]) =>
   `| ${cells.map((cell) => cell.replaceAll("|", String.raw`\|`)).join(" | ")} |`;
 
-const renderBlock = (block: ProseBlock): string => {
+const renderBlock = (block: ProseBlock) => {
   switch (block.kind) {
     case "heading": {
       return `## ${block.text}`;
     }
+
     case "subheading": {
       return `### ${block.text}`;
     }
+
     case "list": {
       return renderList(block.items);
     }
+
     case "bullets": {
       return block.items.map((item) => `- ${renderRuns(item)}`).join("\n");
     }
+
     case "table": {
       return [
         tableRow(block.columns),
@@ -59,21 +64,26 @@ const renderBlock = (block: ProseBlock): string => {
         ...block.rows.map((row) => tableRow(row)),
       ].join("\n");
     }
+
     case "rule": {
       return "---";
     }
+
     case "paragraph": {
       return renderRuns(block.runs);
     }
-    // no default
+
+    default: {
+      return unreachable(block);
+    }
   }
 };
 
-const document = (lines: string[]): string => `${lines.join("\n").trimEnd()}\n`;
+const document = (lines: string[]) => `${lines.join("\n").trimEnd()}\n`;
 
 const footer = `[${siteConfig.name}](${siteConfig.url}) · [Sitemap](${absoluteUrl("/sitemap.xml")}) · [llms.txt](${absoluteUrl("/llms.txt")})`;
 
-export const renderHomeMarkdown = (): string =>
+export const renderHomeMarkdown = () =>
   document([
     `# ${siteConfig.name}`,
     "",
@@ -93,7 +103,7 @@ export const renderHomeMarkdown = (): string =>
     renderList(siteLinks),
   ]);
 
-export const renderProsePageMarkdown = (page: ProsePage): string =>
+export const renderProsePageMarkdown = (page: ProsePage) =>
   document([
     `# ${page.heading}`,
     "",
@@ -105,7 +115,7 @@ export const renderProsePageMarkdown = (page: ProsePage): string =>
     footer,
   ]);
 
-export const renderNotFoundMarkdown = (pathname: string): string =>
+export const renderNotFoundMarkdown = (pathname: string) =>
   document([
     "# Page not found",
     "",
@@ -119,7 +129,7 @@ export const renderNotFoundMarkdown = (pathname: string): string =>
  * when-to-use guidance stays in the prose block because the spec reserves H2
  * sections for links.
  */
-export const renderLlmsTxt = (): string =>
+export const renderLlmsTxt = () =>
   document([
     `# ${siteConfig.name}`,
     "",
