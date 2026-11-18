@@ -11,17 +11,18 @@ const ACTIVITIES = {
   typing: { kind: "working", pose: "typing" },
 } satisfies Record<string, Activity>;
 
-const settled = (activity: Activity, asking: boolean, desk: Dir | null): Situation => ({
-  activity,
-  asking,
-  desk,
-  phase: "settled",
-  waiting: false,
-  walking: false,
-});
+const settled = (activity: Activity, asking: boolean, desk: Dir | null) =>
+  ({
+    activity,
+    asking,
+    desk,
+    phase: "settled",
+    waiting: false,
+    walking: false,
+  }) satisfies Situation;
 
-const still = (facing: Dir): Stance => ({ facing, kind: "still" });
-const typing = (facing: Dir): Stance => ({ facing, kind: "typing" });
+const still = (facing: Dir) => ({ facing, kind: "still" }) satisfies Stance;
+const typing = (facing: Dir) => ({ facing, kind: "typing" }) satisfies Stance;
 
 describe("lookOf, settled and standing still", () => {
   it.each<[keyof typeof ACTIVITIES, boolean, Dir | null, Emote | null, Stance]>([
@@ -78,10 +79,12 @@ describe("lookOf, anywhere else", () => {
   it.each<Phase>(["entering", "leaving"])(
     "keeps the emote but leaves the walk alone while %s",
     (phase) => {
-      const walker = (activity: Activity, asking: boolean): Situation => ({
-        ...settled(activity, asking, null),
-        phase,
-      });
+      const walker = (activity: Activity, asking: boolean) =>
+        ({
+          ...settled(activity, asking, null),
+          phase,
+        }) satisfies Situation;
+
       expect(lookOf(walker(ACTIVITIES.blocked, false))).toEqual({ emote: "alert", stance: null });
       expect(lookOf(walker(ACTIVITIES.idle, true))).toEqual({ emote: "alert", stance: null });
       expect(lookOf(walker(ACTIVITIES.thinking, false))).toEqual({ emote: "think", stance: null });

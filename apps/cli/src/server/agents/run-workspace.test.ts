@@ -25,15 +25,18 @@ describe("gitIdentity", () => {
   it("commits as the employee even where the founder signs every commit and tag with keys the sandbox hides", async () => {
     const company = found();
     const mae = store.listEmployees().find((emp) => emp.name === "Mae");
+
     if (mae === undefined) {
       throw new Error("no hire founded");
     }
+
     const workspace = mkdtempSync(path.join(tmpdir(), "idlebiz-sign-"));
     const config = path.join(workspace, "founder.gitconfig");
     writeFileSync(
       config,
       "[commit]\n\tgpgsign = true\n[tag]\n\tgpgsign = true\n\tforceSignAnnotated = true\n[gpg]\n\tprogram = /usr/bin/false\n",
     );
+
     const env = {
       GIT_CONFIG_GLOBAL: config,
       GIT_CONFIG_NOSYSTEM: "1",
@@ -41,7 +44,9 @@ describe("gitIdentity", () => {
       PATH: "/usr/bin:/bin",
       ...gitIdentity(mae, company),
     };
+
     const git = (...args: string[]) => execFileAsync("/usr/bin/git", args, { cwd: workspace, env });
+
     try {
       await git("init", "--quiet");
       await git("commit", "--allow-empty", "--quiet", "-m", "ship");
@@ -57,6 +62,7 @@ describe("gitIdentity", () => {
 describe("ensureRepository", () => {
   it("makes a workspace a repository once, and leaves one that is", async () => {
     const workspace = mkdtempSync(path.join(tmpdir(), "idlebiz-repo-"));
+
     try {
       await ensureRepository(workspace);
       expect(existsSync(path.join(workspace, ".git/HEAD"))).toBe(true);
@@ -70,8 +76,6 @@ describe("ensureRepository", () => {
     }
   });
 
-  // a template's hooks run as the founder's git does, its config steers it; main's env is
-  // launchd's in the app, which any process of the founder's sets for the next launch
   it.each([
     ["GIT_TEMPLATE_DIR", (templates: string) => ({ GIT_TEMPLATE_DIR: templates })],
     [
@@ -90,9 +94,11 @@ describe("ensureRepository", () => {
     mkdirSync(workspace);
     writeFileSync(path.join(templates, "hooks/pre-commit"), "#!/bin/sh\n", { mode: 0o755 });
     writeFileSync(path.join(templates, "config"), "[core]\n\thooksPath = /private/tmp/hooks\n");
+
     for (const [name, value] of Object.entries(steering(templates))) {
       vi.stubEnv(name, value);
     }
+
     try {
       await ensureRepository(workspace);
       expect(existsSync(path.join(workspace, ".git/HEAD"))).toBe(true);
@@ -104,7 +110,6 @@ describe("ensureRepository", () => {
     }
   });
 
-  // /usr/bin/git is xcode-select's shim, which runs the git of the developer folder it is pointed at
   it.skipIf(process.platform !== "darwin")(
     "makes it with macOS's git, whatever developer folder main's env names",
     async () => {
@@ -119,6 +124,7 @@ describe("ensureRepository", () => {
         { mode: 0o755 },
       );
       vi.stubEnv("DEVELOPER_DIR", path.join(box, "developer"));
+
       try {
         await ensureRepository(workspace);
         expect(existsSync(path.join(workspace, ".git/HEAD"))).toBe(true);
@@ -131,7 +137,8 @@ describe("ensureRepository", () => {
   );
 
   it("goes on without one where git cannot make it", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
+
     try {
       await expect(ensureRepository(path.join(root, "no-such-workspace"))).resolves.toBeUndefined();
       expect(logged).toHaveBeenCalledWith("[repository]", expect.any(Error));

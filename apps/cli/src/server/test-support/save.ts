@@ -3,22 +3,17 @@ import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach } from "vitest";
-import type { Company } from "@repo/domain/domain";
 import type { RunnerId } from "@repo/domain/runners";
 import { openSave } from "../paths";
 import * as store from "../store/store";
 import type { FoundingHire } from "../store/store";
-
-// What the save's tests share: a root of the test file's own, and Kai's Acme founded on it. A
-// test file calls tempSave or freshSave at its top; a path read before either throws, never
-// reaching the founder's save.
 
 /**
  * Opens a save root of the calling test file's own for each of its tests, deleted after its last.
  * The folder is made before the first test, not when the file is collected: a file whose every
  * test skips runs no afterAll, and would leave one behind.
  */
-export const tempSave = (): string => {
+export const tempSave = () => {
   const root = path.join(tmpdir(), `idlebiz-test-${randomUUID()}`);
   openSave(root);
   beforeAll(() => {
@@ -27,16 +22,18 @@ export const tempSave = (): string => {
   afterAll(() => {
     rmSync(root, { force: true, recursive: true });
   });
+
   return root;
 };
 
 /** `tempSave`, emptied and booted before each test, so each starts on a save with no company. */
-export const freshSave = (): string => {
+export const freshSave = () => {
   const root = tempSave();
   beforeEach(() => {
     rmSync(root, { force: true, recursive: true });
     store.initStore();
   });
+
   return root;
 };
 
@@ -53,7 +50,7 @@ type Founding = Parameters<typeof store.foundCompany>[0];
 export const foundAcme = (
   team: readonly FoundingHire[] = [],
   over: Partial<Omit<Founding, "hires">> = {},
-): Company =>
+) =>
   store.foundCompany({
     budget: { mode: "infinite" },
     businessType: "software",

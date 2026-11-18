@@ -7,7 +7,6 @@ import { FEED_NAME, archiveName, feedFor, releaseAssets, releaseFeed } from "./r
 
 const desktop = path.resolve(import.meta.dirname, "..");
 
-// the feed the installed app asks, as the shell is built with it
 const [endpoint] = z
   .object({
     plugins: z.object({ updater: z.object({ endpoints: z.tuple([z.string()]) }) }),
@@ -27,6 +26,7 @@ describe("the release feed", () => {
       signature: "untrusted comment: signature from tauri secret key\nRWQ…\n",
       version: "0.4.0",
     });
+
     expect(feed).toEqual({
       platforms: {
         "darwin-aarch64": {
@@ -45,6 +45,7 @@ describe("the release feed", () => {
       signature: "untrusted comment: signature from tauri secret key\nRWQ…\n",
       version: "0.4.0",
     };
+
     expect(releaseFeed({ ...signed, feed: endpoint })).toEqual(
       feedFor({
         ...signed,
@@ -60,7 +61,6 @@ describe("the release feed", () => {
     );
   });
 
-  // a renamed asset on either side would publish a feed whose URL answers 404
   it("names what publishing uploads", () => {
     const publish = readFileSync(path.join(desktop, "scripts", "publish-release.sh"), "utf-8");
     // oxlint-disable-next-line no-template-curly-in-string -- the script's own shell variable, verbatim

@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import { founderActions } from "./founder-actions";
 import { createPageRouter } from "./page-router";
 
-/** The page's calls as main answers them, with no scheduler behind the founder's actions. */
 const page = () =>
   createRouterClient(
     createPageRouter({
@@ -19,7 +18,7 @@ const page = () =>
 
 describe("the page's router", () => {
   it("keeps a fault the page raised in main's log, named as the page's, its stack after it", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     await page().app.fault({ message: "the panel broke", where: "crash-screen" });
     await page().app.fault({
       message: "it threw",

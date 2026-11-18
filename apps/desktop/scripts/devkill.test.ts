@@ -4,67 +4,83 @@ import { once } from "node:events";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
-// A copy in a scratch checkout, so its patterns, anchored to the checkout it sits in, can
-// never reach a real session of this one.
 const checkout = mkdtempSync(path.join(tmpdir(), "idlebiz-devkill-"));
 const script = path.join(checkout, "apps/desktop/scripts/devkill.sh");
+
 mkdirSync(path.dirname(script), { recursive: true });
+
 copyFileSync(path.join(import.meta.dirname, "devkill.sh"), script);
+
 const shell = path.join(checkout, "apps/desktop/src-tauri/target/debug/idlebiz-desktop");
 const main = path.join(checkout, "apps/cli/dist/index.js");
 
 const started: ChildProcess[] = [];
+
+const alive = (child: ChildProcess) => child.exitCode === null && child.signalCode === null;
+
 afterAll(() => {
   for (const child of started) {
     child.kill("SIGKILL");
   }
+
   rmSync(checkout, { force: true, recursive: true });
 });
 
-/** `program` under a command line that starts `argv`, as pgrep -f sees it. */
-const standIn = (argv: string, program = "sleep 60"): ChildProcess => {
-  const child = spawn("bash", ["-c", `exec -a "$0" ${program}`, argv], { stdio: "ignore" });
+const standIn = async (argv: string, program = "sleep 60") => {
+  const child = spawn("bash", ["-c", `exec -a "$0" ${program}`, argv], {
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+
   started.push(child);
+  await once(child, "spawn");
+
   return child;
 };
 
-const devkill = async (): Promise<void> => {
+const exited = async (child: ChildProcess) => {
+  if (alive(child)) {
+    await once(child, "exit");
+  }
+};
+
+const devkill = async () => {
   await once(spawn("bash", [script], { stdio: "ignore" }), "close");
 };
 
-const alive = (child: ChildProcess): boolean =>
-  child.exitCode === null && child.signalCode === null;
-
 describe("devkill", () => {
   it("stops the dev session's shell and leaves e2e's main running", async () => {
-    const dev = standIn(shell);
-    const e2e = standIn(`node ${main} serve`);
-    await sleep(200);
+    const dev = await standIn(shell);
+    const e2e = await standIn(`node ${main} serve`);
 
     await devkill();
-    await sleep(200);
+    await exited(dev);
 
     expect(alive(dev)).toBe(false);
     expect(alive(e2e)).toBe(true);
-  }, 20_000);
+  });
 
   it("stops what tauri dev started, whatever its command line", async () => {
     const helper = path.join(checkout, "helper-pid");
-    // as pnpm's shim leaves it: it execs node on `.bin/../`, which path.join would fold away
-    const tauri = standIn(
+
+    const tauri = await standIn(
       `node ${checkout}/apps/desktop/node_modules/.bin/../@tauri-apps/cli/tauri.js dev --additional-watch-folders ../cli/dist`,
-      `bash -c "sleep 60 & echo \\$! > ${helper}; wait"`,
+      `bash -c "sleep 60 & echo \\$! > ${helper}; echo ready; wait"`,
     );
-    await sleep(200);
+
+    if (tauri.stdout) {
+      await once(tauri.stdout, "data");
+    }
+
     const pid = Number(readFileSync(helper, "utf-8"));
 
     await devkill();
-    await sleep(200);
+    await exited(tauri);
 
     expect(alive(tauri)).toBe(false);
-    expect(() => process.kill(pid, 0)).toThrow();
-  }, 20_000);
+    await vi.waitFor(() => {
+      expect(() => process.kill(pid, 0)).toThrow();
+    });
+  });
 });

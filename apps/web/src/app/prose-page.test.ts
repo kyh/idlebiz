@@ -12,8 +12,7 @@ import {
 } from "@/lib/agent/site-content";
 import type { ProsePage } from "@/lib/agent/site-content";
 
-const html = (page: ProsePage): string =>
-  renderToStaticMarkup(createElement(ProsePageView, { page }));
+const html = (page: ProsePage) => renderToStaticMarkup(createElement(ProsePageView, { page }));
 
 describe("ProsePageView", () => {
   const privacy = html(privacyPage);
@@ -29,6 +28,7 @@ describe("ProsePageView", () => {
     const columns = privacyPage.blocks.flatMap((block) =>
       block.kind === "table" ? [block.columns.length] : [],
     );
+
     expect(columns.length).toBeGreaterThan(0);
     expect(privacy.match(/<table/gu)).toHaveLength(columns.length);
     expect(privacy.match(/<th scope="col"/gu)).toHaveLength(
@@ -45,9 +45,11 @@ describe("ProsePageView", () => {
   it("shows no link to the Terms of Use on any page, in its text or its footer", () => {
     for (const page of servedPages) {
       const markup = html(page);
+
       for (const listed of prosePages) {
         expect(markup, page.path).toContain(`href="${listed.path}"`);
       }
+
       expect(markup, page.path).not.toContain(`href="${termsPage.path}`);
     }
   });

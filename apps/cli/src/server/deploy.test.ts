@@ -12,17 +12,20 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { RUN_IDLE_TIMEOUT_MS } from "./agents/runner-pool";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import { DEPLOY_TIMEOUT_MS } from "./tool-specs";
 import type { KeptEnvValue } from "./vercel-env";
 import { deployToVercel, unshippableIn } from "./deploy";
 import { tempSave } from "./test-support/save";
+import { answerFetch, interceptNetwork } from "./test-support/network";
 
-// outside the save, so the vault.json a symlink names below is not the save's own
+interceptNetwork();
+
 const scratch = mkdtempSync(path.join(tmpdir(), "idlebiz-deploy-"));
 const workspace = path.join(scratch, "workspace");
+
 tempSave();
 
 const TOKEN = "vercel-token";
@@ -36,6 +39,7 @@ const put = (file: string, text: string) => {
 };
 
 const FileRef = z.object({ file: z.string(), mode: z.number(), sha: z.string(), size: z.number() });
+
 const Created = z.object({
   files: z.array(FileRef),
   name: z.string(),
@@ -43,7 +47,6 @@ const Created = z.object({
   target: z.string(),
 });
 
-/** How a deployment is doing, as Vercel answers the create call and then each poll. */
 interface State {
   readyState: string;
   alias?: string[];
@@ -53,12 +56,9 @@ interface State {
 }
 
 interface FakeVercel {
-  /** How GET /v9/projects/<name> answers: whether a project of that name exists. */
   projectExists?: boolean;
   states?: State[];
-  /** Answer the create call with this status and error instead. */
   refuse?: { status: number; error: { code: string; message: string } };
-  /** Runs when Vercel first asks for the files it lacks. */
   beforeAskingForFiles?: () => void;
 }
 
@@ -75,7 +75,6 @@ const deploymentIn = (state: State | undefined) => ({
   ...state,
 });
 
-/** Vercel's API, as far as a deploy goes, and every call it was sent. */
 const fakeVercel = ({
   projectExists = false,
   states = [LIVE],
@@ -86,7 +85,7 @@ const fakeVercel = ({
   const calls: { route: string; query: Record<string, string>; auth: string | null }[] = [];
   const created: z.infer<typeof Created>[] = [];
   let polls = 0;
-  vi.stubGlobal("fetch", (input: string, init: RequestInit = {}) => {
+  answerFetch((input: string, init: RequestInit) => {
     const url = new URL(input);
     const route = `${init.method ?? "GET"} ${url.pathname}`;
     const headers = new Headers(init.headers);
@@ -95,6 +94,7 @@ const fakeVercel = ({
       query: Object.fromEntries(url.searchParams),
       route,
     });
+
     if (route.startsWith("GET /v9/projects/")) {
       return Promise.resolve(
         projectExists
@@ -102,25 +102,33 @@ const fakeVercel = ({
           : Response.json({ error: { code: "not_found" } }, { status: 404 }),
       );
     }
+
     if (route === "POST /v2/files") {
-      const body = init.body instanceof Uint8Array ? Buffer.from(init.body) : Buffer.alloc(0);
+      const body = Buffer.from(z.string().catch("").parse(init.body));
       const digest = headers.get("x-vercel-digest") ?? "";
+
       if (sha1(body) !== digest) {
         return Promise.resolve(
           Response.json({ error: { code: "invalid_digest" } }, { status: 400 }),
         );
       }
+
       stored.set(digest, body);
+
       return Promise.resolve(Response.json({ urls: [] }));
     }
+
     if (route === "POST /v13/deployments") {
       if (refuse) {
         return Promise.resolve(Response.json({ error: refuse.error }, { status: refuse.status }));
       }
+
       const asked = Created.parse(parseJson(z.string().parse(init.body)));
       const missing = [...new Set(asked.files.map((f) => f.sha))].filter((sha) => !stored.has(sha));
+
       if (missing.length > 0) {
         beforeAskingForFiles?.();
+
         return Promise.resolve(
           Response.json(
             { error: { code: "missing_files", message: "Missing files", missing } },
@@ -128,17 +136,23 @@ const fakeVercel = ({
           ),
         );
       }
+
       created.push(asked);
+
       return Promise.resolve(Response.json(deploymentIn(states[0])));
     }
+
     if (route === "GET /v13/deployments/dpl_1") {
       polls += 1;
+
       return Promise.resolve(
         Response.json(deploymentIn(states[Math.min(polls, states.length - 1)])),
       );
     }
+
     return Promise.resolve(Response.json({ error: { code: "unexpected" } }, { status: 500 }));
   });
+
   return { calls, created, stored };
 };
 
@@ -209,10 +223,12 @@ describe("deploying through Vercel's API", () => {
       "POST /v13/deployments",
       "GET /v13/deployments/dpl_1",
     ]);
+
     for (const { auth, query } of vercel.calls) {
       expect(auth).toBe(`Bearer ${TOKEN}`);
       expect(query.teamId).toBe("team_1");
     }
+
     expect(vercel.calls[0]?.query.skipAutoDetectionConfirmation).toBe("1");
   });
 
@@ -249,6 +265,7 @@ describe("deploying through Vercel's API", () => {
       mode: lstatSync(path.join(workspace, "leak.json")).mode,
     });
     expect(vercel.stored.get(link?.sha ?? "")?.toString()).toBe(secret);
+
     for (const body of vercel.stored.values()) {
       expect(body.toString()).not.toContain("sk_live_founder");
     }
@@ -335,6 +352,7 @@ describe("deploying through Vercel's API", () => {
     const result = await deployBound([
       { kind: "env", name: "OPENAI_API_KEY", product: "acme", value: key },
     ]);
+
     expect(result).toEqual({
       kind: "failed",
       project: null,
@@ -352,6 +370,7 @@ describe("deploying through Vercel's API", () => {
       product: "acme",
       value: "sk-proj-acme-runtime",
     };
+
     put("src/ai.js", held.value);
 
     await expect(unshippableIn(workspace, [held])).resolves.toContain(

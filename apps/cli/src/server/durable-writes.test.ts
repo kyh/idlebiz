@@ -1,4 +1,4 @@
-import type * as NodeFs from "node:fs";
+import * as fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { atomicWrite } from "./lib/fs";
@@ -6,39 +6,36 @@ import { savePrintfulToken } from "./printful-token";
 import { setSecret } from "./vault/vault";
 import * as store from "./store/store";
 import { foundAcme, freshSave } from "./test-support/save";
+import { answerFetch, interceptNetwork } from "./test-support/network";
 
-// No crash can be staged here, so what makes a write durable is held by its order instead: the
-// file is flushed before the rename that gives it its name.
-
-/** What reached the disk, in order: each flush, and the name each rename gave. */
-const disk = vi.hoisted((): string[] => []);
+interceptNetwork();
 
 // oxlint-disable-next-line anti-slop/no-module-mocking -- a spy, not a fake: each call goes to the real fs, and the order is all a flush shows short of a crash
-vi.mock("node:fs", async (importOriginal) => {
-  const fs = await importOriginal<typeof NodeFs>();
-  return {
-    ...fs,
-    fsyncSync: (fd: number): void => {
-      disk.push("flush");
-      fs.fsyncSync(fd);
-    },
-    renameSync: (from: NodeFs.PathLike, to: NodeFs.PathLike): void => {
-      disk.push(`name ${path.basename(String(to))}`);
-      fs.renameSync(from, to);
-    },
-  };
-});
+vi.mock("node:fs", { spy: true });
+
+const disk = () =>
+  [
+    ...vi.mocked(fs.fsyncSync).mock.invocationCallOrder.map((at) => ({ at, step: "flush" })),
+    ...vi.mocked(fs.renameSync).mock.calls.map(([, to], i) => ({
+      at: vi.mocked(fs.renameSync).mock.invocationCallOrder[i] ?? 0,
+      step: `name ${path.basename(String(to))}`,
+    })),
+  ]
+    .toSorted((a, b) => a.at - b.at)
+    .map(({ step }) => step);
 
 const root = freshSave();
 
-/** Whether every write that named `name` was flushed first. */
-const flushedBefore = (name: string): boolean => {
-  const named = disk.flatMap((step, at) => (step === `name ${name}` ? [at] : []));
-  return named.length > 0 && named.every((at) => disk[at - 1] === "flush");
+const flushedBefore = (name: string) => {
+  const steps = disk();
+  const named = steps.flatMap((step, at) => (step === `name ${name}` ? [at] : []));
+
+  return named.length > 0 && named.every((at) => steps[at - 1] === "flush");
 };
 
 beforeEach(() => {
-  disk.length = 0;
+  vi.mocked(fs.fsyncSync).mockClear();
+  vi.mocked(fs.renameSync).mockClear();
 });
 
 afterEach(() => {
@@ -50,15 +47,16 @@ describe("atomicWrite", () => {
     atomicWrite(path.join(root, "durable.json"), "{}", { durable: true });
     atomicWrite(path.join(root, "plain.json"), "{}");
 
-    expect(disk).toEqual(["flush", "name durable.json", "name plain.json"]);
+    expect(disk()).toEqual(["flush", "name durable.json", "name plain.json"]);
   });
 });
 
 describe("what the founder would lose to an OS crash", () => {
   it("is flushed before it takes its name: founding's files, COMPANY.md, the sign-offs", () => {
     foundAcme();
-    const founded = disk.indexOf("name company");
-    const staged = disk.slice(0, founded).filter((step) => step.startsWith("name "));
+    const steps = disk();
+    const founded = steps.indexOf("name company");
+    const staged = steps.slice(0, founded).filter((step) => step.startsWith("name "));
 
     expect(staged.length).toBeGreaterThan(1);
     expect(staged.every((step) => flushedBefore(step.slice("name ".length)))).toBe(true);
@@ -71,7 +69,7 @@ describe("what the founder would lose to an OS crash", () => {
   });
 
   it("is flushed before it takes its name: the keys, and the Printful store its token sells with", async () => {
-    vi.stubGlobal("fetch", (url: string) =>
+    answerFetch((url: string) =>
       Promise.resolve(
         Response.json(
           url.endsWith("/v2/oauth-scopes")

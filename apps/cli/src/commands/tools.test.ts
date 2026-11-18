@@ -10,38 +10,42 @@ import type { ToolName, ToolOutcome } from "../server/tool-specs";
 import { runCli } from "../program";
 import { callTool } from "./tools";
 
-// short, so a socket's path under it fits macOS's limit wherever TMPDIR is
 const box = mkdtempSync(path.join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ib-tools-"));
 const controlPlane = new ControlPlane(() => path.join(box, "save"), path.join(box, "home"));
 
 beforeAll(() => controlPlane.start());
+
 afterAll(() => {
   controlPlane.stop();
   rmSync(box, { force: true, recursive: true });
 });
 
-const noStdin = (): Promise<string> => Promise.reject(new Error("nothing on stdin"));
+const noStdin = () => Promise.reject(new Error("nothing on stdin"));
 
-const done = (text: string): Promise<ToolOutcome> => Promise.resolve({ kind: "done", text });
+const done = (text: string) => Promise.resolve<ToolOutcome>({ kind: "done", text });
 
-/** A run the control plane answers with `answer`, and what it was called with. */
 const aRun = async (answer: (name: ToolName, raw: JsonValue) => Promise<ToolOutcome>) => {
   const calls: { name: ToolName; raw: JsonValue }[] = [];
+
   const handle = await controlPlane.registerRun(async (name, raw) => {
     calls.push({ name, raw });
+
     return await answer(name, raw);
   });
+
   return { calls, env: handle.env, release: handle.release };
 };
 
 describe("a company tool's verb", () => {
   it("sends its request to its tool and answers how it ended, in the server's prose", async () => {
     const run = await aRun(() => Promise.resolve({ kind: "held", text: "Held for the founder." }));
+
     try {
       const said = await callTool("message_team", '{"text":"shipped it"}', {
         env: run.env,
         stdin: noStdin,
       });
+
       expect(said).toEqual({ kind: "held", text: "Held for the founder." });
       expect(run.calls).toEqual([{ name: "message_team", raw: { text: "shipped it" } }]);
     } finally {
@@ -51,6 +55,7 @@ describe("a company tool's verb", () => {
 
   it("reads `-` from stdin, where an apostrophe needs no quoting", async () => {
     const run = await aRun(() => done("Asked."));
+
     try {
       await callTool("ask_boss", "-", {
         env: run.env,
@@ -66,6 +71,7 @@ describe("a company tool's verb", () => {
     const nobody = { kind: "done", text: "Nobody has posted yet." } as const;
     const run = await aRun(() => Promise.resolve(nobody));
     const io = { env: run.env, stdin: noStdin };
+
     try {
       await expect(callTool("read_team_chat", undefined, io)).resolves.toEqual(nobody);
       await callTool("read_team_chat", '{"limit":5}', io);
@@ -81,9 +87,9 @@ describe("a company tool's verb", () => {
   it("sends the shortest JSON of a request, so a value set_env takes fits however it was escaped", async () => {
     const run = await aRun(() => done("Set."));
     const value = '"é'.repeat(Math.floor((MAX_ENV_VALUE_BYTES - 2) / 4));
-    // as Python's json.dumps writes it: each non-ASCII character a six-byte \u escape
     const typed = JSON.stringify({ name: "KEY", value }).replaceAll("é", String.raw`\u00e9`);
     expect(Buffer.byteLength(typed)).toBeGreaterThan(MAX_REQUEST_BYTES);
+
     try {
       await callTool("set_env", typed, { env: run.env, stdin: noStdin });
       expect(run.calls).toEqual([{ name: "set_env", raw: { name: "KEY", value } }]);
@@ -95,6 +101,7 @@ describe("a company tool's verb", () => {
 
   it("refuses a request that is not JSON, saying how to send one", async () => {
     const run = await aRun(() => done("never"));
+
     try {
       const refused = callTool("message_team", "{text: hi}", { env: run.env, stdin: noStdin });
       await expect(refused).rejects.toThrow("message-team's request is not JSON");
@@ -109,6 +116,7 @@ describe("a company tool's verb", () => {
     const run = await aRun(() =>
       Promise.reject(new BadRequestError('Send either {"question":"..."}')),
     );
+
     try {
       await expect(
         callTool("ask_boss", '{"action":"x"}', { env: run.env, stdin: noStdin }),
@@ -121,6 +129,7 @@ describe("a company tool's verb", () => {
   it("answers a request heavier than a call may send with the server's refusal", async () => {
     const run = await aRun(() => done("never"));
     const value = "x".repeat(70_000);
+
     try {
       await expect(
         callTool("set_env", JSON.stringify({ name: "KEY", value }), {
@@ -161,11 +170,13 @@ describe("a company tool's verb", () => {
   it("calls as no other run: a teammate's token on this run's socket is refused", async () => {
     const lead = await aRun(() => done("never"));
     const teammate = await aRun(() => done("never"));
+
     try {
       const env = {
         IDLEBIZ_API_SOCKET: teammate.env.IDLEBIZ_API_SOCKET,
         IDLEBIZ_RUN_TOKEN: lead.env.IDLEBIZ_RUN_TOKEN,
       };
+
       await expect(callTool("read_bets", undefined, { env, stdin: noStdin })).rejects.toThrow(
         "unknown or expired run token",
       );
@@ -179,6 +190,7 @@ describe("a company tool's verb", () => {
   it("says the company did not answer once the server is gone", async () => {
     const run = await aRun(() => done("never"));
     controlPlane.stop();
+
     try {
       await expect(
         callTool("read_bets", undefined, { env: run.env, stdin: noStdin }),
@@ -189,19 +201,14 @@ describe("a company tool's verb", () => {
   });
 });
 
-/** What the command writes from here on, kept from the test's own output. */
 const captured = () => {
-  const out: string[] = [];
-  const err: string[] = [];
-  vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
-    out.push(String(chunk));
-    return true;
-  });
-  vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
-    err.push(String(chunk));
-    return true;
-  });
-  return { err: () => err.join(""), out: () => out.join("") };
+  const stdout = vi.spyOn(process.stdout, "write");
+  const stderr = vi.spyOn(process.stderr, "write");
+
+  return {
+    err: () => stderr.mock.calls.map(([chunk]) => String(chunk)).join(""),
+    out: () => stdout.mock.calls.map(([chunk]) => String(chunk)).join(""),
+  };
 };
 
 describe("the idlebiz command", () => {

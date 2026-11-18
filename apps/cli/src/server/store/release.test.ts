@@ -29,13 +29,16 @@ describe("a release", () => {
   it("drops the leaver's unstarted work, holding no bet's run", () => {
     foundAcme([hire("Mae"), hire("Priya")]);
     const bet = launch(firstProduct().id);
+
     const queued = store.createTask({
       assigneeId: "priya",
       betId: bet.id,
       origin: "work",
       title: "Post it",
     });
+
     store.claimTask(queued.id, "priya");
+
     const todo = store.createTask({
       assigneeId: "priya",
       origin: "founder",
@@ -81,12 +84,14 @@ describe("a release cut short", () => {
   it("hands on the leaver's work on the next boot", () => {
     foundAcme([hire("Mae"), hire("Priya")]);
     const bet = launch(firstProduct().id);
+
     const ask = store.createTask({
       assigneeId: "priya",
       betId: bet.id,
       origin: "work",
       title: "Ask",
     });
+
     block(ask.id, "priya");
     const side = store.createTask({ assigneeId: "priya", origin: "founder", title: "Side work" });
     mkdirSync(alumniDir(), { recursive: true });
@@ -101,21 +106,27 @@ describe("a release cut short", () => {
   it("hands on the rest when one task's save is refused, and that one on the next boot", () => {
     foundAcme([hire("Mae"), hire("Priya")]);
     const bet = launch(firstProduct().id);
+
     const [stuck, rest] = ["First", "Second"].map((title) => {
       const t = store.createTask({ assigneeId: "priya", betId: bet.id, origin: "work", title });
       block(t.id, "priya");
+
       return t.id;
     });
+
     if (!stuck || !rest) {
       throw new Error("no asks");
     }
+
     const dir = path.join(tasksDir(), stuck);
     chmodSync(dir, 0o555);
+
     try {
       expect(store.archiveEmployee("priya")).toMatchObject({ rehomed: 1 });
     } finally {
       chmodSync(dir, 0o755);
     }
+
     expect(store.getTask(rest)?.assigneeId).toBe("mae");
 
     store.initStore();
@@ -126,12 +137,14 @@ describe("a release cut short", () => {
   it("leaves the work of someone boot could not read on them", () => {
     foundAcme([hire("Mae"), hire("Priya")]);
     const bet = launch(firstProduct().id);
+
     const ask = store.createTask({
       assigneeId: "priya",
       betId: bet.id,
       origin: "work",
       title: "Ask",
     });
+
     block(ask.id, "priya");
     writeFileSync(path.join(employeeAgentDir("priya"), "AGENTS.md"), "garbage");
 

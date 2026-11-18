@@ -17,34 +17,24 @@ import { startStandInModel } from "./stand-in-model";
 import type { StandInModel } from "./stand-in-model";
 import { bundledCli, isProviderEnv, standInRunnerEnv } from "./stand-in-runners";
 
-// The CLIs the adapters bundle, signed in to the stand-in model, as main's own probe finds them at
-// boot: as they are everywhere, and on a Mac under each runner's sandbox too, as boot starts them. The
-// probe's env is main's (`runnerEnv`), so this also holds that a run keeps the stand-in's key,
-// though its name is a credential's.
-
-// the sandbox reads where the save is
 tempSave();
 
-/**
- * Main's env holding `env`, with HOME at `home` and none of this machine's own provider env, so
- * the stand-in's login is the only one a CLI could find.
- */
-const asMainWith = (env: Readonly<Record<string, string>>, home: string): void => {
+const asMainWith = (env: Readonly<Record<string, string>>, home: string) => {
   for (const name of Object.keys(process.env)) {
     if (isProviderEnv(name) && !(name in env)) {
-      // oxlint-disable-next-line unicorn/no-useless-undefined -- vi.stubEnv unsets a name only when handed undefined
       vi.stubEnv(name, undefined);
     }
   }
+
   for (const [name, value] of Object.entries(env)) {
     vi.stubEnv(name, value);
   }
+
   vi.stubEnv("HOME", home);
 };
 
-const asItIs = (_runner: RunnerId, argv: Argv): Argv => argv;
+const asItIs = (_runner: RunnerId, argv: Argv) => argv;
 
-/** Whether `probes` found each of `runners` installed and signed in. */
 const readiness = (probes: readonly RunnerProbe[]) =>
   probes.map((probe) => ({
     authed: probe.installed && probe.authed,
@@ -81,6 +71,7 @@ describe("the CLIs the adapters bundle, on the stand-in", () => {
       runners: ["claude", "codex"],
       scratch: path.join(scratch, "both"),
     });
+
     asMainWith(env, home);
     const probes = await probeRunners(runnerEnv, asItIs);
     expect(readiness(probes)).toEqual([
@@ -101,11 +92,14 @@ describe("the CLIs the adapters bundle, on the stand-in", () => {
         runners: ["claude", "codex"],
         scratch: path.join(scratch, "sandboxed"),
       });
+
       asMainWith(env, home);
       const sandbox = await sandboxOf([]);
+
       const probes = await probeRunners(runnerEnv, (runner, argv) =>
         sandboxedCommand(sandbox, runner, argv),
       );
+
       expect(readiness(probes)).toEqual([
         { authed: true, id: "claude", installed: true },
         { authed: true, id: "codex", installed: true },
@@ -118,6 +112,7 @@ describe("the CLIs the adapters bundle, on the stand-in", () => {
     const left = path.join(scratch, "claude-alone");
     const env = await standInRunnerEnv({ model, runners: ["claude"], scratch: left });
     const claudeHome = env.CLAUDE_CONFIG_DIR ?? "";
+
     const sandbox = await sandboxFor({
       clis: [env.CLAUDE_BIN ?? "", env.CODEX_BIN ?? ""],
       closedPorts: [],
@@ -126,16 +121,18 @@ describe("the CLIs the adapters bundle, on the stand-in", () => {
       hostOnly: [],
       pathDirs: [],
       save: path.join(scratch, "save"),
-      // the homes sit in TMPDIR, which every run writes
       scratch: [tmpdir()],
       shims: [],
       sshAgent: null,
       writable: [],
     });
+
     const homes = [claudeHome, await realPathOf(claudeHome)];
+
     const keptOverHome = sandbox.runsAsFounder.filter(({ path: kept }) =>
       homes.some((at) => inside(kept, at)),
     );
+
     expect(keptOverHome).toEqual([]);
   });
 

@@ -15,33 +15,33 @@ import type { Bet, BetState } from "./bets";
 
 const HOUR = 3_600_000;
 
-const bet = (patch: Partial<Bet> = {}): Bet => ({
-  budgetUsd: 5,
-  claim: { landingPath: "/b/bet", metric: "users" },
-  createdAt: 0,
-  hypothesis: "a launch post brings visitors",
-  id: "bet",
-  productId: "app",
-  readAt: null,
-  reading: null,
-  spentUsd: 0,
-  state: { kind: "open" },
-  target: 50,
-  title: "Launch post",
-  windowHours: 24,
-  ...patch,
-});
+const bet = (patch: Partial<Bet> = {}) =>
+  ({
+    budgetUsd: 5,
+    claim: { landingPath: "/b/bet", metric: "users" },
+    createdAt: 0,
+    hypothesis: "a launch post brings visitors",
+    id: "bet",
+    productId: "app",
+    readAt: null,
+    reading: null,
+    spentUsd: 0,
+    state: { kind: "open" },
+    target: 50,
+    title: "Launch post",
+    windowHours: 24,
+    ...patch,
+  }) satisfies Bet;
 
-const verdict = (moved: number, closedAt: number): BetState =>
-  moved >= 50
+const verdict = (moved: number, closedAt: number) =>
+  (moved >= 50
     ? { closedAt, kind: "won", moved }
-    : { closedAt, kind: "killed", moved, reason: "short" };
+    : { closedAt, kind: "killed", moved, reason: "short" }) satisfies BetState;
 
-const closed = (id: string, productId: string, at: number, moved: number, spentUsd = 1): Bet =>
+const closed = (id: string, productId: string, at: number, moved: number, spentUsd = 1) =>
   bet({ createdAt: at, id, productId, spentUsd, state: verdict(moved, at + HOUR) });
 
-/** Killed before any source reported its number. */
-const unread = (id: string, productId: string, at: number): Bet =>
+const unread = (id: string, productId: string, at: number) =>
   bet({
     createdAt: at,
     id,
@@ -61,7 +61,6 @@ const ledger = (bets: Bet[], products = ["app", "site"]) => ({
 });
 
 const measuring: BetState = { kind: "measuring", until: 10 };
-/** One more window after `measuring` closed: how long a verdict waits on a fresh reading. */
 const CLOSES_AGAIN = 10 + 24 * HOUR;
 const ASKING_ALL_ALONG = 0;
 
@@ -219,6 +218,7 @@ describe("allocate", () => {
       ]),
       { explore: 0 },
     );
+
     expect(pick).toEqual({ betId: "app-next", kind: "work" });
   });
 
@@ -230,6 +230,7 @@ describe("allocate", () => {
       },
       DEFAULT_POLICY,
     );
+
     expect(pick).toEqual({ betId: "two", kind: "work" });
   });
 
@@ -238,6 +239,7 @@ describe("allocate", () => {
       { ...ledger([bet({ budgetUsd: 2, id: "tight" })], ["app"]), busy: new Map([["tight", 2]]) },
       DEFAULT_POLICY,
     );
+
     expect(pick.kind).toBe("propose");
   });
 
@@ -246,6 +248,7 @@ describe("allocate", () => {
       { ...ledger([bet({ id: "blocked" })], ["app"]), stalled: new Set(["blocked"]) },
       DEFAULT_POLICY,
     );
+
     expect(pick.kind).toBe("propose");
   });
 
@@ -294,6 +297,7 @@ describe("allocate", () => {
       closed("l1", "app", HOUR, 0),
       unread("u", "app", 2 * HOUR),
     ];
+
     expect(allocate(ledger(losses), DEFAULT_POLICY)).toMatchObject({
       kind: "propose",
       widen: false,
@@ -312,6 +316,7 @@ describe("allocate", () => {
       ]),
       { explore: 0 },
     );
+
     expect(pick).toEqual({ betId: "app-next", kind: "work" });
   });
 
@@ -354,11 +359,13 @@ describe("allocate", () => {
 
   it("waits when the portfolio is full and every product carries all it can", () => {
     const products = ["a", "b", "c", "d", "e"];
+
     const full = products.flatMap((productId) =>
       ["one", "two", "three"].map((n) =>
         bet({ id: `${productId}-${n}`, productId, state: measuring }),
       ),
     );
+
     expect(allocate(ledger(full, products), DEFAULT_POLICY)).toEqual({ kind: "wait" });
   });
 });
@@ -372,12 +379,13 @@ describe("dream", () => {
     const history = Array.from({ length: 10 }, (_, i) =>
       closed(`b${i}`, i % 2 === 0 ? "app" : "site", i * (HOUR / 2), i % 2 === 0 ? 100 : 0),
     );
+
     const next = dream(DEFAULT_POLICY, history);
     expect(next.explore).toBeLessThanOrEqual(DEFAULT_POLICY.explore);
   });
 
-  // ten verdicts on which a bolder explore replays better than the incumbent's
   const early = ["e0", "e1", "e2", "e3"].map((id, i) => closed(id, "app", i * HOUR, 40));
+
   const late = ["app", "app", "app", "site", "site", "site"].map((productId, i) =>
     bet({
       createdAt: 10 * HOUR + i,
@@ -396,6 +404,7 @@ describe("dream", () => {
     const unreadApp = late.map((b) =>
       b.productId === "app" ? unread(b.id, "app", b.createdAt) : b,
     );
+
     expect(dream(DEFAULT_POLICY, [...early, ...unreadApp])).toEqual({ explore: 1 });
   });
 
@@ -416,7 +425,8 @@ describe("dream", () => {
       ["app", 7, 100],
       ["site", 8, 0],
     ];
-    const withB1At = (spentUsd: number): Bet[] =>
+
+    const withB1At = (spentUsd: number) =>
       history.map(([productId, closesAtHour, moved], i) =>
         bet({
           createdAt: i * HOUR,
@@ -426,6 +436,7 @@ describe("dream", () => {
           state: verdict(moved, closesAtHour * HOUR),
         }),
       );
+
     expect(dream(DEFAULT_POLICY, withB1At(0))).toEqual(dream(DEFAULT_POLICY, withB1At(1)));
   });
 });

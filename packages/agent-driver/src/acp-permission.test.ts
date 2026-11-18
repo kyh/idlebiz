@@ -8,12 +8,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { jsonRecordSchema, parseJson } from "@repo/domain/json";
 
-/**
- * An ACP agent that can resume, logs each request it is sent to `requests.jsonl`, and
- * answers session/set_mode with `setMode` (JSON). Given `options` (JSON), it asks
- * mid-prompt to run `git push` and replies with the outcome it was answered. Given
- * `announced`, it first announces the call under that title and asks by its id alone, as codex does.
- */
 const scriptedAgent = ({
   announced = null,
   options = null,
@@ -22,7 +16,7 @@ const scriptedAgent = ({
   announced?: string | null;
   options?: string | null;
   setMode?: string;
-}): string => `
+}) => `
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
 let prompt;
 require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
@@ -89,7 +83,7 @@ const turn = (
 
 const Sent = z.object({ method: z.string(), params: jsonRecordSchema });
 
-const requestsSent = (): z.infer<typeof Sent>[] =>
+const requestsSent = () =>
   readFileSync(path.join(cwd, "requests.jsonl"), "utf-8")
     .trim()
     .split("\n")
@@ -127,6 +121,7 @@ describe("the session mode", () => {
     const refusal = JSON.stringify({
       error: { code: -32_602, message: "Mode default is not available in this session" },
     });
+
     const { end } = await turn(scriptedAgent({ setMode: refusal }));
     expect(end).toEqual({
       class: "other",
@@ -154,25 +149,31 @@ describe("the options a session is given", () => {
 describe("answering a permission ask", () => {
   it("signs only the one-time option, though an always one is offered first", async () => {
     const asks: ToolAsk[] = [];
+
     const options = JSON.stringify([
       option("allow_always", "always"),
       option("allow_once", "once"),
     ]);
+
     const { summary } = await turn(scriptedAgent({ options }), {
       onPermission: (tool) => {
         asks.push(tool);
+
         return Promise.resolve({ allow: true });
       },
     });
+
     expect(asks).toEqual([{ command: "git push", kind: "shell" }]);
     expect(parseJson(summary)).toEqual({ optionId: "once", outcome: "selected" });
   });
 
   it("cancels, never signing for always, when no one-time option is offered", async () => {
     const options = JSON.stringify([option("allow_always", "always"), option("reject_once", "no")]);
+
     const { summary } = await turn(scriptedAgent({ options }), {
       onPermission: () => Promise.resolve({ allow: true }),
     });
+
     expect(parseJson(summary)).toEqual({ outcome: "cancelled" });
   });
 
@@ -182,15 +183,18 @@ describe("answering a permission ask", () => {
       option("reject_always", "never"),
       option("reject_once", "no"),
     ]);
+
     const { summary } = await turn(scriptedAgent({ options }), {
       onPermission: () => Promise.resolve({ allow: false }),
     });
+
     expect(parseJson(summary)).toEqual({ optionId: "no", outcome: "selected" });
   });
 
   it("tells an ask still waiting on the founder that the turn is over", async () => {
     const options = JSON.stringify([option("allow_once", "once")]);
     let toldOver = false;
+
     const { end } = await turn(scriptedAgent({ options }), {
       maxSessionMs: 300,
       onPermission: (_tool, signal) =>
@@ -202,6 +206,7 @@ describe("answering a permission ask", () => {
           });
         }),
     });
+
     expect(end.kind === "failed" ? end.error : end.kind).toContain("session limit");
     expect(toldOver).toBe(true);
   });
@@ -212,6 +217,7 @@ describe("a tool call the agent announces", () => {
     const title = `cat > .env <<'EOF'\n${"API_TOKEN=hunter2\n".repeat(300)}EOF`;
     const titles: string[] = [];
     const asks: ToolAsk[] = [];
+
     const { end } = await turn(
       scriptedAgent({
         announced: title,
@@ -225,10 +231,12 @@ describe("a tool call the agent announces", () => {
         },
         onPermission: (tool) => {
           asks.push(tool);
+
           return Promise.resolve({ allow: true });
         },
       },
     );
+
     expect(end.kind).toBe("completed");
     expect(titles).toEqual([title]);
     expect(asks).toEqual([{ kind: "unknown", title }]);

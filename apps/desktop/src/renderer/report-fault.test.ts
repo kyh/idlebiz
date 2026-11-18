@@ -7,7 +7,6 @@ import { contract } from "@repo/contract/contract";
 import { FAULT_LIMITS } from "@repo/contract/app-contract";
 import { RPC_PREFIX } from "@repo/contract/routes";
 
-/** A fault as main's log takes it. */
 interface Fault {
   where: string;
   message: string;
@@ -16,10 +15,10 @@ interface Fault {
 
 const os = implement(contract);
 
-/** Main's `app.fault` behind the page's fetch, keeping what it was sent, until it goes away. */
 const fakeMain = () => {
   const faults: Fault[] = [];
   let down = false;
+
   const handler = new RPCHandler({
     app: {
       fault: os.app.fault.handler(({ input }) => {
@@ -27,10 +26,12 @@ const fakeMain = () => {
       }),
     },
   });
-  const api = async (url: string, init: RequestInit): Promise<Response> => {
+
+  const api = async (url: string, init: RequestInit) => {
     if (down) {
       throw new TypeError("Load failed");
     }
+
     const { response } = await handler.handle(
       new Request(new URL(url, "http://127.0.0.1:1"), init),
       {
@@ -38,8 +39,10 @@ const fakeMain = () => {
         prefix: RPC_PREFIX,
       },
     );
-    return response ?? new Response(null, { status: 404 });
+
+    return (response ?? new Response(null, { status: 404 })) satisfies Response;
   };
+
   return {
     api,
     faults,
@@ -49,11 +52,11 @@ const fakeMain = () => {
   };
 };
 
-/** The page's reporter, fresh, with `api` behind its fetch. */
 const freshReporter = async (api: ReturnType<typeof fakeMain>["api"]) => {
   vi.stubGlobal("fetch", api);
   vi.resetModules();
   const { reportFault } = await import("@/renderer/report-fault");
+
   return reportFault;
 };
 
@@ -98,9 +101,11 @@ describe("reportFault", () => {
     vi.useFakeTimers({ now: 0, toFake: ["Date"] });
     const { api, faults } = fakeMain();
     const reportFault = await freshReporter(api);
+
     for (let frame = 0; frame < 60; frame += 1) {
       reportFault("window", new Error(`frame ${frame}`));
     }
+
     await settle();
     expect(faults.map((f) => f.message)).toEqual([
       "frame 0",

@@ -7,7 +7,6 @@ import {
   unsandboxedEnv,
 } from "./founder-env";
 
-// what a `launchctl setenv` could have left in main's env, beside the account's own
 const LAUNCHD = {
   BASH_ENV: "/private/tmp/run/env.sh",
   "BASH_FUNC_echo%%": "() { /usr/bin/touch /private/tmp/run/m; }",
@@ -87,6 +86,7 @@ describe("launchdAgentOf", () => {
     ]) {
       expect(launchdAgentOf({ SSH_AUTH_SOCK: planted })).toEqual({});
     }
+
     expect(launchdAgentOf({ SSH_AUTH_SOCK: undefined })).toEqual({});
   });
 });

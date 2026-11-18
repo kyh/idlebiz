@@ -37,29 +37,28 @@ import { block, firstProduct, launch, recruit, stateOf, writeDead } from "../tes
 
 const root = freshSave();
 const asleep = { hold: () => {} };
-/** The app's own runner, whose sandbox no test has checked: its ticks start nothing. */
 const scheduler = createScheduler(runnerPool, asleep, unaskedIntegrations);
 
-/** Stamp the save as another build would have written it. */
-const restamp = (format: number): void => {
+const restamp = (format: number) => {
   writeFileSync(
     companyFile(),
     readFileSync(companyFile(), "utf-8").replace(/format: \d+/u, `format: ${format}`),
   );
 };
 
-const finish = (taskId: string, employeeId: string, summary: string): void => {
+const finish = (taskId: string, employeeId: string, summary: string) => {
   store.claimTask(taskId, employeeId);
   store.lockTaskForRun(taskId, "run-1");
   store.settleTask(taskId, "run-1", { kind: "done", summary });
 };
 
-const saveSnapshot = (dir: string): Map<string, string> =>
-  new Map(
+const saveSnapshot = (dir: string) =>
+  new Map<string, string>(
     readdirSync(dir, { recursive: true, withFileTypes: true })
       .filter((entry) => entry.isFile())
       .map((entry) => {
         const file = path.join(entry.parentPath, entry.name);
+
         return [path.relative(dir, file), readFileSync(file, "utf-8")];
       }),
   );
@@ -85,7 +84,6 @@ describe("the shipping log", () => {
     finish(shipped.id, emp.id, "one");
     const open = store.createTask({ origin: "founder", title: "Still open" });
 
-    // a done package whose move to shipped/ failed, still under tasks/
     const stranded = store.createTask({ origin: "founder", title: "Stranded done" });
     store.claimTask(stranded.id, emp.id);
     store.lockTaskForRun(stranded.id, "run-2");
@@ -108,11 +106,13 @@ describe("the shipping log", () => {
   it("never hands a new task a slug the shipping log already holds", () => {
     foundAcme();
     const emp = store.createEmployee(recruit("Wren"));
+
     for (const slug of ["same-title", "same-title-2"]) {
       const task = store.createTask({ origin: "founder", title: "Same title" });
       expect(task.id).toBe(slug);
       finish(task.id, emp.id, "done");
     }
+
     expect(store.createTask({ origin: "founder", title: "Same title" }).id).toBe("same-title-3");
   });
 });
@@ -142,10 +142,12 @@ describe("products", () => {
     const emp = store.createEmployee(recruit("Quinn"));
     const [first] = store.listProducts();
     const id = first?.id ?? "";
+
     const named = store.nameProduct(id, {
       description: " Invoices that chase themselves. ",
       name: " Ledgerly ",
     });
+
     expect(named).toMatchObject({
       description: "Invoices that chase themselves.",
       id,
@@ -194,10 +196,12 @@ describe("products", () => {
   it("gives a later product its own workspace and tells every agent about it", () => {
     foundAcme();
     const emp = store.createEmployee(recruit("Quinn"));
+
     const gadget = store.createProduct({
       description: "A second thing.",
       name: "Gadget",
     });
+
     expect(gadget.workspaceDir).toBe(productWorkspace(gadget.id));
     expect(existsSync(gadget.workspaceDir)).toBe(true);
     expect(store.employeeInstructions(emp.id)).toContain(gadget.workspaceDir);
@@ -239,11 +243,13 @@ describe("a write that fails", () => {
     store.claimTask(task.id, employee.id);
     const dir = path.join(tasksDir(), task.id);
     chmodSync(dir, 0o555);
+
     try {
       expect(() => store.lockTaskForRun(task.id, "run-1")).toThrow();
     } finally {
       chmodSync(dir, 0o755);
     }
+
     expect(store.getTask(task.id)?.state.kind).toBe("queued");
     expect(store.lockTaskForRun(task.id, "run-2")?.state).toMatchObject({
       kind: "running",
@@ -259,11 +265,13 @@ describe("a write that fails", () => {
     store.lockTaskForRun(task.id, "run-1");
     const dir = path.join(tasksDir(), task.id);
     chmodSync(dir, 0o555);
+
     try {
       expect(() => store.failTask(task.id, "run-1", "boom")).toThrow();
     } finally {
       chmodSync(dir, 0o755);
     }
+
     expect(store.getTask(task.id)).toMatchObject({
       attempts: 1,
       state: { kind: "queued", lastError: "boom" },
@@ -286,9 +294,11 @@ describe("founding publication", () => {
     expect(files.has("routines/business-review/ROUTINE.md")).toBe(false);
     expect(files.has("routines/playtest-session/ROUTINE.md")).toBe(true);
     expect(files.get("agents/mae/AGENTS.md")).toContain("**hire**");
+
     for (const body of files.values()) {
       expect(body).not.toContain(".founding-");
     }
+
     expect(existsSync(productWorkspace("acme"))).toBe(true);
     expect(files.get("agents/priya/AGENTS.md")).toContain(productWorkspace("acme"));
     expect(readdirSync(root).filter((entry) => entry.startsWith(".founding-"))).toEqual([]);
@@ -310,6 +320,7 @@ describe("founding publication", () => {
       const staging = path.join(root, ".founding-interrupted");
       mkdirSync(path.join(staging, "agents", "priya"), { recursive: true });
       writeFileSync(path.join(staging, "agents", "priya", "AGENTS.md"), "partial employee");
+
       if (hasCompanyFile) {
         writeFileSync(
           path.join(staging, "COMPANY.md"),
@@ -320,6 +331,7 @@ describe("founding publication", () => {
           }),
         );
       }
+
       const before = saveSnapshot(staging);
 
       expect(store.initStore()).toEqual({ skipped: [] });
@@ -366,11 +378,13 @@ describe("the one company a root holds", () => {
       const employee = store.createEmployee(recruit("Priya"));
       const task = store.createTask({ origin: "founder", title: "Waiting" });
       store.claimTask(task.id, employee.id);
+
       if (failure === "no COMPANY.md") {
         rmSync(companyFile());
       } else {
         writeFileSync(companyFile(), "corrupt company file");
       }
+
       const before = saveSnapshot(companyDir());
 
       const report = store.initStore();
@@ -460,11 +474,14 @@ describe("the digest", () => {
     rmSync(sinceLastLookFile());
     mkdirSync(sinceLastLookFile());
     const heard: ActivityEvent["kind"][] = [];
-    const listen = (event: ActivityEvent): void => {
+
+    const listen = (event: ActivityEvent) => {
       heard.push(event.kind);
     };
+
     activityEvents.on("activity", listen);
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
+
     try {
       publishActivity({
         ...inRun,
@@ -477,6 +494,7 @@ describe("the digest", () => {
       activityEvents.off("activity", listen);
       logged.mockRestore();
     }
+
     expect(heard).toEqual(["run.end"]);
   });
 });
@@ -536,9 +554,11 @@ describe("what a run leaves behind", () => {
 describe("recently shipped", () => {
   it("keeps the latest summaries for the next brief, across a restart", () => {
     foundAcme();
+
     for (let i = 0; i < 8; i += 1) {
       store.recordShip(null, `ship ${i}`);
     }
+
     store.markSeen(1);
     expect(readdirSync(path.join(companyDir(), "state")).toSorted()).toEqual([
       "recent-ships.json",
@@ -549,8 +569,7 @@ describe("recently shipped", () => {
   });
 });
 
-/** Rewrite the task's TASK.md without the `line` it matches, as a hand edit would. */
-const dropLine = (taskId: string, line: RegExp): void => {
+const dropLine = (taskId: string, line: RegExp) => {
   const file = path.join(tasksDir(), taskId, "TASK.md");
   writeFileSync(file, readFileSync(file, "utf-8").replace(line, ""));
 };
@@ -577,9 +596,11 @@ describe("work a hand edit leaves no run or nobody holding", () => {
       foundAcme([hire("Mae"), hire("Priya")]);
       const t = store.createTask({ assigneeId: "priya", origin: "founder", title: "Ship it" });
       store.claimTask(t.id, "priya");
+
       if (status === "running") {
         store.lockTaskForRun(t.id, "run-1");
       }
+
       dropLine(t.id, /\n {2}assigneeId: .*/u);
 
       store.initStore();
@@ -613,17 +634,21 @@ describe("an answered ask", () => {
   it("drops its continuation once dead when its bet measures, since no retry of it would run", () => {
     foundAcme([hire("Mae"), hire("Priya")]);
     const bet = launch(firstProduct().id);
+
     const ask = store.createTask({
       assigneeId: "priya",
       betId: bet.id,
       origin: "work",
       title: "Ask",
     });
+
     block(ask.id, "priya");
     const next = store.resolveBlockedWithAnswer(ask.id, "yes");
+
     if (!next) {
       throw new Error("the answer went nowhere");
     }
+
     writeDead(next.id, "boom");
     store.initStore();
 
@@ -646,18 +671,23 @@ describe("an answered ask", () => {
   it("is named on its continuation, so measuring, parking, a restart and a release read no history", () => {
     foundAcme([hire("Mae"), hire("Priya")]);
     const bet = launch(firstProduct().id);
-    const answered = (runId: string): string => {
+
+    const answered = (runId: string) => {
       const ask = store.createTask({ betId: bet.id, origin: "work", title: "Ask" });
       block(ask.id, "priya");
       const next = store.resolveBlockedWithAnswer(ask.id, "yes");
+
       if (!next) {
         throw new Error("the answer went nowhere");
       }
+
       expect(next.answers).toBe(ask.id);
       store.claimTask(next.id, "priya");
       store.lockTaskForRun(next.id, runId);
+
       return next.id;
     };
+
     const parking = answered("run-2");
     const cutOff = answered("run-3");
     const unreadable = path.join(shippedDir(), "unreadable", "TASK.md");
@@ -686,13 +716,16 @@ describe("the shipping log as served", () => {
   it("is one line per ship, newest first, with neither its brief nor an answered ask", () => {
     foundAcme([hire("Mae"), hire("Priya")]);
     vi.useFakeTimers({ toFake: ["Date"] });
+
     try {
       vi.setSystemTime(1000);
+
       const first = store.createTask({
         description: "the brief it ran on",
         origin: "founder",
         title: "First",
       });
+
       finish(first.id, "priya", "one");
       vi.setSystemTime(2000);
       const quiet = store.createTask({ origin: "founder", title: "Quiet" });
@@ -757,9 +790,11 @@ describe("founder approvals", () => {
     const interrupted = store.lockTaskForRun(t.id, "run-1");
     const waiting = store.createTask({ assigneeId: mae.id, origin: "founder", title: "Deploy" });
     store.claimTask(waiting.id, mae.id);
+
     if (!interrupted) {
       throw new Error("the run did not lock");
     }
+
     writeFileSync(
       path.join(tasksDir(), t.id, "TASK.md"),
       serializeDoc(taskToDoc({ ...interrupted, attempts: 4 })),
@@ -879,9 +914,11 @@ describe("the save format", () => {
   it("keeps a lead whose AGENTS.md it could not read, who leads again once it reads", () => {
     foundAcme([hire("Mae"), hire("Priya")]);
     const lead = store.requireCompany().leaderId;
+
     if (lead === null) {
       throw new Error("founding elected no lead");
     }
+
     const file = path.join(employeeAgentDir(lead), "AGENTS.md");
     const written = readFileSync(file, "utf-8");
     writeFileSync(file, written.replace(/runner: "?claude"?/u, "runner: clod"));

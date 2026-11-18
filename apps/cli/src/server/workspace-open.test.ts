@@ -10,16 +10,25 @@ const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), "idlebiz-worksp
 const product = realpathSync.native(mkdtempSync(path.join(tmpdir(), "idlebiz-product-")));
 
 mkdirSync(path.join(root, "docs"));
+
 mkdirSync(path.join(root, "Report.app"));
+
 writeFileSync(path.join(root, "run.command"), "#!/bin/sh\n");
+
 writeFileSync(path.join(root, "README.MD"), "# hi\n");
+
 symlinkSync(path.join(root, "run.command"), path.join(root, "notes.md"));
+
 writeFileSync(path.join(root, "a.md"), "# hi\n");
+
 writeFileSync(path.join(root, "b.md"), "# hi\n");
+
 mkdirSync(path.join(root, "Bare/Contents"), { recursive: true });
+
 writeFileSync(path.join(root, "Bare/Contents/PkgInfo"), "APPL????");
-// Only macOS has the attributes that make LaunchServices open a plain file or folder as an app.
+
 const onMac = process.platform === "darwin";
+
 if (onMac) {
   execFileSync("/usr/bin/xattr", [
     "-w",
@@ -40,8 +49,11 @@ if (onMac) {
     path.join(root, "Bare"),
   ]);
 }
+
 writeFileSync(path.join(outside, "secret.md"), "# not yours\n");
+
 symlinkSync(path.join(outside, "secret.md"), path.join(root, "out.md"));
+
 writeFileSync(path.join(product, "index.html"), "<p>hi</p>\n");
 
 afterAll(() => {
@@ -69,7 +81,6 @@ describe("judgeOpening", () => {
     expect(judgeOpening([root], rel)).toBeNull();
   });
 
-  // Elsewhere the launch attributes cannot be read, so everything is revealed: nothing here opens.
   describe.runIf(onMac)("on macOS, where it can read what LaunchServices would do", () => {
     it.each([
       ["", root],
@@ -105,10 +116,12 @@ describe("judgeAgentPath", () => {
   const shared = path.join(save, "acme", "shared");
   const first = path.join(save, "acme", "products", "gizmo", "workspace");
   const second = path.join(save, "acme", "products", "side-quest", "workspace");
+
   for (const dir of [shared, first, second]) {
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, "index.html"), "<p>hi</p>\n");
   }
+
   const roots = [shared, first, second];
   afterAll(() => rmSync(save, { force: true, recursive: true }));
 

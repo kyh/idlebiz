@@ -1,6 +1,5 @@
 import type { Integrations } from "../tools/define";
 
-/** A call out a test never meant to make: it fails, saying what it would have done. */
 const unasked = (what: string) => () =>
   Promise.reject(new Error(`${what} without a test asking for it`));
 

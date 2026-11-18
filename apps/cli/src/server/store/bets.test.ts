@@ -27,17 +27,20 @@ import { firstProduct, launch, recruit, stateOf, writeDead } from "../test-suppo
 
 freshSave();
 
-/** Work on a bet in every state a task can be in before it ships: to do, queued, running, waiting on the founder. */
 const workOn = (betId: string) => {
   const priya = store.createEmployee(recruit("Priya"));
+
   const task = (title: string, run: "queue" | "start" | "ask" | null) => {
     const t = store.createTask({ assigneeId: priya.id, betId, origin: "work", title });
+
     if (run !== null) {
       store.claimTask(t.id, priya.id);
     }
+
     if (run === "start" || run === "ask") {
       store.lockTaskForRun(t.id, `run-${t.id}`);
     }
+
     if (run === "ask") {
       store.settleTask(t.id, `run-${t.id}`, {
         ask: { question: "Ship it?", type: "question" },
@@ -45,18 +48,20 @@ const workOn = (betId: string) => {
         summary: null,
       });
     }
+
     return t.id;
   };
+
   const ids = [
     task("Todo", null),
     task("Queued", "queue"),
     task("Running", "start"),
     task("Asked", "ask"),
   ];
+
   return () => ids.map((id) => stateOf(id)?.kind);
 };
 
-/** Run "run-1" on `taskId` ends asking the founder whether to ship. */
 const askShipIt = (taskId: string) =>
   store.settleTask(taskId, "run-1", {
     ask: { question: "Ship it?", type: "question" },
@@ -64,11 +69,11 @@ const askShipIt = (taskId: string) =>
     summary: null,
   });
 
-/** A task on the bet whose run "run-1" is in flight. */
-const running = (betId: string, employeeId: string): string => {
+const running = (betId: string, employeeId: string) => {
   const t = store.createTask({ assigneeId: employeeId, betId, origin: "work", title: "Post it" });
   store.claimTask(t.id, employeeId);
   store.lockTaskForRun(t.id, "run-1");
+
   return t.id;
 };
 
@@ -152,11 +157,13 @@ describe("bets", () => {
     const bet = launch(firstProduct().id);
     const dir = path.dirname(betFile(bet.id));
     chmodSync(dir, 0o555);
+
     try {
       expect(() => store.recordBetSpend(bet.id, 1.5)).toThrow();
     } finally {
       chmodSync(dir, 0o755);
     }
+
     expect(store.getBet(bet.id)?.spentUsd).toBe(1.5);
     store.setBetReading(bet.id, 10, 1);
     store.initStore();
@@ -220,12 +227,14 @@ describe("bets", () => {
     foundAcme();
     const bet = launch(firstProduct().id);
     const priya = store.createEmployee(recruit("Priya"));
+
     const task = store.createTask({
       assigneeId: priya.id,
       betId: bet.id,
       origin: "work",
       title: "Post it",
     });
+
     store.killBet(bet.id, "dud", 0);
 
     expect(store.getTask(task.id)).toBeNull();
@@ -252,12 +261,14 @@ describe("bets", () => {
       foundAcme();
       const bet = launch(firstProduct().id);
       const priya = store.createEmployee(recruit("Priya"));
+
       const task = store.createTask({
         assigneeId: priya.id,
         betId: bet.id,
         origin: "work",
         title: "Post",
       });
+
       writeDead(task.id, "boom");
       store.initStore();
 
@@ -272,6 +283,7 @@ describe("bets", () => {
     foundAcme([hire("Mae"), hire("Priya")]);
     const side = store.createProduct({ description: "a side bet", name: "Side" });
     const bet = launch(side.id);
+
     const onBet = store.createTask({
       assigneeId: "mae",
       betId: bet.id,
@@ -279,6 +291,7 @@ describe("bets", () => {
       productId: side.id,
       title: "Post",
     });
+
     const onNone = store.createTask({
       assigneeId: "mae",
       betId: null,
@@ -286,6 +299,7 @@ describe("bets", () => {
       productId: side.id,
       title: "Ping",
     });
+
     writeDead(onBet.id, "boom");
     writeDead(onNone.id, "boom");
     store.initStore();
@@ -299,7 +313,8 @@ describe("bets", () => {
   it("drops the retiring run's own work when it fails, parks, asks or is cut off, never queueing it without its product", () => {
     foundAcme([hire("Mae"), hire("Priya")]);
     const side = store.createProduct({ description: "a side bet", name: "Side" });
-    const run = (title: string): string => {
+
+    const run = (title: string) => {
       const t = store.createTask({
         assigneeId: "mae",
         betId: null,
@@ -307,10 +322,13 @@ describe("bets", () => {
         productId: side.id,
         title,
       });
+
       store.claimTask(t.id, "mae");
       store.lockTaskForRun(t.id, `run-${title}`);
+
       return t.id;
     };
+
     const failing = run("fail");
     const parking = run("park");
     const asking = run("ask");
@@ -327,6 +345,7 @@ describe("bets", () => {
       }),
     ).toEqual({ kind: "dropped" });
     store.initStore();
+
     for (const id of [failing, parking, asking, cut]) {
       expect(stateOf(id)).toEqual({ kind: "dropped", reason: "product retired" });
     }
@@ -350,29 +369,34 @@ describe("bets", () => {
     const product = firstProduct();
     const bet = launch(product.id);
     const priya = store.createEmployee(recruit("Priya"));
+
     const stuck = store.createTask({
       assigneeId: priya.id,
       betId: bet.id,
       origin: "work",
       title: "Post it",
     });
+
     const dropped = store.createTask({
       assigneeId: priya.id,
       betId: bet.id,
       origin: "work",
       title: "Tweet it",
     });
+
     store.claimTask(stuck.id, priya.id);
     store.setBetReading(bet.id, 60, 1);
     const dir = path.join(tasksDir(), stuck.id);
     chmodSync(dir, 0o555);
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "error");
+
     try {
       expect(store.judgeBets(1, 0).map((b) => b.state.kind)).toEqual(["won"]);
     } finally {
       chmodSync(dir, 0o755);
       vi.restoreAllMocks();
     }
+
     expect(stateOf(dropped.id)).toEqual({ kind: "dropped", reason: "bet closed" });
     expect(stateOf(stuck.id)?.kind).toBe("queued");
     expect(store.lockTaskForRun(stuck.id, "run-1")).toBeNull();
@@ -462,9 +486,11 @@ describe("bets", () => {
       summary: null,
     });
     const next = store.resolveBlockedWithAnswer(ask, "yes");
+
     if (!next) {
       throw new Error("the answer went nowhere");
     }
+
     store.claimTask(next.id, priya.id);
 
     store.measureBet(bet.id, 0);
@@ -484,9 +510,11 @@ describe("bets", () => {
     });
     store.measureBet(bet.id, 0);
     const next = store.resolveBlockedWithAnswer(ask, "yes");
+
     if (!next) {
       throw new Error("the answer went nowhere");
     }
+
     store.claimTask(next.id, priya.id);
     store.lockTaskForRun(next.id, "run-2");
 
@@ -498,7 +526,8 @@ describe("bets", () => {
     foundAcme();
     const bet = launch(firstProduct().id);
     const priya = store.createEmployee(recruit("Priya"));
-    const answered = (): string => {
+
+    const answered = () => {
       const ask = running(bet.id, priya.id);
       store.settleTask(ask, "run-1", {
         ask: { question: "Ship it?", type: "question" },
@@ -506,13 +535,17 @@ describe("bets", () => {
         summary: null,
       });
       const next = store.resolveBlockedWithAnswer(ask, "yes");
+
       if (!next) {
         throw new Error("the answer went nowhere");
       }
+
       store.claimTask(next.id, priya.id);
       store.lockTaskForRun(next.id, "run-2");
+
       return next.id;
     };
+
     const parking = answered();
     const cutOff = answered();
     store.measureBet(bet.id, 0);
@@ -533,12 +566,14 @@ describe("bets", () => {
     expect(() => store.killProduct(first.id, "dud", null)).toThrow("only product");
     const side = store.createProduct({ description: "a side bet", name: "Side" });
     const bet = launch(side.id);
+
     const task = store.createTask({
       betId: bet.id,
       origin: "work",
       productId: side.id,
       title: "Post",
     });
+
     expect(store.killProduct(side.id, "no traction", null).map((b) => b.id)).toEqual([bet.id]);
     expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
     expect(store.getBet(bet.id)?.state).toMatchObject({ kind: "killed" });
@@ -552,9 +587,11 @@ describe("bets", () => {
   it("refuses a sixth live product, the founder's included, until one is retired", () => {
     foundAcme();
     const second = store.createProduct({ description: "Two", name: "Two" });
+
     for (const name of ["Three", "Four", "Five"]) {
       store.createProduct({ description: name, name });
     }
+
     const sixth = { description: "one too many", name: "Six" };
     expect(() => store.createProduct(sixth)).toThrow(
       "The company already runs 5 products; kill_product one before starting another.",
@@ -568,6 +605,7 @@ describe("bets", () => {
     foundAcme([hire("Mae"), hire("Priya")]);
     const side = store.createProduct({ description: "a side bet", name: "Side" });
     const bet = launch(side.id);
+
     const task = store.createTask({
       assigneeId: "priya",
       betId: bet.id,
@@ -575,11 +613,14 @@ describe("bets", () => {
       productId: side.id,
       title: "Post",
     });
+
     store.claimTask(task.id, "priya");
     store.lockTaskForRun(task.id, "run-1");
+
     for (const by of [null, "mae"]) {
       expect(() => store.killProduct(side.id, "dud", by)).toThrow("Priya is mid-run on Side");
     }
+
     expect(store.getBet(bet.id)?.state.kind).toBe("open");
     expect(existsSync(path.join(productsDir(), side.id, "PRODUCT.md"))).toBe(true);
     expect(store.killProduct(side.id, "dud", "priya").map((b) => b.id)).toEqual([bet.id]);

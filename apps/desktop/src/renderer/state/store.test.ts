@@ -42,116 +42,130 @@ const company: Company = {
   workspaceDir: "/tmp/co",
 };
 
-const employee = (id: string, status: Employee["status"] = "idle"): Employee => ({
-  createdAt: 0,
-  deskIndex: 0,
-  id,
-  instructionsDigest: null,
-  lastRunMetrics: null,
-  lastShip: null,
-  name: id,
-  persona: "",
-  role: "engineer",
-  runner: "claude",
-  session: null,
-  spriteSeed: id,
-  status,
-  title: "Engineer",
-});
+const employee = (id: string, status: Employee["status"] = "idle") =>
+  ({
+    createdAt: 0,
+    deskIndex: 0,
+    id,
+    instructionsDigest: null,
+    lastRunMetrics: null,
+    lastShip: null,
+    name: id,
+    persona: "",
+    role: "engineer",
+    runner: "claude",
+    session: null,
+    spriteSeed: id,
+    status,
+    title: "Engineer",
+  }) satisfies Employee;
 
 const stamp = { createdAt: 0, id: 1, runId: "r1", taskId: "t1" };
-const started = (employeeId: string): ActivityEvent => ({
-  ...stamp,
-  employeeId,
-  kind: "run.start",
-});
-const napping = (runner: "claude" | "codex", until: number): ActivityEvent => ({
-  ...stamp,
-  employeeId: "lead",
-  kind: "runner.resting",
-  payload: { cause: "usage-limit", error: "You've hit your limit", runner, until },
-});
-const refused = (employeeId: string): ActivityEvent => ({
-  ...stamp,
-  employeeId,
-  kind: "run.end",
-  payload: {
-    costUsd: 0,
-    outcome: { error: "Failed to authenticate", kind: "signedOut" },
-    settled: "queued",
-    summary: "",
-  },
-});
-const hired = (employeeId: string): ActivityEvent => ({
-  createdAt: 0,
-  employeeId,
-  id: 1,
-  kind: "org.hired",
-  payload: { by: "lead", name: employeeId, title: "Engineer" },
-});
 
-/** A question of `assigneeId`'s awaiting the founder. */
-const asking = (assigneeId: string): Task => ({
-  answers: null,
-  assigneeId,
-  attempts: 0,
-  betId: null,
-  completedAt: null,
-  createdAt: 0,
-  description: null,
-  id: `ask-${assigneeId}`,
-  origin: "work",
-  priority: "medium",
-  productId: null,
-  state: { ask: { question: "Ship it?", type: "question" }, kind: "blocked", summary: null },
-  title: "Ship it",
-});
-const raised = (employeeId: string): ActivityEvent => ({
-  ...stamp,
-  employeeId,
-  kind: "run.ask",
-  payload: { ask: { question: "Ship it?", type: "question" } },
-});
+const started = (employeeId: string) =>
+  ({
+    ...stamp,
+    employeeId,
+    kind: "run.start",
+  }) satisfies ActivityEvent;
 
-/** The chat event of room line `id`, said at `id`. */
-const said = (id: number, text: string): ActivityEvent => ({
-  createdAt: id,
-  employeeId: null,
-  id: 100 + id,
-  kind: "chat",
-  message: text,
-  payload: { from: { kind: "founder" }, line: id, to: null },
-});
+const napping = (runner: "claude" | "codex", until: number) =>
+  ({
+    ...stamp,
+    employeeId: "lead",
+    kind: "runner.resting",
+    payload: { cause: "usage-limit", error: "You've hit your limit", runner, until },
+  }) satisfies ActivityEvent;
 
-/** What these tests let main answer late. */
+const refused = (employeeId: string) =>
+  ({
+    ...stamp,
+    employeeId,
+    kind: "run.end",
+    payload: {
+      costUsd: 0,
+      outcome: { error: "Failed to authenticate", kind: "signedOut" },
+      settled: "queued",
+      summary: "",
+    },
+  }) satisfies ActivityEvent;
+
+const hired = (employeeId: string) =>
+  ({
+    createdAt: 0,
+    employeeId,
+    id: 1,
+    kind: "org.hired",
+    payload: { by: "lead", name: employeeId, title: "Engineer" },
+  }) satisfies ActivityEvent;
+
+const asking = (assigneeId: string) =>
+  ({
+    answers: null,
+    assigneeId,
+    attempts: 0,
+    betId: null,
+    completedAt: null,
+    createdAt: 0,
+    description: null,
+    id: `ask-${assigneeId}`,
+    origin: "work",
+    priority: "medium",
+    productId: null,
+    state: { ask: { question: "Ship it?", type: "question" }, kind: "blocked", summary: null },
+    title: "Ship it",
+  }) satisfies Task;
+
+const raised = (employeeId: string) =>
+  ({
+    ...stamp,
+    employeeId,
+    kind: "run.ask",
+    payload: { ask: { question: "Ship it?", type: "question" } },
+  }) satisfies ActivityEvent;
+
+const said = (id: number, text: string) =>
+  ({
+    createdAt: id,
+    employeeId: null,
+    id: 100 + id,
+    kind: "chat",
+    message: text,
+    payload: { from: { kind: "founder" }, line: id, to: null },
+  }) satisfies ActivityEvent;
+
 type Late = "employees.list" | "agents.resting" | "company.get";
 
-/** One stream of main's events, as main serves it to the page: the test feeds it until it drops it. */
 interface Stream {
   events: AsyncGenerator<PageEvent>;
   push: (event: PageEvent) => void;
   drop: () => void;
 }
 
-const openStream = (): Stream => {
+const openStream = () => {
   const queue: (PageEvent | "dropped")[] = [];
   let wake: (() => void) | null = null;
-  const push = (next: PageEvent | "dropped"): void => {
+
+  const push = (next: PageEvent | "dropped") => {
     queue.push(next);
     wake?.();
     wake = null;
   };
-  const arrival = (): Promise<void> =>
+
+  const arrival = () =>
     // oxlint-disable-next-line promise/avoid-new -- the test feeds the stream by hand
-    new Promise((resolve) => {
+    new Promise<void>((resolve) => {
       wake = resolve;
     });
-  const events = async function* events(): AsyncGenerator<PageEvent> {
+
+  const events = async function* events() {
     for (;;) {
       const next = queue.shift();
+
       if (next === "dropped") {
         throw new Error("main went away");
       }
+
       if (next === undefined) {
         await arrival();
       } else {
@@ -159,7 +173,8 @@ const openStream = (): Stream => {
       }
     }
   };
-  return { drop: () => push("dropped"), events: events(), push };
+
+  return { drop: () => push("dropped"), events: events(), push } satisfies Stream;
 };
 
 interface MainHolds {
@@ -169,27 +184,19 @@ interface MainHolds {
   resting: RestingRunners;
   room: TeamMessage[];
   tasks: Task[];
-  /** Main cannot read the company, as when it went away. */
   down: boolean;
 }
 
-/** Where the page is served from: the page asks main on its own origin. */
 const PAGE_ORIGIN = "http://127.0.0.1:1";
 
 const os = implement(contract);
 
-/** A fault the page sent to main's log. */
 interface Fault {
   where: string;
   message: string;
   stack?: string | undefined;
 }
 
-/**
- * Main as the page reaches it: the procedures these tests let the store call, over oRPC behind the
- * page's fetch. A `late` procedure answers only when the test says, with what main held when it was
- * asked; the rest answer at once. It counts what it was asked, and in what order.
- */
 const fakeMain = (late: readonly Late[]) => {
   const main: MainHolds = {
     authed: true,
@@ -200,41 +207,53 @@ const fakeMain = (late: readonly Late[]) => {
     signedOut: [],
     tasks: [],
   };
+
   const waiting: { method: Late; release: () => void }[] = [];
   const streams: Stream[] = [];
   const asked = new Map<string, number>();
   const order: string[] = [];
   const faults: Fault[] = [];
-  const count = (method: string): void => {
+
+  const count = (method: string) => {
     asked.set(method, (asked.get(method) ?? 0) + 1);
     order.push(method);
   };
-  /** The stream the page has open: the last it opened. */
-  const open = async (event: PageEvent | "dropped"): Promise<void> => {
+
+  const open = async (event: PageEvent | "dropped") => {
     const stream = streams.at(-1);
+
     if (!stream) {
       throw new Error("the page opened no stream of main's events");
     }
+
     if (event === "dropped") {
       stream.drop();
     } else {
       stream.push(event);
     }
+
     await settle();
   };
-  const answerOf = <T>(method: Late, value: T): Promise<T> => {
+
+  const answerOf = <T>(method: Late, value: T) => {
     count(method);
+
     if (!late.includes(method)) {
       return Promise.resolve(value);
     }
+
     const answer = Promise.withResolvers<T>();
     waiting.push({ method, release: () => answer.resolve(value) });
+
     return answer.promise;
   };
-  const counted = <T>(method: string, value: T): T => {
+
+  const counted = <T>(method: string, value: T) => {
     count(method);
+
     return value;
   };
+
   const router = {
     agents: {
       hasAuth: os.agents.hasAuth.handler(() =>
@@ -253,6 +272,7 @@ const fakeMain = (late: readonly Late[]) => {
         if (main.down) {
           throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "main went away" });
         }
+
         return await answerOf("company.get", company);
       }),
       setMaxAgents: os.company.setMaxAgents.handler(({ input }) => ({
@@ -263,11 +283,11 @@ const fakeMain = (late: readonly Late[]) => {
     employees: {
       list: os.employees.list.handler(() => answerOf("employees.list", main.employees)),
     },
-    // main hears the page from here on, as its subscriber is registered
     events: os.events.handler(() => {
       const stream = openStream();
       streams.push(stream);
       order.push("events");
+
       return stream.events;
     }),
     products: { list: os.products.list.handler(() => counted("products.list", [])) },
@@ -284,60 +304,57 @@ const fakeMain = (late: readonly Late[]) => {
       ),
     },
   };
-  // no pings: a test's stream is fed by hand, and a timer would outlive it
+
   const handler = new RPCHandler(router, {
     toFetchResponse: { eventStream: { keepAlive: { enabled: false } } },
   });
-  /** The page's fetch, answered by this main. */
-  const api = async (url: string, init: RequestInit): Promise<Response> => {
+
+  const api = async (url: string, init: RequestInit) => {
     const { response } = await handler.handle(new Request(new URL(url, PAGE_ORIGIN), init), {
       context: {},
       prefix: RPC_PREFIX,
     });
-    return response ?? new Response(null, { status: 404 });
+
+    return (response ?? new Response(null, { status: 404 })) satisfies Response;
   };
-  /** Answer the oldest request for `method` still waiting, once what the page asked has reached main. */
-  const answer = async (method: Late): Promise<void> => {
+
+  const answer = async (method: Late) => {
     await settle();
     const at = waiting.findIndex((call) => call.method === method);
     const [call] = at === -1 ? [] : waiting.splice(at, 1);
+
     if (!call) {
       throw new Error(`nothing is waiting on ${method}`);
     }
+
     call.release();
     await settle();
   };
+
   return {
     answer,
-    /** Answer every request for `method`, those its answers ask for included. */
-    answerAll: async (method: Late): Promise<void> => {
+    answerAll: async (method: Late) => {
       while (waiting.some((call) => call.method === method)) {
         await answer(method);
       }
     },
     api,
-    /** How many times the page asked main for `method`. */
-    asked: (method: string): number => asked.get(method) ?? 0,
-    /** What the page asked main for, its streams of events among it, the first first. */
-    calls: (): string[] => [...order],
-    /** The open stream ends, as it does when the connection to main drops. */
+    asked: (method: string) => asked.get(method) ?? 0,
+    calls: () => [...order],
     drop: () => open("dropped"),
-    emit: (e: ActivityEvent): Promise<void> => open({ data: e, name: "activity" }),
-    /** The faults the page sent to main's log. */
+    emit: (e: ActivityEvent) => open({ data: e, name: "activity" }),
     faults,
-    /** A step of a login the founder started. */
-    login: (e: AuthFlowEvent): Promise<void> => open({ data: e, name: "auth" }),
+    login: (e: AuthFlowEvent) => open({ data: e, name: "auth" }),
     main,
-    /** How many streams of main's events the page has opened. */
-    opened: (): number => streams.length,
+    opened: () => streams.length,
   };
 };
 
 type FakeMain = ReturnType<typeof fakeMain>;
 
-/** An office that only records what it is told; `heard` sees each message as it is told. */
 const fakeOffice = (heard: (message: keyof OfficeMessages) => void = () => {}) => {
   const told: { message: keyof OfficeMessages; payload: unknown }[] = [];
+
   const game: Office = {
     events: {
       emit: (message, payload) => {
@@ -348,66 +365,70 @@ const fakeOffice = (heard: (message: keyof OfficeMessages) => void = () => {}) =
       on: () => {},
     },
   };
-  const walkedIn = (): unknown[] =>
-    told.filter((m) => m.message === "spawn-employee").map((m) => m.payload);
-  /** How many times the office was told `message`. */
-  const toldOf = (message: keyof OfficeMessages): number =>
+
+  const walkedIn = () => told.flatMap((m) => (m.message === "spawn-employee" ? [m.payload] : []));
+
+  const toldOf = (message: keyof OfficeMessages) =>
     told.filter((m) => m.message === message).length;
+
   return { game, toldOf, walkedIn };
 };
 
 const stops: (() => void)[] = [];
 
-/** The page with main's procedures behind its fetch, before its store hears main. */
 const freshPage = async (api: FakeMain["api"]) => {
   vi.stubGlobal("fetch", api);
   vi.resetModules();
   const store = await import("@/renderer/state/store");
   const queries = await import("@/renderer/state/queries");
-  /** Where the query stands for a component showing it, as useQuery mounts it. */
+
   const mounted = <T, E>(options: QueryObserverOptions<T, E, T, T, DataTag<QueryKey, T, E>>) => {
     const observer = new QueryObserver(queries.queryClient, options);
     stops.push(observer.subscribe(() => {}));
+
     return () => observer.getCurrentResult();
   };
-  /** What a component showing the query shows. */
-  const shown = <T, E>(
-    options: QueryObserverOptions<T, E, T, T, DataTag<QueryKey, T, E>>,
-  ): (() => T | undefined) => {
+
+  const shown = <T, E>(options: QueryObserverOptions<T, E, T, T, DataTag<QueryKey, T, E>>) => {
     const result = mounted(options);
-    return () => result().data;
+
+    return (() => result().data) satisfies () => T | undefined;
   };
-  /** What the window shows, as useBoot reads it from the reads it waits on, each mounted. */
-  const windowShows = (): (() => Boot["kind"]) => {
+
+  const windowShows = () => {
     const saveRead = mounted(orpc.save.report.queryOptions());
     const companyRead = mounted(queries.companyQuery);
     const rosterRead = mounted(queries.employeesQuery);
     const tasksRead = mounted(queries.openTasksQuery);
     const authRead = mounted(queries.authQuery);
-    return () =>
+
+    return (() =>
       queries.bootOfReads({
         authed: authRead().data?.ok ?? null,
         company: companyRead(),
         employees: rosterRead(),
         report: saveRead(),
         tasks: tasksRead(),
-      }).kind;
+      }).kind) satisfies () => Boot["kind"];
   };
+
   return { queries, shown, store, windowShows };
 };
 
-/** The page, its store hearing main. */
 const freshStore = async (api: FakeMain["api"]) => {
   const page = await freshPage(api);
   page.store.initStore();
   await settle();
+
   return page;
 };
 
-const askersOf = (tasks: Task[]): string => tasks.map((t) => t.assigneeId).join(" ");
-const rosterOf = (employees: Employee[] | undefined): string =>
+const askersOf = (tasks: Task[]) => tasks.map((t) => t.assigneeId).join(" ");
+
+const rosterOf = (employees: Employee[] | undefined) =>
   (employees ?? []).map((e) => `${e.id}:${e.status}`).join(" ");
-const restOf = (resting: RestingRunners | undefined): string =>
+
+const restOf = (resting: RestingRunners | undefined) =>
   Object.entries(resting ?? {})
     .map(([runner, until]) => `${runner}:${until}`)
     .toSorted()
@@ -423,7 +444,6 @@ describe("store", () => {
   it("asks main once for the company, the roster and the tasks as the window and the office boot", async () => {
     const { api, asked } = fakeMain([]);
     const { queries, shown, store } = await freshPage(api);
-    // the window mounts what it shows, then its store hears main, while the office boots alongside
     shown(queries.companyQuery);
     store.initStore();
     const read = await queries.read(queries.companyQuery);
@@ -448,7 +468,6 @@ describe("store", () => {
       queries.read(queries.employeesQuery),
       queries.read(queries.openTasksQuery),
     ]);
-    // what main did between those answers and the stream is the window docs/app.md accepts
     store.initStore();
     await settle();
     expect(opened()).toBe(1);
@@ -469,11 +488,9 @@ describe("store", () => {
     main.employees = [employee("lead", "working")];
     await emit(started("lead"));
     expect(rosterOf(roster())).toBe("lead:working");
-    // the read asked for before the run started lands, and changes nothing
     await answer("employees.list");
     await refreshed;
     expect(rosterOf(roster())).toBe("lead:working");
-    // what the patch asked for again
     await answer("employees.list");
     expect(rosterOf(roster())).toBe("lead:working");
   });
@@ -539,7 +556,8 @@ describe("store", () => {
         on: () => {},
       },
     });
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
+
     try {
       main.employees = [employee("lead"), employee("mae")];
       await emit(hired("mae"));
@@ -609,7 +627,8 @@ describe("store", () => {
   it("refuses a retry while main still cannot read the company, and holds it once one lands", async () => {
     const { api, main } = fakeMain([]);
     main.down = true;
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
+
     try {
       const { queries, shown, store } = await freshStore(api);
       const held = shown(queries.companyQuery);
@@ -627,14 +646,14 @@ describe("store", () => {
   it("boots the office again, once, when main answers after the window could not reach it", async () => {
     const { api, main } = fakeMain([]);
     main.down = true;
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
+
     try {
       const { store, windowShows } = await freshStore(api);
       const { game, toldOf } = fakeOffice();
       store.setGame(game);
       const shows = windowShows();
       await settle();
-      // the window shows each change of what it shows, as Page's effect does
       store.bootShown(shows());
       expect(shows()).toBe("unreachable");
       await expect(store.refresh()).rejects.toThrow("main went away");
@@ -647,7 +666,6 @@ describe("store", () => {
       store.bootShown(shows());
       expect(shows()).toBe("office");
       expect(toldOf("company-ready")).toBe(1);
-      // the window showing the office again, or a resync landing the same answers, boots nothing
       store.bootShown(shows());
       expect(toldOf("company-ready")).toBe(1);
     } finally {
@@ -670,7 +688,8 @@ describe("store", () => {
 
   it("asks main for everything again once its events come back, since what it sent meanwhile is lost", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
+
     try {
       const { api, calls, drop, main, opened } = fakeMain([]);
       const { queries, shown } = await freshStore(api);
@@ -680,7 +699,6 @@ describe("store", () => {
       expect(rosterOf(roster())).toBe("lead:idle");
       await drop();
       expect(logged).toHaveBeenCalledWith("Lost main's events", expect.any(Error));
-      // a run started and a sign-in lapsed while the page heard nothing
       main.employees = [employee("lead", "working")];
       main.signedOut = ["codex"];
       const before = calls().length;
@@ -689,7 +707,6 @@ describe("store", () => {
       await vi.advanceTimersByTimeAsync(1);
       await settle();
       expect(opened()).toBe(2);
-      // main hears the page before it answers again, so what it does after an answer is not lost
       const reopened = calls().slice(before);
       expect(reopened[0]).toBe("events");
       expect(reopened).toContain("employees.list");
@@ -703,7 +720,8 @@ describe("store", () => {
 
   it("sets the office right by main's roster and tasks once its events come back", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
+
     try {
       const { api, drop, main } = fakeMain([]);
       main.employees = [employee("lead"), employee("bob")];
@@ -712,19 +730,18 @@ describe("store", () => {
       shown(queries.employeesQuery);
       shown(queries.openTasksQuery);
       await settle();
-      // what the window holds as the office is told, which is what the office sets itself by
       const resynced: string[] = [];
+
       const { game } = fakeOffice((message) => {
         if (message === "resynced") {
           const roster = rosterOf(queries.held(queries.employeesQuery));
           resynced.push(`${roster} | ${askersOf(queries.held(queries.openTasksQuery) ?? [])}`);
         }
       });
+
       store.setGame(game);
-      // the first stream opened on the window's own first reads
       expect(resynced).toEqual([]);
       await drop();
-      // a teammate was released, another hired, a run started and an ask raised, all unheard
       main.employees = [employee("lead", "working"), employee("mae")];
       main.tasks = [asking("mae")];
       await vi.advanceTimersByTimeAsync(1000);
@@ -738,7 +755,8 @@ describe("store", () => {
 
   it("sets the office right only once the events its stream brought meanwhile are applied", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout"] });
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
+
     try {
       const { answerAll, api, drop, emit, main } = fakeMain(["employees.list"]);
       const { queries, shown, store } = await freshStore(api);
@@ -747,20 +765,20 @@ describe("store", () => {
       shown(queries.openTasksQuery);
       await answerAll("employees.list");
       const told: string[] = [];
+
       const { game } = fakeOffice((message) => {
         if (message === "spawn-employee" || message === "resynced") {
           told.push(`${message} ${rosterOf(queries.held(queries.employeesQuery))}`);
         }
       });
+
       store.setGame(game);
       await drop();
       main.employees = [employee("lead"), employee("mae")];
-      // the stream opens again, and its resync reads the roster while main hires someone
       await vi.advanceTimersByTimeAsync(1000);
       await emit(hired("mae"));
       await answerAll("employees.list");
       await settle();
-      // the hire walks in before the office is set right, by answers that hold the hire
       expect(told).toEqual(["spawn-employee lead:idle mae:idle", "resynced lead:idle mae:idle"]);
     } finally {
       logged.mockRestore();

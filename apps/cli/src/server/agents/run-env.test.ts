@@ -37,6 +37,7 @@ describe("runEnv", () => {
       "BW_CLIENTSECRET",
       "OP_SESSION_my",
     ];
+
     const env = runEnv(Object.fromEntries(dropped.map((name) => [name, "secret"])), PROVIDERS);
     expect(env).toEqual({});
   });
@@ -59,6 +60,7 @@ describe("runEnv", () => {
       TOKENIZERS_PARALLELISM: "false",
       XDG_SESSION_TYPE: "tty",
     };
+
     expect(runEnv(base, PROVIDERS)).toEqual(base);
   });
 
@@ -70,6 +72,7 @@ describe("runEnv", () => {
       SITE_URL: "https://acme.vercel.app",
       https_proxy: "http://kai:pw@proxy.corp:8080",
     };
+
     expect(runEnv(base, PROVIDERS)).toEqual({
       HTTPS_PROXY: "http://kai:pw@proxy.corp:8080",
       SITE_URL: "https://acme.vercel.app",
@@ -91,6 +94,7 @@ describe("runEnv", () => {
       AWS_SECRET_ACCESS_KEY: "secret",
       AWS_SESSION_TOKEN: "session",
     };
+
     expect(runEnv(base, RUNNERS[runner].providerEnv)).toEqual({
       AWS_BEARER_TOKEN_BEDROCK: "bedrock",
       AWS_PROFILE: "founder",

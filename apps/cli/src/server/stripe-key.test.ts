@@ -1,11 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { RefusalError } from "./refusal";
 import { getSecret, setSecret } from "./vault/vault";
 import { noteStripeRead, removeStripeKey, saveStripeKey, stripeKeyStatus } from "./stripe-key";
 import { fetchRealMetrics, stripeCredential } from "./metrics";
-import type { StripeAnswer } from "./metrics";
 import { tempSave } from "./test-support/save";
 import { keychainVault } from "./test-support/vault";
+import { answerFetch, interceptNetwork } from "./test-support/network";
+
+interceptNetwork();
 
 tempSave();
 
@@ -15,32 +17,36 @@ beforeEach(() => {
   keychain = keychainVault();
 });
 
-/** Stripe answering every call with `answer`; keeps what each call asked for, and with which key. */
 const stripe = (answer: (url: string) => Promise<Response>) => {
   const asked: { url: string; auth: string | null; method: string }[] = [];
-  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+  answerFetch((url: string, init?: RequestInit) => {
     asked.push({
       auth: new Headers(init?.headers).get("authorization"),
       method: init?.method ?? "GET",
       url,
     });
+
     return answer(url);
   });
+
   return asked;
 };
 
-/** The metrics pulse's read of the saved key, noted as the pulse notes it. */
-const pulse = async (): Promise<StripeAnswer> => {
+const pulse = async () => {
   const key = stripeCredential();
   const read = await fetchRealMetrics(key, [], []);
+
   if (key === null || read.stripe === null) {
     throw new Error("the saved key was not read");
   }
+
   noteStripeRead(key, read.stripe);
+
   return read.stripe;
 };
 
 const listed = () => Promise.resolve(Response.json({ data: [], has_more: false, object: "list" }));
+
 const refused = (status: number) => () =>
   Promise.resolve(
     Response.json({ error: { message: "no", type: "invalid_request_error" } }, { status }),
@@ -144,9 +150,11 @@ describe("a charging key that can't read", () => {
 
   it("reads a refused key afresh once it is saved again, since its grants are edited in place", async () => {
     let charges = refused(403);
+
     const asked = stripe((url) =>
       url.startsWith("https://api.stripe.com/v1/payment_links") ? listed() : charges(),
     );
+
     await saveStripeKey("rk_live_grantedlater4321");
     expect(await pulse()).toBe("refused");
 

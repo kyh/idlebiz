@@ -103,6 +103,7 @@ describe("acpAgentFor", () => {
   it("starts no codex run whose MCP servers it could not list, and says why", async () => {
     expect(() => codexSessionConfig("Error: unknown flag --json")).toThrow(RefusalError);
     vi.stubEnv("CODEX_BIN", path.join(root, "no-codex"));
+
     try {
       await expect(codexSessionEnv(SANDBOX)).rejects.toThrow(
         /could not list your codex MCP servers to keep them out of the run \(.+\)/u,
@@ -148,6 +149,7 @@ describe("acpAgentFor", () => {
 
   it("signs a claude session in, and picks its model, as the founder's settings did", () => {
     const userSettings = { apiKeyHelper: "~/bin/anthropic-key", model: "haiku" };
+
     const agent = acpAgentFor(
       "claude",
       SANDBOX,
@@ -157,6 +159,7 @@ describe("acpAgentFor", () => {
         ANTHROPIC_BASE_URL: "https://gateway.example.com",
       },
     );
+
     expect(agent.sessionMeta).toMatchObject({
       claudeCode: {
         options: {
@@ -182,7 +185,6 @@ describe("acpAgentFor", () => {
 
 const onMac = process.platform === "darwin";
 
-/** An ACP agent whose one message is the names of the variables it was started with. */
 const ENV_NAMING_AGENT = `
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
 require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
@@ -204,6 +206,7 @@ describe("the environment an agent is spawned with", () => {
     STRIPE_SECRET_KEY: "sk_live_founder",
     VERCEL_TOKEN: "vercel-founder",
   };
+
   const touched = [...Object.keys(founder), "CLAUDE_BIN", "CODEX_BIN"];
   const previous = Object.fromEntries(touched.map((key) => [key, process.env[key]]));
   const names = z.array(z.string());
@@ -216,6 +219,7 @@ describe("the environment an agent is spawned with", () => {
 
   afterEach(() => {
     rmSync(cwd, { force: true, recursive: true });
+
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) {
         // oxlint-disable-next-line typescript/no-dynamic-delete -- process.env stringifies an assigned undefined; delete is the only unset
@@ -228,6 +232,7 @@ describe("the environment an agent is spawned with", () => {
 
   it("holds none of IdleBiz's keys, even when main's own env has them", async () => {
     const agent = acpAgentFor("claude", SANDBOX, SETUP);
+
     const { end, summary } = await runAcpTurn({
       agent: { ...agent, command: [process.execPath, "-e", ENV_NAMING_AGENT] },
       cwd,
@@ -239,6 +244,7 @@ describe("the environment an agent is spawned with", () => {
       prompt: () => "work",
       teardownGraceMs: 100,
     });
+
     expect(end).toEqual({ kind: "completed" });
     const spawnedWith = names.parse(parseJson(summary));
     expect(spawnedWith).not.toContain("VERCEL_TOKEN");
@@ -256,12 +262,13 @@ describe("the environment an agent is spawned with", () => {
     process.env.CLAUDE_BIN = cli;
     process.env.CODEX_BIN = path.join(cwd, "no-codex");
 
-    // the stand-in CLI writes what it saw where a run may write
     const scratch: Sandbox["scratch"][number] = { match: "subpath", path: realpathSync(cwd) };
+
     const pool = createRunnerPool({
       checkSandbox: () => Promise.resolve({ kind: "sandboxed" }),
       resolveSandbox: () => Promise.resolve({ ...SANDBOX, scratch: [scratch] }),
     });
+
     pool.init();
     await pool.hasAnyRunner();
     const probedWith = names.parse(parseJson(readFileSync(seen, "utf-8")));

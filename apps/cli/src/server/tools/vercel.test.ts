@@ -98,13 +98,16 @@ describe("deploy", () => {
   it("leaves a binding the founder made while the deploy ran", async () => {
     connectVercel(root);
     const run = deployingRun(DEPLOYED);
+
     const ctx: RunContext = {
       ...run.ctx,
       deploy: () => {
         store.setProductVercel("acme", VERCEL);
+
         return Promise.resolve({ ...DEPLOYED, project: NEW_PROJECT });
       },
     };
+
     store.grantApproval(ctx.run.taskId, NEW_ACTION);
 
     expect(await answerText(ctx, "deploy", {})).toBe(
@@ -214,10 +217,12 @@ describe("deploy", () => {
     store.setProductVercel("acme", VERCEL);
     store.grantApproval(run.ctx.run.taskId, BOUND_ACTION);
     const checked: string[] = [];
+
     const ctx: RunContext = {
       ...run.ctx,
       checkVercelToken: (token) => {
         checked.push(token);
+
         return Promise.resolve({ kind: "refused" });
       },
     };
@@ -241,11 +246,12 @@ describe("deploy", () => {
   });
 
   it("spends no sign-off while Vercel cannot be asked about the token", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     connectVercel(root);
     const run = deployingRun(DEPLOYED);
     store.setProductVercel("acme", VERCEL);
     store.grantApproval(run.ctx.run.taskId, BOUND_ACTION);
+
     const ctx: RunContext = {
       ...run.ctx,
       checkVercelToken: () => Promise.reject(new TypeError("fetch failed")),
@@ -264,19 +270,21 @@ const OPENAI = { name: "OPENAI_API_KEY", value: "sk-proj-acme-runtime" };
 
 const SET: EnvResult = { ok: true };
 
-/** A run of Priya's on Acme whose variables answer `result`, and what each was asked. */
 const settingRun = (result: EnvResult = SET) => {
   const run = runAs("priya");
   const sets: EnvRequest[] = [];
+
   const ctx: RunContext = {
     ...run.ctx,
     checkVercelToken: () => Promise.resolve({ account: "kai", kind: "valid" }),
     run: { ...run.ctx.run, productId: "acme" },
     setEnv: (req) => {
       sets.push(req);
+
       return Promise.resolve(result);
     },
   };
+
   return { ...run, ctx, sets };
 };
 
@@ -348,13 +356,16 @@ describe("set_env", () => {
 
     writeFileSync(path.join(product.workspaceDir, "pay.js"), `const pk = "${publishable}";`);
     const deploys: DeployRequest[] = [];
+
     const deploying: RunContext = {
       ...ctx,
       deploy: (req) => {
         deploys.push(req);
+
         return Promise.resolve(DEPLOYED);
       },
     };
+
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
     expect(await answerText(deploying, "deploy", {})).toContain("Deployed Acme");
@@ -441,13 +452,16 @@ describe("set_env", () => {
     store.setProductVercel("acme", VERCEL);
     await answerText(ctx, "set_env", OPENAI);
     const deploys: DeployRequest[] = [];
+
     const deploying: RunContext = {
       ...ctx,
       deploy: (req) => {
         deploys.push(req);
+
         return Promise.resolve(DEPLOYED);
       },
     };
+
     store.grantApproval(ctx.run.taskId, BOUND_ACTION);
 
     await answerText(deploying, "deploy", {});
@@ -455,10 +469,13 @@ describe("set_env", () => {
       { ...OPENAI, kind: "env", product: "acme" },
       { kind: "held", name: "VERCEL_TOKEN", value: TOKEN },
     ]);
+
     const saved = readdirSync(root, { recursive: true, withFileTypes: true }).filter(
       (entry) => entry.isFile() && entry.name !== "vault.json",
     );
+
     expect(saved.length).toBeGreaterThan(0);
+
     for (const entry of saved) {
       expect(readFileSync(path.join(entry.parentPath, entry.name), "utf-8")).not.toContain(
         OPENAI.value,
@@ -468,10 +485,12 @@ describe("set_env", () => {
 
   it("replaces only a name the team set, and keeps nothing Vercel turned down", async () => {
     connectVercel(root);
+
     const refused = settingRun({
       error: "Vercel turned it down (403): A variable with this name already exists",
       ok: false,
     });
+
     store.setProductVercel("acme", VERCEL);
 
     expect(await answerText(refused.ctx, "set_env", OPENAI)).toBe(
@@ -480,13 +499,16 @@ describe("set_env", () => {
     expect(store.recentTeamMessages()).toEqual([]);
 
     const sets: EnvRequest[] = [];
+
     const ctx: RunContext = {
       ...refused.ctx,
       setEnv: (req) => {
         sets.push(req);
+
         return Promise.resolve(SET);
       },
     };
+
     await answerText(ctx, "set_env", OPENAI);
     await answerText(ctx, "set_env", { ...OPENAI, value: "sk-proj-acme-rotated" });
     expect([...refused.sets, ...sets].map((req) => req.replaces)).toEqual([false, false, true]);
@@ -550,6 +572,7 @@ describe("set_env", () => {
     connectVercel(root);
     const run = settingRun();
     store.setProductVercel("acme", VERCEL);
+
     const ctx: RunContext = {
       ...run.ctx,
       checkVercelToken: () => Promise.resolve({ kind: "refused" }),
@@ -579,6 +602,7 @@ describe("set_env", () => {
         BadRequestError,
       );
     }
+
     expect(sets).toEqual([]);
   });
 });

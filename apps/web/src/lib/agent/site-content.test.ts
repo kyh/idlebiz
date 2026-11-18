@@ -31,28 +31,31 @@ type LinkRun = Extract<Run, { kind: "link" }>;
 
 const isLink = (run: Run): run is LinkRun => !isPlainRun(run) && run.kind === "link";
 
-const runsOf = (block: ProseBlock): Run[] => {
+const runsOf = (block: ProseBlock) => {
   if (block.kind === "paragraph") {
     return block.runs;
   }
+
   if (block.kind === "bullets") {
     return block.items.flat();
   }
+
   if (block.kind === "list") {
-    return block.items.flatMap(({ href, label }): Run[] =>
-      href ? [{ href, kind: "link", text: label }] : [],
+    return block.items.flatMap(
+      ({ href, label }) => (href ? [{ href, kind: "link", text: label }] : []) satisfies Run[],
     );
   }
+
   return [];
 };
 
-const linksOf = (page: ProsePage): string[] =>
+const linksOf = (page: ProsePage) =>
   page.blocks
     .flatMap(runsOf)
     .filter(isLink)
     .map((run) => run.href);
 
-const headingsOf = (page: ProsePage): string[] =>
+const headingsOf = (page: ProsePage) =>
   page.blocks.flatMap((block) => (block.kind === "heading" ? [block.text] : []));
 
 const legalPages = [privacyPage, termsPage];
@@ -75,9 +78,11 @@ describe("heading anchors", () => {
     for (const page of servedPages) {
       for (const href of linksOf(page)) {
         const [pathname, fragment] = href.split("#");
+
         if (fragment === undefined) {
           continue;
         }
+
         const target = pathname ? findProsePage(pathname) : page;
         expect(target, href).toBeDefined();
         expect([...headingAnchors(target?.blocks ?? []).values()], href).toContain(fragment);
@@ -114,9 +119,11 @@ describe("the Privacy Policy", () => {
 
   it("opens with its effective date and an index of every section", () => {
     expect(markdown).toContain(`Effective as of ${legalRevisedOn}.`);
+
     const index = headingsOf(privacyPage)
       .map((heading) => `- [${heading}](#${headingSlug(heading)})`)
       .join("\n");
+
     expect(markdown).toContain(`**Index**\n\n${index}\n`);
   });
 
@@ -199,10 +206,13 @@ describe("the Terms of Use", () => {
     expect(findProsePage(termsPage.path)).toBe(termsPage);
     expect(sitemap().map(({ url }) => url)).toContain(termsUrl);
     expect(siteLinks.map(({ href }) => href)).toContain(termsPage.path);
+
     for (const list of [renderLlmsTxt(), renderHomeMarkdown(), renderNotFoundMarkdown("/nope")]) {
       expect(list).toContain(`[${termsPage.title}](${termsUrl})`);
     }
+
     expect(prosePages).not.toContain(termsPage);
+
     for (const page of servedPages) {
       expect(linksOf(page).map((href) => href.split("#")[0])).not.toContain(termsPage.path);
     }

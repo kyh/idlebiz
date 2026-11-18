@@ -39,6 +39,7 @@ describe("resolveMentions", () => {
       { id: "zoe-park", name: "Zoë Park" },
       { id: "jose", name: "José Ruiz" },
     ];
+
     expect(resolveMentions("@Zoë can you fix the signup?", team)).toEqual(["zoe-park"]);
     expect(resolveMentions("@zoe and @Jose\u0301, thoughts?", team)).toEqual(["zoe-park", "jose"]);
     expect(resolveMentions("@Zoëy", team)).toEqual([]);
@@ -65,6 +66,7 @@ describe("isRoutineDue", () => {
     name: "Playtest",
     role: null,
   };
+
   const DAY = 86_400_000;
 
   it("waits out the first interval from the founding", () => {

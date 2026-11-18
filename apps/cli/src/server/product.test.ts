@@ -19,9 +19,11 @@ describe("opening from the workspace", () => {
 
   it("turns away an entry outside the product's workspace as the founder's answer", async () => {
     const [product] = store.listProducts();
+
     if (product === undefined) {
       throw new Error("a company is founded with its first product");
     }
+
     writeFileSync(path.join(product.workspaceDir, "PRODUCT.md"), "entry: ../../../../etc/hosts\n");
     await expect(openProduct(product.id)).rejects.toBeInstanceOf(RefusalError);
   });

@@ -24,26 +24,29 @@ const failed = {
   error: "exceeded the 45m session limit — killed",
   kind: "failed",
 } as const;
+
 const limited = {
   class: "usage-limit",
   error: "You've hit your session limit",
   kind: "failed",
   reportedReset: null,
 } as const;
+
 const overloaded = {
   class: "overloaded",
   error: "API Error: 529 Overloaded",
   kind: "failed",
 } as const;
+
 const accessRefused = {
   class: "access-denied",
   error: "Your organization must verify before using the API.",
   kind: "failed",
 } as const;
+
 const refusedLogin = { class: "auth", error: "Failed to authenticate", kind: "failed" } as const;
 
-/** Until when an outcome rests its runner; 0 when it does not. */
-const untilOf = (outcome: RunOutcome): number => (outcome.kind === "resting" ? outcome.until : 0);
+const untilOf = (outcome: RunOutcome) => (outcome.kind === "resting" ? outcome.until : 0);
 
 describe("addUsage", () => {
   it("counts both attempts of a retried turn, dollars as already priced", () => {
@@ -66,6 +69,7 @@ describe("outcomeOf", () => {
     kind: "resting",
     until: 99,
   } as const;
+
   const failure = { error: failed.error, kind: "failed" } as const;
   const signedOut = { error: refusedLogin.error, kind: "signedOut" } as const;
 
@@ -89,7 +93,6 @@ describe("outcomeOf", () => {
   });
 });
 
-/** A pool whose check holds, sandboxing runs with SANDBOX and keeping no rests, but for what `deps` say. */
 const poolOf = (deps: Partial<RunnerPoolDeps> = {}) =>
   createRunnerPool({
     checkSandbox: () => Promise.resolve({ kind: "sandboxed" }),
@@ -150,11 +153,11 @@ describe("an overloaded provider", () => {
   const minute = 60_000;
   const pool = poolOf();
 
-  /** How long the next overload rests codex, by the outcome heed hands back. */
-  const restAfterOverload = (): number => {
+  const restAfterOverload = () => {
     const before = Date.now();
     const until = untilOf(pool.heed("codex", overloaded));
     expect(pool.restingRunner("codex")).toBe(until);
+
     return Math.round((until - before) / minute);
   };
 
@@ -164,17 +167,18 @@ describe("an overloaded provider", () => {
 
   it("starts at a minute again once a turn ends another way", () => {
     const fresh = poolOf();
-    const rest = (): number => {
+
+    const rest = () => {
       const before = Date.now();
+
       return Math.round((untilOf(fresh.heed("claude", overloaded)) - before) / minute);
     };
+
     expect(rest()).toBe(1);
     expect(rest()).toBe(2);
     const held = fresh.restingRunner("claude");
     fresh.heed("claude", failed);
-    // the next asks a minute, so the 2m rest still holding stands
     expect(untilOf(fresh.heed("claude", overloaded))).toBe(held);
-    // and the one after asks 2m, not the 8m a streak never broken would
     expect(rest()).toBe(2);
   });
 
@@ -192,11 +196,13 @@ describe("an overloaded provider", () => {
 
 describe("a provider refusing access no sign-in repairs", () => {
   const minute = 60_000;
-  const restOf = (outcome: RunOutcome, before: number): number =>
+
+  const restOf = (outcome: RunOutcome, before: number) =>
     Math.round((untilOf(outcome) - before) / minute);
 
   it("rests the runner on an overload's backoff, never signing it out or spending the session", () => {
     const pool = poolOf();
+
     const signedInClaude = {
       authed: true,
       bin: "claude",
@@ -204,6 +210,7 @@ describe("a provider refusing access no sign-in repairs", () => {
       installed: true,
       version: "1.0.0",
     } as const;
+
     const rests = [1, 2, 3, 4, 5].map(() => restOf(pool.heed("claude", accessRefused), Date.now()));
     expect(rests).toEqual([1, 2, 4, 8, 15]);
     expect(pool.needsSignIn(signedInClaude)).toBe(false);
@@ -220,7 +227,6 @@ describe("a provider refusing access no sign-in repairs", () => {
     expect(restOf(pool.heed("codex", accessRefused), Date.now())).toBe(2);
     pool.heed("codex", failed);
     const held = pool.restingRunner("codex");
-    // a minute asked: the 2m rest still holding stands
     expect(pool.heed("codex", accessRefused)).toMatchObject({ until: held });
   });
 });
@@ -307,19 +313,18 @@ describe("resumeIn", () => {
   });
 });
 
-/** A claude whose stored login always reads as signed in, and whose sign-in exits `exit`. */
-const storedLoginClaude = (exit: number): void => {
+const storedLoginClaude = (exit: number) => {
   const cli = path.join(root, "claude");
   const script = `case "$1 $2" in --version*) echo 1.0.0 ;; "auth login") exit ${exit} ;; *) echo '{"loggedIn": true}' ;; esac`;
   writeFileSync(cli, `#!/bin/sh\n${script}\n`, { mode: 0o755 });
   process.env.CLAUDE_BIN = cli;
 };
+
 const signingIn = {
   message: "Signing in to Claude Code — your browser will open…",
   type: "progress",
 };
 
-/** Point both CLIs at nothing, so looking for them spawns no real one. */
 const withoutClis = () => {
   const touched = ["CLAUDE_BIN", "CODEX_BIN"];
   const previous = Object.fromEntries(touched.map((key) => [key, process.env[key]]));
@@ -342,22 +347,28 @@ const withoutClis = () => {
 
 describe("a sandbox the boot check refuses", () => {
   withoutClis();
+
   const refused: SandboxState = {
     kind: "refused",
     reason: "sandbox-exec timed out, so none will start.",
   };
+
   const holding: SandboxState = { kind: "sandboxed" };
 
   it("starts no run and says why, then checks again when the CLIs are looked for again", async () => {
     const verdicts = [refused, holding];
     let checks = 0;
+
     const pool = poolOf({
       checkSandbox: () => {
         checks += 1;
+
         return Promise.resolve(verdicts[checks - 1] ?? holding);
       },
     });
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const logged = vi.spyOn(console, "error");
+
     try {
       pool.init();
       expect(pool.runsSandboxed()).toBe(false);
@@ -382,16 +393,15 @@ describe("a sandbox the boot check refuses", () => {
 
 const onMac = process.platform === "darwin";
 
-/** Whether a pool whose check holds finds a CLI ready, each probe under the sandbox `resolveSandbox` gives. */
-const anyRunnerUnder = async (resolveSandbox: () => Promise<Sandbox>): Promise<boolean> => {
+const anyRunnerUnder = async (resolveSandbox: () => Promise<Sandbox>) => {
   const pool = poolOf({ resolveSandbox });
   pool.init();
+
   return await pool.hasAnyRunner();
 };
 
 describe.skipIf(!onMac)("the sandbox a run starts under", () => {
   withoutClis();
-  // a claude that reads as installed only while the canary it tries is sandboxed from it
   let canary = "";
   beforeEach(() => {
     canary = path.join(realpathSync(root), "canary");
@@ -401,15 +411,18 @@ describe.skipIf(!onMac)("the sandbox a run starts under", () => {
     writeFileSync(cli, `#!/bin/sh\n${script}\n`, { mode: 0o755 });
     process.env.CLAUDE_BIN = cli;
   });
-  const sandboxing = (): Sandbox => ({
-    ...SANDBOX,
-    unreadable: [{ match: "subpath", path: canary }],
-  });
+
+  const sandboxing = () =>
+    ({
+      ...SANDBOX,
+      unreadable: [{ match: "subpath", path: canary }],
+    }) satisfies Sandbox;
 
   it("finds a CLI only under its sandbox, and none with no sandbox", async () => {
     expect(await anyRunnerUnder(() => Promise.resolve(sandboxing()))).toBe(true);
     expect(await anyRunnerUnder(() => Promise.resolve({ ...SANDBOX, unreadable: [] }))).toBe(false);
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
+
     try {
       expect(await anyRunnerUnder(() => Promise.reject(new Error("no sandbox")))).toBe(false);
       expect(logged).toHaveBeenCalledWith("[probe]", new Error("no sandbox"));
@@ -424,11 +437,14 @@ describe.skipIf(!onMac)("the sandbox a run starts under", () => {
     expect(await sandboxed.sandboxedSignIn("codex", ["codex", "login"])).toEqual(
       signInCommand(sandboxing(), "codex", ["codex", "login"]),
     );
+
     const refused = poolOf({
       checkSandbox: () => Promise.resolve({ kind: "refused", reason: "no sandbox-exec here." }),
       resolveSandbox: () => Promise.resolve(sandboxing()),
     });
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const logged = vi.spyOn(console, "error");
+
     try {
       refused.init();
       await expect(refused.sandboxedSignIn("claude", ["claude", "auth", "login"])).rejects.toThrow(
@@ -443,13 +459,16 @@ describe.skipIf(!onMac)("the sandbox a run starts under", () => {
   it("checks the sandbox only once main's PATH has settled, and starts no run before", async () => {
     const shellAnswered = Promise.withResolvers<null>();
     let checked = 0;
+
     const pool = poolOf({
       checkSandbox: () => {
         checked += 1;
+
         return Promise.resolve({ kind: "sandboxed" });
       },
       resolveSandbox: () => Promise.resolve(sandboxing()),
     });
+
     pool.init(
       (async () => {
         await shellAnswered.promise;
@@ -468,14 +487,17 @@ describe.skipIf(!onMac)("the sandbox a run starts under", () => {
 
   it("is resolved again for every run, and none starts without one", async () => {
     let resolved = 0;
+
     const pool = poolOf({
       resolveSandbox: () => {
         resolved += 1;
+
         return resolved === 1
           ? Promise.resolve(sandboxing())
           : Promise.reject(new Error(`no sandbox ${resolved}`));
       },
     });
+
     pool.init();
     expect(await pool.hasAnyRunner()).toBe(true);
     await expect(pool.completeOneShot("hire")).rejects.toThrow("no sandbox 2");
@@ -518,30 +540,37 @@ describe.skipIf(!onMac)("the sandbox a run starts under", () => {
 
   it("lets a task's run write only its own folders in the save, and the hiring one-shot none", async () => {
     const asked: (readonly string[])[] = [];
+
     const pool = poolOf({
       resolveSandbox: (writable) => {
         asked.push(writable);
+
         return asked.length === 1
           ? Promise.resolve(sandboxing())
           : Promise.reject(new Error("no sandbox"));
       },
     });
+
     pool.init();
     await pool.hasAnyRunner();
     const company = found();
     const [emp] = store.listEmployees();
     const [product] = store.listProducts();
+
     if (emp === undefined || product === undefined) {
       throw new Error("founded without a hire or a product");
     }
+
     const task = { description: "", id: "t", title: "work", workspace: product.workspaceDir };
+
     const tools = {
       asks: askBox(() => {}),
       call: () => Promise.reject(new Error("called a tool without a test asking for it")),
     };
+
     await expect(pool.completeOneShot("hire")).rejects.toThrow("no sandbox");
-    // as at boot: a task's run opens its socket first, since its sandbox names it
     await controlPlane.start();
+
     try {
       await expect(
         pool.runTask(emp, company, task, () => {}, tools, new AbortController().signal),
@@ -549,6 +578,7 @@ describe.skipIf(!onMac)("the sandbox a run starts under", () => {
     } finally {
       controlPlane.stop();
     }
+
     expect(asked).toEqual([
       [],
       [],

@@ -95,7 +95,6 @@ describe("tool specs", () => {
     expect(body.safeParse({ ...example, name }).success).toBe(ok);
   });
 
-  // a quote, a backslash or a line break escapes in two bytes, a control character in six
   it.each(["x", '"', "\\", "x\ny", "\u0001", "é", "😀"])(
     "takes the longest set_env value of %j whose request still fits what a call may send, and no longer",
     (unit) => {
