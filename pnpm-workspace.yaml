@@ -5,6 +5,9 @@ packages:
 
 # One declaration per dep that more than one workspace uses, so versions
 # cannot drift between them, and the ACP adapters.
+allowBuilds:
+  msw: set this to true or false
+
 catalog:
   # Exact: a bump changes the wire acp-session.ts speaks.
   "@agentclientprotocol/claude-agent-acp": 0.85.1
@@ -20,6 +23,7 @@ catalog:
   "@types/react": ^19.3.0
   "@types/react-dom": ^19.3.0
   cn: ^0.4.0
+  msw: ^3.0.6
   react: ^19.3.1
   react-dom: ^19.3.1
   tailwindcss: ^4.3.3
@@ -27,6 +31,10 @@ catalog:
   vite: ^8.3.5
   vitest: ^5.0.5
   zod: ^4.6.7
+
+minimumReleaseAgeExclude:
+  - "@interfere/landmines@0.1.0"
+  - "ultracite@8.3.0"
 
 updateConfig:
   ignoreDependencies:

@@ -23,13 +23,14 @@
     "verify": "pnpm typecheck && pnpm lint && pnpm knip && pnpm format && pnpm test && pnpm build"
   },
   "devDependencies": {
+    "@interfere/landmines": "^0.1.0",
     "knip": "^6.43.0",
     "oxfmt": "^0.74.0",
-    "oxlint": "^1.89.0",
-    "oxlint-tsgolint": "^7.0.2005",
+    "oxlint": "^1.94.0",
+    "oxlint-tsgolint": "^7.0.2007",
     "turbo": "^2.11.10",
     "typescript": "catalog:",
-    "ultracite": "^8.0.0"
+    "ultracite": "^8.3.0"
   },
   "engines": {
     "node": "24.x"

@@ -5,7 +5,12 @@
   "description": "CLI coding-agent runners (claude, codex) over the Agent Client Protocol: spawn, run one turn, price usage",
   "type": "module",
   "exports": {
-    "./*": "./src/*.ts"
+    "./acp-session": "./src/acp-session.ts",
+    "./detect": "./src/detect.ts",
+    "./events": "./src/events.ts",
+    "./pricing": "./src/pricing.ts",
+    "./registry": "./src/registry.ts",
+    "./tool-ask": "./src/tool-ask.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
