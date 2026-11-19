@@ -33,8 +33,6 @@ catalog:
   zod: ^4.6.7
 
 minimumReleaseAgeExclude:
-  - "@interfere/landmines@0.1.0"
-  - "ultracite@8.3.0"
 
 updateConfig:
   ignoreDependencies:
