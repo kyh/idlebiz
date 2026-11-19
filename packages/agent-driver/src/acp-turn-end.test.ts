@@ -9,8 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CLAUDE_RATE_LIMITED_UPDATE } from "./claude-rate-limit.fixture";
 
-/** An ACP agent that opens a session, then answers the prompt with `answer` (JSON), or never. */
-const scriptedAgent = (answer: string | null, stderr = ""): string => `
+const scriptedAgent = (answer: string | null, stderr = "") => `
 process.stderr.write(${JSON.stringify(stderr)});
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
 require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
@@ -22,8 +21,7 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
 });
 `;
 
-/** An ACP agent that opens a session, then runs `onPrompt` (JS that can use `id` and `send`). */
-const agentThat = (onPrompt: string): string => `
+const agentThat = (onPrompt: string) => `
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
 require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
   const { id, method } = JSON.parse(line);
@@ -45,18 +43,15 @@ interface SessionFailure {
   title: string;
 }
 
-const typedError = (category: string, actions: string[], title: string): SessionFailure => ({
-  actions,
-  category,
-  severity: "error",
-  title,
-});
+const typedError = (category: string, actions: string[], title: string) =>
+  ({
+    actions,
+    category,
+    severity: "error",
+    title,
+  }) satisfies SessionFailure;
 
-/**
- * codex-acp ending a turn on `failure`: on the prompt response to a client that declared typed
- * failures, and otherwise only in prose, the turn still ending end_turn.
- */
-const failingAgent = (failure: SessionFailure, stderr = ""): string => `
+const failingAgent = (failure: SessionFailure, stderr = "") => `
 process.stderr.write(${JSON.stringify(stderr)});
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
 const failure = ${JSON.stringify(failure)};
@@ -108,14 +103,12 @@ const turn = (agentScript: string, maxSessionMs = 0) =>
     teardownGraceMs: 100,
   });
 
-/** When a turn's usage limit lifts, as it reported it; 0 for any other end. */
-const resetOf = (end: Awaited<ReturnType<typeof turn>>["end"]): number =>
+const resetOf = (end: Awaited<ReturnType<typeof turn>>["end"]) =>
   end.kind === "failed" && end.class === "usage-limit" ? (end.reportedReset ?? 0) : 0;
 
 const CLAUDE_LIMIT = "You've hit your limit · try again in 2 hours";
 
-/** claude refusing the prompt for a usage limit, its text naming `message`. */
-const claudeLimited = (message = CLAUDE_LIMIT): string =>
+const claudeLimited = (message = CLAUDE_LIMIT) =>
   `send({ id, error: { code: -32603, data: { errorKind: "rate_limit" }, message: ${JSON.stringify(message)} } });`;
 
 describe("how a turn ends", () => {
@@ -131,6 +124,7 @@ describe("how a turn ends", () => {
     const lifts = Math.floor((Date.now() + 45 * 60_000) / 1000);
     const { update } = CLAUDE_RATE_LIMITED_UPDATE.params;
     const rateLimit = { ...update._meta["_claude/rateLimit"], resetsAt: lifts };
+
     const line = JSON.stringify({
       ...CLAUDE_RATE_LIMITED_UPDATE,
       params: {
@@ -138,9 +132,11 @@ describe("how a turn ends", () => {
         update: { ...update, _meta: { ...update._meta, "_claude/rateLimit": rateLimit } },
       },
     });
+
     const { end } = await turn(
       agentThat(`process.stdout.write(${JSON.stringify(`${line}\n`)});\n${claudeLimited()}`),
     );
+
     expect(end).toMatchObject({
       class: "usage-limit",
       kind: "failed",
@@ -166,6 +162,7 @@ describe("how a turn ends", () => {
         message: "API Error: 529 Overloaded",
       },
     });
+
     const { end } = await turn(scriptedAgent(refusal));
     expect(end).toEqual({
       class: "overloaded",
@@ -176,9 +173,11 @@ describe("how a turn ends", () => {
 
   it("fails on a refusal of access, never a sign-in, when claude's provider refuses access", async () => {
     const message = "Your organization must verify before using the API.";
+
     const refusal = JSON.stringify({
       error: { code: -32_603, data: { errorKind: "verification_required" }, message },
     });
+
     const { end } = await turn(scriptedAgent(refusal));
     expect(end).toEqual({ class: "access-denied", error: message, kind: "failed" });
   });
@@ -211,15 +210,18 @@ describe("a turn whose runner's login was refused", () => {
     const refusal = JSON.stringify({
       error: { code: -32_000, message: "Authentication required" },
     });
+
     const { end } = await turn(scriptedAgent(refusal));
     expect(end).toEqual({ class: "auth", error: "Authentication required", kind: "failed" });
   });
 
   it("fails on auth when the provider refused the login claude sent", async () => {
     const message = "Failed to authenticate. API Error: 401 OAuth token has been revoked";
+
     const refusal = JSON.stringify({
       error: { code: -32_603, data: { errorKind: "authentication_failed" }, message },
     });
+
     const { end } = await turn(scriptedAgent(refusal));
     expect(end).toEqual({ class: "auth", error: message, kind: "failed" });
   });
@@ -246,31 +248,36 @@ describe("a turn whose agent dies mid-prompt", () => {
     const answers = `send({ id, error: { code: -32603, message: "Internal error" } });
 process.stderr.write("shutting down");
 setTimeout(() => process.exit(1), 200);`;
+
     const { end } = await turn(agentThat(answers));
     expect(end).toEqual({ class: "other", error: "Internal error", kind: "failed" });
   });
 });
 
-/** What node's `child_process` channel says of each child it spawns. */
 const Announced = z.object({ process: z.instanceof(ChildProcess) });
 
 describe("a turn whose agent's output breaks", () => {
   it("fails with what broke it, not as a connection that only closed", async () => {
-    // node announces each child it spawns here, which puts the agent's own pipe in hand
     const spawned: ChildProcess[] = [];
+
     const onSpawn: ChannelListener = (message) => {
       const announced = Announced.safeParse(message);
+
       if (announced.success) {
         spawned.push(announced.data.process);
       }
     };
+
     subscribe("child_process", onSpawn);
+
     try {
       const ending = turn("setInterval(() => {}, 1000);");
       const stdout = spawned.at(-1)?.stdout;
+
       if (!stdout) {
         throw new Error("the agent never spawned");
       }
+
       stdout.destroy(new Error("stdout broke"));
       const { end } = await ending;
       expect(end).toEqual({ class: "other", error: "stdout broke", kind: "failed" });
@@ -324,9 +331,11 @@ describe("a turn the agent ended on a typed failure", () => {
 
   it("fails on the session's context when only a new one can go on", async () => {
     const title = "Codex ran out of room in the model's context window.";
+
     const { end, sessionId } = await turn(
       failingAgent(typedError("limit", ["new_session"], title)),
     );
+
     expect(end).toEqual({ class: "context", error: title, kind: "failed" });
     expect(sessionId).toBe("s1");
   });
@@ -334,19 +343,23 @@ describe("a turn the agent ended on a typed failure", () => {
   it("fails, keeping the session, on any other error", async () => {
     const refused = await turn(failingAgent(typedError("request", [], "Bad request")));
     expect(refused.end).toEqual({ class: "other", error: "Bad request", kind: "failed" });
+
     const lost = await turn(
       failingAgent(typedError("connection", ["retry", "new_session"], "Connection lost")),
     );
+
     expect(lost.end).toEqual({ class: "other", error: "Connection lost", kind: "failed" });
   });
 
   it("completes when the agent reports no failure, or only a warning the turn got past", async () => {
     const clean = await turn(scriptedAgent(JSON.stringify({ result: { stopReason: "end_turn" } })));
     expect(clean.end).toEqual({ kind: "completed" });
+
     const warning = failingAgent({
       ...typedError("service", [], "Reconnecting…"),
       severity: "warning",
     });
+
     const { end } = await turn(warning);
     expect(end).toEqual({ kind: "completed" });
   });

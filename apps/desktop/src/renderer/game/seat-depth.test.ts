@@ -4,32 +4,36 @@ import { bustOverlapRect, bustOverlaps, seatDepth } from "./seat-depth";
 import type { RoomImage, SeatSpot } from "./seat-depth";
 import type { OpaqueMask } from "./opaque-mask";
 
-// A seat at (100, 100): the bust spans x 90..110 and y 62..100 (height 38 above the origin).
 const seat = { x: 100, y: 100 };
 
-const image = (overrides: Partial<RoomImage> = {}): RoomImage => ({
-  depth: 0,
-  flipX: false,
-  flipY: false,
-  height: 80,
-  width: 40,
-  x: 80,
-  y: 40,
-  ...overrides,
-});
+const image = (overrides: Partial<RoomImage> = {}) =>
+  ({
+    depth: 0,
+    flipX: false,
+    flipY: false,
+    height: 80,
+    width: 40,
+    x: 80,
+    y: 40,
+    ...overrides,
+  }) satisfies RoomImage;
 
-/** A w×h mask with one opaque pixel at (px, py) in texture space. */
-const dotMask = (w: number, h: number, px: number, py: number): OpaqueMask => {
+const dotMask = (w: number, h: number, px: number, py: number) => {
   const opaque = new Uint8Array(w * h);
   opaque[py * w + px] = 1;
-  return { h, opaque, w };
+
+  return { h, opaque, w } satisfies OpaqueMask;
 };
-const clear = (w: number, h: number): OpaqueMask => ({ h, opaque: new Uint8Array(w * h), w });
-const solid = (w: number, h: number): OpaqueMask => ({
-  h,
-  opaque: new Uint8Array(w * h).fill(1),
-  w,
-});
+
+const clear = (w: number, h: number) =>
+  ({ h, opaque: new Uint8Array(w * h), w }) satisfies OpaqueMask;
+
+const solid = (w: number, h: number) =>
+  ({
+    h,
+    opaque: new Uint8Array(w * h).fill(1),
+    w,
+  }) satisfies OpaqueMask;
 
 describe("bustOverlapRect", () => {
   it("is the bust clipped to the image bounds, in whole pixels", () => {
@@ -49,9 +53,7 @@ describe("bustOverlapRect", () => {
   });
 
   it("is null when the bounds do not meet", () => {
-    // starts where the bust ends
     expect(bustOverlapRect(seat, image({ x: 110 }))).toBeNull();
-    // below the origin row
     expect(bustOverlapRect(seat, image({ y: 100 }))).toBeNull();
     expect(bustOverlapRect(seat, image({ width: 50, x: 0 }))).toBeNull();
   });
@@ -64,6 +66,7 @@ describe("bustOverlaps", () => {
     expect(
       bustOverlaps(seat, miss, () => {
         reads += 1;
+
         return solid(40, 80);
       }),
     ).toBe(false);
@@ -75,21 +78,15 @@ describe("bustOverlaps", () => {
   });
 
   it("looks for an opaque pixel inside the overlap, not just anywhere on the canvas", () => {
-    // image at (80, 40): the bust covers texture x 10..30, y 22..60
     expect(bustOverlaps(seat, image(), () => dotMask(40, 80, 15, 30))).toBe(true);
-    // left of the bust
     expect(bustOverlaps(seat, image(), () => dotMask(40, 80, 2, 30))).toBe(false);
-    // below the origin
     expect(bustOverlaps(seat, image(), () => dotMask(40, 80, 15, 70))).toBe(false);
     expect(bustOverlaps(seat, image(), () => clear(40, 80))).toBe(false);
   });
 
   it("reads a flipped image through its flipped pixels", () => {
-    // flipped horizontally, texture x 2 is drawn at world x 80 + 37 = 117 — off the bust
     expect(bustOverlaps(seat, image({ flipX: true }), () => dotMask(40, 80, 2, 30))).toBe(false);
-    // ...and texture x 25 at world x 80 + 14 = 94, inside it
     expect(bustOverlaps(seat, image({ flipX: true }), () => dotMask(40, 80, 25, 30))).toBe(true);
-    // flipped vertically, texture y 70 lands at world y 40 + 9 = 49 — above the bust
     expect(bustOverlaps(seat, image({ flipY: true }), () => dotMask(40, 80, 15, 70))).toBe(false);
     expect(bustOverlaps(seat, image({ flipY: true }), () => dotMask(40, 80, 15, 30))).toBe(true);
   });
@@ -107,9 +104,9 @@ describe("seatDepth", () => {
     const room = [
       image({ depth: base + 3 }),
       image({ depth: base + 9 }),
-      // above, but off to the side
       image({ depth: base + 30, x: 200 }),
     ];
+
     expect(seatDepth(front, room, () => solid(40, 80))).toBeCloseTo(base + 9.25);
   });
 
@@ -120,13 +117,16 @@ describe("seatDepth", () => {
 
   it("decodes only the textures whose bounds reach the seat", () => {
     const read: number[] = [];
+
     const room = [
       image({ depth: base + 1, x: 300 }),
       image({ depth: base + 2 }),
       image({ depth: base + 3, y: 200 }),
     ];
+
     seatDepth(front, room, (img) => {
       read.push(img.depth);
+
       return solid(40, 80);
     });
     expect(read).toEqual([base + 2]);
@@ -152,6 +152,7 @@ describe("seatDepth", () => {
       let reads = 0;
       seatDepth(behind, [chair], () => {
         reads += 1;
+
         return solid(40, 80);
       });
       expect(reads).toBe(0);

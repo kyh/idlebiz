@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { denialOf } from "./denials";
 
-const event = (eventMessage: string): string =>
+const event = (eventMessage: string) =>
   JSON.stringify({ eventMessage, messageType: "Error", senderImagePath: "/Sandbox" });
 
 describe("denialOf", () => {

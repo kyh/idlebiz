@@ -3,12 +3,13 @@ import type { Host, Launch } from "./host";
 
 const SIX_HOURS = 6 * 60 * 60_000;
 
-const launchOf = (packaged: boolean): Launch => ({
-  openedAtLogin: false,
-  packaged,
-  pageDevUrl: null,
-  vault: null,
-});
+const launchOf = (packaged: boolean) =>
+  ({
+    openedAtLogin: false,
+    packaged,
+    pageDevUrl: null,
+    vault: null,
+  }) satisfies Launch;
 
 const unasked = (): never => {
   throw new Error("main asks the shell no such thing here");
@@ -16,26 +17,28 @@ const unasked = (): never => {
 
 type Feed = () => Promise<{ version: string } | null>;
 
-// a shell whose release feed is `feed`, recording what main tells it, what it installs and the
-// boxes it shows; it downloads only the feed's newest, as the shell's updater does
 const shellOf = (feed: Feed) => {
   const told: string[] = [];
   const installed: string[] = [];
   const boxes: (string | null)[] = [];
+
   const host: Host = {
     checkUpdate: async () => await feed(),
     copyText: unasked,
     installUpdate: async (version) => {
       const newest = await feed();
+
       if (newest?.version !== version) {
         throw new Error(`the feed offers ${newest?.version ?? "nothing"} now`);
       }
+
       installed.push(version);
     },
     keepAwake: unasked,
     loginItem: unasked,
     messageBox: ({ detail }) => {
       boxes.push(detail);
+
       return Promise.resolve();
     },
     notify: ({ title }) => {
@@ -47,14 +50,15 @@ const shellOf = (feed: Feed) => {
     vaultDelete: unasked,
     vaultSet: unasked,
   };
+
   return { boxes, host, installed, told };
 };
 
-// what the module heard lasts the launch, so each test loads it, and the host, anew
 const load = async (packaged: boolean, host: Host) => {
   vi.resetModules();
   const hostModule = await import("./host");
   hostModule.setHost(host, launchOf(packaged));
+
   return await import("./updates");
 };
 
@@ -64,14 +68,21 @@ afterEach(() => {
 
 describe("IdleBiz's own updates", () => {
   it("are off in a dev build, which asks the shell nothing", async () => {
-    const newest = vi.fn(() => Promise.resolve({ version: "0.4.0" }));
+    let asked = 0;
+
+    const newest = () => {
+      asked += 1;
+
+      return Promise.resolve({ version: "0.4.0" });
+    };
+
     const updates = await load(false, shellOf(newest).host);
     updates.startUpdateChecks(() => {});
     expect(updates.updateStatus()).toEqual({
       kind: "off",
       why: "Only the installed app updates itself.",
     });
-    expect(newest).not.toHaveBeenCalled();
+    expect(asked).toBe(0);
   });
 
   it("offer a newer release as soon as one is found, and tell the founder once a version", async () => {
@@ -101,11 +112,13 @@ describe("IdleBiz's own updates", () => {
   it("show a check that fails as its reason, until the next one", async () => {
     vi.useFakeTimers();
     let answers = false;
+
     const shell = shellOf(() =>
       answers
         ? Promise.resolve(null)
         : Promise.reject(new Error("the release feed did not answer")),
     );
+
     const updates = await load(true, shell.host);
     updates.startUpdateChecks(() => {});
     await vi.waitFor(() => {
@@ -123,11 +136,13 @@ describe("IdleBiz's own updates", () => {
   it("keep a release on offer through a check that fails, since the founder was told of it", async () => {
     vi.useFakeTimers();
     let answers = true;
+
     const shell = shellOf(() =>
       answers
         ? Promise.resolve({ version: "0.4.0" })
         : Promise.reject(new Error("the release feed did not answer")),
     );
+
     const updates = await load(true, shell.host);
     updates.startUpdateChecks(() => {});
     await vi.waitFor(() => {
@@ -149,10 +164,12 @@ describe("IdleBiz's own updates", () => {
     await expect(updates.installUpdate()).rejects.toThrow("No update is waiting to install.");
 
     const offered = shellOf(() => Promise.resolve({ version: "0.4.0" }));
+
     const offering = await load(true, {
       ...offered.host,
       installUpdate: () => Promise.reject(new Error("the download was cut off")),
     });
+
     offering.startUpdateChecks(() => {});
     await vi.waitFor(() => {
       expect(offering.updateStatus()).toEqual({ kind: "available", version: "0.4.0" });
@@ -197,7 +214,6 @@ describe("IdleBiz's own updates", () => {
     });
 
     await updates.installUpdate();
-    // the menu bar hears that the item it offered is under way
     expect(changed).toHaveBeenCalledTimes(2);
     newest = null;
     await vi.advanceTimersByTimeAsync(SIX_HOURS);
@@ -227,7 +243,9 @@ describe("IdleBiz's own updates", () => {
       ...shellOf(() => Promise.resolve(null)).host,
       messageBox: () => Promise.reject(new Error("the shell is gone")),
     });
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const logged = vi.spyOn(console, "error");
+
     try {
       await expect(updates.installFromMenu()).resolves.toBeUndefined();
       expect(logged).toHaveBeenCalledWith("[update from the menu]", new Error("the shell is gone"));

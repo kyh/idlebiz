@@ -29,53 +29,38 @@ import type { SandboxProbe } from "./check";
 
 const onMac = process.platform === "darwin";
 
-// every test here starts real sandboxed processes, which take seconds each on a CI runner
 vi.setConfig({ testTimeout: 30_000 });
 
-/** How `argv` exited, run as it stands. */
-const exitOf = (argv: readonly string[]): number | null => {
+const exitOf = (argv: readonly string[]) => {
   const [bin = "", ...args] = argv;
+
   return spawnSync(bin, args, { encoding: "utf-8" }).status;
 };
 
-/** What `argv` printed, run as it stands with `input` on stdin; given up on after 20s, a hang too. */
-const outputOf = (argv: readonly string[], input = ""): string => {
+const outputOf = (argv: readonly string[], input = "") => {
   const [bin = "", ...args] = argv;
+
   return spawnSync(bin, args, { encoding: "utf-8", input, timeout: 20_000 }).stdout;
 };
 
-/**
- * Whether a `runner` run under `sandboxed` starts a program at all: until it does, a canary that finds
- * nothing landed would pass on a profile that never compiled.
- */
-const startsUnder = (sandboxed: Sandbox, runner: RunnerId): boolean =>
+const startsUnder = (sandboxed: Sandbox, runner: RunnerId) =>
   exitOf(sandboxedCommand(sandboxed, runner, ["/usr/bin/true"])) === 0;
 
-/** Every disk an `hdiutil attach` printed, for a cleanup to detach. */
-const disksIn = (printed: string): string[] =>
+const disksIn = (printed: string) =>
   Array.from(printed.matchAll(/\/dev\/disk\d+/gu), ([disk]) => disk);
 
-// the find pasteboard, which pboard serves over the one service as it does the general one, so the
-// canary leaves what the founder copied alone
 const PASTE = ["/usr/bin/pbpaste", "-pboard", "find"];
 const COPY = ["/usr/bin/pbcopy", "-pboard", "find"];
 
-// pbpaste answers only in a session with a window server, which CI's macOS runner has
 const pasteboardAnswers =
   onMac && spawnSync(PASTE[0] ?? "", PASTE.slice(1), { timeout: 20_000 }).status === 0;
 
-/** A real probe of the checked command, its profile swapped for `profile`. */
-const under =
-  (profile: string): SandboxProbe =>
-  (argv, env) =>
+const under = (profile: string) =>
+  ((argv, env) =>
     Promise.resolve(
       spawnSync(argv[0] ?? "", [argv[1] ?? "", profile, ...argv.slice(3)], { env }).status,
-    );
+    )) satisfies SandboxProbe;
 
-/**
- * What each file came to under the profile: "removed", "moved", "made", "linked", "read",
- * "written" or "ran", or the error that stopped it.
- */
 const Outcomes = z.record(z.string(), z.string());
 
 const TRY_FILES = `
@@ -95,7 +80,6 @@ for (const bin of runs) { const r = spawnSync(bin, ["help"]); out[bin] = r.error
 console.log(JSON.stringify(out));
 `;
 
-/** What a run tries, each kind in this order: a key names each `[from, to]` by `to`, but a move by `from`. */
 interface Attempts {
   removes?: string[];
   moves?: [string, string][];
@@ -107,39 +91,42 @@ interface Attempts {
   runs?: string[];
 }
 
-/** Every one of `files` came to `outcome`. */
-const all = (files: readonly string[], outcome: string): Record<string, string> =>
+const all = (files: readonly string[], outcome: string) =>
   Object.fromEntries(files.map((file) => [file, outcome]));
 
 describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => {
-  // home sits in a box of its own, so a rename the sandbox failed to stop is still cleaned up
   let box = "";
   let home = "";
-  const at = (file: string): string => path.join(home, file);
-  const plant = (file: string): string => {
+  const at = (file: string) => path.join(home, file);
+
+  const plant = (file: string) => {
     mkdirSync(path.dirname(at(file)), { recursive: true });
     writeFileSync(at(file), "canary");
+
     return at(file);
   };
-  /** `name` in home as a symlink to `target`, a folder when `target` ends in a slash. */
-  const link = (name: string, target: string): string => {
+
+  const link = (name: string, target: string) => {
     if (target.endsWith("/")) {
       mkdirSync(at(target), { recursive: true });
     } else {
       plant(target);
     }
+
     mkdirSync(path.dirname(at(name)), { recursive: true });
     symlinkSync(at(target), at(name));
+
     return at(target);
   };
-  /** The folders a run on a product writes, which the runner pool hands it. */
+
   const own = () => [
     at(".idlebiz/company/products/ledger/workspace"),
     at(".idlebiz/company/agents/ann/memory"),
     at(".idlebiz/cache"),
     at(".idlebiz/company/shared"),
   ];
-  const sandbox = (more: Partial<Parameters<typeof sandboxFor>[0]> = {}): Promise<Sandbox> =>
+
+  const sandbox = (more: Partial<Parameters<typeof sandboxFor>[0]> = {}) =>
     sandboxFor({
       clis: [],
       closedPorts: [],
@@ -154,6 +141,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       writable: own(),
       ...more,
     });
+
   const tryAs = async (
     runner: "claude" | "codex",
     files: Attempts,
@@ -166,8 +154,10 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       TRY_FILES,
       JSON.stringify(files),
     ]);
+
     const [bin, ...args] = argv;
     const { stdout } = spawnSync(bin, args, { encoding: "utf-8", env: { HOME: home } });
+
     return Outcomes.parse(parseJson(stdout));
   };
 
@@ -175,6 +165,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     box = realpathSync(mkdtempSync(path.join(tmpdir(), "idlebiz-home-")));
     home = path.join(box, "home");
     mkdirSync(home);
+
     for (const folder of [...own(), at("tmp")]) {
       mkdirSync(folder, { recursive: true });
     }
@@ -271,12 +262,12 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       ".cache/node/corepack/pnpm/9.0.0/bin/pnpm.cjs",
       "Library/Caches/ms-playwright/chromium/chrome",
       ".agent-browser/config.json",
-      // what a toolchain reads on every build, beside the logins sandboxed in its folder
       ".yarnrc.yml",
       ".m2/repository/org/a/a.jar",
       ".gradle/caches/modules-2/a.bin",
       ".pulumi/plugins/resource-aws/pulumi-resource-aws",
     ].map(plant);
+
     const fresh = [at("Documents/new.md"), at(".zlogin"), at("Library/LaunchAgents/new.plist")];
     expect(await tryAs("codex", { reads: files })).toEqual(all(files, "read"));
     expect(await tryAs("claude", { writes: [...files, ...fresh] })).toEqual(
@@ -301,6 +292,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       at("tmp/build.log"),
       at("Library/Preferences/create-next-app-nodejs/config.json"),
     ];
+
     mkdirSync(at("Library/Preferences/create-next-app-nodejs"), { recursive: true });
     const plist = plant("Library/Preferences/com.example.app.plist");
     expect(await tryAs("codex", { writes: [...writes, plist] })).toEqual({
@@ -326,17 +318,19 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   });
 
   it("lets a runner's runs make the state of a home moved into TMPDIR, as the stand-in's are", async () => {
-    // named through TMPDIR's own link (/var to /private/var), as main names the stand-in's homes
     const away = mkdtempSync(path.join(tmpdir(), "idlebiz-stand-in-"));
+
     try {
       const codex = path.join(away, "codex");
       const claude = path.join(away, "claude");
       mkdirSync(codex);
       mkdirSync(claude);
+
       const moved = sandbox({
         env: { CLAUDE_CONFIG_DIR: claude, CODEX_HOME: codex },
         scratch: [tmpdir()],
       });
+
       const codexState = path.join(codex, "state_5.sqlite");
       const claudeState = path.join(claude, "history.jsonl");
       expect(await tryAs("codex", { writes: [codexState] }, moved)).toEqual({
@@ -354,9 +348,11 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     const claudeHome = plant(".claude/canary");
     const claudeAccount = plant(".claude.json");
     const codexLogin = plant(".codex/auth.json");
+
     const moved = sandbox({
       env: { CLAUDE_CONFIG_DIR: at("stand-in/claude"), CODEX_HOME: at("stand-in/codex") },
     });
+
     expect(await tryAs("codex", { reads: [claudeHome, claudeAccount] }, moved)).toEqual(
       all([claudeHome, claudeAccount], "EPERM"),
     );
@@ -382,6 +378,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       plant(".codex/AGENTS.override.md"),
       plant(".codex/memories/memory_summary.md"),
     ];
+
     const config = plant(".codex/config.toml");
     expect(await tryAs("codex", { reads: [...personal, config] })).toEqual({
       ...all(personal, "EPERM"),
@@ -488,7 +485,6 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
               ".claude/jobs/a/job.json",
               ".claude/bridge-spawn/a.json",
               ".claude/seed-admin/a.json",
-              // what a setting names by path: a status line, a hook's script
               ".claude/statusline.sh",
               ".claude/scripts/notify.sh",
             ]
@@ -513,10 +509,11 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
               ".codex/browser/config.toml",
               ".codex/node_repl/active_execs",
               ".codex/sessions/a/.codex/config.toml",
-              // what `notify` names by path
               ".codex/notify.py",
             ];
+
       const kept = config.map(plant);
+
       const state = (
         runner === "claude"
           ? [
@@ -535,12 +532,13 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
               ".codex/log/codex-tui.log",
             ]
       ).map(plant);
-      // a name that only starts like the home's, such as the founder's worktrees of real repositories
+
       const beside = [
         ".claude-worktrees/app/src/index.ts",
         ".claude.d/a.json",
         ".codex-old/config.toml",
       ].map(plant);
+
       expect(await tryAs(runner, { reads: kept })).toEqual(all(kept, "read"));
       expect(await tryAs(runner, { writes: [...kept, ...beside] })).toEqual(
         all([...kept, ...beside], "EPERM"),
@@ -584,7 +582,6 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       ...all([theirs, transcript], "EPERM"),
       [path.dirname(mine)]: "made",
     });
-    // a folder is checked where it goes, never what it carries: none moves in or out
     const other = at(".claude/projects/-Users-me-app");
     const planted = plant("tmp/planted/memory/MEMORY.md");
     expect(
@@ -612,6 +609,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     const memory = plant(".idlebiz/company/agents/ann/memory/notes.md");
     const cache = plant(".idlebiz/cache/npm/_cacache/x");
     const shared = plant(".idlebiz/company/shared/brief.md");
+
     const forged = [
       plant(".idlebiz/company/approvals.json"),
       plant(".idlebiz/company/bets/more-users/BET.md"),
@@ -622,6 +620,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       at(".idlebiz/company/tasks/landing/PLAN.md"),
       at(".idlebiz/notes.json"),
     ];
+
     const linked = at(".idlebiz/company/products/ledger/workspace/approvals.json");
     expect(
       await tryAs("claude", {
@@ -676,6 +675,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         plant(".idlebiz/company/products/ledger/workspace/.idea/workspace.xml"),
         at(".idlebiz/company/products/ledger/workspace/.envrc"),
       ];
+
       mkdirSync(at(".idlebiz/company/products/ledger/workspace/web/.vscode"), {
         recursive: true,
       });
@@ -683,6 +683,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         recursive: true,
       });
       mkdirSync(at(".idlebiz/company/products/ledger/workspace/.git/logs"), { recursive: true });
+
       const work = [
         plant(".idlebiz/company/products/ledger/workspace/.git/index"),
         at(".idlebiz/company/products/ledger/workspace/.git/index.lock"),
@@ -695,15 +696,16 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         plant(".idlebiz/company/products/ledger/workspace/hooks/use-x.ts"),
         at(".idlebiz/company/products/ledger/workspace/.vscode/extensions.json"),
       ];
+
       const workspace = at(".idlebiz/company/products/ledger/workspace");
-      // nor built anywhere else a run writes, to be moved in whole: a move is checked where it
-      // lands, never for what it carries
+
       const built = [
         at("tmp/built/.mcp.json"),
         at("tmp/built/.claude/settings.json"),
         at("tmp/built/.codex/config.toml"),
         at(".idlebiz/cache/built/.mcp.json"),
       ];
+
       mkdirSync(at("tmp/built/.claude"), { recursive: true });
       mkdirSync(at("tmp/built/.codex"), { recursive: true });
       plant("tmp/built/dotgit/config");
@@ -746,11 +748,12 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   it("reports each deny of a labelled run to whoever watches for its label", async () => {
     const prefix = `sandbox-test-${process.pid}:`;
     const seen: Denial[] = [];
+
     const stop = watchDenials(prefix, (denial) => {
       seen.push(denial);
     });
+
     try {
-      // the log streams only what lands after it starts
       await sleep(1500);
       const ssh = plant(".ssh/id_ed25519");
       expect(await tryAs("codex", { reads: [ssh] }, sandbox({ label: `${prefix}ann/t1` }))).toEqual(
@@ -778,17 +781,20 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     const workspace = at(".idlebiz/company/products/ledger/workspace");
     plant(".idlebiz/company/products/ledger/workspace/.git/config");
     mkdirSync(path.join(workspace, ".claude"), { recursive: true });
+
     const cased = [
       path.join(workspace, ".GIT/config"),
       path.join(workspace, ".Claude/Settings.local.json"),
       path.join(workspace, ".MCP.json"),
       path.join(workspace, ".EnvRC"),
     ];
+
     expect(await tryAs("claude", { writes: cased })).toEqual(all(cased, "EPERM"));
   });
 
-  it("lets a run commit, branch, merge, rebase, stash and gc in the repository main made, never changing its config", () => {
+  it("lets a run commit, branch, merge, rebase, stash and gc in the repository main made, never changing its config", async () => {
     const workspace = at(".idlebiz/company/products/ledger/workspace");
+
     const env = {
       GIT_AUTHOR_EMAIL: "ann@idlebiz.local",
       GIT_AUTHOR_NAME: "Ann",
@@ -797,8 +803,10 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       HOME: home,
       PATH: "/usr/bin:/bin",
     };
+
     spawnSync("/usr/bin/git", ["init", "-q", "-b", "main"], { cwd: workspace, env });
     const config = readFileSync(path.join(workspace, ".git/config"), "utf-8");
+
     const work = [
       "echo a > a && git add a && git commit -qm a",
       "git checkout -qb feature && echo b > b && git add b && git commit -qm b",
@@ -810,37 +818,41 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       "git diff --stat && git log --oneline",
       "git gc -q",
     ].join(" && ");
-    // xcrun, which /usr/bin/git runs through, caches in macOS's per-user temp folder whatever
-    // TMPDIR says, and a run's sandbox lets it write there
+
     const darwinTemp = spawnSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], {
       encoding: "utf-8",
     }).stdout.trim();
-    return sandbox({ scratch: [at("tmp"), darwinTemp] }).then((sandboxed) => {
-      const run = (script: string) => {
-        const [bin, ...args] = sandboxedCommand(sandboxed, "codex", ["/bin/sh", "-c", script]);
-        return spawnSync(bin, args, { cwd: workspace, encoding: "utf-8", env });
-      };
-      const done = run(`set -e; ${work}`);
-      expect(done.stderr).toBe("");
-      expect(done.status).toBe(0);
-      expect(run("git config user.name Mallory").status).not.toBe(0);
-      expect(run("git worktree add -q ../w").status).not.toBe(0);
-      expect(readFileSync(path.join(workspace, ".git/config"), "utf-8")).toBe(config);
-      expect(run("git log --format=%an topic").stdout.trim().split("\n")).toEqual(
-        Array.from({ length: 5 }, () => "Ann"),
-      );
-    });
+
+    const sandboxed = await sandbox({ scratch: [at("tmp"), darwinTemp] });
+
+    const run = (script: string) => {
+      const [bin, ...args] = sandboxedCommand(sandboxed, "codex", ["/bin/sh", "-c", script]);
+
+      return spawnSync(bin, args, { cwd: workspace, encoding: "utf-8", env });
+    };
+
+    const done = run(`set -e; ${work}`);
+    expect(done.stderr).toBe("");
+    expect(done.status).toBe(0);
+    expect(run("git config user.name Mallory").status).not.toBe(0);
+    expect(run("git worktree add -q ../w").status).not.toBe(0);
+    expect(readFileSync(path.join(workspace, ".git/config"), "utf-8")).toBe(config);
+    expect(run("git log --format=%an topic").stdout.trim().split("\n")).toEqual(
+      Array.from({ length: 5 }, () => "Ann"),
+    );
   });
 
   it("keeps a run from reading a sibling of vault.json, where the save is named and where it leads", async () => {
     link("linked-save", "elsewhere/idlebiz/");
     const stale = plant("elsewhere/idlebiz/vault.json.tmp");
     const named = at("linked-save/vault.json.tmp");
+
     const sandboxed = sandbox({
       hostOnly: [at("linked-save/vault.json")],
       save: at("linked-save"),
       writable: [],
     });
+
     expect(await tryAs("codex", { reads: [named, stale] }, sandboxed)).toEqual(
       all([named, stale], "EPERM"),
     );
@@ -946,6 +958,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     mkdirSync(at("elsewhere/ann"), { recursive: true });
     symlinkSync(at("elsewhere/ann"), ann);
     await expect(sandbox()).rejects.toMatchObject({ refusal: { kind: "linked", link: ann } });
+
     for (const folder of [at("projects/app"), at(".idlebiz")]) {
       await expect(sandbox({ writable: [folder] })).rejects.toThrow(
         new FolderRefusedError({ folder, kind: "outside-save" }),
@@ -975,17 +988,19 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     expect(exitOf(sandboxedCommand(sandboxed, "claude", argv))).not.toBe(0);
     await sleep(1500);
     expect(existsSync(launched)).toBe(false);
-    // the control: the same open from a sign-in, which may open the browser, does start it
     expect(exitOf(signInCommand(sandboxed, "claude", argv))).toBe(0);
-    // LaunchServices registers a bundle it has never seen before it starts it, which a cold runner can take seconds over
-    for (let waited = 0; waited < 200 && !existsSync(launched); waited += 1) {
-      await sleep(100);
-    }
-    expect(existsSync(launched)).toBe(true);
+
+    await vi.waitFor(
+      () => {
+        expect(existsSync(launched)).toBe(true);
+      },
+      { interval: 100, timeout: 20_000 },
+    );
   });
 
   it("lets a run list processes, as version managers do to find their shell", async () => {
     const sandboxed = await sandbox();
+
     for (const runner of ["claude", "codex"] as const) {
       expect(
         exitOf(sandboxedCommand(sandboxed, runner, ["/bin/ps", "-p", "1", "-o", "pid="])),
@@ -1003,6 +1018,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   it("stops git's Keychain helper for every run", async () => {
     const helper = plant("bin/git-credential-osxkeychain");
     spawnSync("chmod", ["+x", helper]);
+
     for (const runner of ["claude", "codex"] as const) {
       expect(await tryAs(runner, { runs: [helper] })).toEqual({ [helper]: "EPERM" });
     }
@@ -1015,15 +1031,15 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       const held = outputOf(PASTE);
       const canary = `idlebiz-sandbox-canary-${process.pid}-${Date.now()}`;
       outputOf(COPY, canary);
+
       try {
         for (const runner of ["claude", "codex"] as const) {
           expect(startsUnder(sandboxed, runner)).toBe(true);
           expect(outputOf(sandboxedCommand(sandboxed, runner, PASTE))).not.toContain(canary);
-          // nor does it put its own in place of what the founder copied
           outputOf(sandboxedCommand(sandboxed, runner, COPY), "planted");
         }
+
         expect(outputOf(PASTE)).toBe(canary);
-        // the control: the same read from a sign-in does reach it
         expect(outputOf(signInCommand(sandboxed, "claude", PASTE))).toBe(canary);
       } finally {
         outputOf(COPY, held);
@@ -1031,8 +1047,6 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     },
   );
 
-  // launchd refuses a job from any sandboxed caller, a sign-in's too, so the control is unsandboxed:
-  // it shows this session starts jobs at all, without which the canary proves nothing
   it("keeps a run from having launchd start a job, which runs unsandboxed", async ({ skip }) => {
     const sandboxed = await sandbox();
     const label = `io.idlebiz.sandbox-canary.${process.pid}.${Date.now()}`;
@@ -1052,6 +1066,7 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     );
     const domain = `gui/${userInfo().uid}`;
     const submit = ["/bin/launchctl", "submit", "-l", label, "--", "/usr/bin/touch", submitted];
+
     try {
       spawnSync("/bin/launchctl", [
         "submit",
@@ -1061,12 +1076,21 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         "/usr/bin/touch",
         control,
       ]);
-      for (let waited = 0; waited < 200 && !existsSync(control); waited += 1) {
-        await sleep(100);
-      }
-      if (!existsSync(control)) {
+
+      const started = await vi
+        .waitFor(
+          () => {
+            expect(existsSync(control)).toBe(true);
+          },
+          { interval: 100, timeout: 20_000 },
+        )
+        .then(() => true)
+        .catch(() => false);
+
+      if (!started) {
         skip();
       }
+
       expect(startsUnder(sandboxed, "claude")).toBe(true);
       expect(startsUnder(sandboxed, "codex")).toBe(true);
       outputOf(sandboxedCommand(sandboxed, "claude", submit));
@@ -1083,24 +1107,24 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     }
   });
 
-  // launchd hands what `launchctl setenv` sets to every app opened after it: IdleBiz's own shell,
-  // the founder's terminal. No rule of the sandbox's names a setenv, so this measures what launchd does
-  // with one from a sandboxed caller. The control is unsandboxed: it shows this session's launchd takes a
-  // setenv at all, without which the canary proves nothing. Unset either way, since the steps after
-  // this suite share the domain.
   it("keeps a run from setting the env launchd hands the apps opened after it", async ({
     skip,
   }) => {
     const sandboxed = await sandbox();
     const name = `SANDBOX_CANARY_${process.pid}_${Date.now()}`;
-    const canary = (verb: string, ...value: string[]): string =>
+
+    const canary = (verb: string, ...value: string[]) =>
       outputOf(["/bin/launchctl", verb, name, ...value]).trim();
+
     try {
       canary("setenv", "control");
+
       if (canary("getenv") !== "control") {
         skip();
       }
+
       canary("unsetenv");
+
       for (const runner of ["claude", "codex"] as const) {
         expect(startsUnder(sandboxed, runner)).toBe(true);
         outputOf(sandboxedCommand(sandboxed, runner, ["/bin/launchctl", "setenv", name, runner]));
@@ -1117,22 +1141,22 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     const sandboxed = await sandbox();
     const mountpoint = realpathSync(mkdtempSync(path.join(tmpdir(), "idlebiz-mount-")));
     const mount = ["/sbin/mount", "-t", "devfs", "-o", "noowners", "devfs", mountpoint];
+
     try {
       for (const runner of ["claude", "codex"] as const) {
         expect(startsUnder(sandboxed, runner)).toBe(true);
         outputOf(sandboxedCommand(sandboxed, runner, mount));
         expect(existsSync(path.join(mountpoint, "null"))).toBe(false);
       }
-      // the control: the same mount from a sign-in, whose sandbox denies no file-mount, does land; a
-      // session whose user mounts no devfs skips, since there the canary proves nothing
+
       outputOf(signInCommand(sandboxed, "claude", mount));
+
       if (!existsSync(path.join(mountpoint, "null"))) {
         skip();
       }
     } finally {
       spawnSync("/sbin/umount", [mountpoint]);
-      // never recursive: through a mount the sandbox missed it would remove device nodes; and a
-      // folder still mounted over is left, never thrown over the failure that explains it
+      // WARNING: never recursive: through a mount the sandbox missed it removes device nodes.
       spawnSync("/bin/rmdir", [mountpoint]);
     }
   });
@@ -1148,17 +1172,18 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     spawnSync("/usr/bin/hdiutil", ["create", "-quiet", "-srcfolder", at("image"), image]);
     expect(existsSync(image)).toBe(true);
     const attached: string[] = [];
+
     try {
       const attach = ["/usr/bin/hdiutil", "attach", "-nobrowse", "-mountpoint", bin, image];
+
       for (const runner of ["claude", "codex"] as const) {
         expect(startsUnder(sandboxed, runner)).toBe(true);
-        // diskarbitrationd mounts it, and checks its caller's sandbox for a folder the caller names
         attached.push(...disksIn(outputOf(sandboxedCommand(sandboxed, runner, attach))));
         expect(existsSync(path.join(bin, "claude"))).toBe(false);
       }
-      // the control is unsandboxed, whatever diskarbitrationd makes of a sandboxed caller: it shows
-      // this session lays an image over a folder at all, without which the canary proves nothing
+
       attached.push(...disksIn(outputOf(attach)));
+
       if (!existsSync(path.join(bin, "claude"))) {
         skip();
       }
@@ -1167,7 +1192,6 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
         spawnSync("/usr/bin/hdiutil", ["detach", "-force", disk]);
       }
     }
-    // each attach takes diskarbitrationd seconds, refused or not, and the control mounts and detaches
   }, 90_000);
 
   it("keeps a run from having cfprefsd write a preference, as a sign-in still could", async () => {
@@ -1175,14 +1199,14 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
     const domain = `io.idlebiz.sandbox-canary.${process.pid}.${Date.now()}`;
     const write = ["/usr/bin/defaults", "write", domain, "canary", "-string", "landed"];
     const read = () => outputOf(["/usr/bin/defaults", "read", domain, "canary"]).trim();
+
     try {
       for (const runner of ["claude", "codex"] as const) {
         expect(startsUnder(sandboxed, runner)).toBe(true);
         outputOf(sandboxedCommand(sandboxed, runner, write));
       }
+
       expect(read()).toBe("");
-      // the control: cfprefsd writes for a caller allowed this or the plist's own write, and a
-      // sign-in is denied only the second
       outputOf(signInCommand(sandboxed, "claude", write));
       expect(read()).toBe("landed");
     } finally {
@@ -1191,18 +1215,20 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
   });
 
   describe("a socket", () => {
-    // a socket's path must fit in 104 bytes: tmpdir() on macOS alone takes half of that
     let short = "";
     let launchd = "";
     const servers: Server[] = [];
-    const listen = async (socket: string): Promise<string> => {
+
+    const listen = async (socket: string) => {
       mkdirSync(path.dirname(socket), { recursive: true });
       const server = createServer();
       servers.push(server);
       server.listen(socket);
       await once(server, "listening");
+
       return socket;
     };
+
     beforeEach(() => {
       short = realpathSync(mkdtempSync("/tmp/ib-"));
       launchd = realpathSync(mkdtempSync("/tmp/com.apple.launchd.ib-"));
@@ -1211,11 +1237,11 @@ describe.skipIf(!onMac)("the profile, on canaries under a stand-in home", () => 
       for (const server of servers.splice(0)) {
         server.close();
       }
+
       rmSync(short, { force: true, recursive: true });
       rmSync(launchd, { force: true, recursive: true });
     });
 
-    // "connect" fires once the kernel queues it: this process, blocked in spawnSync, never accepts
     const CONNECT = `
 const net = require("node:net");
 const fs = require("node:fs");
@@ -1231,6 +1257,7 @@ for (const target of targets) {
   connection.on("error", (error) => done(target, error.code));
 }
 `;
+
     const connect = async (
       runner: "claude" | "codex",
       targets: readonly string[],
@@ -1251,13 +1278,16 @@ for (const target of targets) {
         writable: [],
         ...more,
       });
+
       const argv = sandboxedCommand(sandboxed, runner, [
         process.execPath,
         "-e",
         CONNECT,
         JSON.stringify([targets, moves]),
       ]);
+
       const [bin, ...args] = argv;
+
       return Outcomes.parse(parseJson(spawnSync(bin, args, { encoding: "utf-8" }).stdout));
     };
 
@@ -1265,8 +1295,10 @@ for (const target of targets) {
       const save = path.join(short, ".idlebiz");
       const workspace = path.join(save, "company/products/ledger/workspace");
       const namespaces = path.join(short, ".agent-browser/namespaces");
+
       const daemon = (runner: "claude" | "codex", folders: readonly string[]) =>
         `.agent-browser/namespaces/${browserNamespace(save, runner, folders)}/run/d.sock`;
+
       const [inWorkspace, claude, codex, otherFolders, ...founders] = await Promise.all(
         [
           ".idlebiz/company/products/ledger/workspace/tmp/tsx-501/1.pipe",
@@ -1283,6 +1315,7 @@ for (const target of targets) {
           "work/discord-ipc-0",
         ].map((name) => listen(path.join(short, name))),
       );
+
       expect(path.dirname(path.dirname(claude ?? ""))).toBe(
         path.join(namespaces, browserNamespace(save, "claude", [workspace])),
       );
@@ -1304,13 +1337,16 @@ for (const target of targets) {
 
     it("reaches its own line to the company and no other run's, though both sit in the save", async () => {
       const save = path.join(short, ".idlebiz");
+
       const [mine, theirs] = await Promise.all(
         [".idlebiz/.run/aaaaaaaaaaaa", ".idlebiz/.run/bbbbbbbbbbbb"].map((name) =>
           listen(path.join(short, name)),
         ),
       );
+
       const workspace = path.join(save, "company/products/ledger/workspace");
       mkdirSync(workspace, { recursive: true });
+
       for (const runner of ["claude", "codex"] as const) {
         expect(
           await connect(runner, [mine ?? "", theirs ?? ""], {
@@ -1319,7 +1355,7 @@ for (const target of targets) {
           }),
         ).toEqual({ [mine ?? ""]: "reached", [theirs ?? ""]: "EPERM" });
       }
-      // nor can it take the other's place
+
       expect(
         await connect("claude", [mine ?? ""], { apiSocket: mine ?? "", writable: [workspace] }, [
           [theirs ?? "", path.join(save, ".run/moved")],

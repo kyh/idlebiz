@@ -1,3 +1,4 @@
+import { unreachable } from "@repo/domain/errors";
 import { createHash } from "node:crypto";
 import * as store from "./store/store";
 import { postToRoom, raiseOrderCard } from "./company-actions";
@@ -16,30 +17,21 @@ import type { Order, Recipient } from "./order";
 import type { LinkState } from "./link-record";
 import { REFUND, describe } from "./order-card";
 
-// Each paid checkout on the company's links kept as an order, as docs/keys.md's "The order
-// pump" describes.
-
-// Stripe's reads are allotted by sales (on average 500 a transaction over 30 days, at least
-// 10k a month), and metrics already spends most of a quiet store's: checkouts are read on a
-// slower beat than Printful, which allows far more.
 /** How often Stripe's checkouts are read for new paid orders. */
 export const CHECKOUTS_READ_MS = 30 * 60_000;
 
-// Each read starts this far behind the last one, so a checkout Stripe lists a moment late is
-// still read; one read twice is already kept.
 const OVERLAP_S = 10 * 60;
-// An unpaid completed checkout is one whose payment (a bank debit) may still land: the cursor
-// waits for it this long.
 const UNPAID_WAIT_MS = 7 * 24 * 3_600_000;
 
-/** Where the buyer asked for it to go, or null when Stripe's checkout holds no whole US address. */
-const recipientOf = (session: CheckoutSession): Recipient | null => {
+const recipientOf = (session: CheckoutSession) => {
   const shipping = session.collected_information?.shipping_details;
   const address = shipping?.address;
   const { city, country, line1, postal_code: zip, state } = address ?? {};
+
   if (!shipping || !line1 || !city || !state || !zip || country !== "US") {
     return null;
   }
+
   return {
     address1: line1,
     address2: address?.line2 ?? null,
@@ -49,45 +41,59 @@ const recipientOf = (session: CheckoutSession): Recipient | null => {
     phone: session.customer_details?.phone ?? null,
     stateCode: state,
     zip,
-  };
+  } satisfies Recipient | null;
 };
 
 type Variant = Listing["variants"][number];
 
-/** Why a paid checkout is no order IdleBiz can send, or what it orders. */
-const saleOf = (
-  session: CheckoutSession,
-  listing: Listing,
-):
-  | { kind: "sale"; recipient: Recipient; variant: Variant; quantity: number }
-  | { kind: "unreadable"; why: string } => {
+const saleOf = (session: CheckoutSession, listing: Listing) => {
   if (session.currency !== "usd" || session.amount_total === null) {
     return {
       kind: "unreadable",
       why: `Stripe collected it in ${session.currency ?? "no currency"}, not USD`,
-    };
+    } satisfies
+      | { kind: "sale"; recipient: Recipient; variant: Variant; quantity: number }
+      | { kind: "unreadable"; why: string };
   }
+
   const recipient = recipientOf(session);
+
   if (recipient === null) {
-    return { kind: "unreadable", why: "Stripe's checkout carries no whole US shipping address" };
+    return {
+      kind: "unreadable",
+      why: "Stripe's checkout carries no whole US shipping address",
+    } satisfies
+      | { kind: "sale"; recipient: Recipient; variant: Variant; quantity: number }
+      | { kind: "unreadable"; why: string };
   }
+
   const chosen = session.custom_fields?.find((field) => field.key === VARIANT_FIELD)?.dropdown
     ?.value;
+
   const [only] = listing.variants;
+
   const variant =
     listing.variants.length === 1 ? only : listing.variants.find((v) => String(v.id) === chosen);
+
   if (variant === undefined) {
-    return { kind: "unreadable", why: "the buyer's option names none of the listing's variants" };
+    return {
+      kind: "unreadable",
+      why: "the buyer's option names none of the listing's variants",
+    } satisfies
+      | { kind: "sale"; recipient: Recipient; variant: Variant; quantity: number }
+      | { kind: "unreadable"; why: string };
   }
+
   return {
     kind: "sale",
     quantity: session.line_items?.data[0]?.quantity ?? 1,
     recipient,
     variant,
-  };
+  } satisfies
+    | { kind: "sale"; recipient: Recipient; variant: Variant; quantity: number }
+    | { kind: "unreadable"; why: string };
 };
 
-/** What every kept checkout records: who paid how much, and where to find it in Stripe. */
 const paidOn = (session: CheckoutSession, productId: string) => ({
   collectedCents: session.amount_total ?? 0,
   createdAt: session.created * 1000,
@@ -99,17 +105,14 @@ const paidOn = (session: CheckoutSession, productId: string) => ({
   sessionId: session.id,
 });
 
-/**
- * Keep a paid checkout IdleBiz cannot send, and hand it to the founder: the card is raised
- * first, since cards dedupe by subject and the kept order is what stops the next read retrying.
- */
 const keepUnreadable = (
   session: CheckoutSession,
   productId: string,
   listingId: string,
   why: string,
-): void => {
+) => {
   const order: Order = { ...paidOn(session, productId), kind: "unreadable", listingId, why };
+
   if (order.livemode) {
     raiseOrderCard(
       { kind: "order", orderId: order.id, trouble: "IdleBiz cannot send it" },
@@ -120,7 +123,9 @@ const keepUnreadable = (
       },
     );
   }
+
   store.recordOrder(order);
+
   if (!order.livemode) {
     postToRoom(
       { kind: "office" },
@@ -129,17 +134,18 @@ const keepUnreadable = (
   }
 };
 
-/** A checkout opened before its link was switched off still pays, so the room hears that one is on its way. */
-const sinceOff = (state: LinkState): string =>
+const sinceOff = (state: LinkState) =>
   state.kind === "switched-off" ? ", paid on a link since switched off" : "";
 
-/** Keep a paid checkout on a listing's link as an order, and tell the room: the first sale is the game's milestone. */
-const take = (session: CheckoutSession, listing: Listing): void => {
+const take = (session: CheckoutSession, listing: Listing) => {
   const read = saleOf(session, listing);
+
   if (read.kind === "unreadable") {
     keepUnreadable(session, listing.productId, listing.id, read.why);
+
     return;
   }
+
   const paid = { ...paidOn(session, listing.productId), listingId: listing.id };
   const { kind, ...sold } = read;
   store.recordOrder({
@@ -150,27 +156,25 @@ const take = (session: CheckoutSession, listing: Listing): void => {
     printfulStatus: null,
     stage: { kind: "received", tries: 0 },
   });
+
   const test = session.livemode
     ? ""
     : " (test mode: Printful only prices a draft, then it is deleted)";
+
   postToRoom(
     { kind: "office" },
     `📦 Sold ${listing.name} (${read.variant.label}) for ${formatCents(paid.collectedCents)} on ${listing.productId}${sinceOff(listing.paymentLink.state)}: it goes to Printful now${test}.`,
   );
 };
 
-/**
- * Keep a paid checkout on a create_payment_link link, tell the room, and card the founder with
- * what the link says to deliver: nothing reaches a buyer from the team. The card is raised
- * before the order is kept, as in keepUnreadable.
- */
-const takeLinkSale = (session: CheckoutSession, productId: string): void => {
+const takeLinkSale = (session: CheckoutSession, productId: string) => {
   const order: Order = {
     ...paidOn(session, productId),
     delivery: session.metadata?.delivery ?? null,
     kind: "link",
     name: session.line_items?.data[0]?.description ?? "a payment link's item",
   };
+
   if (order.livemode && order.delivery !== null) {
     raiseOrderCard(
       { kind: "order", orderId: order.id, trouble: "deliver it" },
@@ -181,48 +185,57 @@ const takeLinkSale = (session: CheckoutSession, productId: string): void => {
       },
     );
   }
+
   store.recordOrder(order);
   const link = store.getChargeLink(session.payment_link ?? "");
   const sold = `💵 Sold ${JSON.stringify(order.name)} for ${formatCents(order.collectedCents)} on ${productId}${link === null ? "" : sinceOff(link.state)}`;
+
   if (!order.livemode) {
     postToRoom({ kind: "office" }, `${sold} (test mode: nobody paid).`);
+
     return;
   }
+
   postToRoom(
     { kind: "office" },
     order.delivery === null ? `${sold}.` : `${sold}: the founder delivers it.`,
   );
 };
 
-/** Which of the company's links a checkout was made on, or null for any other checkout on the account. */
 type SoldOn =
   | { kind: "listing"; listing: Listing }
-  /** A listing's link whose listing this save no longer holds: paid, with nothing to print from. */
   | { kind: "lost"; productId: string; listingId: string }
   | { kind: "link"; productId: string };
 
-/** A link is the company's when it is a listing's, or its `product` tag names a product the company made. */
-const soldOn = (session: CheckoutSession, onLink: ReadonlyMap<string, Listing>): SoldOn | null => {
+const soldOn = (session: CheckoutSession, onLink: ReadonlyMap<string, Listing>) => {
   const listing = onLink.get(session.payment_link ?? "");
+
   if (listing !== undefined) {
-    return { kind: "listing", listing };
+    return { kind: "listing", listing } satisfies SoldOn | null;
   }
+
   const tags = session.metadata;
   const productId = tags?.product;
+
   if (!session.payment_link || !productId || !store.madeProduct(productId)) {
     return null;
   }
-  return tags.listing === undefined
-    ? { kind: "link", productId }
-    : { kind: "lost", listingId: tags.listing, productId };
+
+  return (
+    tags.listing === undefined
+      ? { kind: "link", productId }
+      : { kind: "lost", listingId: tags.listing, productId }
+  ) satisfies SoldOn | null;
 };
 
-const keep = (session: CheckoutSession, sold: SoldOn): void => {
+const keep = (session: CheckoutSession, sold: SoldOn) => {
   switch (sold.kind) {
     case "listing": {
       take(session, sold.listing);
+
       return;
     }
+
     case "lost": {
       keepUnreadable(
         session,
@@ -230,57 +243,58 @@ const keep = (session: CheckoutSession, sold: SoldOn): void => {
         sold.listingId,
         `IdleBiz no longer holds the listing ${sold.listingId} it was bought from`,
       );
+
       return;
     }
+
     case "link": {
       takeLinkSale(session, sold.productId);
+
+      return;
     }
-    // no default
+
+    default: {
+      return unreachable(sold);
+    }
   }
 };
 
-/**
- * Which key reads, as the cursor keeps it: its mode, and a digest that tells keys apart without
- * holding one, since the save is read by every run.
- */
-const readerOf = (key: string): string =>
+const readerOf = (key: string) =>
   `${isTestKey(key) ? "test" : "live"}:${createHash("sha256").update(key).digest("hex").slice(0, 16)}`;
 
-/**
- * Where a key's read goes on from: its own last read. A key that never read, in a mode another
- * has (a rolled key, another account), starts from the oldest of that mode's reads; one of a
- * mode never read starts from `foundedAt`. Whichever key read last, no key skips what it never read.
- */
-const startOf = (cursor: OrdersCursor, reader: string, foundedAt: number): number => {
+const startOf = (cursor: OrdersCursor, reader: string, foundedAt: number) => {
   const own = cursor.byKey[reader];
+
   if (own !== undefined) {
     return own;
   }
+
   const mode = `${reader.split(":")[0]}:`;
+
   const sameMode = Object.entries(cursor.byKey)
     .filter(([other]) => other.startsWith(mode))
     .map(([, at]) => at);
+
   return sameMode.length > 0 ? Math.min(...sameMode) : foundedAt;
 };
 
-const stillSelling = (state: LinkState): boolean => state.kind !== "switched-off";
+const stillSelling = (state: LinkState) => state.kind !== "switched-off";
 
-/**
- * The founder's card while no live key reads what a live link still sells: a print, or a
- * delivery. Removing the key or saving a test one switches off no link.
- */
-const cardUnlessLive = (key: string | null): void => {
+const cardUnlessLive = (key: string | null) => {
   if (key !== null && !isTestKey(key)) {
     return;
   }
+
   const owed =
     store.listListings().some((l) => l.livemode && stillSelling(l.paymentLink.state)) ||
     store
       .listChargeLinks()
       .some((link) => link.livemode && link.delivery !== null && stillSelling(link.state));
+
   if (!owed) {
     return;
   }
+
   const why = key === null ? "no Stripe key is saved" : "the saved Stripe key is a test key";
   raiseOrderCard(
     { kind: "pump", reason: "no-live-key" },
@@ -297,32 +311,37 @@ const cardUnlessLive = (key: string | null): void => {
  * oldest that may still be paid: an open one (Stripe expires those within a day), or one whose
  * payment is still on its way.
  */
-export const takePaidCheckouts = async (now: number): Promise<void> => {
+export const takePaidCheckouts = async (now: number) => {
   const key = getSecret(STRIPE_SECRET_KEY);
   cardUnlessLive(key);
+
   if (key === null) {
     return;
   }
+
   const cursor = store.ordersCursor() ?? { byKey: {} };
   const reader = readerOf(key);
   const from = startOf(cursor, reader, Math.floor(store.requireCompany().createdAt / 1000) - 1);
-  const moveTo = (next: number): void => {
+
+  const moveTo = (next: number) => {
     store.setOrdersCursor({
       ...cursor,
       byKey: { ...cursor.byKey, [reader]: Math.max(from, next) },
     });
   };
+
   const read = await readCheckouts(key, from);
+
   if (read.kind === "refused") {
-    // Only what can be owed wants a read: a print, a kept order, or a live link's delivery. The
-    // grant is checked as a delivery link is made, but a key saved since may lack it.
     const owed =
       store.listListings().length > 0 ||
       store.listOrders().length > 0 ||
       store.listChargeLinks().some((link) => link.livemode && link.delivery !== null);
+
     if (!owed) {
       return;
     }
+
     raiseOrderCard(
       { kind: "pump", reason: "unreadable-checkouts" },
       {
@@ -331,26 +350,35 @@ export const takePaidCheckouts = async (now: number): Promise<void> => {
         instructions: `Stripe turned IdleBiz's key away when it read checkout sessions (${read.reason}), so no paid print reaches Printful and no card tells you what a buyer is owed. In the Budget panel, paste over it a key whose restricted permissions include Read on Checkout Sessions, or your secret key. Press Done once it is saved: the waiting orders go out on their own.`,
       },
     );
+
     return;
   }
+
   if (read.kind === "failed") {
     report("orders", new Error(`Stripe's checkouts could not be read: ${read.reason}`));
+
     return;
   }
+
   const onLink = new Map(store.listListings().map((l) => [l.paymentLink.id, l]));
   const kept = new Set(store.listOrders().map((o) => o.sessionId));
   let waitFrom = Math.floor(now / 1000) - OVERLAP_S;
+
   for (const session of read.sessions) {
     const sold = soldOn(session, onLink);
+
     if (sold === null || kept.has(session.id)) {
       continue;
     }
+
     const mayPay =
       session.status === "open" ||
       (session.status === "complete" &&
         session.payment_status === "unpaid" &&
         now - session.created * 1000 < UNPAID_WAIT_MS);
+
     let unkept = false;
+
     if (session.payment_status === "paid") {
       try {
         keep(session, sold);
@@ -359,17 +387,20 @@ export const takePaidCheckouts = async (now: number): Promise<void> => {
         unkept = true;
       }
     }
+
     if (mayPay || unkept) {
       waitFrom = Math.min(waitFrom, session.created - 1);
     }
+
     kept.add(session.id);
   }
+
   if (read.whole) {
     moveTo(waitFrom);
+
     return;
   }
-  // Stripe lists newest first, so the older ones are out of reach of every read to come: the
-  // founder is told, and the cursor moves up to what was read, or no read would ever catch up.
+
   const oldestRead = Math.min(...read.sessions.map((session) => session.created));
   moveTo(Math.min(waitFrom, oldestRead - 1));
   raiseOrderCard(

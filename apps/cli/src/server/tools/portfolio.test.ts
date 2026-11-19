@@ -3,14 +3,24 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { ActivityEvent } from "@repo/domain/activity";
 import { BadRequestError } from "@repo/domain/errors";
-import { BET, PAID_URL, PRO_LINK, answerText, openBet, runAs } from "../test-support/tools";
+import { BET, PAID_URL, PRO_LINK, openBet, runAs } from "../test-support/tools";
 import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { fetchRealMetrics } from "../metrics";
 import { activityEvents } from "../activity";
 import { startProduct } from "../company-actions";
+import { callTool } from "./index";
+import { answerFetch, interceptNetwork } from "../test-support/network";
+
+interceptNetwork();
 
 const root = freshSave();
+
+const answerText = async (...call: Parameters<typeof callTool>) => {
+  const { text } = await callTool(...call);
+
+  return text;
+};
 
 describe("portfolio tools", () => {
   it("tells the room of a new product as whoever started it, the lead or the founder", async () => {
@@ -45,17 +55,21 @@ describe("portfolio tools", () => {
   });
 
   it("turns a product or a bet past the portfolio's caps away as an answer, not a fault", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     const { ctx } = runAs("mae");
+
     for (const name of ["Two", "Three", "Four", "Five"]) {
       await answerText(ctx, "create_product", { description: name, name });
     }
+
     expect(await answerText(ctx, "create_product", { description: "x", name: "Six" })).toBe(
       "The company already runs 5 products; kill_product one before starting another.",
     );
+
     for (const title of ["One", "Two", "Three"]) {
       await answerText(ctx, "open_bet", { ...BET, product: "acme", title });
     }
+
     expect(await answerText(ctx, "open_bet", { ...BET, product: "acme" })).toBe(
       "Acme already carries 3 live bets; wait for a verdict or kill one first.",
     );
@@ -69,9 +83,11 @@ describe("portfolio tools", () => {
     const visits = await openBet(ctx);
     await answerText(ctx, "open_bet", { ...BET, metric: "revenue", title: "Paid tier" });
     const money = store.listBets().find((b) => b.claim.metric === "revenue");
+
     if (!money) {
       throw new Error("no revenue bet opened");
     }
+
     const measure = (slug: string) => answerText(ctx, "measure_bet", { slug });
 
     expect(await measure(money.id)).toBe(
@@ -99,9 +115,11 @@ describe("portfolio tools", () => {
     const { ctx } = runAs("mae");
     await answerText(ctx, "open_bet", { ...BET, metric: "revenue", title: "Paid tier" });
     const [money] = store.listBets();
+
     if (!money) {
       throw new Error("no revenue bet opened");
     }
+
     const measure = () => answerText(ctx, "measure_bet", { slug: money.id });
     const secrets = path.join(root, "vault.json");
 
@@ -117,9 +135,11 @@ describe("portfolio tools", () => {
     const { ctx } = runAs("mae");
     await answerText(ctx, "open_bet", { ...BET, metric: "revenue", title: "Paid tier" });
     const [money] = store.listBets();
+
     if (!money) {
       throw new Error("no revenue bet opened");
     }
+
     const testCharge = {
       amount_captured: 700,
       captured: true,
@@ -130,14 +150,15 @@ describe("portfolio tools", () => {
       metadata: { bet: money.id },
       paid: true,
     };
-    vi.stubGlobal("fetch", () =>
-      Promise.resolve(Response.json({ data: [testCharge], total_count: 1 })),
-    );
+
+    answerFetch(() => Promise.resolve(Response.json({ data: [testCharge], total_count: 1 })));
 
     const snap = await fetchRealMetrics("sk_test_1", store.listProducts(), store.listBets());
+
     for (const [betId, { reading, at }] of snap.betReadings) {
       store.setBetReading(betId, reading, at);
     }
+
     await answerText(ctx, "kill_bet", {
       reason: "no live Stripe to count it",
       slug: money.id,
@@ -158,22 +179,27 @@ describe("portfolio tools", () => {
   it("posts a bet the lead opens as the office's news, to the room and the feed alike", async () => {
     const { ctx } = runAs("mae");
     const heard: Extract<ActivityEvent, { kind: "chat" }>[] = [];
-    const listen = (e: ActivityEvent): void => {
+
+    const listen = (e: ActivityEvent) => {
       if (e.kind === "chat") {
         heard.push(e);
       }
     };
+
     activityEvents.on("activity", listen);
+
     try {
       await openBet(ctx);
       await answerText(ctx, "message_team", { text: "on it" });
     } finally {
       activityEvents.off("activity", listen);
     }
+
     const lines = [
       { from: { kind: "office" }, text: "🎲 New bet: Launch post — a post brings visitors" },
       { from: { id: "mae", kind: "employee" }, text: "on it" },
     ];
+
     expect(store.recentTeamMessages().map(({ from, text }) => ({ from, text }))).toEqual(lines);
     expect(heard.map((e) => ({ from: e.payload.from, text: e.message }))).toEqual(lines);
     expect(heard.map((e) => e.employeeId)).toEqual([null, "mae"]);
@@ -183,18 +209,22 @@ describe("portfolio tools", () => {
     const { ctx } = runAs("mae");
     const hypothesis = "h".repeat(600);
     const heard: string[] = [];
-    const listen = (e: ActivityEvent): void => {
+
+    const listen = (e: ActivityEvent) => {
       if (e.kind === "chat") {
         heard.push(e.message);
       }
     };
+
     activityEvents.on("activity", listen);
+
     try {
       await answerText(ctx, "open_bet", { ...BET, hypothesis });
       await answerText(ctx, "message_team", { text: "m".repeat(500) });
     } finally {
       activityEvents.off("activity", listen);
     }
+
     const news = `🎲 New bet: ${BET.title} — ${hypothesis}`;
     expect(store.recentTeamMessages().map(({ text }) => text)).toEqual([news, "m".repeat(400)]);
     expect(heard).toEqual([news.slice(0, 400), "m".repeat(400)]);
@@ -207,11 +237,14 @@ describe("name_product", () => {
     const [first] = store.listProducts();
     const id = first?.id ?? "";
     const heard: ActivityEvent[] = [];
-    const listen = (e: ActivityEvent): void => {
+
+    const listen = (e: ActivityEvent) => {
       heard.push(e);
     };
+
     activityEvents.on("activity", listen);
     let answer: string | null = null;
+
     try {
       answer = await answerText({ ...ctx, run: { ...ctx.run, productId: id } }, "name_product", {
         description: "Invoices that chase themselves.",
@@ -220,6 +253,7 @@ describe("name_product", () => {
     } finally {
       activityEvents.off("activity", listen);
     }
+
     expect(answer).toBe(`${id} is now "Ledgerly": Invoices that chase themselves.`);
     expect(store.getProduct(id)?.name).toBe("Ledgerly");
     expect(store.recentTeamMessages().map(({ from, text }) => ({ from, text }))).toEqual([
@@ -272,7 +306,7 @@ describe("kill_product", () => {
       productId: side.id,
       url: "https://buy.stripe.com/gone",
     });
-    vi.stubGlobal("fetch", (url: string) =>
+    answerFetch((url: string) =>
       Promise.resolve(
         url.endsWith("/plink_gone")
           ? Response.json({ error: { message: "No such payment_link" } }, { status: 404 })

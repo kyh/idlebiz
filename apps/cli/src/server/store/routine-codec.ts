@@ -3,7 +3,6 @@ import type { Routine } from "@repo/domain/domain";
 import { PACKAGE_SCHEMA, decodeDoc } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
-/** A null field gets no line. */
 const RoutineDocSchema = z.object({
   body: z.string(),
   fields: z.object({ name: z.string(), schema: z.literal(PACKAGE_SCHEMA), slug: z.string() }),
@@ -14,18 +13,20 @@ const RoutineDocSchema = z.object({
   }),
 });
 
-export const routineToDoc = (r: Routine): z.input<typeof RoutineDocSchema> => ({
-  body: `${r.instruction}\n`,
-  fields: { name: r.name, schema: PACKAGE_SCHEMA, slug: r.id },
-  metadata: {
-    intervalHours: r.intervalHours,
-    lastRunAt: r.lastRunAt ?? undefined,
-    role: r.role ?? undefined,
-  },
-});
+export const routineToDoc = (r: Routine) =>
+  ({
+    body: `${r.instruction}\n`,
+    fields: { name: r.name, schema: PACKAGE_SCHEMA, slug: r.id },
+    metadata: {
+      intervalHours: r.intervalHours,
+      lastRunAt: r.lastRunAt ?? undefined,
+      role: r.role ?? undefined,
+    },
+  }) satisfies z.input<typeof RoutineDocSchema>;
 
-export const docToRoutine = (doc: FrontmatterDoc): Routine => {
+export const docToRoutine = (doc: FrontmatterDoc) => {
   const { body, fields, metadata: m } = decodeDoc(RoutineDocSchema, doc);
+
   return {
     id: fields.slug,
     instruction: body.trim(),
@@ -33,5 +34,5 @@ export const docToRoutine = (doc: FrontmatterDoc): Routine => {
     lastRunAt: m.lastRunAt ?? null,
     name: fields.name,
     role: m.role ?? null,
-  };
+  } satisfies Routine;
 };

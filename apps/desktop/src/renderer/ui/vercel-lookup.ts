@@ -1,6 +1,6 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { BlockedAsk } from "@repo/domain/domain";
-import { errorMessage } from "@repo/domain/errors";
+import { errorMessage, unreachable } from "@repo/domain/errors";
 import type { VercelListing, VercelProject } from "@repo/domain/integrations";
 
 type Lookup =
@@ -15,27 +15,38 @@ type Lookup =
       token?: string | undefined;
     };
 
-const lookupOf = (listing: VercelListing, token?: string): Lookup => {
+const lookupOf = (listing: VercelListing, token?: string) => {
   switch (listing.kind) {
     case "loaded": {
-      return { account: listing.account, projects: listing.projects, state: "loaded", token };
+      return {
+        account: listing.account,
+        projects: listing.projects,
+        state: "loaded",
+        token,
+      } satisfies Lookup;
     }
+
     case "refused": {
-      // A saved token that is refused, or missing, only means one has to be pasted.
-      return token === undefined
-        ? { state: "idle" }
-        : {
-            message: "That token was rejected — create one at vercel.com/account/tokens.",
-            state: "error",
-          };
+      return (
+        token === undefined
+          ? { state: "idle" }
+          : {
+              message: "That token was rejected — create one at vercel.com/account/tokens.",
+              state: "error",
+            }
+      ) satisfies Lookup;
     }
+
     case "unreachable": {
       return {
         message: `Couldn't reach Vercel — check your connection and try again. (${listing.reason})`,
         state: "error",
-      };
+      } satisfies Lookup;
     }
-    // no default
+
+    default: {
+      return unreachable(listing);
+    }
   }
 };
 
@@ -46,18 +57,19 @@ export type Listing = Pick<UseQueryResult<VercelListing>, "data" | "error" | "is
  * How the picker shows the listing read for `token`, the one pasted — absent when
  * the saved one was tried. A listing being read again is no answer yet.
  */
-export const lookupFor = (listing: Listing, token?: string): Lookup => {
+export const lookupFor = (listing: Listing, token?: string) => {
   if (listing.isFetching) {
-    return { state: "loading" };
+    return { state: "loading" } satisfies Lookup;
   }
+
   if (listing.error) {
-    return { message: errorMessage(listing.error), state: "error" };
+    return { message: errorMessage(listing.error), state: "error" } satisfies Lookup;
   }
-  return listing.data ? lookupOf(listing.data, token) : { state: "loading" };
+
+  return (listing.data ? lookupOf(listing.data, token) : { state: "loading" }) satisfies Lookup;
 };
 
-export const problemOf = (lookup: Lookup): string | null =>
-  lookup.state === "error" ? lookup.message : null;
+export const problemOf = (lookup: Lookup) => (lookup.state === "error" ? lookup.message : null);
 
 /**
  * Whether the team waits on Vercel for this product, or for one it never named. A bound product
@@ -66,7 +78,7 @@ export const problemOf = (lookup: Lookup): string | null =>
 export const awaitsVercelToken = (
   productId: string,
   asks: readonly { state: { ask: BlockedAsk } }[],
-): boolean =>
+) =>
   asks.some(
     ({ state: { ask } }) =>
       ask.type === "integration" &&

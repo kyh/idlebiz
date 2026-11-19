@@ -23,22 +23,23 @@ test("a founded company boots into the office", async ({ launch }) => {
   await founding.close();
 
   const { page } = await launch();
+
   for (const plate of [/revenue/iu, /users/iu, /product/iu, /team/iu]) {
     await expect(page.getByRole("button", { name: plate })).toBeVisible();
   }
+
   await expect(page.getByText("# team")).toBeVisible();
   await expect.poll(() => page.evaluate(NPCS_IN_OFFICE)).toBe(employees.length);
   await page.evaluate(STEP_OFFICE);
   await keyShot(page, "office");
 });
 
-/** A task of the lead's, left blocked on `ask` as the store writes it, for the next launch to load. */
 const blockLead = async (
   root: string,
   { company, product }: Founded,
   slug: string,
   ask: BlockedAsk,
-): Promise<void> => {
+) => {
   const task: Task = {
     answers: null,
     assigneeId: company.leaderId,
@@ -54,6 +55,7 @@ const blockLead = async (
     state: { ask, kind: "blocked", summary: null },
     title: "Ship the tip jar",
   };
+
   const taskDir = path.join(root, "company", "tasks", slug);
   await mkdir(taskDir, { recursive: true });
   await writeFile(path.join(taskDir, "TASK.md"), serializeTask(task));
@@ -94,11 +96,13 @@ test("an action card hands the founder its draft and carries their answer back",
   const founding = await launch();
   const founded = await foundCompany(founding.page);
   await founding.close();
+
   const action = {
     action: "Post the launch thread on r/SideProject",
     draft: "We built a tip jar.\nTry it!",
     instructions: "Post it from your account, then send me its URL.",
   };
+
   await blockLead(root, founded, "e2e-post", { ...action, type: "action" });
 
   const { page } = await launch();
@@ -106,7 +110,6 @@ test("an action card hands the founder its draft and carries their answer back",
   const inbox = page.getByRole("dialog", { name: "Inbox" });
   await expect(inbox.getByText(action.action)).toBeVisible();
   await expect(inbox.getByText(action.instructions)).toBeVisible();
-  // Copy draft is left unclicked: it would overwrite the clipboard of whoever runs the suite
   await expect(inbox.getByText("We built a tip jar.")).toBeVisible();
   await expect(inbox.getByRole("button", { name: "Copy draft" })).toBeVisible();
 
@@ -121,17 +124,17 @@ test("an action card hands the founder its draft and carries their answer back",
 });
 
 const pointSchema = z.object({ x: z.number(), y: z.number() });
+
 type Point = z.infer<typeof pointSchema>;
 
-const playerAt = async (page: Page): Promise<Point> =>
+const playerAt = async (page: Page) =>
   pointSchema.parse(await page.evaluate(`(({ x, y }) => ({ x, y }))(${SCENE}.player.sprite)`));
 
-const placePlayer = async (page: Page, { x, y }: Point): Promise<void> => {
+const placePlayer = async (page: Page, { x, y }: Point) => {
   await page.evaluate(`void ${SCENE}.player.sprite.setPosition(${x}, ${y})`);
 };
 
-/** Stand the founder just left of `employeeId`, facing them, close enough to talk. */
-const standBeside = async (page: Page, employeeId: string): Promise<void> => {
+const standBeside = async (page: Page, employeeId: string) => {
   await page.evaluate(`(() => {
     const scene = ${SCENE};
     const at = scene.npcs.positionOf(${JSON.stringify(employeeId)});
@@ -140,7 +143,6 @@ const standBeside = async (page: Page, employeeId: string): Promise<void> => {
   })()`);
 };
 
-// a human beat between keys: sent within one frame, a key let go reaches the office after it has the keyboard back
 const HOLD_MS = 150;
 
 test("a key held while a window opens is let go of when it closes", async ({ launch }) => {
@@ -148,6 +150,7 @@ test("a key held while a window opens is let go of when it closes", async ({ lau
   const { employees } = await foundCompany(founding.page);
   await founding.close();
   const bo = employees.find((e) => e.name === "Bo Chen");
+
   if (!bo) {
     throw new Error("the founded team has no Bo");
   }
@@ -156,6 +159,7 @@ test("a key held while a window opens is let go of when it closes", async ({ lau
   await expect.poll(() => page.evaluate(NPC_PLACED(bo.id))).toBe(true);
   const spawn = await playerAt(page);
   const dialogue = page.locator(".dlg");
+
   for (const attempt of [1, 2]) {
     await standBeside(page, bo.id);
     await page.keyboard.down("e");
@@ -189,14 +193,17 @@ test("#team stays on its newest line after a window closes over it", async ({ la
 
   const { page } = await launch();
   const api = await apiOf(page);
+
   for (let i = 1; i <= 30; i += 1) {
     await api.team.post({ text: `line ${i}` });
   }
+
   const feed = page
     .locator(".px-window")
     .filter({ hasText: "# team" })
     .locator(".px-scroll")
     .first();
+
   await expect(feed.getByText("line 30")).toBeInViewport();
 
   await page.getByTitle("Settings").click();
@@ -234,6 +241,7 @@ test("a long question keeps its lines and the dialogue stays on screen", async (
   await founding.close();
   await blockLead(root, founded, "e2e-long-ask", { question: LONG_QUESTION, type: "question" });
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
+
   if (!lead) {
     throw new Error("the founded company has no lead");
   }
@@ -263,6 +271,7 @@ test("hovering the dialogue's menu leaves the typed answer where the founder is 
   await founding.close();
   await blockLead(root, founded, "e2e-color", { question: "Which color?", type: "question" });
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
+
   if (!lead) {
     throw new Error("the founded company has no lead");
   }
@@ -285,6 +294,7 @@ test("an answer being typed survives a status event of the asker's", async ({ la
   await founding.close();
   await blockLead(root, founded, "e2e-color", { question: "Which color?", type: "question" });
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
+
   if (!lead) {
     throw new Error("the founded company has no lead");
   }
@@ -316,6 +326,7 @@ test("Talk… keeps the keys while an ask waits and a status event of the asker'
   await founding.close();
   await blockLead(root, founded, "e2e-color", { question: "Which color?", type: "question" });
   const lead = founded.employees.find((e) => e.id === founded.company.leaderId);
+
   if (!lead) {
     throw new Error("the founded company has no lead");
   }
@@ -341,14 +352,9 @@ test("Talk… keeps the keys while an ask waits and a status event of the asker'
   await expect(dialogue.getByPlaceholder("Your answer…")).toHaveValue("");
 });
 
-// a fake key's shape, which main refuses to pass to the team
 const REFUSED_TEXT = "use sk_test_0000000000000000";
 
-/**
- * Marks `field` once it is ever disabled. Chromium blurs a disabled field only at its next focus
- * fixup, so a refusal that lands first leaves focus in place and only the mark shows the drop.
- */
-const markWhenDisabled = (field: Locator): Promise<void> =>
+const markWhenDisabled = (field: Locator) =>
   field.evaluate((el) => {
     new MutationObserver(() => {
       if (el.hasAttribute("disabled")) {
@@ -362,6 +368,7 @@ test("Talk… keeps the keys after main refuses what was sent", async ({ launch 
   const founded = await foundCompany(founding.page);
   await founding.close();
   const engineer = founded.employees.find((e) => e.id !== founded.company.leaderId);
+
   if (!engineer) {
     throw new Error("the founded company has only its lead");
   }
@@ -413,7 +420,6 @@ test("#team keeps the keys after a message is sent", async ({ launch }) => {
   await founding.close();
 
   const { page } = await launch();
-  // #team shows before the office has run: until then the keys are Phaser's default, bound to nothing
   await expect.poll(() => page.evaluate(OFFICE_HAS_KEYS)).toBe(true);
   const field = page.locator(".px-window").filter({ hasText: "# team" }).getByRole("textbox");
   await field.click();
@@ -435,6 +441,7 @@ test("the dialogue's cursor stays on Talk… when a row is added ahead of it mea
   const founded = await foundCompany(founding.page);
   await founding.close();
   const engineer = founded.employees.find((e) => e.id !== founded.company.leaderId);
+
   if (!engineer) {
     throw new Error("the founded company has only its lead");
   }
@@ -447,7 +454,6 @@ test("the dialogue's cursor stays on Talk… when a row is added ahead of it mea
   await menu.getByRole("button", { name: /Talk…/u }).click();
   await expect(dialogue.getByPlaceholder(`Tell ${engineer.name} what to do…`)).toBeFocused();
 
-  // queued work puts a Check in row ahead of Talk… while the menu is away
   const api = await apiOf(page);
   await api.employees.direct({ employeeId: engineer.id, instruction: "Tidy the README." });
   await expect(dialogue.getByText(/queued/u)).toBeVisible();

@@ -3,15 +3,12 @@ import type { Metadata } from "next";
 import { siteConfig } from "@/lib/site-config";
 
 /** Where a page's own share card is served: its segment's `opengraph-image`. */
-export const ogImagePath = (path: string): string => `${path === "/" ? "" : path}/opengraph-image`;
+export const ogImagePath = (path: string) => `${path === "/" ? "" : path}/opengraph-image`;
 
-/**
- * The office clip, on the home page only. Crawlers want og:video absolute, which
- * `metadataBase` does not do for videos.
- */
 const homeVideos = () => {
   const { height, url, width } = siteConfig.video;
   const absolute = `${siteConfig.url}${url}`;
+
   return [{ height, secureUrl: absolute, type: "video/mp4", url: absolute, width }];
 };
 
@@ -26,14 +23,16 @@ export const pageMetadata = (
   path: string,
   title: string | null,
   description: string = siteConfig.description,
-): Metadata => {
+) => {
   const cardTitle = title ? `${title} | ${siteConfig.name}` : siteConfig.name;
+
   const image = {
     alt: `${cardTitle} — ${description}`,
     height: 630,
     url: ogImagePath(path),
     width: 1200,
   };
+
   const openGraph: NonNullable<Metadata["openGraph"]> = {
     description,
     images: [image],
@@ -43,9 +42,11 @@ export const pageMetadata = (
     type: "website",
     url: path,
   };
+
   if (path === "/") {
     openGraph.videos = homeVideos();
   }
+
   const metadata: Metadata = {
     alternates: { canonical: path },
     description,
@@ -58,8 +59,10 @@ export const pageMetadata = (
       title: cardTitle,
     },
   };
+
   if (title) {
     metadata.title = title;
   }
+
   return metadata;
 };

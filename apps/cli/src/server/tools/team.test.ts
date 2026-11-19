@@ -9,7 +9,7 @@ freshSave();
 
 describe("team tools", () => {
   it("turns a hire away at the seat cap as an answer, not a fault", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     const { ctx } = runAs("mae");
     store.setMaxAgents(2);
     expect(await answerText(ctx, "hire", { role: "engineer", title: "Engineer" })).toContain(
@@ -42,10 +42,12 @@ describe("team tools", () => {
 
   it("hands the founder an action, and says when a second ask of the run went nowhere", async () => {
     const { ctx, asked } = runAs("priya");
+
     const card = await answerText(ctx, "ask_boss", {
       action: "Post the launch thread",
       instructions: "Post it on r/SideProject and send me its URL.",
     });
+
     const second = await answerText(ctx, "ask_boss", { question: "Ship it?" });
     expect(card).toContain("action card");
     expect(second).toContain("The founder was not asked");
@@ -74,11 +76,13 @@ describe("team tools", () => {
     await answerText(ctx, "open_bet", BET);
     const [bet] = store.listBets();
     const working = { ...ctx, run: { ...ctx.run, betId: bet?.id ?? null } };
+
     const answer = await answerText(working, "delegate", {
       description: "write it",
       role: "engineer",
       title: "Draft the post",
     });
+
     expect(answer).toContain("Delegated");
     const [task] = store.listOpenTasks();
     expect(task).toMatchObject({
@@ -92,9 +96,11 @@ describe("team tools", () => {
 
   it("fans same-role work out across the teammates who have the least of it", async () => {
     const { ctx } = runAs("mae", [hire("Sam"), hire("Ana")]);
+
     for (const title of ["Page A", "Page B", "Page C", "Page D"]) {
       await answerText(ctx, "delegate", { ...HANDOFF, title });
     }
+
     const holders = new Map(store.listOpenTasks().map((t) => [t.title, t.assigneeId]));
     expect(["Page A", "Page B", "Page C", "Page D"].map((t) => holders.get(t))).toEqual([
       "priya",
@@ -106,6 +112,7 @@ describe("team tools", () => {
 
   it("delegates past a teammate whose runner cannot start the work", async () => {
     const { ctx } = runAs("mae", [hire("Ana", "Engineer", "codex")]);
+
     const resting: RunContext = {
       ...ctx,
       runners: {
@@ -113,11 +120,14 @@ describe("team tools", () => {
         restingRunner: (r) => (r === "claude" ? Date.now() + 60_000 : null),
       },
     };
+
     expect(await answerText(resting, "delegate", HANDOFF)).toContain("to Ana");
+
     const signedOut: RunContext = {
       ...ctx,
       runners: { ...ctx.runners, signedIn: (r) => r !== "claude" },
     };
+
     expect(await answerText(signedOut, "delegate", HANDOFF)).toContain("to Ana");
     const nobody: RunContext = { ...ctx, runners: { ...ctx.runners, signedIn: () => false } };
     expect(await answerText(nobody, "delegate", HANDOFF)).toContain("to Priya");
@@ -158,7 +168,7 @@ describe("team tools", () => {
   });
 
   it("makes a proposal delegate against the bet it opened, never unfunded", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     const { ctx } = runAs("mae");
     const proposing: RunContext = { ...ctx, run: { ...ctx.run, origin: "propose" } };
     expect(await answerText(proposing, "delegate", HANDOFF)).toContain("open_bet first");
@@ -184,12 +194,14 @@ describe("team tools", () => {
     const { ctx } = runAs("mae");
     await answerText(ctx, "delegate", HANDOFF);
     const bet = await openBet(ctx);
+
     const ask = store.createTask({
       assigneeId: "priya",
       betId: bet.id,
       origin: "work",
       title: "Ask",
     });
+
     store.claimTask(ask.id, "priya");
     store.lockTaskForRun(ask.id, "run-1");
     store.settleTask(ask.id, "run-1", {

@@ -5,8 +5,9 @@ import type { RunnerId } from "@repo/domain/runners";
 import { RUNNERS } from "./registry";
 import type { Argv } from "./registry";
 
-export const runnerBin = (id: RunnerId): string => {
+export const runnerBin = (id: RunnerId) => {
   const { command, override } = RUNNERS[id].cli;
+
   return process.env[override] ?? command;
 };
 
@@ -15,7 +16,7 @@ export type RunnerProbe = { id: RunnerId; bin: string } & (
   | { installed: true; version: string | null; authed: boolean }
 );
 
-export const isReady = (p: RunnerProbe): boolean => p.installed && p.authed;
+export const isReady = (p: RunnerProbe) => p.installed && p.authed;
 
 const PROBE_TIMEOUT_MS = 15_000;
 
@@ -24,51 +25,42 @@ type CliLaunch = (id: RunnerId, argv: Argv) => Argv;
 
 const execFileAsync = promisify(execFile);
 
-/** Whether `argv` exited 0 within the probe's time, and what it printed then. */
-const run = async (
-  [bin, ...args]: Argv,
-  env: Record<string, string>,
-): Promise<{ ok: boolean; output: string }> => {
+const run = async ([bin, ...args]: Argv, env: Record<string, string>) => {
   try {
     const pending = execFileAsync(bin, args, {
       env,
       killSignal: "SIGKILL",
       timeout: PROBE_TIMEOUT_MS,
     });
-    // execFile pipes stdin, and a CLI that reads a piped stdin as its prompt would wait out the
-    // timeout on it
+
     pending.child.stdin?.end();
     const { stderr, stdout } = await pending;
+
     return { ok: true, output: stdout + stderr };
   } catch {
     return { ok: false, output: "" };
   }
 };
 
-// Probe the player's CLI login as its runs start it, so signed in means a run can sign in.
-const probeRunner = async (
-  id: RunnerId,
-  env: Record<string, string>,
-  launch: CliLaunch,
-): Promise<RunnerProbe> => {
+const probeRunner = async (id: RunnerId, env: Record<string, string>, launch: CliLaunch) => {
   const bin = runnerBin(id);
   const version = await run(launch(id, [bin, "--version"]), env);
+
   if (!version.ok) {
-    return { bin, id, installed: false };
+    return { bin, id, installed: false } satisfies RunnerProbe;
   }
+
   const { authProbe } = RUNNERS[id];
   const auth = await run(launch(id, [bin, ...authProbe.args]), env);
+
   return {
     authed: auth.ok && authProbe.loggedIn(auth.output),
     bin,
     id,
     installed: true,
     version: version.output.trim().split("\n")[0] ?? null,
-  };
+  } satisfies RunnerProbe;
 };
 
-export const probeRunners = (
-  envOf: (id: RunnerId) => Record<string, string>,
-  launch: CliLaunch,
-): Promise<RunnerProbe[]> =>
+export const probeRunners = (envOf: (id: RunnerId) => Record<string, string>, launch: CliLaunch) =>
   Promise.all(RUNNER_IDS.map((id) => probeRunner(id, envOf(id), launch)));

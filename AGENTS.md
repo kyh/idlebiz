@@ -139,14 +139,16 @@ runs (the renderer, `@repo/domain`, `@repo/contract`) extends `tsconfig.page.jso
 ceiling of the window's WebKit; the renderer adds the DOM in `renderer/env.d.ts`.
 
 **Lint is a clean gate.** `oxlint.config.ts` extends the ultracite presets
-(`ultracite/oxlint/core`, `react`, `anti-slop`; `next` scoped to `apps/web`); every rule is an
-error and `lint` fails on the first one. It is type-aware (`options.typeAware`, run by the
-`oxlint-tsgolint` devDependency): without it the presets' `no-floating-promises`,
+(`ultracite/oxlint/core`, `react`, `anti-slop`, `landmines`; `next` scoped to `apps/web`); every
+rule is an error and `lint` fails on the first one. It is type-aware (`options.typeAware`, run by
+the `oxlint-tsgolint` devDependency): without it the presets' `no-floating-promises`,
 `no-misused-promises`, `switch-exhaustiveness-check`, `no-deprecated` and `no-unsafe-*` are skipped
-without a word. Fix the code, don't add overrides: the deliberate ones are in `oxlint.config.ts`,
-each with its reason beside it. `switch-exhaustiveness-check` takes a `default` as exhaustive, so a
-switch that must name every kind has none; the activity reducer's table of slices is typed over
-every kind instead (`satisfies Record<ActivityKind, …>`).
+without a word. landmines refuses prose comments, annotated return types, test doubles, fixed
+sleeps and raised timeouts, and wants each `.test.ts` beside its subject: CLAUDE.md's Code section
+says what to write instead, and gives the reason for each rule set otherwise. Fix the code, don't
+add overrides. A switch that must name every case ends in `default: return unreachable(x)`; the
+activity reducer's table of slices is typed over every kind instead
+(`satisfies Record<ActivityKind, …>`).
 
 Prefer fixing code over `oxlint-disable` comments; when a rule is genuinely wrong for a line, disable that line with a stated reason (`// oxlint-disable-next-line rule -- why`).
 
@@ -157,7 +159,7 @@ and opens the built page main serves on the handoff link main hands it, as the s
 opens. `pnpm -F @repo/e2e e2e` reruns it on the last build. The shell itself (the window, the
 menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test`, driven packaged by
 `pnpm smoke:desktop` and `pnpm smoke:update`, and looked at by hand. What the suite covers is its
-tests, in `tools/e2e/src/*.spec.ts`. It is not part of `pnpm verify`; CI's `e2e-macos` job runs
+tests, in `tools/e2e/src/*.test.ts`. It is not part of `pnpm verify`; CI's `e2e-macos` job runs
 it, and fails on any skip:
 
 - It needs Playwright's Chromium (`pnpm -F @repo/e2e exec playwright install chromium`, once).
@@ -172,7 +174,7 @@ it, and fails on any skip:
   `tools/e2e/src/stub-services.ts` preloaded, which answers Stripe, Vercel and Printful from
   canned JSON: an account that takes any key, or, under `launch({ keys: "refused" })`, a Stripe
   and Vercel that answer every key with a 401. No test sends a key to a vendor: what each
-  really answers a key it refuses is the unit fetch fakes' to hold (`stripe-key.test.ts`,
+  really answers a key it refuses is the unit suites' MSW answers to hold (`stripe-key.test.ts`,
   `vercel.test.ts`, `vercel-connect.test.ts`, `printful-token.test.ts`).
 - It runs beside `pnpm dev:desktop` and `pnpm dev:browser`: each launch serves its page on a port
   of its own, and opens an isolated root.
@@ -180,7 +182,7 @@ it, and fails on any skip:
   fresh `IDLEBIZ_ROOT_DIR` and founds through the page's API, called from the test with the page's
   cookie and origin (`apiOf`), with a hand-written team (no casting run), a $0 cap and autopilot
   off; the scheduler checks the budget before it spawns anything, so no run starts until a test
-  raises the cap, and then only the work it directs (`src/runs.spec.ts`, once per runner, whose
+  raises the cap, and then only the work it directs (`src/runs.test.ts`, once per runner, whose
   onboarding test founds through the page on $5 with autopilot on). Every test ends by asserting
   its save logged exactly the runs it scripts (`test.use({ runs })`, none by default, or
   `"settled"` for autopilot's), each one ended and none failed, and the stand-in saw no login but
@@ -248,7 +250,7 @@ flow (`renderer/ui/onboarding-flow.ts`) founds nothing when no hires come back. 
 it with no login: casting and every run after it are turns of the CLIs the adapters bundle,
 sandboxed, on the stand-in model, so only a Mac founds there. The last is the e2e suite's, which
 founds through the page's API, and through the onboarding itself once per runner
-(`tools/e2e/src/runs.spec.ts`), with no login, on the stand-in model ([Verify a change
+(`tools/e2e/src/runs.test.ts`), with no login, on the stand-in model ([Verify a change
 end-to-end](#verify-a-change-end-to-end)). Use `IDLEBIZ_ROOT_DIR` for fixtures; there is no
 bundled seeded save. Employee runs started by hand use the signed-in CLI, or the stand-in under
 `IDLEBIZ_STAND_IN=1`.

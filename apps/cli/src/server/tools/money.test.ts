@@ -23,40 +23,46 @@ import { freshSave } from "../test-support/save";
 import * as store from "../store/store";
 import { callTool } from "./index";
 import { stripeLinkAccess, stripePaymentLink } from "../stripe-links";
+import { answerFetch, interceptNetwork } from "../test-support/network";
+
+interceptNetwork();
 
 const root = freshSave();
 
 const LINK = { amountUsd: 9, name: "Pro plan" };
 
-/** Stripe, as far as a payment link goes: every form it was sent, by endpoint. */
 const fakeStripe = () => {
   const sent: { endpoint: string; auth: string | null; form: Record<string, string> }[] = [];
-  vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+  answerFetch((url: string, init: RequestInit) => {
     const endpoint = new URL(url).pathname;
     sent.push({
       auth: new Headers(init.headers).get("Authorization"),
       endpoint,
-      form: init.body instanceof URLSearchParams ? Object.fromEntries(init.body) : {},
+      form: Object.fromEntries(new URLSearchParams(z.string().catch("").parse(init.body))),
     });
+
     if (endpoint.startsWith("/v1/payment_links/")) {
       return Promise.resolve(Response.json({ active: false, id: "plink_pro" }));
     }
+
     return Promise.resolve(
       Response.json(
         endpoint === "/v1/prices" ? { id: "price_1" } : { id: "plink_pro", url: PAID_URL },
       ),
     );
   });
+
   return sent;
 };
 
-/** A run of Priya's on Acme that charges through the fake Stripe, with the founder's key saved. */
 const chargingRun = (key: string | null = "sk_live_founder") => {
   if (key !== null) {
     writeFileSync(path.join(root, "vault.json"), JSON.stringify({ STRIPE_SECRET_KEY: key }));
   }
+
   const run = runAs("priya");
   const stripe = fakeStripe();
+
   const ctx: RunContext = {
     ...run.ctx,
     checkoutAccess: () => Promise.resolve({ kind: "granted" }),
@@ -64,13 +70,13 @@ const chargingRun = (key: string | null = "sk_live_founder") => {
     linkAccess: () => Promise.resolve({ kind: "granted" }),
     run: { ...run.ctx.run, productId: "acme" },
   };
+
   return { ...run, ctx, stripe };
 };
 
 const UNLOCK = "https://play.acme.dev/unlock";
 const UNLOCK_ACTION = `payment link "Pro plan" at $9.00 on acme then send buyers to ${UNLOCK}`;
 
-/** A charging run whose Acme serves production on acme-site.vercel.app and play.acme.dev, with the founder's Vercel token saved too. */
 const landingRun = () => {
   const run = chargingRun(null);
   writeFileSync(
@@ -79,13 +85,16 @@ const landingRun = () => {
   );
   store.setProductVercel("acme", VERCEL);
   const hostsAsked: string[] = [];
+
   const ctx: RunContext = {
     ...run.ctx,
     productionHosts: (_binding, token) => {
       hostsAsked.push(token);
+
       return Promise.resolve({ hosts: ["acme-site.vercel.app", "play.acme.dev"], kind: "listed" });
     },
   };
+
   return { ...run, ctx, hostsAsked };
 };
 
@@ -160,11 +169,13 @@ describe("create_payment_link", () => {
     const { ctx, stripe } = chargingRun();
     const side = store.createProduct({ description: "a side project", name: "Side" });
     store.grantApproval(ctx.run.taskId, `payment link "Pro plan" at $9.00 on ${side.id}`);
+
     const retiring: RunContext = {
       ...ctx,
       createPaymentLink: async (req) => {
         const made = await stripePaymentLink(req);
         store.killProduct(side.id, "dud", null);
+
         return made;
       },
     };
@@ -193,31 +204,40 @@ describe("create_payment_link", () => {
     const replays = new Map<string, Record<string, string>>();
     let links = 0;
     let timeouts = 1;
-    vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+    answerFetch((url: string, init: RequestInit) => {
       const endpoint = new URL(url).pathname;
       const key = new Headers(init.headers).get("Idempotency-Key");
       const replay = key === null ? undefined : replays.get(key);
+
       if (replay !== undefined) {
         return Promise.resolve(Response.json(replay));
       }
+
       if (endpoint === "/v1/prices") {
         return Promise.resolve(Response.json({ id: "price_1" }));
       }
+
       links += 1;
       const link = { id: `plink_${links}`, url: `https://buy.stripe.com/${links}` };
+
       if (key !== null) {
         replays.set(key, link);
       }
+
       if (timeouts > 0) {
         timeouts -= 1;
+
         return Promise.reject(
           new DOMException("The operation was aborted due to timeout", "TimeoutError"),
         );
       }
+
       return Promise.resolve(Response.json(link));
     });
+
     const call = () => {
       store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+
       return answerText(ctx, "create_payment_link", LINK);
     };
 
@@ -232,18 +252,26 @@ describe("create_payment_link", () => {
   it("makes the link when signed for again after Stripe answered the create with a failure", async () => {
     const { ctx } = chargingRun();
     let failures = 1;
-    replayingStripe((endpoint): StripeAnswer => {
+    replayingStripe((endpoint) => {
       if (endpoint === "/v1/prices") {
-        return { body: { id: "price_1" }, status: 200 };
+        return { body: { id: "price_1" }, status: 200 } satisfies StripeAnswer;
       }
+
       if (failures > 0) {
         failures -= 1;
-        return { body: { error: { message: "An unknown error occurred" } }, status: 500 };
+
+        return {
+          body: { error: { message: "An unknown error occurred" } },
+          status: 500,
+        } satisfies StripeAnswer;
       }
-      return { body: { id: "plink_pro", url: PAID_URL }, status: 200 };
+
+      return { body: { id: "plink_pro", url: PAID_URL }, status: 200 } satisfies StripeAnswer;
     });
+
     const call = () => {
       store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+
       return answerText(ctx, "create_payment_link", LINK);
     };
 
@@ -253,12 +281,13 @@ describe("create_payment_link", () => {
   });
 
   it("says the link may stand on Stripe when Stripe took the create but answered in a shape IdleBiz does not read, and reports it", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     const { ctx } = chargingRun();
-    replayingStripe((endpoint): StripeAnswer =>
-      endpoint === "/v1/prices"
-        ? { body: { id: "price_1" }, status: 200 }
-        : { body: { id: "plink_pro", link: PAID_URL }, status: 200 },
+    replayingStripe(
+      (endpoint) =>
+        (endpoint === "/v1/prices"
+          ? { body: { id: "price_1" }, status: 200 }
+          : { body: { id: "plink_pro", link: PAID_URL }, status: 200 }) satisfies StripeAnswer,
     );
     store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
 
@@ -275,15 +304,18 @@ describe("create_payment_link", () => {
   ])(
     "still says the link may stand on Stripe when signed for again and the replay $what",
     async ({ replayed }) => {
-      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const logged = vi.spyOn(console, "error");
       const { ctx } = chargingRun();
-      replayingStripe((endpoint): StripeAnswer =>
-        endpoint === "/v1/prices"
-          ? { body: { id: "price_1" }, status: 200 }
-          : { body: replayed, status: 200 },
+      replayingStripe(
+        (endpoint) =>
+          (endpoint === "/v1/prices"
+            ? { body: { id: "price_1" }, status: 200 }
+            : { body: replayed, status: 200 }) satisfies StripeAnswer,
       );
+
       const call = () => {
         store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+
         return callTool(ctx, "create_payment_link", LINK);
       };
 
@@ -298,34 +330,42 @@ describe("create_payment_link", () => {
 
   it("records a replayed link Stripe won't look up, rather than say Stripe made none", async () => {
     const replays = new Map<string, JsonValue>();
+
     const stripe = (url: string, init: RequestInit = {}) => {
       if (init.method !== "POST") {
         return Promise.resolve(
           Response.json({ error: { message: "An unknown error occurred" } }, { status: 500 }),
         );
       }
+
       const key = new Headers(init.headers).get("Idempotency-Key") ?? "";
       const replay = replays.get(key);
+
       if (replay !== undefined) {
         return Promise.resolve(
           Response.json(replay, { headers: { "Idempotent-Replayed": "true" } }),
         );
       }
+
       const made: JsonValue =
         new URL(url).pathname === "/v1/prices"
           ? { id: "price_1" }
           : { active: true, id: "plink_pro", url: PAID_URL };
+
       replays.set(key, made);
+
       return Promise.resolve(Response.json(made));
     };
+
     const make = () => {
       const { ctx } = chargingRun();
-      vi.stubGlobal("fetch", stripe);
+      answerFetch(stripe);
       store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+
       return answerText(ctx, "create_payment_link", LINK);
     };
+
     expect(await make()).toContain(PAID_URL);
-    // the founder resets and founds Acme again, so the replay meets a save that records no link
     rmSync(root, { force: true, recursive: true });
     store.initStore();
 
@@ -340,38 +380,49 @@ describe("create_payment_link", () => {
   it("makes a new link rather than record one Stripe replays that is switched off since", async () => {
     const replays = new Map<string, JsonValue>();
     const active = new Map<string, boolean>();
+
     const stripe = (url: string, init: RequestInit = {}) => {
       const { pathname } = new URL(url);
       const id = pathname.split("/").at(-1) ?? "";
+
       if (init.method !== "POST") {
         return Promise.resolve(Response.json({ active: active.get(id), id }));
       }
+
       const key = new Headers(init.headers).get("Idempotency-Key") ?? "";
       const replay = replays.get(key);
+
       if (replay !== undefined) {
         return Promise.resolve(
           Response.json(replay, { headers: { "Idempotent-Replayed": "true" } }),
         );
       }
+
       const n = active.size + 1;
+
       const made: JsonValue =
         pathname === "/v1/prices"
           ? { id: `price_${n}` }
           : { active: true, id: `plink_${n}`, url: `https://buy.stripe.com/${n}` };
+
       if (pathname === "/v1/payment_links") {
         active.set(`plink_${n}`, true);
       }
+
       replays.set(key, made);
+
       return Promise.resolve(Response.json(made));
     };
+
     const make = () => {
       const { ctx } = chargingRun();
-      vi.stubGlobal("fetch", stripe);
+      answerFetch(stripe);
       store.grantApproval(ctx.run.taskId, 'payment link "Pro plan" at $9.00 on acme');
+
       return answerText(ctx, "create_payment_link", LINK);
     };
+
     expect(await make()).toContain("https://buy.stripe.com/1");
-    // the founder resets, which switches the link off, and founds Acme again
     active.set("plink_1", false);
     rmSync(root, { force: true, recursive: true });
     store.initStore();
@@ -448,6 +499,7 @@ describe("create_payment_link", () => {
 
   it("leaves a Stripe card, not a sign-off, for a delivery the key cannot read checkouts for", async () => {
     const run = chargingRun();
+
     const ctx: RunContext = {
       ...run.ctx,
       checkoutAccess: () =>
@@ -472,8 +524,9 @@ describe("create_payment_link", () => {
     const action = 'payment link "Pro plan" at $9.00 on acme';
     store.grantApproval(run.ctx.run.taskId, action);
     const asked: string[] = [];
-    vi.stubGlobal("fetch", (url: string) => {
+    answerFetch((url: string) => {
       asked.push(new URL(url).pathname);
+
       return Promise.resolve(
         Response.json(
           { error: { message: "Expired API Key provided: rk_live_*****y123" } },
@@ -503,7 +556,7 @@ describe("create_payment_link", () => {
 
   it("leaves a Stripe card when Stripe turns the key away from making the link after all", async () => {
     const { ctx, asked } = chargingRun();
-    vi.stubGlobal("fetch", () =>
+    answerFetch(() =>
       Promise.resolve(
         Response.json(
           { error: { message: "The provided key does not have the required permissions" } },
@@ -580,12 +633,14 @@ describe("create_payment_link", () => {
     const { ctx, asked, stripe } = chargingRun();
     const side = store.createProduct({ description: "a side project", name: "Side" });
     const elsewhere = revenueBet(side.id);
+
     const visitors = store.openBet({
       ...BET,
       landingPath: null,
       metric: "users",
       productId: "acme",
     });
+
     const killed = revenueBet();
     store.killBet(killed.id, "dud", Date.now());
 
@@ -594,6 +649,7 @@ describe("create_payment_link", () => {
         `"${bet.id}" is not a revenue bet on acme that is open or measuring — read_bets lists every live bet, what it counts and its product.`,
       );
     }
+
     expect(asked).toEqual([]);
     expect(stripe).toEqual([]);
   });
@@ -774,6 +830,7 @@ describe("create_payment_link", () => {
 
   it("leaves a Vercel card when Vercel turns the token away while checking the landing page", async () => {
     const { ctx, asked, stripe } = landingRun();
+
     const refused: RunContext = {
       ...ctx,
       productionHosts: () => Promise.resolve({ kind: "refused" }),
@@ -795,6 +852,7 @@ describe("create_payment_link", () => {
 
   it("asks again later when Vercel cannot say where the landing page is served", async () => {
     const { ctx, asked, stripe } = landingRun();
+
     const unreachable: RunContext = {
       ...ctx,
       productionHosts: () => Promise.resolve({ kind: "unreachable", reason: "timed out" }),
@@ -809,7 +867,7 @@ describe("create_payment_link", () => {
 
   it("answers with Stripe's own reason when it makes no link", async () => {
     const { ctx } = chargingRun();
-    vi.stubGlobal("fetch", () =>
+    answerFetch(() =>
       Promise.resolve(
         Response.json(
           { error: { message: "Your account cannot currently make live charges." } },

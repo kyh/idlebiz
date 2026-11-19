@@ -2,8 +2,6 @@ import { z } from "zod";
 import { HOLD_RULE_IDS } from "./hold-rules";
 import type { RunnerId } from "./runners";
 
-// Shared by main and renderer. Ids are agentcompanies/v1 slugs matching package folders.
-
 /** Hard ceiling on team size — the LLM staffs freely underneath it. */
 export const DEFAULT_MAX_AGENTS = 12;
 
@@ -17,11 +15,12 @@ export const MaxAgentsSchema = z.number().int().min(1).max(MAX_AGENTS);
 export const DEFAULT_FOUNDER_SEED = "founder-player-001";
 
 /** A new employee's look: a seed character-seed.ts maps to a bundled sheet, unique per hire. */
-export const spriteSeedFor = (role: string, name: string, salt = ""): string =>
+export const spriteSeedFor = (role: string, name: string, salt = "") =>
   `${role}-${name}-${Date.now().toString(36)}${salt}`;
 
 /** What an integration ask waits on; `stripe` is the founder's own key, which charges and reads revenue. */
 export const INTEGRATION_KINDS = ["vercel", "stripe", "printful"] as const;
+
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
 export const INTEGRATION_LABELS = {
@@ -59,7 +58,9 @@ export const BlockedAskSchema = z.discriminatedUnion("type", [
     type: z.literal("approval"),
   }),
 ]);
+
 export type BlockedAsk = z.infer<typeof BlockedAskSchema>;
+
 export type IntegrationAsk = Extract<BlockedAsk, { type: "integration" }>;
 
 /**
@@ -70,29 +71,29 @@ export const ActionReplySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("done"), note: z.string().trim().max(4000) }),
   z.object({ kind: z.literal("cant"), reason: z.string().trim().min(1).max(2000) }),
 ]);
+
 export type ActionReply = z.infer<typeof ActionReplySchema>;
 
-/** A name as a mention matches it: case and accents aside, so `@zoe` and `@Zoë` both find Zoë. */
-const foldName = (name: string): string =>
-  name.normalize("NFKD").replaceAll(/\p{M}/gu, "").toLowerCase();
+const foldName = (name: string) => name.normalize("NFKD").replaceAll(/\p{M}/gu, "").toLowerCase();
 
 /**
  * Resolve `@token` mentions against the roster: employee slug match first,
  * then exact first-name token (case- and accent-insensitive). Whole-token matching only —
  * `@sam` never wakes Samantha. Returns matched employee ids, deduped.
  */
-export const resolveMentions = (
-  text: string,
-  roster: readonly { id: string; name: string }[],
-): string[] => {
+export const resolveMentions = (text: string, roster: readonly { id: string; name: string }[]) => {
   const ids = new Set<string>();
+
   for (const m of text.matchAll(/@(?<token>[\p{L}\p{M}\p{N}_-]+)/gu)) {
     const token = foldName(m.groups?.token ?? "");
+
     if (!token) {
       continue;
     }
+
     const bySlug = roster.find((e) => e.id.toLowerCase() === token);
     const byFirst = roster.filter((e) => foldName(e.name.split(/\s+/u)[0] ?? "") === token);
+
     if (bySlug) {
       ids.add(bySlug.id);
     } else {
@@ -101,23 +102,31 @@ export const resolveMentions = (
       }
     }
   }
+
   return [...ids];
 };
 
 /** What stays in the queue. dead: failed MAX_TASK_ATTEMPTS times, no longer auto-retried, kept for the Inbox to retry. */
 export const OPEN_TASK_STATUSES = ["todo", "queued", "running", "blocked", "dead"] as const;
+
 export type OpenTaskStatus = (typeof OPEN_TASK_STATUSES)[number];
+
 /**
  * History, shelved in shipped/. superseded: an ask the founder answered. settled: an order card
  * the founder closed. dropped: work the steering loop took away — its bet stopped taking work,
  * its product was retired, or its assignee was released.
  */
 export const HISTORY_TASK_STATUSES = ["done", "superseded", "settled", "dropped"] as const;
+
 /** The open ones plus history. */
 export const TASK_STATUSES = [...OPEN_TASK_STATUSES, ...HISTORY_TASK_STATUSES] as const;
+
 export type TaskStatus = (typeof TASK_STATUSES)[number];
+
 export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
+
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
+
 /** `order` is main's card about a paid order, which the founder settles and no run carries on. */
 export const TASK_ORIGINS = [
   "work",
@@ -128,7 +137,9 @@ export const TASK_ORIGINS = [
   "delegated",
   "order",
 ] as const;
+
 export type TaskOrigin = (typeof TASK_ORIGINS)[number];
+
 /** Why work a run carries exists: every origin but an order card's. */
 export type RunOrigin = Exclude<TaskOrigin, "order">;
 
@@ -145,7 +156,9 @@ export const OrderCardSubjectSchema = z.discriminatedUnion("kind", [
     reason: z.enum(["no-printful-token", "no-live-key", "unreadable-checkouts", "missed"]),
   }),
 ]);
+
 export type OrderCardSubject = z.infer<typeof OrderCardSubjectSchema>;
+
 /** Whether a run is in flight for them. Held in memory by the scheduler, never on disk. */
 export type EmployeeStatus = "idle" | "working";
 
@@ -160,7 +173,6 @@ export const REST_CAUSES = ["usage-limit", "overloaded", "access-denied"] as con
 export const RunOutcomeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("done") }),
   z.object({ ask: BlockedAskSchema, kind: z.literal("blocked") }),
-  // the runner rests: park until `until` without burning an attempt
   z.object({
     cause: z.enum(REST_CAUSES),
     error: z.string(),
@@ -168,11 +180,10 @@ export const RunOutcomeSchema = z.discriminatedUnion("kind", [
     until: z.number(),
   }),
   z.object({ error: z.string(), kind: z.literal("failed") }),
-  // the runner's login was refused: park without burning an attempt until a sign-in finds it again
   z.object({ error: z.string(), kind: z.literal("signedOut") }),
-  // the app stopped the run: requeue without burning an attempt
   z.object({ kind: z.literal("interrupted") }),
 ]);
+
 export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
 
 /** How many times a task may run before it is dead-lettered. */
@@ -180,24 +191,28 @@ export const MAX_TASK_ATTEMPTS = 5;
 const RETRY_BASE_MS = 15_000;
 const RETRY_CAP_MS = 10 * 60_000;
 
-/** Exponential backoff for the Nth failed attempt (1-based), capped. */
-const retryDelayMs = (attempt: number): number => {
+const retryDelayMs = (attempt: number) => {
   const d = RETRY_BASE_MS * 2 ** Math.max(0, attempt - 1);
+
   return Math.min(d, RETRY_CAP_MS);
 };
 
-export type FailureVerdict =
+type FailureVerdict =
   | { kind: "retry"; attempts: number; retryAt: number }
   | { kind: "dead"; attempts: number };
 
-export const afterFailure = (attemptsSoFar: number, now: number): FailureVerdict => {
+export const afterFailure = (attemptsSoFar: number, now: number) => {
   const attempts = attemptsSoFar + 1;
-  return attempts >= MAX_TASK_ATTEMPTS
-    ? { attempts, kind: "dead" }
-    : { attempts, kind: "retry", retryAt: now + retryDelayMs(attempts) };
+
+  return (
+    attempts >= MAX_TASK_ATTEMPTS
+      ? { attempts, kind: "dead" }
+      : { attempts, kind: "retry", retryAt: now + retryDelayMs(attempts) }
+  ) satisfies FailureVerdict;
 };
 
 export const BUSINESS_TYPE_IDS = ["software", "game-studio", "vc", "ecommerce", "custom"] as const;
+
 export type BusinessTypeId = (typeof BUSINESS_TYPE_IDS)[number];
 
 export interface BusinessType {
@@ -235,13 +250,15 @@ export const BUSINESS_TYPES: readonly BusinessType[] = [
 ];
 
 /** A blank pitch leaves what the company builds to the team. */
-export const missionFromPitch = (pitch: string): string | null => pitch.trim() || null;
+export const missionFromPitch = (pitch: string) => pitch.trim() || null;
 
-export const businessTypeById = (id: BusinessTypeId): BusinessType => {
+export const businessTypeById = (id: BusinessTypeId) => {
   const found = BUSINESS_TYPES.find((b) => b.id === id);
+
   if (!found) {
     throw new Error(`unknown business type ${id}`);
   }
+
   return found;
 };
 
@@ -250,9 +267,10 @@ export const BudgetSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("infinite") }),
   z.object({ capUsd: z.number().nonnegative(), mode: z.literal("capped") }),
 ]);
+
 export type Budget = z.infer<typeof BudgetSchema>;
 
-export const isOutOfBudget = (co: Company): boolean =>
+export const isOutOfBudget = (co: Company) =>
   co.budget.mode === "capped" && co.spentUsd >= co.budget.capUsd;
 
 export interface Company {
@@ -288,6 +306,7 @@ export const RunMetricsSchema = z.object({
   revenueUsd: z.number().nullable(),
   users: z.number().nullable(),
 });
+
 export type RunMetrics = z.infer<typeof RunMetricsSchema>;
 
 export const LastShipSchema = z.object({
@@ -295,6 +314,7 @@ export const LastShipSchema = z.object({
   taskId: z.string(),
   title: z.string(),
 });
+
 type LastShip = z.infer<typeof LastShipSchema>;
 
 /** A runner session, and the folder it began in: claude records a turn only under the folder it runs in. */
@@ -330,19 +350,14 @@ export interface Employee {
  * "Growth Lead" all read like leadership and none of them is — so they are never
  * guessed from.
  */
-export const leadOf = (employees: readonly Pick<Employee, "id">[]): string | null =>
-  employees[0]?.id ?? null;
+export const leadOf = (employees: readonly Pick<Employee, "id">[]) => employees[0]?.id ?? null;
 
 /** Whether someone answers to a role named loosely: "market" finds the Growth & Marketing Lead, "engineer" the Founding Engineer. */
-export const hasRole =
-  (want: string) =>
-  (employee: Pick<Employee, "role" | "title">): boolean =>
-    `${employee.role} ${employee.title}`.toLowerCase().includes(want.trim().toLowerCase());
+export const hasRole = (want: string) => (employee: Pick<Employee, "role" | "title">) =>
+  `${employee.role} ${employee.title}`.toLowerCase().includes(want.trim().toLowerCase());
 
-export const isLead = (
-  company: Pick<Company, "leaderId">,
-  employee: Pick<Employee, "id">,
-): boolean => company.leaderId === employee.id;
+export const isLead = (company: Pick<Company, "leaderId">, employee: Pick<Employee, "id">) =>
+  company.leaderId === employee.id;
 
 /** The Vercel project a product deploys to; the token is the founder's, one per company. */
 export interface VercelBinding {
@@ -373,6 +388,7 @@ export const ProductDraftSchema = z.strictObject({
   description: z.string().trim().min(1).max(600),
   name: z.string().trim().min(1).max(80),
 });
+
 export type ProductDraft = z.infer<typeof ProductDraftSchema>;
 
 /** What a company founded with no pitch says its first product is, until the lead names it. */
@@ -388,6 +404,7 @@ export const SpeakerSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("office") }),
   z.object({ id: z.string(), kind: z.literal("employee") }),
 ]);
+
 export type Speaker = z.infer<typeof SpeakerSchema>;
 
 export interface TeamMessage {
@@ -410,35 +427,32 @@ export type TaskState =
   | { kind: "running"; runId: string }
   | { kind: "blocked"; ask: BlockedAsk; summary: string | null }
   | { kind: "done"; summary: string | null }
-  /** The founder answered its ask: history, not a ship. `by` is the continuation carrying the work. */
   | { kind: "superseded"; by: string }
-  /** The founder closed an order card: history, which no run carries on. */
   | { kind: "settled" }
-  /** History, not a failure: reviving it would only bill a bet or product that takes no more work. */
   | { kind: "dropped"; reason: string }
   | { kind: "dead"; lastError: string };
 
-// the state kinds and the status vocabulary (TASK.md, tasks.list's filter, status events) are one set
 type _AssertStatesAreStatuses = TaskState["kind"] extends TaskStatus ? true : never;
+
 type _AssertStatusesAreStates = TaskStatus extends TaskState["kind"] ? true : never;
+
 const statesAreStatuses: _AssertStatesAreStatuses = true;
 const statusesAreStates: _AssertStatusesAreStates = true;
+
 void statesAreStatuses;
+
 void statusesAreStates;
 
 /** Entering a state, stamped with the moment it settled, if it did. Every change of state goes through here, so the stamp cannot disagree with it. */
-export const entering = (
-  state: TaskState,
-  now: number,
-): Pick<Task, "state"> & Partial<Pick<Task, "completedAt">> =>
-  state.kind === "done" ||
+export const entering = (state: TaskState, now: number) =>
+  (state.kind === "done" ||
   state.kind === "superseded" ||
   state.kind === "settled" ||
   state.kind === "dropped" ||
   state.kind === "blocked" ||
   state.kind === "dead"
     ? { completedAt: now, state }
-    : { state };
+    : { state }) satisfies Pick<Task, "state"> & Partial<Pick<Task, "completedAt">>;
 
 /** A task known to be in one state, so its fields need no second check. */
 export type TaskIn<K extends TaskStatus> = Task & { state: Extract<TaskState, { kind: K }> };
@@ -503,7 +517,7 @@ export interface Routine {
  * founding: due at once, every routine fires on the first tick, ahead of the
  * lead's first bet and before there is anything to review.
  */
-export const isRoutineDue = (routine: Routine, foundedAt: number, now: number): boolean =>
+export const isRoutineDue = (routine: Routine, foundedAt: number, now: number) =>
   now - (routine.lastRunAt ?? foundedAt) >= routine.intervalHours * 3_600_000;
 
 /** Streamed steps of the workforce setup flow (CLI detect/install/login). */
@@ -513,6 +527,7 @@ export const AuthFlowEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("done") }),
   z.object({ message: z.string(), type: z.literal("error") }),
 ]);
+
 export type AuthFlowEvent = z.infer<typeof AuthFlowEventSchema>;
 
 /** runner → epoch its usage limit lifts, for every runner currently parked. */
@@ -555,6 +570,7 @@ export const LAUNCH_AT_LOGIN = [
   "not-found",
   "unavailable",
 ] as const;
+
 export type LaunchAtLogin = (typeof LAUNCH_AT_LOGIN)[number];
 
 /**
@@ -569,6 +585,7 @@ export const UpdateStatusSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("installing"), version: z.string() }),
   z.object({ kind: z.literal("failed"), reason: z.string() }),
 ]);
+
 export type UpdateStatus = z.infer<typeof UpdateStatusSchema>;
 
 /** One thing the founder can ask an employee from the battle box: the label shown, the brief sent. */

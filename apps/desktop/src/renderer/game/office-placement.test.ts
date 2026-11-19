@@ -3,7 +3,7 @@ import { planSeats } from "./office-placement";
 import type { SeatPlan } from "./office-placement";
 
 const emp = (id: string, deskIndex: number) => ({ deskIndex, id });
-const plan = (entries: [string, number | null][]): SeatPlan => new Map(entries);
+const plan = (entries: [string, number | null][]) => new Map(entries) satisfies SeatPlan;
 const none: SeatPlan = new Map();
 
 describe("planSeats", () => {
@@ -22,7 +22,6 @@ describe("planSeats", () => {
 
   it("keeps an incumbent in place when a newcomer was hired into their desk", () => {
     const before = plan([["a", 0]]);
-    // the newcomer is listed first, and still does not displace anyone
     const out = planSeats(2, [emp("b", 0), emp("a", 0)], before);
     expect(out.get("a")).toBe(0);
     expect(out.get("b")).toBe(1);
@@ -40,7 +39,6 @@ describe("planSeats", () => {
     const full = planSeats(2, roster, none);
     expect(full.get("c")).toBeNull();
 
-    // a is released: c walks to the freed desk, b stays put
     const after = planSeats(2, [emp("b", 1), emp("c", 2)], full);
     expect(after.get("b")).toBe(1);
     expect(after.get("c")).toBe(0);

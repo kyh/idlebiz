@@ -1,5 +1,3 @@
-// The bets that steer the company: the list, and the founder's kill.
-
 import { oc, type } from "@orpc/contract";
 import { z } from "zod";
 import type { Bet } from "@repo/domain/bets";

@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseDoc, serializeDoc } from "./frontmatter";
 
-/** A package file whose frontmatter is `head`, one line each, as a founder's editor saves it. */
-const file = (...head: string[]): string => ["---", ...head, "---", "Body."].join("\n");
+const file = (...head: string[]) => ["---", ...head, "---", "Body."].join("\n");
 
 describe("frontmatter as the app writes it", () => {
   it.each([

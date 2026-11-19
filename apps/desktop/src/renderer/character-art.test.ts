@@ -15,9 +15,9 @@ import { bustUrl, sheetUrl } from "./character-art";
 const publicDir = path.resolve(import.meta.dirname, "../../public");
 const pinned = Array.from({ length: SHEET_COUNT }, (_, i) => `employee-sheet:${i + 1}`);
 
-/** A PNG's size, from its IHDR chunk, which every PNG opens with. */
 const pngSize = (url: string) => {
   const png = readFileSync(path.join(publicDir, url));
+
   return { height: png.readUInt32BE(20), width: png.readUInt32BE(16) };
 };
 
@@ -31,6 +31,7 @@ describe("the bundled characters", () => {
   it("lay every sheet out in the frames the office cuts its anims from", () => {
     const last = Math.max(...Object.values(WALK_START), ...Object.values(SIT_START)) + STRIP_FRAMES;
     const rows = Math.ceil(last / SHEET_COLUMNS);
+
     for (const seed of pinned) {
       const { height, width } = pngSize(sheetUrl(seed));
       expect(width).toBe(SHEET_COLUMNS * FRAME_W);

@@ -1,3 +1,4 @@
+import { unreachable } from "@repo/domain/errors";
 import { useState } from "react";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import {
@@ -23,7 +24,6 @@ import type { Overlay } from "@/renderer/ui/overlay";
 import type { IntegrationAsk, IntegrationKind, Task, TaskIn } from "@repo/domain/domain";
 import { cn } from "cn";
 
-// Connecting resumes integration asks automatically; no text answer is needed.
 const ConnectRow = ({
   t,
   by,
@@ -39,6 +39,7 @@ const ConnectRow = ({
 }) => {
   const stripeKey = useStripeKey();
   const copy = connectAskCopy(integration, stripeKey);
+
   return (
     <div className="px-inset p-3">
       <div className="text-xs text-accent-lo">
@@ -69,6 +70,7 @@ const ApprovalRow = ({
   rule: HoldRuleId;
 }) => {
   const { submission, decided, decide } = useApproval(t.id);
+
   return (
     <div className={cn("px-inset p-3", decided && "opacity-50")}>
       <div className="text-xs text-warn">
@@ -88,6 +90,7 @@ const ApprovalRow = ({
 const StuckRow = ({ t, by }: { t: TaskIn<"dead">; by: string }) => {
   const { submission, submit } = useSubmission(() => retryTask(t));
   const retried = submission.kind === "sending" || submission.kind === "sent";
+
   return (
     <div className={cn("px-inset p-3", retried && "opacity-50")}>
       <div className="text-xs text-danger">
@@ -111,6 +114,7 @@ const StuckRow = ({ t, by }: { t: TaskIn<"dead">; by: string }) => {
 
 const AskRow = ({ t, by, question }: { t: Task; by: string; question: string }) => {
   const [sent, setSent] = useState(false);
+
   return (
     <div className={cn("px-inset p-3", sent && "opacity-50")}>
       <div className="text-xs text-danger">
@@ -140,9 +144,10 @@ export const Inbox = ({
   if (!company) {
     return null;
   }
-  const nameOf = (id: string | null): string => employeeName(employees, id, "someone");
-  // Stripe and Printful are the company's; Vercel binds the product the ask is about, or asks which
-  const connect = (ask: IntegrationAsk): void => {
+
+  const nameOf = (id: string | null) => employeeName(employees, id, "someone");
+
+  const connect = (ask: IntegrationAsk) => {
     onOpen(
       ask.integration === "vercel"
         ? { kind: "vercel", productId: ask.productId }
@@ -152,6 +157,7 @@ export const Inbox = ({
 
   const askRow = (t: TaskIn<"blocked">) => {
     const { ask } = t.state;
+
     switch (ask.type) {
       case "integration": {
         return (
@@ -165,6 +171,7 @@ export const Inbox = ({
           />
         );
       }
+
       case "approval": {
         return (
           <ApprovalRow
@@ -176,14 +183,20 @@ export const Inbox = ({
           />
         );
       }
+
       case "question": {
         return <AskRow key={t.id} t={t} by={nameOf(t.assigneeId)} question={ask.question} />;
       }
+
       case "action": {
         const by = t.origin === "order" ? "Orders" : nameOf(t.assigneeId);
+
         return <ActionCard key={t.id} t={t} by={by} ask={ask} />;
       }
-      // no default
+
+      default: {
+        return unreachable(ask);
+      }
     }
   };
 

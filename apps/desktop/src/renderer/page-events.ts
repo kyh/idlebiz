@@ -1,12 +1,10 @@
-// Main's events as the page hears them: the contract's one stream, reopened whenever it drops.
-
+import { unreachable } from "@repo/domain/errors";
 import type { PageEvent, PageEventName, PageEvents } from "@repo/contract/events";
 import { api } from "@/renderer/api";
 import { reportFault } from "@/renderer/report-fault";
 
 type Listener<E extends PageEventName> = (data: PageEvents[E]) => void;
 
-/** Who hears each event, by its name. */
 type Listeners = { [E in PageEventName]: Set<Listener<E>> };
 
 const listeners: Listeners = {
@@ -16,16 +14,16 @@ const listeners: Listeners = {
 };
 
 /** Hears one of main's events until the function it returns is called. */
-export const listen = <E extends PageEventName>(name: E, listener: Listener<E>): (() => void) => {
+export const listen = <E extends PageEventName>(name: E, listener: Listener<E>) => {
   const heard = listeners[name];
   heard.add(listener);
-  return () => {
+
+  return (() => {
     heard.delete(listener);
-  };
+  }) satisfies () => void;
 };
 
-// one listener's fault is its own: the others still hear the event, and the stream stays open
-const tell = <E extends PageEventName>(name: E, data: PageEvents[E]): void => {
+const tell = <E extends PageEventName>(name: E, data: PageEvents[E]) => {
   for (const listener of listeners[name]) {
     try {
       listener(data);
@@ -36,31 +34,34 @@ const tell = <E extends PageEventName>(name: E, data: PageEvents[E]): void => {
   }
 };
 
-// the same call in each case: only a narrowed event pairs a name with the data it carries
-const hear = (event: PageEvent): void => {
+const hear = (event: PageEvent) => {
   switch (event.name) {
     case "activity": {
       tell(event.name, event.data);
       break;
     }
+
     case "auth": {
       tell(event.name, event.data);
       break;
     }
+
     case "update": {
       tell(event.name, event.data);
       break;
     }
-    // no default
+
+    default: {
+      return unreachable(event);
+    }
   }
 };
 
-/** Between one stream dropping and the next, so a main that keeps refusing it is not hammered. */
 const RETRY_MS = 1000;
 
-const retryPause = (): Promise<void> =>
+const retryPause = () =>
   // oxlint-disable-next-line promise/avoid-new -- wraps a timer
-  new Promise((resolve) => {
+  new Promise<void>((resolve) => {
     setTimeout(resolve, RETRY_MS);
   });
 
@@ -70,21 +71,25 @@ const retryPause = (): Promise<void> =>
  * first: main then hears the page before it answers, so nothing it does after an answer is lost.
  * The first stream opens beside the window's own first reads (docs/app.md).
  */
-export const hearMain = (resync: () => void): void => {
+export const hearMain = (resync: () => void) => {
   void (async () => {
     let reopened = false;
+
     for (;;) {
       try {
         const events = await api.events();
+
         if (reopened) {
           resync();
         }
+
         for await (const event of events) {
           hear(event);
         }
       } catch (error) {
         console.error("Lost main's events", error);
       }
+
       reopened = true;
       await retryPause();
     }

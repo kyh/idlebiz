@@ -1,10 +1,6 @@
 import { z } from "zod";
 import type { Listing } from "./listing";
 
-// A Stripe payment link the company sells through, a listing's or create_payment_link's, and
-// whether it still takes money: retiring its product switches it off, so a retired product takes
-// no new money. What it took before still counts and still ships.
-
 /** Stripe's id for a payment link, which also names its file, so it holds nothing a path reads. */
 export const StripeLinkIdSchema = z.string().regex(/^plink_\w+$/u);
 
@@ -29,6 +25,7 @@ export const LinkStateSchema = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("left-on"), why: z.string() }),
 ]);
+
 export type LinkState = z.infer<typeof LinkStateSchema>;
 
 /** What retirement reads of any payment link: which it is, what it sells and whether it still takes money. */
@@ -41,6 +38,7 @@ export const LinkCoreSchema = z.object({
   state: LinkStateSchema,
   url: z.url(),
 });
+
 export type LinkCore = z.infer<typeof LinkCoreSchema>;
 
 /** links/<id>.json: a create_payment_link link, by Stripe's id, beside the products like a listing. */
@@ -51,6 +49,7 @@ export const ChargeLinkSchema = LinkCoreSchema.extend({
   /** What the founder hands each buyer, as the link's metadata carries it. */
   delivery: z.string().nullable(),
 });
+
 export type ChargeLink = z.infer<typeof ChargeLinkSchema>;
 
 /**

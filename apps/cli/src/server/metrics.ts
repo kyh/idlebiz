@@ -10,20 +10,15 @@ import { webAnalyticsVisitors } from "./vercel";
 
 export const PULSE_MS = 30_000;
 
-/** Null metrics preserve the last reported value when a source is absent or unavailable. */
-export interface RealSnapshot {
+interface RealSnapshot {
   users: number | null;
   revenue: number | null;
   productUsers: ReadonlyMap<string, number | null>;
-  /** Revenue from charges tagged with the product; null for every product while no full read of the charges has come back. */
   productRevenue: ReadonlyMap<string, number | null>;
-  /** What each live bet's claim has brought in, and when it was read. */
   betReadings: ReadonlyMap<string, BetRead>;
-  /** How Stripe answered the founder's key; null when none is saved. */
   stripe: StripeAnswer | null;
 }
 
-/** A bet's reading, null where no source can say, and when it was taken. */
 interface BetRead {
   reading: number | null;
   at: number;
@@ -32,7 +27,7 @@ interface BetRead {
 /** Stripe took the key, turned it away (401/403), or never answered, which says nothing either way. */
 export type StripeAnswer = "accepted" | "refused" | "unanswered";
 
-const stripeGet = (endpoint: string, key: string): Promise<JsonValue> =>
+const stripeGet = (endpoint: string, key: string) =>
   getJson(`${STRIPE_API}${endpoint}`, stripeHeaders(key));
 
 const StripeChargePageSchema = z.object({
@@ -56,22 +51,18 @@ const StripeChargePageSchema = z.object({
 
 const MAX_CHARGE_PAGES = 100;
 
-/** Cents one charge kept, and when it was made (ms). */
 interface KeptCharge {
   cents: number;
   created: number;
 }
 
-export interface Revenue {
-  /** Dollars kept across every captured USD charge that counts. */
+interface Revenue {
   total: number;
-  /** The share of it tagged `metadata[product]=<id>`; untagged money belongs to the company alone. */
   byProduct: ReadonlyMap<string, number>;
-  /** The charges tagged `metadata[bet]=<id>`: what a revenue bet may claim, each with when it was made, since a measuring bet claims only those inside its window. */
   byBet: ReadonlyMap<string, readonly KeptCharge[]>;
 }
 
-const credit = (bucket: Map<string, number>, tag: string | undefined, kept: number): void => {
+const credit = (bucket: Map<string, number>, tag: string | undefined, kept: number) => {
   if (tag !== undefined) {
     bucket.set(tag, (bucket.get(tag) ?? 0) + kept / 100);
   }
@@ -81,11 +72,13 @@ const fileCharge = (
   bucket: Map<string, KeptCharge[]>,
   tag: string | undefined,
   kept: KeptCharge,
-): void => {
+) => {
   if (tag === undefined) {
     return;
   }
+
   const filed = bucket.get(tag);
+
   if (filed) {
     filed.push(kept);
   } else {
@@ -93,7 +86,7 @@ const fileCharge = (
   }
 };
 
-const keptBy = (revenue: Revenue, betId: string, until: number): number =>
+const keptBy = (revenue: Revenue, betId: string, until: number) =>
   (revenue.byBet.get(betId) ?? [])
     .filter((charge) => charge.created <= until)
     .reduce((cents, charge) => cents + charge.cents, 0) / 100;
@@ -111,16 +104,19 @@ const keptBy = (revenue: Revenue, betId: string, until: number): number =>
 export const sumCharges = async (
   fetchPage: (after: string | null) => Promise<JsonValue>,
   countTest: boolean,
-): Promise<Revenue | null> => {
+) => {
   let cents = 0;
   const byProduct = new Map<string, number>();
   const byBet = new Map<string, KeptCharge[]>();
   let after: string | null = null;
+
   for (let i = 0; i < MAX_CHARGE_PAGES; i += 1) {
     const page = StripeChargePageSchema.safeParse(await fetchPage(after));
+
     if (!page.success) {
       return null;
     }
+
     for (const ch of page.data.data) {
       if (
         ch.paid === true &&
@@ -134,21 +130,20 @@ export const sumCharges = async (
         fileCharge(byBet, ch.metadata?.bet, { cents: kept, created: ch.created * 1000 });
       }
     }
+
     after = page.data.has_more ? (page.data.data.at(-1)?.id ?? null) : null;
+
     if (after === null) {
-      return { byBet, byProduct, total: cents / 100 };
+      return { byBet, byProduct, total: cents / 100 } satisfies Revenue | null;
     }
   }
+
   return null;
 };
 
-/** Every charge on the account, or only those created since `since` (ms). */
-const stripeCharges = (
-  key: string,
-  since: number | null,
-  countTest: boolean,
-): Promise<Revenue | null> => {
+const stripeCharges = (key: string, since: number | null, countTest: boolean) => {
   const created = since === null ? "" : `&created[gte]=${Math.floor(since / 1000)}`;
+
   return sumCharges(
     (after) =>
       stripeGet(`/v1/charges?limit=100${created}${after ? `&starting_after=${after}` : ""}`, key),
@@ -157,11 +152,8 @@ const stripeCharges = (
 };
 
 interface StripeSnapshot {
-  /** When it was read: a kept read is as old as the pulse that took it. */
   at: number;
-  /** Every charge the account has taken: the company's money and its products'. */
   charges: Revenue | null;
-  /** Charges since the oldest live revenue bet opened: all a bet can claim, whatever the account's size. Null on a key that counts no money. */
   bets: Revenue | null;
   answer: StripeAnswer;
 }
@@ -170,17 +162,16 @@ interface StripeSnapshot {
  * The key revenue is read with: the founder's own, which makes every payment link, so its
  * account is the one a bet's tagged money lands on.
  */
-export const stripeCredential = (): string | null => getSecret(STRIPE_SECRET_KEY);
+export const stripeCredential = () => getSecret(STRIPE_SECRET_KEY);
 
-/** Whether test-mode money counts: only in an end-to-end run of a revenue bet, never by default. */
-const countsTestMoney = (): boolean => process.env.IDLEBIZ_COUNT_TEST_MONEY === "1";
+const countsTestMoney = () => process.env.IDLEBIZ_COUNT_TEST_MONEY === "1";
 
-/** While test money does not count, a key in test mode counts none: it sees only test charges. */
-const countsNoMoney = (key: string): boolean => !countsTestMoney() && isTestKey(key);
+const countsNoMoney = (key: string) => !countsTestMoney() && isTestKey(key);
 
 /** Whether Stripe is read with a key in test mode, whose charges count for nothing. */
-export const stripeInTestMode = (): boolean => {
+export const stripeInTestMode = () => {
   const key = stripeCredential();
+
   return key !== null && countsNoMoney(key);
 };
 
@@ -190,27 +181,26 @@ export const stripeInTestMode = (): boolean => {
  * Vercel project for visitors. A window over a number nothing reads could only
  * close on no reading at all.
  */
-export const measureRefusal = (bet: Bet, product: Product | null): string | null => {
+export const measureRefusal = (bet: Bet, product: Product | null) => {
   if (bet.claim.metric === "revenue") {
     const key = stripeCredential();
+
     if (key === null) {
       return 'No source reads revenue yet — request_integration "stripe" for the founder to add the Stripe key IdleBiz charges with in the Budget panel. Then measure_bet again.';
     }
+
     return countsNoMoney(key)
       ? 'Stripe is in test mode — no charge counts. Ask the founder to swap the Stripe key IdleBiz charges with for a live one in the Budget panel (request_integration "stripe"), then measure_bet again.'
       : null;
   }
+
   return product?.vercel && getSecret(VERCEL_TOKEN)
     ? null
     : `No source reads users of ${product?.name ?? bet.productId} yet — ask the founder to bind Vercel to it (request_integration "vercel"), then measure_bet again.`;
 };
 
-// A refund can land on any old charge, so every read re-reads them all. The numbers move in hours,
-// so one read is kept this long, short or refused (its null only holds the last value), rather
-// than page the account through again every pulse. Only a read Stripe never answered is asked
-// again sooner. A new key or a change to whether any money counts reads at once, since each is
-// part of what is kept, and so does a key saved again, since `forgetStripeRead` drops the read.
 const STRIPE_TTL_MS = 10 * 60_000;
+
 let stripeRead: {
   countTest: boolean;
   key: string;
@@ -220,40 +210,40 @@ let stripeRead: {
 } | null = null;
 
 /** Drop the kept read, so the next pulse asks Stripe again whatever key it reads with. */
-export const forgetStripeRead = (): void => {
+export const forgetStripeRead = () => {
   stripeRead = null;
 };
 
-const settled = <T>(read: PromiseSettledResult<T | null>): T | null =>
+const settled = <T>(read: PromiseSettledResult<T | null>) =>
   read.status === "fulfilled" ? read.value : null;
 
-const refusedRead = (read: PromiseSettledResult<unknown>): boolean =>
+const refusedRead = (read: PromiseSettledResult<unknown>) =>
   read.status === "rejected" && read.reason instanceof HttpError && read.reason.refused;
 
-/** Any refusal refuses the key; any read that came back means Stripe took it. */
-const answerOf = (reads: readonly PromiseSettledResult<unknown>[]): StripeAnswer => {
+const answerOf = (reads: readonly PromiseSettledResult<unknown>[]) => {
   if (reads.some(refusedRead)) {
-    return "refused";
+    return "refused" satisfies StripeAnswer;
   }
-  return reads.some((read) => read.status === "fulfilled") ? "accepted" : "unanswered";
+
+  return (
+    reads.some((read) => read.status === "fulfilled") ? "accepted" : "unanswered"
+  ) satisfies StripeAnswer;
 };
 
-/**
- * Kept per key and `since` (when the oldest live revenue bet opened): a bet
- * that moves `since` reads again at once, and so does a revenue bet's window
- * (`closes`) that closed after the kept read, which its verdict waits on.
- */
 const stripeSnapshot = async (
   key: string | null,
   since: number | null,
   closes: readonly number[],
-): Promise<StripeSnapshot> => {
+) => {
   const now = Date.now();
+
   if (key === null) {
-    return { answer: "unanswered", at: now, bets: null, charges: null };
+    return { answer: "unanswered", at: now, bets: null, charges: null } satisfies StripeSnapshot;
   }
+
   const countTest = countsTestMoney();
   const noMoney = countsNoMoney(key);
+
   const kept =
     stripeRead?.key === key &&
     stripeRead.since === since &&
@@ -261,6 +251,7 @@ const stripeSnapshot = async (
     stripeRead.noMoney === noMoney
       ? stripeRead.snapshot
       : null;
+
   if (
     kept &&
     now - kept.at < STRIPE_TTL_MS &&
@@ -268,69 +259,65 @@ const stripeSnapshot = async (
   ) {
     return kept;
   }
-  // Settled one by one, so a scan that times out never throws away the reads that answered.
-  // A key that counts no money gives a bet no reading, not a zero: a zero would
-  // close its window, or a kill, as a measured loss for dream to learn from.
+
   const reads = await Promise.allSettled([
     stripeCharges(key, null, countTest),
     since === null || noMoney ? null : stripeCharges(key, since, countTest),
   ]);
+
   const [charges, bets] = reads;
+
   const snapshot: StripeSnapshot = {
-    // the bets read is a stand-in when no revenue bet is live, so it cannot say Stripe answered
     answer: answerOf([charges]),
     at: now,
     bets: settled(bets),
     charges: settled(charges),
   };
+
   if (reads.every((read) => read.status === "fulfilled" || refusedRead(read))) {
     stripeRead = { countTest, key, noMoney, since, snapshot };
   }
+
   return snapshot;
 };
 
-/**
- * Visitors of every product's deploy, and their sum only once every one reported: a sum
- * missing a product that failed this beat would read as visitors lost, then won back.
- */
-const productVisitors = async (
-  products: readonly Product[],
-  token: string | null,
-): Promise<{ each: Map<string, number | null>; total: number | null }> => {
+const productVisitors = async (products: readonly Product[], token: string | null) => {
   const bound = products.flatMap(({ id, vercel }) => (vercel ? [{ id, vercel }] : []));
+
   const counts = await Promise.all(
     bound.map(({ vercel }) =>
       token ? webAnalyticsVisitors(vercel, token) : Promise.resolve(null),
     ),
   );
+
   const each = new Map(bound.map(({ id }, i) => [id, counts[i] ?? null]));
   const known = counts.filter((n): n is number => n !== null);
+
   return {
     each,
     total:
       known.length > 0 && known.length === counts.length ? known.reduce((a, b) => a + b, 0) : null,
-  };
+  } satisfies { each: Map<string, number | null>; total: number | null };
 };
 
-/**
- * What one bet's claim has brought in, and when it was read: visitors who landed
- * on its path since it opened, as of `now`, or money carrying its tag, as of the
- * Stripe read. A measuring bet counts only up to its window's close, so a read
- * that comes long after it — past a sleep, a quit or a source that was down —
- * is still exactly the window's number.
- */
 const betReading = async (
   bet: Bet,
   products: readonly Product[],
   stripe: StripeSnapshot,
   vercelToken: string | null,
   now: number,
-): Promise<BetRead> => {
+) => {
   const closes = bet.state.kind === "measuring" ? bet.state.until : Infinity;
+
   if (bet.claim.metric === "revenue") {
-    return { at: stripe.at, reading: stripe.bets ? keptBy(stripe.bets, bet.id, closes) : null };
+    return {
+      at: stripe.at,
+      reading: stripe.bets ? keptBy(stripe.bets, bet.id, closes) : null,
+    } satisfies BetRead;
   }
+
   const deploy = products.find((p) => p.id === bet.productId)?.vercel;
+
   return {
     at: now,
     reading:
@@ -340,17 +327,16 @@ const betReading = async (
             under: bet.claim.landingPath,
           })
         : null,
-  };
+  } satisfies BetRead;
 };
 
-/** When the oldest of these bets that claims money opened: no charge before it can carry a live bet's tag. */
-const revenueSince = (bets: readonly Bet[]): number | null => {
-  const opened = bets.filter((bet) => bet.claim.metric === "revenue").map((bet) => bet.createdAt);
+const revenueSince = (bets: readonly Bet[]) => {
+  const opened = bets.flatMap((bet) => (bet.claim.metric === "revenue" ? [bet.createdAt] : []));
+
   return opened.length > 0 ? Math.min(...opened) : null;
 };
 
-/** When these bets that claim money close their windows. */
-const revenueCloses = (bets: readonly Bet[]): number[] =>
+const revenueCloses = (bets: readonly Bet[]) =>
   bets.flatMap((bet) =>
     bet.claim.metric === "revenue" && bet.state.kind === "measuring" ? [bet.state.until] : [],
   );
@@ -360,20 +346,27 @@ export const fetchRealMetrics = async (
   key: string | null,
   products: readonly Product[],
   bets: readonly Bet[],
-): Promise<RealSnapshot> => {
+) => {
   const now = Date.now();
   const vercelToken = getSecret(VERCEL_TOKEN);
+
   const [stripe, vercel] = await Promise.all([
     stripeSnapshot(key, revenueSince(bets), revenueCloses(bets)),
     productVisitors(products, vercelToken),
   ]);
+
   const { charges } = stripe;
+
   const readings = await Promise.all(
-    bets.map(async (bet): Promise<[string, BetRead]> => [
-      bet.id,
-      await betReading(bet, products, stripe, vercelToken, now),
-    ]),
+    bets.map(
+      async (bet) =>
+        [bet.id, await betReading(bet, products, stripe, vercelToken, now)] satisfies [
+          string,
+          BetRead,
+        ],
+    ),
   );
+
   return {
     betReadings: new Map(readings),
     productRevenue: new Map(
@@ -383,5 +376,5 @@ export const fetchRealMetrics = async (
     revenue: charges?.total ?? null,
     stripe: key === null ? null : stripe.answer,
     users: vercel.total,
-  };
+  } satisfies RealSnapshot;
 };

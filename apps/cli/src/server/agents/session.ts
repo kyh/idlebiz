@@ -1,7 +1,7 @@
 import { runnerBin } from "@repo/agent-driver/detect";
 import { RUNNERS } from "@repo/agent-driver/registry";
 import type { RunnerAdapter, SessionSetup } from "@repo/agent-driver/registry";
-import type { AcpAgent, PermissionDecision } from "@repo/agent-driver/acp-session";
+import type { AcpAgent } from "@repo/agent-driver/acp-session";
 import type { ToolAsk } from "@repo/agent-driver/tool-ask";
 import { execFile } from "node:child_process";
 import { mkdirSync } from "node:fs";
@@ -23,12 +23,10 @@ import { sandboxedCommand } from "@repo/sandbox/profile";
 import type { Sandbox } from "@repo/sandbox/profile";
 import { TEAM_NOTES_MAX_BYTES, readTeamNotes } from "./team-notes";
 
-// The ACP adapters are this package's own dependencies, which the .app ships beside the bundle.
 const fromPackage = createRequire(import.meta.url);
 
 /** What of main's env a runner's CLI gets, for a run or a probe of its login alike. */
-export const runnerEnv = (runner: RunnerId): Record<string, string> =>
-  runEnv(process.env, RUNNERS[runner].providerEnv);
+export const runnerEnv = (runner: RunnerId) => runEnv(process.env, RUNNERS[runner].providerEnv);
 
 /**
  * What of main's env a runner's CLI gets to sign in: the account's names, main's PATH and the
@@ -44,14 +42,6 @@ export const signInEnv = (runner: RunnerId) => ({
   ...namedWith(process.env, RUNNERS[runner].providerEnv),
 });
 
-/**
- * Chrome's own sandbox is one more that cannot start inside the sandbox. No AGENT_BROWSER_PROFILE:
- * unset, each session's Chrome gets a fresh profile under TMPDIR, never the founder's, while one
- * fixed profile would keep every session but the first from starting, since Chrome locks it.
- * The namespace is that of the run's runner and folders, and so are its daemons: only such runs,
- * or a read made the way one of them would make it, ever start one there. A screenshot named no
- * path lands in the runs' temp folder, not agent-browser's own in HOME, which no run writes.
- */
 const browserEnv = (sandbox: Sandbox, runner: RunnerId) => ({
   AGENT_BROWSER_ARGS: "--no-sandbox",
   AGENT_BROWSER_NAMESPACE: namespaceUnder(sandbox, runner),
@@ -60,7 +50,7 @@ const browserEnv = (sandbox: Sandbox, runner: RunnerId) => ({
 });
 
 /** The folder the daemons of `runner`'s runs under `sandbox` listen in, which a run cannot make: only write inside it. */
-export const makeBrowserNamespace = (sandbox: Sandbox, runner: RunnerId): void => {
+export const makeBrowserNamespace = (sandbox: Sandbox, runner: RunnerId) => {
   mkdirSync(sandbox.namespaces[runner].path, { recursive: true });
 };
 
@@ -74,20 +64,22 @@ export const acpAgentFor = (
   sandbox: Sandbox,
   setup: SessionSetup,
   more: Record<string, string> = {},
-): AcpAgent => {
+) => {
   const adapter: RunnerAdapter = RUNNERS[runner];
   const session = adapter.session(setup);
+
   const env: AcpAgent["env"] = {
     ...runnerEnv(runner),
     ...more,
     ...browserEnv(sandbox, runner),
   };
+
   env[adapter.binEnvVar] = runnerBin(runner);
+
   if (runner === "claude") {
-    // claude kills a shell command after 2 minutes by default: `idlebiz deploy` would die before
-    // Vercel answers, with the founder's sign-off already spent on it
     env.BASH_DEFAULT_TIMEOUT_MS = String(DEPLOY_TIMEOUT_MS + 60_000);
   }
+
   return {
     command: sandboxedCommand(sandbox, runner, [
       process.execPath,
@@ -99,12 +91,13 @@ export const acpAgentFor = (
     sessionMode: adapter.sessionMode,
     typedFailures: adapter.typedFailures,
     usagePerRequest: adapter.usagePerRequest,
-  };
+  } satisfies AcpAgent;
 };
 
-export const acpAgentInstalled = (runner: RunnerId): boolean => {
+export const acpAgentInstalled = (runner: RunnerId) => {
   try {
     fromPackage.resolve(RUNNERS[runner].acpEntry);
+
     return true;
   } catch {
     return false;
@@ -117,11 +110,10 @@ const CodexMcpServers = z.array(z.object({ name: z.string() }));
 
 const ExecFailure = z.object({ stderr: z.string() });
 
-/** Why codex could not list its servers, in words the founder can act on. */
-const unlisted = (why: string): RefusalError =>
+const unlisted = (why: string) =>
   new RefusalError(
     `IdleBiz could not list your codex MCP servers to keep them out of the run (${why}), so it did not start.`,
-  );
+  ) satisfies RefusalError;
 
 /**
  * The session config turning off every MCP server `listed` (what `codex mcp list --json` printed)
@@ -131,17 +123,20 @@ const unlisted = (why: string): RefusalError =>
  */
 export const codexSessionConfig = (listed: string) => {
   let servers: z.infer<typeof CodexMcpServers>;
+
   try {
     servers = CodexMcpServers.parse(parseJson(listed));
   } catch {
     throw unlisted("codex answered in a shape IdleBiz does not read");
   }
+
   const config = {
     features: { apps: false, memories: false, plugins: false },
     mcp_servers: Object.fromEntries(servers.map(({ name }) => [name, { enabled: false }])),
     project_doc_fallback_filenames: [],
     project_doc_max_bytes: TEAM_NOTES_MAX_BYTES,
   };
+
   return { CODEX_CONFIG: JSON.stringify(config) };
 };
 
@@ -150,17 +145,16 @@ export const codexSessionConfig = (listed: string) => {
  * with no switch that loads no server, so each is listed as the run would load them (`env` is the
  * run's own, a CODEX_HOME in it included) and turned off by name.
  */
-export const codexSessionEnv = async (
-  sandbox: Sandbox,
-  env: Record<string, string> = {},
-): Promise<Record<string, string>> => {
+export const codexSessionEnv = async (sandbox: Sandbox, env: Record<string, string> = {}) => {
   const [bin, ...rest] = sandboxedCommand(sandbox, "codex", [
     runnerBin("codex"),
     "mcp",
     "list",
     "--json",
   ]);
+
   let listed: string;
+
   try {
     ({ stdout: listed } = await execFileAsync(bin, rest, {
       env: { ...runnerEnv("codex"), ...env },
@@ -171,6 +165,7 @@ export const codexSessionEnv = async (
     const [said = ""] = failed.success ? failed.data.stderr.trim().split("\n", 1) : [];
     throw unlisted(said === "" ? "codex did not answer" : said);
   }
+
   return codexSessionConfig(listed);
 };
 
@@ -184,18 +179,22 @@ export const sessionAgent = async (
   sandbox: Sandbox,
   skills: string,
   workspace: string | null,
-): Promise<AcpAgent> => {
+) => {
   if (runner === "codex") {
     const setup = { skills, teamNotes: null, userSettings: {} };
+
     return acpAgentFor(runner, sandbox, setup, await codexSessionEnv(sandbox));
   }
+
   const { env, settings } = await claudeUserSettings(sandbox.runners.claude.folder);
   const notes = workspace === null ? null : await readTeamNotes(workspace);
+
   const setup = {
     skills,
     teamNotes: notes === null ? null : teamNotesPrompt(notes),
     userSettings: settings,
   };
+
   return acpAgentFor(runner, sandbox, setup, env);
 };
 
@@ -204,5 +203,5 @@ export const sessionAgent = async (
  * asking: what reaches IdleBiz runs, since the sandbox and the vault are what hold a run. A widening
  * of codex's own sandbox never does: once widened, nothing in the run would ask again.
  */
-export const permissionGate = (tool: ToolAsk): Promise<PermissionDecision> =>
+export const permissionGate = (tool: ToolAsk) =>
   Promise.resolve({ allow: tool.kind !== "sandbox" });

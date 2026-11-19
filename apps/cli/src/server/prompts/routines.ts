@@ -2,9 +2,6 @@ import type { BusinessTypeId, Routine } from "@repo/domain/domain";
 
 export type RoutineDefinition = Pick<Routine, "name" | "intervalHours" | "role" | "instruction">;
 
-// Only work that recurs by nature is a routine. Reviewing the business and
-// marketing the product are not: a bet does both with a budget and a verdict,
-// and a routine doing them spends outside every bet.
 const BUSINESS_ROUTINES = {
   custom: null,
   ecommerce: {
@@ -31,7 +28,8 @@ const BUSINESS_ROUTINES = {
   },
 } satisfies Record<BusinessTypeId, RoutineDefinition | null>;
 
-export const defaultRoutines = (businessType: BusinessTypeId): readonly RoutineDefinition[] => {
+export const defaultRoutines = (businessType: BusinessTypeId) => {
   const preset = BUSINESS_ROUTINES[businessType];
-  return preset ? [preset] : [];
+
+  return (preset ? [preset] : []) satisfies readonly RoutineDefinition[];
 };

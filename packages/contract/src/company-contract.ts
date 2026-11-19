@@ -1,5 +1,3 @@
-// The one company this launch runs: its state, the founder's dials, the digest and its files.
-
 import { oc, type } from "@orpc/contract";
 import { z } from "zod";
 import type { Digest } from "@repo/domain/digest";

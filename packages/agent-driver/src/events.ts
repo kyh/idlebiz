@@ -22,16 +22,18 @@ export type AgentEvent =
       kind?: ToolKind | undefined;
     };
 
-export const zeroUsage = (): AgentUsage => ({
-  cachedTokens: 0,
-  costUsd: 0,
-  inputTokens: 0,
-  outputTokens: 0,
-});
+export const zeroUsage = () =>
+  ({
+    cachedTokens: 0,
+    costUsd: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+  }) satisfies AgentUsage;
 
-export const addUsage = (a: AgentUsage, b: AgentUsage): AgentUsage => ({
-  cachedTokens: a.cachedTokens + b.cachedTokens,
-  costUsd: a.costUsd + b.costUsd,
-  inputTokens: a.inputTokens + b.inputTokens,
-  outputTokens: a.outputTokens + b.outputTokens,
-});
+export const addUsage = (a: AgentUsage, b: AgentUsage) =>
+  ({
+    cachedTokens: a.cachedTokens + b.cachedTokens,
+    costUsd: a.costUsd + b.costUsd,
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+  }) satisfies AgentUsage;

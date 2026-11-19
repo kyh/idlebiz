@@ -9,7 +9,7 @@ const seatCap = "the office is at its 12-seat cap";
 
 describe("the answer to a call that threw", () => {
   it("turns a refusal into the store's bare sentence, and reports nothing", () => {
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const log = vi.spyOn(console, "error");
     const answer = answerOf(new RefusalError(seatCap), "employees.direct");
     expect(answer).toBeInstanceOf(ORPCError);
     expect(answer.code).toBe("CONFLICT");
@@ -18,7 +18,7 @@ describe("the answer to a call that threw", () => {
   });
 
   it("answers a fault with its message too, and reports it", () => {
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const log = vi.spyOn(console, "error");
     const fault = new Error("EACCES: permission denied");
     const answer = answerOf(fault, "save.openFolder");
     expect(answer.code).toBe("INTERNAL_SERVER_ERROR");
@@ -34,21 +34,25 @@ describe("the answer to a call that threw", () => {
 
 describe("an input its schema refuses", () => {
   const post = z.object({ text: z.string().min(1).max(2000) });
+
   const refusalOf = (text: string | number) => {
     const parsed = post["~standard"].validate({ text });
+
     if (parsed instanceof Promise || parsed.issues === undefined) {
       throw new Error("the schema took it");
     }
+
     const invalid = new ValidationError({
       invalidData: { text },
       issues: parsed.issues,
       message: "Input validation failed",
     });
+
     return answerOf(new ORPCError("BAD_REQUEST", { cause: invalid }), "team.post");
   };
 
   it("tells the founder the limit text went over, and reports nothing", () => {
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const log = vi.spyOn(console, "error");
     const answer = refusalOf("x".repeat(2100));
     expect(answer.code).toBe("CONFLICT");
     expect(answer.message).toBe("Keep it to 2000 characters or fewer.");
@@ -56,7 +60,7 @@ describe("an input its schema refuses", () => {
   });
 
   it("answers any other misfit as a fault, and reports it", () => {
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const log = vi.spyOn(console, "error");
     const answer = refusalOf(7);
     expect(answer.code).toBe("BAD_REQUEST");
     expect(answer.message).toMatch(/^\[rpc:team\.post\] input validation failed/u);

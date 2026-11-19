@@ -1,3 +1,4 @@
+import { unreachable } from "@repo/domain/errors";
 import { useEffect, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { PhaserGame } from "@/renderer/game/phaser-game";
@@ -33,31 +34,38 @@ const OpenOverlay = ({
   if (overlay === null) {
     return null;
   }
+
   switch (overlay.kind) {
     case "ships": {
       return <Ships onOpen={onOpen} onClose={onClose} />;
     }
+
     case "inbox": {
-      // the Stripe and Printful keys live in the budget modal; a Vercel ask binds a product
       return <Inbox onClose={onClose} onOpen={onOpen} />;
     }
+
     case "teams": {
       return <Teams onClose={onClose} />;
     }
+
     case "budget": {
       return <BudgetModal onClose={onClose} />;
     }
+
     case "vercel": {
       return <ConnectVercel productId={overlay.productId} onClose={onClose} />;
     }
+
     case "settings": {
       return <Settings onClose={onClose} />;
     }
-    // no default
+
+    default: {
+      return unreachable(overlay);
+    }
   }
 };
 
-/** The one thing the window shows over the office, by where boot got to. */
 const Screen = ({
   boot,
   overlay,
@@ -71,18 +79,23 @@ const Screen = ({
     case "loading": {
       return null;
     }
+
     case "unreadable": {
       return <SaveUnreadable issues={boot.issues} />;
     }
+
     case "unreachable": {
       return <Unreachable message={boot.message} />;
     }
+
     case "onboarding": {
       return <Onboarding />;
     }
+
     case "signed-out": {
       return <AuthGate />;
     }
+
     case "office": {
       return (
         <>
@@ -94,7 +107,10 @@ const Screen = ({
         </>
       );
     }
-    // no default
+
+    default: {
+      return unreachable(boot);
+    }
   }
 };
 
@@ -106,7 +122,6 @@ const Page = () => {
     initStore();
   }, []);
 
-  // the office boots on the window's own reads: it fails with them, and boots again once they land
   useEffect(() => {
     bootShown(boot.kind);
   }, [boot.kind]);

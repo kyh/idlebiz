@@ -1,11 +1,6 @@
 import { z } from "zod";
 import { LinkCoreSchema, LinkStateSchema } from "./link-record";
 
-// A print-on-demand item on sale: what Printful prints for each paid order, and the payment
-// link that takes the money. Printful names placements and techniques in lowercase snake case
-// (`front`, `embroidery_chest_left`, `dtg`); holding them to that keeps what the founder signs
-// plain.
-
 /** How many products one page of Printful's catalog lists: enough to skim, few enough to read. */
 export const CATALOG_PAGE = 50;
 
@@ -19,19 +14,20 @@ export const PrintPlacementSchema = z.strictObject({
   placement: PrintfulKeySchema,
   technique: PrintfulKeySchema,
 });
+
 export type PrintPlacement = z.infer<typeof PrintPlacementSchema>;
 
-/** A placement as it was signed off: with the digest of the file its URL served then, which an order is checked against. */
 const ListedPlacementSchema = PrintPlacementSchema.extend({
   sha256: z.string().regex(/^[0-9a-f]{64}$/u),
 });
+
 export type ListedPlacement = z.infer<typeof ListedPlacementSchema>;
 
-/** A Printful catalog variant a buyer can pick, labelled as Printful names it (colour / size). */
 const ListingVariantSchema = z.object({
   id: z.number().int().positive(),
   label: z.string().min(1).max(100),
 });
+
 export type ListingVariant = z.infer<typeof ListingVariantSchema>;
 
 /** listings/<id>.json, beside the products rather than in one: a retired product's orders still ship. */
@@ -56,4 +52,5 @@ export const ListingSchema = z.object({
   shippingCents: z.number().int().nonnegative(),
   variants: z.array(ListingVariantSchema).min(1),
 });
+
 export type Listing = z.infer<typeof ListingSchema>;

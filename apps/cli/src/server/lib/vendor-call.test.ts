@@ -3,7 +3,7 @@ import { z } from "zod";
 import { HttpError } from "./http";
 import { answering } from "./vendor-call";
 
-const says = (error: HttpError): string => `the vendor answered ${error.status}`;
+const says = (error: HttpError) => `the vendor answered ${error.status}`;
 
 const answeredWith = (status: number) => () =>
   Promise.reject(new HttpError(status, "https://api.vendor.test/v1/thing", new Headers()));
@@ -28,7 +28,7 @@ describe("a vendor's call", () => {
     { answer: { kind: "down", reason: "the vendor answered 429" }, status: 429 },
     { answer: { kind: "down", reason: "the vendor answered 503" }, status: 503 },
   ])("sorts a $status in the vendor's words, and reports nothing", async ({ answer, status }) => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     expect(await answering("Vendor", "thing", answeredWith(status), says)).toEqual(answer);
     expect(logged).not.toHaveBeenCalled();
   });
@@ -41,7 +41,7 @@ describe("a vendor's call", () => {
   });
 
   it("reports an answer its schema refuses once, under the call, and answers it as down", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
 
     expect(await answering("Vendor", "thing", drifted, says)).toEqual({
       kind: "down",

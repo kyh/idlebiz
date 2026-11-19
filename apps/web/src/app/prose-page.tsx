@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { JsonLd } from "@/app/json-ld";
 import { SiteFooter } from "@/app/site-footer";
+import { unreachable } from "@/lib/unreachable";
 import { headingAnchors, isPlainRun } from "@/lib/agent/site-content";
 import type { LinkItem, ProseBlock, ProsePage, Run } from "@/lib/agent/site-content";
 import { pageGraph } from "@/lib/agent/structured-data";
@@ -11,7 +12,6 @@ import { pageMetadata } from "@/lib/page-metadata";
 export const prosePageMetadata = (page: ProsePage) =>
   pageMetadata(page.path, page.title, page.description);
 
-/** A page of this site goes through next/link; a file, an anchor, mail and other sites stay plain links. */
 const TextLink = ({ children, href }: { children: ReactNode; href: string }) => {
   if (href.startsWith("/") && !href.includes(".")) {
     return (
@@ -20,6 +20,7 @@ const TextLink = ({ children, href }: { children: ReactNode; href: string }) => 
       </Link>
     );
   }
+
   return (
     <a href={href} className="underline">
       {children}
@@ -31,6 +32,7 @@ const ItemLabel = ({ item }: { item: LinkItem }) => {
   if (!item.href) {
     return <strong>{item.label}</strong>;
   }
+
   return <TextLink href={item.href}>{item.label}</TextLink>;
 };
 
@@ -38,9 +40,11 @@ const RunView = ({ run }: { run: Run }) => {
   if (isPlainRun(run)) {
     return run;
   }
+
   if (run.kind === "strong") {
     return <strong>{run.text}</strong>;
   }
+
   return <TextLink href={run.href}>{run.text}</TextLink>;
 };
 
@@ -58,6 +62,7 @@ const Block = ({ anchor, block }: { anchor: string | undefined; block: ProseBloc
         </h2>
       );
     }
+
     case "subheading": {
       return (
         <h3 id={anchor} className="pt-1 text-[14px] text-fg">
@@ -65,6 +70,7 @@ const Block = ({ anchor, block }: { anchor: string | undefined; block: ProseBloc
         </h3>
       );
     }
+
     case "list": {
       return (
         <ul className="list-disc space-y-1.5 pl-5">
@@ -77,6 +83,7 @@ const Block = ({ anchor, block }: { anchor: string | undefined; block: ProseBloc
         </ul>
       );
     }
+
     case "bullets": {
       return (
         <ul className="list-disc space-y-1.5 pl-5">
@@ -88,6 +95,7 @@ const Block = ({ anchor, block }: { anchor: string | undefined; block: ProseBloc
         </ul>
       );
     }
+
     case "table": {
       return (
         <div className="overflow-x-auto">
@@ -116,9 +124,11 @@ const Block = ({ anchor, block }: { anchor: string | undefined; block: ProseBloc
         </div>
       );
     }
+
     case "rule": {
       return <hr className="border-t-2 border-face-lo" />;
     }
+
     case "paragraph": {
       return (
         <p>
@@ -126,12 +136,16 @@ const Block = ({ anchor, block }: { anchor: string | undefined; block: ProseBloc
         </p>
       );
     }
-    // no default
+
+    default: {
+      return unreachable(block);
+    }
   }
 };
 
 export const ProsePageView = ({ page }: { page: ProsePage }) => {
   const anchors = headingAnchors(page.blocks);
+
   return (
     <main className="px-floor flex min-h-dvh flex-col items-center px-4 py-10">
       <JsonLd node={pageGraph(page)} />

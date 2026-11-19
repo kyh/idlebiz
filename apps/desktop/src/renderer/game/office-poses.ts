@@ -1,29 +1,22 @@
-// What a working employee is doing at their desk, as far as the sprite can show.
-//
-// Every tool call the agent makes arrives with ACP's `kind` — the protocol's
-// own discriminant ("read", "edit", "execute", "search", "think", …). The
-// title beside it is agent prose ("Read src/app.ts") and differs per CLI, so
-// the pose keys off the kind and nothing else.
-
 export type WorkPose = "typing" | "reading" | "thinking";
 
 /** Fallback when a run starts, before its first tool call says otherwise. */
 export const DEFAULT_WORK_POSE: WorkPose = "typing";
 
-export const poseForToolKind = (kind: string | undefined): WorkPose => {
+export const poseForToolKind = (kind: string | undefined) => {
   switch (kind) {
     case "read":
     case "search":
     case "fetch": {
-      return "reading";
+      return "reading" satisfies WorkPose;
     }
+
     case "think": {
-      return "thinking";
+      return "thinking" satisfies WorkPose;
     }
+
     default: {
-      // edit, delete, move, execute, switch_mode, other, and anything unlabelled:
-      // hands on the keyboard is the honest default for "doing something"
-      return "typing";
+      return "typing" satisfies WorkPose;
     }
   }
 };

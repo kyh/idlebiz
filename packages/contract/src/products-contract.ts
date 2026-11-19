@@ -1,5 +1,3 @@
-// The products the company runs: the list, a new one, one's status, opening one and retiring one.
-
 import { oc, type } from "@orpc/contract";
 import { z } from "zod";
 import { KillReasonSchema, ProductDraftSchema } from "@repo/domain/domain";

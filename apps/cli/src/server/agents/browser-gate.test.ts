@@ -9,11 +9,6 @@ import { sandboxedCommand } from "@repo/sandbox/profile";
 import { toolCacheDir } from "../paths";
 import { tempSave } from "../test-support/save";
 
-// The real agent-browser, driven as a run drives it: under the run's sandbox, in its env, from its
-// working directory. It proves a screenshot named no path lands where a run writes, and that a
-// daemon a run left idling never serves a run with other folders, where it would write into the
-// first run's workspace.
-
 const root = tempSave();
 
 const browserRuns =
@@ -21,10 +16,8 @@ const browserRuns =
 
 const SESSION = "mae";
 
-/** Everything each test's runs opened, closed once all are done. */
 const opened: { sandbox: Sandbox; cwd: string }[] = [];
 
-/** `args` as agent-browser runs them in a claude run under `sandbox`, from `cwd`. */
 const browse = (sandbox: Sandbox, cwd: string, ...args: string[]) => {
   const [bin, ...rest] = sandboxedCommand(sandbox, "claude", [
     "agent-browser",
@@ -32,16 +25,17 @@ const browse = (sandbox: Sandbox, cwd: string, ...args: string[]) => {
     SESSION,
     ...args,
   ]);
+
   const { output, status } = spawnSync(bin, rest, {
     cwd,
     encoding: "utf-8",
     env: acpAgentFor("claude", sandbox, { skills: root, teamNotes: null, userSettings: {} }).env,
     timeout: 45_000,
   });
+
   return { output: output.join(""), status };
 };
 
-/** A run's sandbox, with its folders and daemon namespace made as main makes them before it starts. */
 const runIn = async (name: string) => {
   const workspace = path.join(root, name);
   mkdirSync(workspace, { recursive: true });
@@ -49,16 +43,16 @@ const runIn = async (name: string) => {
   const sandbox = await sandboxOf([workspace, toolCacheDir()]);
   mkdirSync(sandbox.namespaces.claude.path, { recursive: true });
   opened.push({ cwd: workspace, sandbox });
+
   return { sandbox, workspace };
 };
 
 describe.skipIf(!browserRuns)("agent-browser inside the sandbox", () => {
-  // every daemon closed before any namespace goes: a close with no daemon there starts one. On a
-  // busy machine (`pnpm test` compiling the shell beside it) the closes outlast a hook's 10s.
   afterAll(() => {
     for (const { cwd, sandbox } of opened) {
       browse(sandbox, cwd, "close");
     }
+
     for (const { sandbox } of opened) {
       rmSync(sandbox.namespaces.claude.path, { force: true, recursive: true });
     }

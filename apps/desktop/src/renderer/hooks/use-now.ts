@@ -2,13 +2,12 @@ import { useSyncExternalStore } from "react";
 
 const TICK_MS = 30_000;
 
-// Stable subscription identity keeps frequent HUD updates from restarting the timer.
-const subscribe = (onStoreChange: () => void): (() => void) => {
+const subscribe = (onStoreChange: () => void) => {
   const id = window.setInterval(onStoreChange, TICK_MS);
-  return () => window.clearInterval(id);
+
+  return (() => window.clearInterval(id)) satisfies () => void;
 };
 
-const getSnapshot = (): number => Math.floor(Date.now() / TICK_MS) * TICK_MS;
+const getSnapshot = () => Math.floor(Date.now() / TICK_MS) * TICK_MS;
 
-// Quantized snapshots stay stable between ticks, as useSyncExternalStore requires.
-export const useNow = (): number => useSyncExternalStore(subscribe, getSnapshot);
+export const useNow = () => useSyncExternalStore(subscribe, getSnapshot);

@@ -12,7 +12,7 @@ type Settled = Exclude<Submission, { kind: "sending" }>;
 
 const READY: Settled = { kind: "ready" };
 
-export interface Submitting<A> {
+interface Submitting<A> {
   submission: Submission;
   submit: (arg: A) => void;
 }
@@ -23,15 +23,17 @@ export interface Submitting<A> {
  * or a control stuck half-sent. The failure is returned as state rather than
  * thrown, since a throw inside an action goes to the error boundary.
  */
-export const useSubmission = <A = void>(act: (arg: A) => Promise<void>): Submitting<A> => {
+export const useSubmission = <A = void>(act: (arg: A) => Promise<void>) => {
   const [settled, dispatch, pending] = useActionState<Settled, A>(async (_previous, arg) => {
     try {
       await act(arg);
+
       return { kind: "sent" };
     } catch (error) {
       return { kind: "failed", message: errorMessage(error) };
     }
   }, READY);
+
   return {
     submission: pending ? { kind: "sending" } : settled,
     submit: (arg) => {
@@ -39,5 +41,5 @@ export const useSubmission = <A = void>(act: (arg: A) => Promise<void>): Submitt
         dispatch(arg);
       });
     },
-  };
+  } satisfies Submitting<A>;
 };

@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { jsonValueSchema } from "@repo/domain/json";
-import type { JsonValue } from "@repo/domain/json";
 import { fetchOk } from "./lib/http";
 import type { HttpError } from "./lib/http";
 
@@ -27,12 +26,13 @@ export const vercelCall = (
   route: string,
   { teamId, token }: VercelScope,
   { init, query = {}, signal }: VercelCallOptions,
-): Promise<Response> => {
+) => {
   const params = new URLSearchParams(
     Object.entries({ ...query, teamId: teamId ?? undefined }).filter(
       (entry): entry is [string, string] => entry[1] !== undefined,
     ),
   );
+
   return fetchOk(`${VERCEL_API}${route}${params.size > 0 ? `?${params.toString()}` : ""}`, {
     ...init,
     headers: { ...init?.headers, Authorization: `Bearer ${token}` },
@@ -42,15 +42,12 @@ export const vercelCall = (
 
 const READ_TIMEOUT_MS = 10_000;
 
-export const vercelGetJson = async (
-  route: string,
-  scope: VercelScope,
-  query?: VercelQuery,
-): Promise<JsonValue> => {
+export const vercelGetJson = async (route: string, scope: VercelScope, query?: VercelQuery) => {
   const res = await vercelCall(route, scope, {
     query,
     signal: AbortSignal.timeout(READ_TIMEOUT_MS),
   });
+
   return jsonValueSchema.parse(await res.json());
 };
 
@@ -60,24 +57,25 @@ export const VercelSaid = z.object({
   message: z.string().optional(),
   missing: z.array(z.string()).optional(),
 });
+
 type Said = z.infer<typeof VercelSaid>;
 
 const Refusal = z.object({ error: VercelSaid });
 
 /** Vercel's word in a refused call's answer, or null when it sent none. */
-export const vercelRefusalOf = (error: HttpError): Said | null => {
+export const vercelRefusalOf = (error: HttpError) => {
   const refusal = Refusal.safeParse(error.answer);
+
   return refusal.success ? refusal.data.error : null;
 };
 
 /** Vercel's words, with each `[sent, label]` it quotes of what was sent replaced by its label. */
-export const vercelSays = (
-  said: Said,
-  ...redact: readonly (readonly [string, string])[]
-): string => {
+export const vercelSays = (said: Said, ...redact: readonly (readonly [string, string])[]) => {
   let words = said.message ?? said.code ?? "no reason given";
+
   for (const [sent, label] of redact) {
     words = words.replaceAll(sent, label);
   }
+
   return words;
 };

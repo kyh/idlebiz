@@ -6,7 +6,7 @@ import { report } from "./report";
  * which a reset deletes. An error nothing caught is written there and main carries on: one failed
  * step must not take the office down with it.
  */
-export const initLog = (): void => {
+export const initLog = () => {
   process.on("uncaughtException", (error) => {
     report("uncaught", error);
   });

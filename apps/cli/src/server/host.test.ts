@@ -24,7 +24,6 @@ import {
 import type { RelayMethod } from "./host";
 import { jsonValueSchema } from "@repo/domain/json";
 
-// the shell's own tests read the same samples into its types (src-tauri/src/protocol.rs)
 const SAMPLES = path.resolve(
   import.meta.dirname,
   "../../../desktop/src-tauri/tests/fixtures/relay",
@@ -33,11 +32,9 @@ const SAMPLES = path.resolve(
 const sampleSchema = z.strictObject({
   from: z.enum(["main", "shell"]),
   params: jsonValueSchema,
-  // a request's answer; a notification has none
   result: jsonValueSchema.optional(),
 });
 
-// how main reads each method: who sends it, its params and, for a request, its answer
 interface Message {
   from: "main" | "shell";
   params: z.ZodType;
@@ -73,6 +70,7 @@ describe("the relay's samples", () => {
     const sampled = readdirSync(SAMPLES)
       .filter((file) => file.endsWith(".json"))
       .map((file) => path.basename(file, ".json"));
+
     expect(sampled.toSorted()).toEqual([...RELAY_METHODS].toSorted());
   });
 
@@ -81,6 +79,7 @@ describe("the relay's samples", () => {
     const sample = sampleOf(method);
     expect(sample.from).toBe(message.from);
     expect(message.params.safeParse(sample.params).error).toBeUndefined();
+
     if (message.result === undefined) {
       expect(sample.result, "a notification is answered with nothing").toBeUndefined();
     } else {

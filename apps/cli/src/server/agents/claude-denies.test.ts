@@ -8,7 +8,7 @@ import { deniesCommand, refuseDeniedTools } from "./claude-denies";
 
 const MESSAGE_TEAM = commandOf("message_team");
 
-const settle = (file: string, deny: readonly string[]): void => {
+const settle = (file: string, deny: readonly string[]) => {
   writeFileSync(file, JSON.stringify({ permissions: { allow: ["Bash"], deny } }));
 };
 

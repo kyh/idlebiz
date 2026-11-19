@@ -1,3 +1,4 @@
+import { unreachable } from "@repo/domain/errors";
 import { api } from "@/renderer/api";
 import { ConfirmLink } from "@/renderer/ui/confirm-link";
 import {
@@ -12,34 +13,41 @@ import type { Bet } from "@repo/domain/bets";
 import { formatDate, formatTime, formatUsd } from "@repo/domain/format";
 import { cn } from "cn";
 
-/** What the badge does not already say: how long is left, how far it moved, why it died. */
-const verdictOf = (bet: Bet): string => {
+const verdictOf = (bet: Bet) => {
   const st = bet.state;
+
   switch (st.kind) {
     case "open": {
       return isSpentOut(bet)
         ? "out of budget — the lead starts its clock or kills it"
         : `${formatUsd(bet.budgetUsd - bet.spentUsd)} left`;
     }
+
     case "measuring": {
       return `til ${formatDate(st.until)} ${formatTime(st.until)}`;
     }
+
     case "won": {
       return "target reached";
     }
+
     case "killed": {
       return st.reason;
     }
-    // no default
+
+    default: {
+      return unreachable(st);
+    }
   }
 };
 
 const BetRow = ({ bet }: { bet: Bet }) => {
   const live = !isClosed(bet);
-  // main answers with `bet.changed`, and that event refetches what moved
+
   const kill = async () => {
     await api.bets.kill({ betId: bet.id, reason: "the founder called it" });
   };
+
   return (
     <div className="px-inset p-2.5">
       <div className="flex items-baseline justify-between gap-2">
@@ -78,5 +86,6 @@ export const BetList = ({ bets }: { bets: Bet[] }) => {
       </div>
     );
   }
+
   return ledgerOrder(bets).map((b) => <BetRow key={b.id} bet={b} />);
 };

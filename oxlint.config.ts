@@ -1,34 +1,55 @@
 import { defineConfig } from "oxlint";
 import antiSlop from "ultracite/oxlint/anti-slop";
 import core from "ultracite/oxlint/core";
+import landmines from "ultracite/oxlint/landmines";
 import next from "ultracite/oxlint/next";
 import react from "ultracite/oxlint/react";
 
 export default defineConfig({
-  extends: [core, react, antiSlop],
+  extends: [core, react, antiSlop, landmines],
   ignorePatterns: [...(core.ignorePatterns ?? []), "target", ".claude", "*.tsbuildinfo"],
+  jsPlugins: landmines.jsPlugins,
   options: { typeAware: true },
-  overrides: [{ files: ["apps/web/**"], plugins: next.plugins, rules: next.rules }],
+  overrides: [
+    { files: ["apps/web/**"], plugins: next.plugins, rules: next.rules },
+    {
+      files: [
+        "apps/desktop/src/renderer/report-fault.test.ts",
+        "apps/desktop/src/renderer/state/store.test.ts",
+      ],
+      rules: { "landmines-testing/no-test-doubles": "off" },
+    },
+  ],
   rules: {
-    // Its message asks for a `// SAFETY:` comment, which admits nothing now that
-    // `typescript/consistent-type-assertions` refuses every assertion.
     "anti-slop/require-safety-comment-for-type-assertion": "off",
-    // Sequential awaits in loops are deliberate here (ordered agent turns, paced writes).
+    "landmines-testing/no-fixed-sleep": [
+      "error",
+      { allow: { "packages/sandbox/src/machine.mac.test.ts": 3 } },
+    ],
+    "landmines-testing/no-flake-masking": [
+      "error",
+      {
+        allow: {
+          "apps/cli/src/server/agents/browser-gate.test.ts": 2,
+          "apps/cli/src/server/agents/claude-gate.test.ts": 14,
+          "apps/cli/src/server/agents/codex-gate.test.ts": 9,
+          "apps/cli/src/server/agents/sandbox.mac.test.ts": 1,
+          "apps/cli/src/server/test-support/stand-in-runners.test.ts": 2,
+          "packages/sandbox/src/machine.mac.test.ts": 2,
+        },
+      },
+    ],
+    "landmines-testing/strict-msw": [
+      "error",
+      { allow: { "apps/cli/src/server/test-support/network.ts": 1 } },
+    ],
     "no-await-in-loop": "off",
-    // A bare `return` in a `T | undefined` helper is deliberate.
     "typescript/consistent-return": "off",
-    // No type assertion and no escape comment: parse at the boundary or narrow with a type guard.
-    // `as const` asserts no other type and stays legal.
     "typescript/consistent-type-assertions": ["error", { assertionStyle: "never" }],
-    // `() => set(x)` is the house style for handlers.
     "typescript/no-confusing-void-expression": "off",
-    // A promise-returning function need not be `async`; a dropped promise is no-floating-promises' job.
     "typescript/promise-function-async": "off",
-    // Truthiness checks on optionals are idiomatic here.
     "typescript/strict-boolean-expressions": "off",
-    // A value handed where void is expected is harmless; a promise there is no-misused-promises' job.
     "typescript/strict-void-return": "off",
-    // A `default` is how a consumer says every other kind means nothing to it.
     "typescript/switch-exhaustiveness-check": [
       "error",
       { considerDefaultExhaustiveForUnions: true },

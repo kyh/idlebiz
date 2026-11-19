@@ -4,29 +4,27 @@ import path from "node:path";
 import { compile } from "tailwindcss";
 import { expect, it } from "vitest";
 
-// Size and colour are the kit's, never a component's. The kit's classes are Tailwind's components
-// layer, so a utility that sets a property its kit class also sets overrides it on that element.
-
 const require = createRequire(import.meta.url);
 const tailwindRoot = path.dirname(require.resolve("tailwindcss/package.json"));
 const kitPath = require.resolve("@repo/px-kit/px-kit.css");
 const renderer = import.meta.dirname;
 
-// A shorthand the kit sets covers the longhands a utility sets, but not these.
 const notCoveredBy = new Map([["border", ["border-radius"]]]);
 
-const declaredProps = (body: string): string[] =>
+const declaredProps = (body: string) =>
   body
     .split(";")
     .map((decl) => decl.split(":")[0]?.trim() ?? "")
     .filter((prop) => prop !== "" && !prop.startsWith("--"));
 
-const kitProps = (): Map<string, string[]> => {
+const kitProps = () => {
   const css = readFileSync(kitPath, "utf-8").replaceAll(/\/\*[\s\S]*?\*\//gu, "");
   const props = new Map<string, string[]>();
+
   for (const rule of css.matchAll(/(?<selectors>[^{}]+)\{(?<body>[^{}]*)\}/gu)) {
     for (const selector of (rule.groups?.selectors ?? "").split(",")) {
       const kitClass = /^\.(?<name>px-[\w-]+)$/u.exec(selector.trim())?.groups?.name;
+
       if (kitClass !== undefined) {
         props.set(kitClass, [
           ...(props.get(kitClass) ?? []),
@@ -35,18 +33,21 @@ const kitProps = (): Map<string, string[]> => {
       }
     }
   }
+
   return props;
 };
 
-const utilityProps = async (candidates: readonly string[]): Promise<Map<string, string[]>> => {
+const utilityProps = async (candidates: readonly string[]) => {
   const stylesheets = new Map([
     ["@repo/px-kit/px-kit.css", kitPath],
     ["tailwindcss", path.join(tailwindRoot, "index.css")],
   ]);
+
   const compiler = await compile(readFileSync(path.join(renderer, "styles.css"), "utf-8"), {
     base: renderer,
     loadStylesheet: (id, base) => {
       const file = stylesheets.get(id) ?? path.join(base, id);
+
       return Promise.resolve({
         base: path.dirname(file),
         content: readFileSync(file, "utf-8"),
@@ -54,39 +55,45 @@ const utilityProps = async (candidates: readonly string[]): Promise<Map<string, 
       });
     },
   });
+
   const css = compiler.build([...candidates]);
   const start = css.indexOf("@layer utilities {");
   const layer = css.slice(start, css.indexOf("\n}", start));
   const props = new Map<string, string[]>();
+
   for (const rule of layer.matchAll(/\.(?<selector>(?:\\.|[\w-])+)\s*\{(?<body>[^{}]*)\}/gu)) {
     props.set(
       (rule.groups?.selector ?? "").replaceAll("\\", ""),
       declaredProps(rule.groups?.body ?? ""),
     );
   }
+
   return props;
 };
 
-const overrides = (kit: string, utility: string): boolean =>
+const overrides = (kit: string, utility: string) =>
   utility === kit ||
   (utility.startsWith(`${kit}-`) && !(notCoveredBy.get(kit) ?? []).includes(utility));
 
 it("puts no Tailwind utility beside a kit class that sets the same property", async () => {
   const kit = kitProps();
   const uses: { file: string; kitClasses: string[]; utilities: string[] }[] = [];
+
   for (const file of readdirSync(renderer, { encoding: "utf-8", recursive: true })) {
     if (!file.endsWith(".tsx")) {
       continue;
     }
+
     const source = readFileSync(path.join(renderer, file), "utf-8");
+
     for (const literal of source.matchAll(/["'`](?<text>[^"'`\n]*)["'`]/gu)) {
       const tokens = (literal.groups?.text ?? "").split(/\s+/u).filter((token) => token !== "");
       const kitClasses = tokens.filter((token) => kit.has(token));
+
       if (kitClasses.length > 0) {
         uses.push({
           file,
           kitClasses,
-          // A variant sets the same property in its state, so it overrides the kit there too.
           utilities: tokens
             .filter((token) => !kit.has(token))
             .map((token) => token.split(":").at(-1) ?? token),
@@ -94,7 +101,9 @@ it("puts no Tailwind utility beside a kit class that sets the same property", as
       }
     }
   }
+
   const utilities = await utilityProps(uses.flatMap((use) => use.utilities));
+
   const overridden = uses.flatMap(({ file, kitClasses, utilities: used }) =>
     kitClasses.flatMap((kitClass) =>
       used.flatMap((utility) =>
@@ -104,6 +113,7 @@ it("puts no Tailwind utility beside a kit class that sets the same property", as
       ),
     ),
   );
+
   expect(overridden).toEqual([]);
 });
 
@@ -115,5 +125,6 @@ it("puts no hex in a renderer class string: a colour there is one of the kit's t
         ([hex]) => `${file}: ${hex}`,
       ),
     );
+
   expect(own).toEqual([]);
 });

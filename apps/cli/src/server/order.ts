@@ -1,17 +1,12 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
-// A paid checkout on one of the company's payment links, and, for a listing's, what became of it
-// at Printful. Main writes one file per order; runs may read them, so support can answer a buyer.
-
-/** Printful's `external_id`: at most 32 of [A-Za-z0-9_-], unique per store, which makes creating an order idempotent. */
 const OrderIdSchema = z.string().regex(/^[\w-]{1,32}$/u);
 
 /** Printful's external id for a checkout: its hash, since a session id is longer than the 32 characters Printful keeps. */
-export const orderIdOf = (sessionId: string): string =>
+export const orderIdOf = (sessionId: string) =>
   createHash("sha256").update(sessionId).digest("base64url").slice(0, 32);
 
-/** Where Printful ships it, as the buyer entered it on Stripe's page. */
 const RecipientSchema = z.object({
   address1: z.string(),
   address2: z.string().nullable(),
@@ -22,16 +17,9 @@ const RecipientSchema = z.object({
   stateCode: z.string(),
   zip: z.string(),
 });
+
 export type Recipient = z.infer<typeof RecipientSchema>;
 
-/**
- * Where an order stands between IdleBiz and Printful. `received` is on disk before Printful is
- * asked anything, so a restart finds it and looks it up by its external id rather than make it
- * twice; `tries` counts failed sends. `pricing` is a draft whose costs are being worked out,
- * `checks` the reads so far. `held` waits on the founder, who has a card saying `why`.
- * `test` was paid in test mode: its draft deleted once priced, or once Printful never priced it,
- * since nobody paid for it.
- */
 const OrderStageSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("received"), tries: z.number().int().nonnegative() }),
   z.object({
@@ -45,15 +33,11 @@ const OrderStageSchema = z.discriminatedUnion("kind", [
 ]);
 
 const Paid = {
-  /** What Stripe collected, in cents: the price and the shipping the buyer paid. */
   collectedCents: z.number().int().nonnegative(),
-  /** When the buyer opened the checkout (ms). */
   createdAt: z.number(),
   email: z.string().nullable(),
   id: OrderIdSchema,
-  /** False for a checkout in test mode, which nobody paid. */
   livemode: z.boolean(),
-  /** What a refund in Stripe is made against. */
   paymentIntent: z.string().nullable(),
   productId: z.string().min(1),
   sessionId: z.string().min(1),
@@ -74,17 +58,12 @@ export const OrderSchema = z.discriminatedUnion("kind", [
     stage: OrderStageSchema,
     variant: z.object({ id: z.number().int().positive(), label: z.string() }),
   }),
-  /** Paid, but not an order IdleBiz can send, such as one with no shipping address: the founder's, by hand. */
   z.object({
     ...Paid,
     kind: z.literal("unreadable"),
     listingId: z.string().min(1),
     why: z.string(),
   }),
-  /**
-   * Paid on a create_payment_link link, where nothing ships on its own: `name` is what it sold,
-   * `delivery` what the team said the founder hands each buyer, null when it said nothing.
-   */
   z.object({
     ...Paid,
     delivery: z.string().nullable(),
@@ -92,5 +71,7 @@ export const OrderSchema = z.discriminatedUnion("kind", [
     name: z.string(),
   }),
 ]);
+
 export type Order = z.infer<typeof OrderSchema>;
+
 export type Sale = Extract<Order, { kind: "sale" }>;

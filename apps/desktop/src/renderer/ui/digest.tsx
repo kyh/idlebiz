@@ -6,10 +6,9 @@ import { Modal } from "@/renderer/ui/modal";
 import { formatAway, formatNames, formatUsd, plural } from "@repo/domain/format";
 import type { Digest as DigestSummary } from "@repo/domain/digest";
 
-/** Shorter absences read as a glance away, not a return. */
 const AWAY_MS = 10 * 60_000;
 
-const eventful = (d: DigestSummary): boolean =>
+const eventful = (d: DigestSummary) =>
   d.shipped + d.runs + d.hired.length + d.released.length + d.dead + d.actions > 0;
 
 const Lines = ({ d }: { d: DigestSummary }) => (
@@ -61,10 +60,11 @@ export const Digest = () => {
     if (!hasCompany) {
       return;
     }
-    // a look main refuses (its company gone in a reset) or cannot answer shows nothing
+
     const look = async () => {
       try {
         const d = await digest();
+
         if (d && eventful(d) && Date.now() - d.since >= AWAY_MS) {
           setSummary(d);
         }
@@ -72,17 +72,21 @@ export const Digest = () => {
         console.error("Could not read the digest", error);
       }
     };
+
     const onFocus = () => {
       void look();
     };
+
     void look();
     window.addEventListener("focus", onFocus);
+
     return () => window.removeEventListener("focus", onFocus);
   }, [hasCompany]);
 
   if (!summary) {
     return null;
   }
+
   return (
     <Modal
       title="While you were away"

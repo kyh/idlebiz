@@ -5,8 +5,12 @@ import type { JsonValue } from "@repo/domain/json";
 import { createHash } from "node:crypto";
 import { printfulCatalog, printfulQuote } from "./printful";
 import { priceFloorCents, readPrintFile } from "./print-listing";
+import { answerFetch, interceptNetwork } from "./test-support/network";
+
+interceptNetwork();
 
 const CREDENTIAL = { storeId: 42, token: "pf_token" };
+
 const FRONT = {
   fileUrl: "https://acme.vercel.app/print/a.png",
   placement: "front",
@@ -27,12 +31,12 @@ const EstimateSchema = z.object({
   recipient: z.object({ state_code: z.string() }),
 });
 
-/** The variant, state and retail price an estimate was asked for. */
 const estimateOf = (body: JsonValue) => {
   const {
     order_items: [item],
     recipient,
   } = EstimateSchema.parse(body);
+
   return {
     retail: item.retail_price ?? null,
     state: recipient.state_code,
@@ -40,20 +44,17 @@ const estimateOf = (body: JsonValue) => {
   };
 };
 
-/** What Printful charges one variant to one state at a retail price, in dollars as its API writes them. */
 type Costs = (
   variant: number,
   state: string,
   retail: string | null,
 ) => { total: string; shipping: string } | null;
 
-const flatCosts = (_variant: number, state: string): ReturnType<Costs> =>
-  state === "CA" ? { shipping: "4.75", total: "16.40" } : { shipping: "7.99", total: "18.20" };
+const flatCosts = (_variant: number, state: string) =>
+  (state === "CA"
+    ? { shipping: "4.75", total: "16.40" }
+    : { shipping: "7.99", total: "18.20" }) satisfies ReturnType<Costs>;
 
-/**
- * Printful's catalog and estimates: every task is pending when made and done on its first read,
- * or failed when `costs` has none for it.
- */
 const printful = ({
   costs = flatCosts,
   products = { 4012: 71, 4013: 71 },
@@ -65,7 +66,7 @@ const printful = ({
 } = {}) => {
   const asked: Asked[] = [];
   const tasks = new Map<string, ReturnType<typeof estimateOf>>();
-  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+  answerFetch((url: string, init?: RequestInit) => {
     const { pathname, searchParams } = new URL(url);
     const body = init?.method === "POST" ? parseJson(z.string().parse(init.body)) : null;
     asked.push({
@@ -75,8 +76,10 @@ const printful = ({
       store: new Headers(init?.headers).get("x-pf-store-id"),
     });
     const variant = /^\/v2\/catalog-variants\/(?<id>\d+)$/u.exec(pathname)?.groups?.id;
+
     if (variant !== undefined) {
       const product = products[Number(variant)];
+
       return Promise.resolve(
         product === undefined
           ? Response.json({ code: 404, result: "Not found" }, { status: 404 })
@@ -91,17 +94,21 @@ const printful = ({
             }),
       );
     }
+
     if (init?.method === "POST") {
       const order = estimateOf(body);
       const id = `task-${tasks.size}`;
       tasks.set(id, order);
+
       return Promise.resolve(
         Response.json({ data: { costs: null, failure_reasons: [], id, status: "pending" } }),
       );
     }
+
     const id = searchParams.get("id") ?? "";
     const task = tasks.get(id);
     const priced = task ? costs(task.variant, task.state, task.retail) : null;
+
     return Promise.resolve(
       Response.json({
         data:
@@ -116,6 +123,7 @@ const printful = ({
       }),
     );
   });
+
   return asked;
 };
 
@@ -189,11 +197,10 @@ describe("pricing a print with Printful", () => {
   });
 
   it("prices California's tax on the listing's own price, as Printful taxes its orders", async () => {
-    // Printful taxes a California order on its retail price, or on its own $20.00 plus 10%
-    // without one: 9.5% of $22.00 would quote $27.09, a floor of $23.66 that CA orders outcost
     printful({
       costs: (_variant, state, retail) => {
         const tax = state === "CA" ? Math.round(Number(retail ?? "22.00") * 9.5) / 100 : 0;
+
         return { shipping: "5.00", total: (25 + tax).toFixed(2) };
       },
     });
@@ -208,16 +215,17 @@ describe("pricing a print with Printful", () => {
   });
 
   it("prices Seattle's tax and Colorado's delivery fee, which outcost California's tax", async () => {
-    // $25.00 shipped, plus each place's tax on the $28.00 listing and Colorado's 29¢ fee
     const rates = new Map([
       ["CA", 9.75],
       ["WA", 10.35],
       ["CO", 8.81],
     ]);
+
     printful({
       costs: (_variant, state) => {
         const tax = Math.round(28 * (rates.get(state) ?? 0));
         const fee = state === "CO" ? 29 : 0;
+
         return { shipping: "5.00", total: ((2500 + tax + fee) / 100).toFixed(2) };
       },
     });
@@ -263,14 +271,14 @@ describe("pricing a print with Printful", () => {
   });
 
   it("tells a token Printful turned away from a failure", async () => {
-    vi.stubGlobal("fetch", () =>
+    answerFetch(() =>
       Promise.resolve(Response.json({ detail: "expired", status: 401 }, { status: 401 })),
     );
     expect(await quote([4012])).toEqual({ kind: "refused" });
   });
 
   it("gives Printful's words for any other refusal", async () => {
-    vi.stubGlobal("fetch", () =>
+    answerFetch(() =>
       Promise.resolve(
         Response.json(
           { code: 400, error: { message: "Invalid technique" }, result: "Bad" },
@@ -288,14 +296,15 @@ describe("pricing a print with Printful", () => {
 describe("Printful's rate limit", () => {
   it("is waited out, and the call tried again", async () => {
     const asked = printful();
-    const answer = globalThis.fetch;
     let limited = 2;
-    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
-      if (limited > 0) {
-        limited -= 1;
-        return Promise.resolve(Response.json({ detail: "Too Many Requests" }, { status: 429 }));
+    answerFetch(() => {
+      if (limited === 0) {
+        return;
       }
-      return answer(url, init);
+
+      limited -= 1;
+
+      return Promise.resolve(Response.json({ detail: "Too Many Requests" }, { status: 429 }));
     });
 
     expect(await quote([4012])).toMatchObject({ kind: "quoted", quote: { costCents: 1820 } });
@@ -304,8 +313,9 @@ describe("Printful's rate limit", () => {
 
   it("ends the call once it outlasts every retry", async () => {
     let calls = 0;
-    vi.stubGlobal("fetch", () => {
+    answerFetch(() => {
       calls += 1;
+
       return Promise.resolve(Response.json({ detail: "Too Many Requests" }, { status: 429 }));
     });
     expect(await quote([4012])).toEqual({
@@ -318,8 +328,8 @@ describe("Printful's rate limit", () => {
 
 describe("an answer IdleBiz cannot read", () => {
   it("is a sentence for the agent and a fault in main's log", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.stubGlobal("fetch", () => Promise.resolve(Response.json({ data: { id: "4012" } })));
+    const logged = vi.spyOn(console, "error");
+    answerFetch(() => Promise.resolve(Response.json({ data: { id: "4012" } })));
     expect(await quote([4012])).toEqual({
       kind: "failed",
       reason:
@@ -345,8 +355,9 @@ const TEE = {
 describe("reading Printful's catalog", () => {
   it("lists a page of the products that ship to the US, leaving out the discontinued", async () => {
     const asked: string[] = [];
-    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    answerFetch((url: string, init?: RequestInit) => {
       asked.push(`${url} store=${new Headers(init?.headers).get("x-pf-store-id")}`);
+
       return Promise.resolve(
         Response.json({
           data: [TEE, { ...TEE, id: 12, is_discontinued: true, name: "Old tee" }],
@@ -367,7 +378,7 @@ describe("reading Printful's catalog", () => {
   });
 
   it("gives a product's placements and every variant, labelled as sell_print offers them", async () => {
-    vi.stubGlobal("fetch", (url: string) =>
+    answerFetch((url: string) =>
       Promise.resolve(
         url.endsWith("/catalog-variants")
           ? Response.json({
@@ -396,51 +407,69 @@ describe("reading Printful's catalog", () => {
   });
 
   it("names a product the catalog does not have, and tells a token turned away", async () => {
-    vi.stubGlobal("fetch", () =>
+    answerFetch(() =>
       Promise.resolve(Response.json({ code: 404, result: "Not found" }, { status: 404 })),
     );
     expect(await printfulCatalog({ product: 9 }, CREDENTIAL)).toEqual({
       kind: "failed",
       reason: "Printful's catalog has no product 9.",
     });
-    vi.stubGlobal("fetch", () => Promise.resolve(Response.json({}, { status: 401 })));
+    answerFetch(() => Promise.resolve(Response.json({}, { status: 401 })));
     expect(await printfulCatalog({ offset: 0 }, CREDENTIAL)).toEqual({ kind: "refused" });
   });
 });
 
 describe("the price floor", () => {
   it("covers Printful's dearest cost and Stripe's share, less the shipping the buyer pays", () => {
-    // (2110 + 30) / 0.956 = 2238.49…, so 2239 in all, 950 of it shipping
     expect(priceFloorCents({ costCents: 2110, shippingCents: 950, variants: [] })).toBe(1289);
   });
 });
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
 
-/** The product's site answering a print file's URL with `status` and `type`, and the file when it is found. */
+const MOVED_TO = "https://cdn.test/moved.png";
+
 const serving = (status: number, type: string | null) => {
   const asked: { url: string; init: RequestInit | undefined }[] = [];
-  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+  answerFetch((url: string, init?: RequestInit) => {
     asked.push({ init, url });
+
+    if (url === MOVED_TO) {
+      return Promise.resolve(
+        new Response(new Uint8Array(PNG), { headers: { "content-type": "image/png" } }),
+      );
+    }
+
+    const headers = new Headers(type === null ? {} : { "content-type": type });
+
+    if (status >= 300 && status < 400) {
+      headers.set("location", MOVED_TO);
+    }
+
     return Promise.resolve(
-      new Response(status === 200 ? PNG : null, {
-        headers: type === null ? {} : { "content-type": type },
-        status,
-      }),
+      new Response(status === 200 ? new Uint8Array(PNG) : null, { headers, status }),
     );
   });
+
   return asked;
 };
 
 describe("a print file", () => {
-  it("is read whole and hashed when it serves an image, asked without following a redirect", async () => {
+  it("is read whole and hashed when it serves an image", async () => {
     const asked = serving(200, "image/png");
     expect(await readPrintFile(FRONT.fileUrl)).toEqual({
       kind: "image",
       sha256: createHash("sha256").update(PNG).digest("hex"),
     });
-    expect(asked[0]?.init).toMatchObject({ redirect: "manual" });
-    expect(asked[0]?.init?.method).toBeUndefined();
+    expect(asked.map(({ init, url }) => `${init?.method} ${url}`)).toEqual([
+      `GET ${FRONT.fileUrl}`,
+    ]);
+  });
+
+  it("is asked without following a redirect, even one to an image", async () => {
+    const asked = serving(308, null);
+    expect(await readPrintFile(FRONT.fileUrl)).toEqual({ kind: "unfit", reason: "it answers 308" });
+    expect(asked.map(({ url }) => url)).toEqual([FRONT.fileUrl]);
   });
 
   it.each([

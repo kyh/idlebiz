@@ -1,3 +1,4 @@
+import { unreachable } from "@repo/domain/errors";
 import {
   MAX_LIVE_PRODUCTS,
   RUN_COST_ESTIMATE_USD,
@@ -33,157 +34,170 @@ export interface TaskBrief {
   description: string;
 }
 
-/** An office line is news, not anyone's word: it names no speaker, so no agent takes it for the founder's. */
-const roomLine = (message: TeamMessage, nameOf: (id: string) => string): string => {
+const roomLine = (message: TeamMessage, nameOf: (id: string) => string) => {
   const { from, text } = message;
+
   switch (from.kind) {
     case "founder": {
       return `- founder: ${text}`;
     }
+
     case "office": {
       return `- ${text}`;
     }
+
     case "employee": {
       return `- ${nameOf(from.id)}: ${text}`;
     }
-    // no default
+
+    default: {
+      return unreachable(from);
+    }
   }
 };
 
-export const roomTranscript = (
-  messages: readonly TeamMessage[],
-  nameOf: (id: string) => string,
-): string => messages.map((message) => roomLine(message, nameOf)).join("\n") || "(no messages yet)";
+export const roomTranscript = (messages: readonly TeamMessage[], nameOf: (id: string) => string) =>
+  messages.map((message) => roomLine(message, nameOf)).join("\n") || "(no messages yet)";
 
-/** "; +$2.00 since your last run" — how a live number moved, when the previous run recorded one. */
-const movedBy = (now: number, then: number | null | undefined, money: boolean): string => {
+const movedBy = (now: number, then: number | null | undefined, money: boolean) => {
   if (then === null || then === undefined) {
     return "";
   }
+
   const delta = now - then;
+
   if (delta === 0) {
     return "; unchanged since your last run";
   }
+
   const shown = money ? formatUsd(Math.abs(delta)) : `${Math.abs(delta)}`;
+
   return `; ${delta > 0 ? "+" : "−"}${shown} since your last run`;
 };
 
-/** The company's revenue line: a test-mode Stripe reads as zero, which is not "nothing sold yet". */
-const revenueLine = (
-  company: Company,
-  since: RunMetrics | null,
-  stripeTestMode: boolean,
-): string => {
+const revenueLine = (company: Company, since: RunMetrics | null, stripeTestMode: boolean) => {
   if (stripeTestMode) {
     return '- Revenue: Stripe is in test mode — no charge counts; request_integration "stripe" for the founder to swap the Stripe key IdleBiz charges with for a live one so revenue can be counted.';
   }
+
   return company.revenueUsd === null
     ? '- Revenue: no source connected (no Stripe key) — nothing is being charged yet; request_integration "stripe" so revenue can be counted.'
     : `- Revenue: ${formatUsd(company.revenueUsd)} lifetime (Stripe, live${movedBy(company.revenueUsd, since?.revenueUsd, true)}).`;
 };
 
-/** The live numbers the founder's HUD shows, so a run can steer by them.
- *  Null is "no source connected", never zero: the difference decides whether
- *  the next move is growth or asking for the connection. */
 const realNumbers = (
   company: Company,
   products: readonly Product[],
   since: RunMetrics | null,
   stripeTestMode: boolean,
-): string => {
+) => {
   const revenue = revenueLine(company, since, stripeTestMode);
+
   const users =
     company.users === null
       ? '- Users: no source connected — nobody can see traffic; a product deployed on Vercel reports visitors (request_integration "vercel").'
       : `- Users: ${company.users} visitors across products (Vercel Web Analytics, live${movedBy(company.users, since?.users, false)}).`;
+
   const perProduct = products
-    .filter((p) => p.users !== null)
-    .map((p) => `  - ${p.name}: ${p.users} visitors`)
+    .flatMap((p) => (p.users === null ? [] : [`  - ${p.name}: ${p.users} visitors`]))
     .join("\n");
+
   return [revenue, users, perProduct].filter((line) => line.length > 0).join("\n");
 };
 
-const budgetLine = (company: Company): string => {
+const budgetLine = (company: Company) => {
   if (company.budget.mode !== "capped") {
     return `AI spend so far: ${formatUsd(company.spentUsd)} (no cap set).`;
   }
+
   return `AI budget: ${formatUsd(company.spentUsd)} of ${formatUsd(company.budget.capUsd)} spent.`;
 };
 
 /** What the allocator decided this run is for: an `Allocation` with its ids resolved. */
 export type Assignment =
   | { kind: "work"; bet: Bet }
-  /** The bet's budget is gone: the lead starts its clock or kills it. */
   | { kind: "settle"; bet: Bet }
-  /** Nothing is fundable, so the lead opens the next bet: on `product`, or on new ground when `widen` — a new product only when `newProduct`. */
   | { kind: "propose"; product: Product | null; widen: boolean; newProduct: boolean };
 
-const betLine = (bet: Bet): string => {
+const betLine = (bet: Bet) => {
   const st = bet.state;
   const head = `- ${bet.title} (${bet.id}) on ${bet.productId}: ${betGoal(bet)} (${betProgress(bet)}), ${betMoney(bet)} spent`;
+
   switch (st.kind) {
     case "open": {
       return `${head} — open`;
     }
+
     case "measuring": {
       return `${head} — measuring until ${new Date(st.until).toISOString()}`;
     }
+
     case "won": {
       return `${head} — WON (moved ${st.moved})`;
     }
+
     case "killed": {
       return `${head} — KILLED (${st.reason})`;
     }
-    // no default
+
+    default: {
+      return unreachable(st);
+    }
   }
 };
 
 /** How a bet's result gets counted: the one thing its work must never skip. */
-export const betMark = (bet: Bet): string =>
+export const betMark = (bet: Bet) =>
   bet.claim.metric === "users"
     ? `It counts only visitors who land on ${bet.claim.landingPath} (or a page under it) of ${bet.productId}'s deploy: every link this bet places anywhere must point there, and the path must serve a real page — see "Marking a bet's traffic" in your instructions.`
     : `It counts only captured USD charges tagged metadata[bet]=${bet.id}: charge for it only with create_payment_link or sell_print and "bet":"${bet.id}", which set that tag on every payment.`;
 
 /** What the team room hears when a bet opens or changes state. */
-export const betNews = (bet: Bet): string => {
+export const betNews = (bet: Bet) => {
   const st = bet.state;
+
   switch (st.kind) {
     case "open": {
       return `🎲 New bet: ${bet.title} — ${bet.hypothesis}`;
     }
+
     case "measuring": {
       return `⏳ ${bet.title}: spending stopped — the number has ${bet.windowHours}h to answer.`;
     }
+
     case "won": {
       return `🏆 Bet won: ${bet.title} — it brought in ${betProgress(bet)} ${bet.claim.metric}.`;
     }
+
     case "killed": {
       return `🪦 Bet killed: ${bet.title} — ${st.reason}.`;
     }
-    // no default
+
+    default: {
+      return unreachable(st);
+    }
   }
 };
 
-/** How many verdicts a brief lists. Facts only: what was bet, what it cost, what the number did. */
 const VERDICTS_SHOWN = 6;
 
 /** The ledger as the team reads it, in the brief and from read_bets. */
-export const betLedger = (bets: readonly Bet[]): string =>
+export const betLedger = (bets: readonly Bet[]) =>
   ledgerOrder(bets, VERDICTS_SHOWN).map(betLine).join("\n") || "(no bets yet)";
 
-/** How one assignment reads in a brief: its title, the product it lands on, and what it asks for. */
 interface AssignmentBrief {
   title: string;
   focus: Product | null;
   lines: string[];
 }
 
-/** With no pitch the lead picks what to build, and names the product still waiting on that pick. */
-const noPitch = (company: Company, products: readonly Product[]): string => {
+const noPitch = (company: Company, products: readonly Product[]) => {
   const unnamed = products.find((p) => p.description === UNNAMED_PRODUCT_DESCRIPTION);
+
   const naming = unnamed
     ? `, give ${unnamed.name} (${unnamed.id}) its name and a one-line description of it with name_product`
     : "";
+
   return `The founder gave no pitch: what ${company.name} builds is your pick. Choose something its business type can sell with the tools here${naming}, say in the team room what the team will try and why, and keep it in the product's AGENTS.md. Bets whose number does not move get killed, so pick, bet small and move on.`;
 };
 
@@ -194,10 +208,11 @@ const assignmentBrief = (
     products,
     isLeader,
   }: { company: Company; products: readonly Product[]; isLeader: boolean },
-): AssignmentBrief => {
+) => {
   switch (assignment.kind) {
     case "work": {
       const { bet } = assignment;
+
       return {
         focus: products.find((p) => p.id === bet.productId) ?? null,
         lines: [
@@ -212,10 +227,12 @@ const assignmentBrief = (
             : `If you believe the work that could move it is already out the door, tell the lead in the team room.`,
         ],
         title: `Bet: ${bet.title}`,
-      };
+      } satisfies AssignmentBrief;
     }
+
     case "settle": {
       const { bet } = assignment;
+
       return {
         focus: products.find((p) => p.id === bet.productId) ?? null,
         lines: [
@@ -225,16 +242,20 @@ const assignmentBrief = (
           `Decide this run: one that ends with no measure_bet, kill_bet or ask to the founder closes the bet unmeasured. Do not do the work yourself here.`,
         ],
         title: `Settle the bet: ${bet.title}`,
-      };
+      } satisfies AssignmentBrief;
     }
+
     case "propose": {
       const { product, widen, newProduct } = assignment;
+
       const where = product
         ? `${product.name} (${product.id}) has room for one`
         : "every product already carries all the live bets it can";
+
       const newGround = newProduct
         ? `Go somewhere new: a product the company does not have yet (create_product, then bet on it) or a channel it has never tried — ${where}.`
         : `Go somewhere new: a channel it has never tried — ${where}. The company already runs ${MAX_LIVE_PRODUCTS} products, all it can: a new one needs kill_product to make room first.`;
+
       return {
         focus: product,
         lines: [
@@ -245,9 +266,12 @@ const assignmentBrief = (
           `A product whose bets keep dying is a candidate for kill_product: its package is archived, its budget goes to the others.`,
         ],
         title: `Open the next bet for ${product?.name ?? company.name}`,
-      };
+      } satisfies AssignmentBrief;
     }
-    // no default
+
+    default: {
+      return unreachable(assignment);
+    }
   }
 };
 
@@ -268,7 +292,7 @@ export interface AutonomousBriefInput {
   nameOf: (id: string) => string;
 }
 
-export const autonomousBrief = (input: AutonomousBriefInput): TaskBrief => {
+export const autonomousBrief = (input: AutonomousBriefInput) => {
   const {
     company,
     employee,
@@ -282,18 +306,24 @@ export const autonomousBrief = (input: AutonomousBriefInput): TaskBrief => {
     stripeTestMode,
     nameOf,
   } = input;
+
   const isLeader = isLead(company, employee);
   const { title, focus, lines } = assignmentBrief(assignment, { company, isLeader, products });
+
   const portfolio = products
     .map((p) => `- ${p.name} (${p.id}): ${p.description}${p === focus ? " ← this run" : ""}`)
     .join("\n");
+
   const roster =
     employees
       .map((e) => `${e.name} (${e.title})${company.leaderId === e.id ? " — lead" : ""}`)
       .join(", ") || "(just you)";
+
   const shipped = ships.map((s) => `- ${s}`).join("\n") || "(nothing shipped yet)";
+
   const failures =
     problems.map((t) => `- ${t.title} (last error: ${t.state.lastError})`).join("\n") || "(none)";
+
   const budget = budgetLine(company);
 
   const coordinate = isLeader
@@ -333,52 +363,56 @@ You also OWN headcount (hard cap ${company.maxAgents} seats, ${employees.length}
     `When you finish, post a one-line update to the team room with message_team(text).`,
     `End with a short summary of exactly what you shipped and where it lives (files, URLs).`,
   ].join("\n");
-  return { description, title };
+
+  return { description, title } satisfies TaskBrief;
 };
 
-export const runPreamble = (product: Product | null, company: Company): string => {
+export const runPreamble = (product: Product | null, company: Company) => {
   if (!product) {
     return `COMPANY-LEVEL WORK (not for one product). Working directory: ${company.workspaceDir}.`;
   }
+
   return `PRODUCT: ${product.name} — ${product.description}\nWorking directory: ${product.workspaceDir}\nThe company workspace, shared across products, is at ${company.workspaceDir}.`;
 };
 
 const ROUTINE_NOTE = "\n\n(Recurring company routine — runs every ";
 
-export const routineBrief = (r: Routine): TaskBrief => ({
-  description: `${r.instruction}${ROUTINE_NOTE}${r.intervalHours}h.)`,
-  title: r.name,
-});
+export const routineBrief = (r: Routine) =>
+  ({
+    description: `${r.instruction}${ROUTINE_NOTE}${r.intervalHours}h.)`,
+    title: r.name,
+  }) satisfies TaskBrief;
 
-export const founderPing = (text: string): TaskBrief => ({
-  description: [
-    "The founder pinged you in the team room:",
-    `"${text}"`,
-    "",
-    "Read the room with read_team_chat for context, do what they're asking (or answer their question), and reply with message_team.",
-  ].join("\n"),
-  title: `Founder: ${text.slice(0, 48)}`,
-});
+export const founderPing = (text: string) =>
+  ({
+    description: [
+      "The founder pinged you in the team room:",
+      `"${text}"`,
+      "",
+      "Read the room with read_team_chat for context, do what they're asking (or answer their question), and reply with message_team.",
+    ].join("\n"),
+    title: `Founder: ${text.slice(0, 48)}`,
+  }) satisfies TaskBrief;
 
-/** `text` in a code fence that no run of backticks inside it closes early. */
-const fenced = (text: string): string[] => {
+const fenced = (text: string) => {
   const longest = Math.max(2, ...Array.from(text.matchAll(/`+/gu), ([run]) => run.length));
   const fence = "`".repeat(longest + 1);
+
   return [fence, text, fence];
 };
 
-/** Every line of `text` quoted, so a line break cannot end the quote early. */
-const quoted = (text: string): string =>
+const quoted = (text: string) =>
   text
     .split("\n")
     .map((line) => `> ${line}`)
     .join("\n");
 
-const askInWords = (ask: BlockedAsk): string => {
+const askInWords = (ask: BlockedAsk) => {
   switch (ask.type) {
     case "question": {
       return ask.question;
     }
+
     case "action": {
       return [
         `a step only a human could take: ${ask.action}`,
@@ -386,52 +420,60 @@ const askInWords = (ask: BlockedAsk): string => {
         ...(ask.draft === null ? [] : ["The draft they were handed:", ...fenced(ask.draft)]),
       ].join("\n");
     }
+
     case "approval": {
       return `permission to run \`${ask.command}\``;
     }
+
     case "integration": {
       return ask.integration === "stripe"
         ? `a Stripe key: ${ask.reason}`
         : `a ${INTEGRATION_LABELS[ask.integration]} connection: ${ask.reason}`;
     }
-    // no default
+
+    default: {
+      return unreachable(ask);
+    }
   }
 };
 
-const continuationTitle = (askTitle: string): string => `Continue: ${askTitle.slice(0, 60)}`;
+const continuationTitle = (askTitle: string) => `Continue: ${askTitle.slice(0, 60)}`;
 
 /** Whoever runs it may not be who asked: a leaver's open asks pass to the lead. */
-export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string): TaskBrief => ({
-  description: [
-    "This task was waiting on the founder for:",
-    quoted(askInWords(ask)),
-    "",
-    "The founder answered:",
-    quoted(answer),
-    "",
-    `Continue the work with that answer. Original task: ${task.title}`,
-    ...(task.description === null ? [] : ["", task.description]),
-  ].join("\n"),
-  title: continuationTitle(task.title),
-});
+export const continuationBrief = (task: Task, ask: BlockedAsk, answer: string) =>
+  ({
+    description: [
+      "This task was waiting on the founder for:",
+      quoted(askInWords(ask)),
+      "",
+      "The founder answered:",
+      quoted(answer),
+      "",
+      `Continue the work with that answer. Original task: ${task.title}`,
+      ...(task.description === null ? [] : ["", task.description]),
+    ].join("\n"),
+    title: continuationTitle(task.title),
+  }) satisfies TaskBrief;
 
-export const integrationConnectedAnswer = (kind: IntegrationKind): string =>
+export const integrationConnectedAnswer = (kind: IntegrationKind) =>
   kind === "stripe"
     ? "The founder saved a Stripe key — IdleBiz holds it and charges with it for you. Continue where you left off."
     : `${INTEGRATION_LABELS[kind]} is now connected — IdleBiz holds its key and uses it for you. Continue where you left off.`;
 
-export const actionAnswer = (reply: ActionReply): string => {
+export const actionAnswer = (reply: ActionReply) => {
   if (reply.kind === "cant") {
     return `They could not: ${reply.reason}. Do not hand them the same step again: find another way, or carry on without it.`;
   }
+
   return reply.note === "" ? "Done." : `Done. They sent back: ${reply.note}`;
 };
 
 /** What the run reads once the founder decides `ask`: if signed, exactly what the sign-off covers. */
-export const approvalAnswer = (approved: boolean, ask: { command: string }): string => {
+export const approvalAnswer = (approved: boolean, ask: { command: string }) => {
   if (!approved) {
     return "Not approved. Do not run it, and do not look for another way to achieve the same effect. Continue with the rest of the work.";
   }
+
   return [
     "Approved. The sign-off is for exactly this, character for character, in this task only — a reworded call is a different call and will be held again:",
     "",

@@ -13,6 +13,9 @@ import { CHECKOUTS_READ_MS } from "./order-intake";
 import { pumpOrders } from "./order-pump";
 import { retireProduct, settleOrderCard } from "./company-actions";
 import { foundAcme, freshSave, hire } from "./test-support/save";
+import { answerFetch, interceptNetwork } from "./test-support/network";
+
+interceptNetwork();
 
 const root = freshSave();
 
@@ -24,42 +27,41 @@ const FILE_URL = "https://acme-site.vercel.app/print/tee-1.png";
 const DESIGN = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 7]);
 const DESIGN_SHA = createHash("sha256").update(DESIGN).digest("hex");
 
-/** A checkout on the tee's link: paid, shipped to Illinois, for the black M, $35.99 all told. */
-const checkout = (id: string, over: Partial<CheckoutSession> = {}): CheckoutSession => ({
-  amount_total: 3599,
-  collected_information: {
-    shipping_details: {
-      address: {
-        city: "Springfield",
-        country: "US",
-        line1: "1 Main St",
-        line2: null,
-        postal_code: "62701",
-        state: "IL",
+const checkout = (id: string, over: Partial<CheckoutSession> = {}) =>
+  ({
+    amount_total: 3599,
+    collected_information: {
+      shipping_details: {
+        address: {
+          city: "Springfield",
+          country: "US",
+          line1: "1 Main St",
+          line2: null,
+          postal_code: "62701",
+          state: "IL",
+        },
+        name: "Ada Buyer",
       },
-      name: "Ada Buyer",
     },
-  },
-  created: NOW_S - 3600,
-  currency: "usd",
-  custom_fields: [{ dropdown: { value: "4013" }, key: "variant" }],
-  customer_details: { email: "ada@example.com", phone: null },
-  id,
-  line_items: { data: [{ quantity: 1 }] },
-  livemode: true,
-  payment_intent: `pi_${id}`,
-  payment_link: LINK,
-  payment_status: "paid",
-  status: "complete",
-  ...over,
-});
+    created: NOW_S - 3600,
+    currency: "usd",
+    custom_fields: [{ dropdown: { value: "4013" }, key: "variant" }],
+    customer_details: { email: "ada@example.com", phone: null },
+    id,
+    line_items: { data: [{ quantity: 1 }] },
+    livemode: true,
+    payment_intent: `pi_${id}`,
+    payment_link: LINK,
+    payment_status: "paid",
+    status: "complete",
+    ...over,
+  }) satisfies CheckoutSession;
 
 interface PrintfulOrder {
   id: number;
   external_id: string;
   status: string;
   body: JsonValue;
-  /** Reads left before its costs are worked out. */
   pricingReads: number;
 }
 
@@ -71,19 +73,12 @@ interface WorldSetup {
   pricingReads?: number;
   design?: Uint8Array;
   lostConfirmations?: number;
-  /** The status a confirmation leaves the order in. */
   confirmedAs?: string;
-  /** Creates that make the draft but answer 500, as a timeout would. */
   lostCreates?: number;
 }
 
 const notFound = () => Response.json({ code: 404 }, { status: 404 });
 
-/**
- * Stripe's checkouts, the product's site and Printful's orders, faked at fetch. Printful prices
- * a draft at `totalUsd` once `pricingReads` reads have seen it calculating; `lostConfirmations`
- * confirmations go through but answer 500, as a timeout would.
- */
 const fakeWorld = ({
   sessions = [],
   totalUsd = "24.10",
@@ -96,28 +91,24 @@ const fakeWorld = ({
   const checkoutReads: number[] = [];
   const switchedOff: string[] = [];
   const orders = new Map<number, PrintfulOrder>();
+
   const world = {
-    /** Called as a confirmation arrives, before Printful acts on it. */
-    beforeConfirm: (_order: PrintfulOrder): void => {},
-    /** Whether the key is turned away from reading charges, as one never granted Read on Charges is. */
+    beforeConfirm: (_order: PrintfulOrder) => {},
     chargesRefused: false,
     checkoutReads,
     confirmations: 0,
     creates: 0,
     discards: 0,
-    /** Whether Stripe says every page has more after it. */
     endless: false,
     lostConfirmations,
     lostCreates,
     orders,
-    /** How each payment was made, by its intent, where it was not by card. */
     paidWith: new Map<string, string>(),
-    /** Payments the founder refunded in Stripe. */
     refunded: new Set<string>(),
     sessions,
-    /** Payment links switched off, by id. */
     switchedOff,
   };
+
   const orderJson = (order: PrintfulOrder) => ({
     data: {
       costs:
@@ -129,6 +120,7 @@ const fakeWorld = ({
       status: order.status,
     },
   });
+
   const charges = (intent: string) =>
     world.chargesRefused
       ? Response.json({ error: { message: "lacks rak_charge_read" } }, { status: 403 })
@@ -142,14 +134,19 @@ const fakeWorld = ({
             },
           ],
         });
+
   const byExternalId = (ext: string) => [...orders.values()].find((o) => o.external_id === ext);
+
   const create = (init: RequestInit | undefined) => {
     const body = parseJson(z.string().parse(init?.body));
     const ext = CreatedSchema.parse(body).external_id;
+
     if (byExternalId(ext)) {
       return Response.json({ error: { message: "External ID already in use" } }, { status: 400 });
     }
+
     world.creates += 1;
+
     const order = {
       body,
       external_id: ext,
@@ -157,83 +154,118 @@ const fakeWorld = ({
       pricingReads,
       status: "draft",
     };
+
     orders.set(order.id, order);
+
     if (world.lostCreates > 0) {
       world.lostCreates -= 1;
+
       return new Response(null, { status: 500 });
     }
+
     return Response.json(orderJson(order));
   };
+
   const confirm = (order: PrintfulOrder | undefined) => {
     if (order) {
       world.beforeConfirm(order);
     }
+
     if (order?.status !== "draft") {
       return Response.json({ code: 400 }, { status: 400 });
     }
+
     world.confirmations += 1;
     order.status = confirmedAs;
+
     if (world.lostConfirmations > 0) {
       world.lostConfirmations -= 1;
+
       return new Response(null, { status: 500 });
     }
+
     return Response.json(orderJson(order));
   };
+
   const read = (order: PrintfulOrder | undefined) => {
     if (!order) {
       return notFound();
     }
+
     const answer = orderJson(order);
     order.pricingReads -= 1;
+
     return Response.json(answer);
   };
-  const printful = (pathname: string, init: RequestInit | undefined): Response => {
+
+  const printful = (pathname: string, init: RequestInit | undefined) => {
     const ext = /^\/v2\/orders\/@(?<ext>.+)$/u.exec(pathname)?.groups?.ext;
+
     if (ext !== undefined) {
       const found = byExternalId(ext);
+
       return found ? Response.json(orderJson(found)) : notFound();
     }
+
     if (pathname === "/v2/orders" && init?.method === "POST") {
       return create(init);
     }
+
     const confirming = /^\/v2\/orders\/(?<id>\d+)\/confirmation$/u.exec(pathname)?.groups?.id;
+
     if (confirming !== undefined) {
       return confirm(orders.get(Number(confirming)));
     }
+
     const id = Number(/^\/v2\/orders\/(?<id>\d+)$/u.exec(pathname)?.groups?.id);
+
     if (init?.method === "DELETE") {
       world.discards += 1;
-      return orders.delete(id) ? new Response(null, { status: 204 }) : notFound();
+
+      return (
+        orders.delete(id) ? new Response(null, { status: 204 }) : notFound()
+      ) satisfies Response;
     }
+
     return read(orders.get(id));
   };
-  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+
+  answerFetch((url: string, init?: RequestInit) => {
     const { host, pathname, searchParams } = new URL(url);
-    // a key lists only the sessions of its own mode
     const live = !new Headers(init?.headers).get("Authorization")?.includes("_test_");
+
     if (host === "api.stripe.com" && pathname === "/v1/checkout/sessions") {
       const after = Number(searchParams.get("created[gt]"));
       checkoutReads.push(after);
+
       const data = world.sessions.filter(
         (session) => session.created > after && session.livemode === live,
       );
+
       return Promise.resolve(Response.json({ data, has_more: world.endless }));
     }
+
     if (host === "api.stripe.com" && pathname === "/v1/charges") {
       return Promise.resolve(charges(searchParams.get("payment_intent") ?? ""));
     }
+
     const link = /^\/v1\/payment_links\/(?<id>\w+)$/u.exec(pathname)?.groups?.id;
+
     if (host === "api.stripe.com" && link !== undefined && init?.method === "POST") {
       switchedOff.push(link);
+
       return Promise.resolve(Response.json({ active: false, id: link }));
     }
+
     if (host === "acme-site.vercel.app") {
       return Promise.resolve(new Response(design, { headers: { "content-type": "image/png" } }));
     }
+
     return host === "api.printful.com"
       ? Promise.resolve(printful(pathname, init))
       : Promise.reject(new Error(`unexpected call to ${url}`));
   });
+
   return world;
 };
 
@@ -248,7 +280,6 @@ const saveSecrets = (stripeKey = "rk_live_founder") => {
   );
 };
 
-/** Acme, selling a tee in black S and M at $28 plus $7.99 shipping through `LINK`. */
 const openShop = (livemode = true) => {
   foundAcme([hire("Priya")], { businessType: "ecommerce", mission: "sell tees" });
   const productId = store.listProducts()[0]?.id ?? "";
@@ -270,10 +301,10 @@ const openShop = (livemode = true) => {
     ],
   });
   saveSecrets();
+
   return productId;
 };
 
-/** Where each key's next read of checkouts starts. */
 const readFrom = () => Object.values(store.ordersCursor()?.byKey ?? {});
 
 const orderCards = () =>
@@ -281,15 +312,17 @@ const orderCards = () =>
 
 const onlySale = () => {
   const [order] = store.listOrders();
+
   if (order?.kind !== "sale") {
     throw new Error("no sale was kept");
   }
+
   return order;
 };
 
-/** A read and then enough pulses to price and confirm what it sent. */
 const pumpUntilSettled = async (pulses = 3) => {
   await pumpOrders(NOW, "read");
+
   for (let i = 0; i < pulses; i += 1) {
     await pumpOrders(NOW, "price");
   }
@@ -298,6 +331,7 @@ const pumpUntilSettled = async (pulses = 3) => {
 describe("the order pump", () => {
   it("sends only paid checkouts on a listing's link to Printful, as drafts built from the listing", async () => {
     const productId = openShop();
+
     const world = fakeWorld({
       sessions: [
         checkout("cs_paid"),
@@ -369,18 +403,18 @@ describe("the order pump", () => {
     openShop();
     const world = fakeWorld({ sessions: [checkout("cs_paid")] });
     await pumpOrders(NOW, "read");
-    // the next read overlaps the last, and a restart reads everything again
     await pumpOrders(NOW + 600_000, "read");
     store.initStore();
     await pumpOrders(NOW + 1_200_000, "read");
     expect(store.listOrders()).toHaveLength(1);
     expect(world.creates).toBe(1);
 
-    // a crash after Printful made the order, before the save knew: it is found by its id
     const [kept] = store.listOrders();
+
     if (kept?.kind !== "sale") {
       throw new Error("no sale");
     }
+
     store.updateSale(kept.id, { stage: { kind: "received", tries: 0 } });
     await pumpOrders(NOW + 1_800_000, "read");
     expect(world.creates).toBe(1);
@@ -423,7 +457,6 @@ describe("the order pump", () => {
       "Ada Buyer's Launch tee (Black / M), ada@example.com: paid $35.99 on acme, Stripe payment pi_cs_paid\nPrintful charges $36.50 to print and ship it, and the buyer paid $35.99",
     );
 
-    // pumping on raises no second card, and the founder's answer closes it without a run
     await pumpUntilSettled();
     expect(orderCards()).toHaveLength(1);
     settleOrderCard(card?.id ?? "", { kind: "done", note: "refunded" });
@@ -434,7 +467,6 @@ describe("the order pump", () => {
 
   it("leaves a draft paid other than by card, whose Stripe fee can pass a card's", async () => {
     openShop();
-    // a card's dearest fee leaves $34.10 of $35.99, Klarna's 5.99% + 30¢ only $33.53
     const world = fakeWorld({ sessions: [checkout("cs_paid")], totalUsd: "34.00" });
     world.paidWith.set("pi_cs_paid", "klarna");
 
@@ -456,9 +488,11 @@ describe("the order pump", () => {
     const world = fakeWorld({ sessions: [checkout("cs_paid")] });
     await pumpUntilSettled();
     const [sent] = world.orders.values();
+
     if (!sent) {
       throw new Error("nothing was sent");
     }
+
     sent.status = "failed";
 
     await pumpOrders(NOW + 600_000, "read");
@@ -491,6 +525,7 @@ describe("the order pump", () => {
 
   it("hands the founder an order first read failed after its confirmation's answer was lost", async () => {
     openShop();
+
     const world = fakeWorld({
       confirmedAs: "failed",
       lostConfirmations: 1,
@@ -509,11 +544,12 @@ describe("the order pump", () => {
     const world = fakeWorld({ sessions: [checkout("cs_paid")] });
     await pumpUntilSettled();
     const [sent] = world.orders.values();
+
     if (!sent) {
       throw new Error("nothing was sent");
     }
+
     sent.status = "failed";
-    // a crash before the save knew what Printful made
     store.updateSale(onlySale().id, {
       printfulStatus: null,
       stage: { kind: "received", tries: 0 },
@@ -605,6 +641,7 @@ describe("the order pump", () => {
   it("keeps where the next read starts, holding it for a checkout that may still be paid", async () => {
     openShop();
     const openedAt = NOW_S - 7200;
+
     const world = fakeWorld({
       sessions: [
         checkout("cs_open", { created: openedAt, payment_status: "unpaid", status: "open" }),
@@ -616,7 +653,6 @@ describe("the order pump", () => {
     expect(world.checkoutReads).toEqual([Math.floor(foundedAt / 1000) - 1]);
     expect(readFrom()).toEqual([openedAt - 1]);
 
-    // it expires unpaid: the cursor moves up to a little before the read
     world.sessions = [
       checkout("cs_open", { created: openedAt, payment_status: "unpaid", status: "expired" }),
     ];
@@ -629,6 +665,7 @@ describe("the order pump", () => {
   it("prices a test-mode checkout, then deletes its draft, since nobody paid, even one dearer than the payment", async () => {
     openShop(false);
     saveSecrets("rk_test_founder");
+
     const world = fakeWorld({
       sessions: [checkout("cs_test", { livemode: false })],
       totalUsd: "36.50",
@@ -662,6 +699,7 @@ describe("the order pump", () => {
 
   it("keeps a paid checkout it cannot send, and hands it to the founder", async () => {
     openShop();
+
     const world = fakeWorld({
       sessions: [checkout("cs_nowhere", { collected_information: null })],
     });
@@ -696,9 +734,11 @@ describe("the order pump", () => {
     const [card] = orderCards();
     settleOrderCard(card?.id ?? "", { kind: "done", note: "" });
     saveSecrets("rk_test_founder");
+
     const world = fakeWorld({
       sessions: [checkout("cs_paid"), checkout("cs_test", { livemode: false })],
     });
+
     await pumpOrders(NOW + CHECKOUTS_READ_MS, "read");
     expect(orderCards().map((t) => t.title)).toEqual(["Paid orders wait for a live Stripe key"]);
     expect(store.listOrders().map((o) => o.sessionId)).toEqual(["cs_test"]);
@@ -707,9 +747,11 @@ describe("the order pump", () => {
 
   it("raises no key card once every live link that could owe a buyer is switched off", async () => {
     openShop();
+
     for (const held of store.paymentLinks()) {
       store.setLinkState(held, { at: NOW, by: "idlebiz", kind: "switched-off" });
     }
+
     writeFileSync(path.join(root, "vault.json"), JSON.stringify({ PRINTFUL_TOKEN: "pf_token" }));
     fakeWorld();
 
@@ -722,6 +764,7 @@ describe("the order pump", () => {
     foundAcme([], { businessType: "vc", mission: "sell deal memos" });
     saveSecrets();
     const productId = store.listProducts()[0]?.id ?? "";
+
     const memo = (id: string, over: Partial<CheckoutSession> = {}) =>
       checkout(id, {
         amount_total: 900,
@@ -732,6 +775,7 @@ describe("the order pump", () => {
         payment_link: "plink_memo",
         ...over,
       });
+
     const world = fakeWorld({
       sessions: [
         memo("cs_delivered"),
@@ -750,8 +794,6 @@ describe("the order pump", () => {
       { delivery: null, kind: "link", sessionId: "cs_tip" },
       { kind: "unreadable", listingId: "gone", sessionId: "cs_lost_listing" },
     ]);
-    // one read raises both, often within one millisecond, where newest-first keeps the order they
-    // were raised in: which comes first is the clock's, not the assertion
     const cards = orderCards();
     expect(cards).toHaveLength(2);
     expect(cards.map((t) => t.title)).toEqual(
@@ -771,7 +813,6 @@ describe("the order pump", () => {
       `💵 Sold "Acme teardown" for $9.00 on ${productId}.`,
     ]);
 
-    // a retired product's link nobody switched off still takes money, and its buyer is still owed
     store.createProduct({ description: "the next idea", name: "Next" });
     store.killProduct(productId, "dud", null);
     world.sessions.push(memo("cs_after", { created: NOW_S + 60 }));
@@ -813,7 +854,6 @@ describe("the order pump", () => {
 
   it("leaves a draft Printful prices above what Stripe's fee leaves of the payment", async () => {
     openShop();
-    // $34.50 is under the $35.99 paid, but over the $34.10 Stripe's fee may leave
     const world = fakeWorld({ sessions: [checkout("cs_paid")], totalUsd: "34.50" });
 
     await pumpUntilSettled();
@@ -863,7 +903,6 @@ describe("the order pump", () => {
     const world = fakeWorld({ sessions: [checkout("cs_paid")] });
     await pumpOrders(NOW, "read");
     world.orders.clear();
-    // the last try: its create makes the draft, but the answer is lost
     world.lostCreates = 1;
     store.updateSale(onlySale().id, { stage: { kind: "received", tries: 5 } });
 
@@ -877,15 +916,17 @@ describe("the order pump", () => {
   it("cards the founder even when the order cannot be kept, and only once when it is", async () => {
     const productId = openShop();
     fakeWorld({ sessions: [checkout("cs_nowhere", { collected_information: null })] });
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     mkdirSync(ordersDir(), { recursive: true });
     chmodSync(ordersDir(), 0o555);
+
     try {
       await pumpOrders(NOW, "read");
     } finally {
       chmodSync(ordersDir(), 0o755);
       logged.mockRestore();
     }
+
     expect(store.listOrders()).toEqual([]);
     expect(orderCards()).toHaveLength(1);
 
@@ -911,7 +952,7 @@ describe("the order pump", () => {
   it("raises no card for a key that cannot read checkouts while nothing is sold", async () => {
     foundAcme([], { businessType: "vc", mission: "sell deal memos" });
     saveSecrets();
-    vi.stubGlobal("fetch", () =>
+    answerFetch(() =>
       Promise.resolve(Response.json({ error: { message: "no checkout read" } }, { status: 403 })),
     );
 
@@ -935,7 +976,7 @@ describe("the order pump", () => {
       url: "https://buy.stripe.com/memo",
     });
     saveSecrets("rk_live_rotated");
-    vi.stubGlobal("fetch", () =>
+    answerFetch(() =>
       Promise.resolve(Response.json({ error: { message: "no checkout read" } }, { status: 403 })),
     );
 
@@ -947,6 +988,7 @@ describe("the order pump", () => {
   it("deletes a test-mode draft Printful never finishes pricing, rather than leave it to be confirmed by hand", async () => {
     openShop(false);
     saveSecrets("rk_test_founder");
+
     const world = fakeWorld({
       pricingReads: 1000,
       sessions: [checkout("cs_test", { livemode: false })],

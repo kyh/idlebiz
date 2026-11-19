@@ -17,6 +17,7 @@ export const ErrorStatus = ({
   useEffect(() => {
     console.error(error);
   }, [error]);
+
   return (
     <StatusPage
       title="Something went wrong"

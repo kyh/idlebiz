@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
 import * as store from "./store/store";
 import { getSecret, setSecret } from "./vault/vault";
 import {
@@ -8,39 +8,47 @@ import {
   saveVercelToken,
 } from "./vercel-connect";
 import { foundAcme, freshSave } from "./test-support/save";
+import { answerFetch, interceptNetwork } from "./test-support/network";
+
+interceptNetwork();
 
 freshSave();
 
 const foundProduct = () => {
   foundAcme();
   const [product] = store.listProducts();
+
   if (!product) {
     throw new Error("missing founding product");
   }
+
   return product;
 };
 
-/** How Vercel answers one call instead of the one-project account; null keeps the account's answer. */
 type Override = (call: { pathname: string; teamId: string | null }) => Promise<Response> | null;
 
-/** Answer Vercel as an account with one project, and keep the token each call carried. */
-const vercelAccount = (override: Override = () => null): (string | null)[] => {
+const vercelAccount = (override: Override = () => null) => {
   const tokens: (string | null)[] = [];
-  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+  answerFetch((url: string, init?: RequestInit) => {
     tokens.push(new Headers(init?.headers).get("authorization"));
     const { pathname, searchParams } = new URL(url);
     const overridden = override({ pathname, teamId: searchParams.get("teamId") });
+
     if (overridden) {
       return overridden;
     }
+
     if (pathname === "/v2/user") {
       return Promise.resolve(Response.json({ user: { username: "kai" } }));
     }
+
     if (pathname === "/v2/teams") {
       return Promise.resolve(Response.json({ teams: [] }));
     }
+
     return Promise.resolve(Response.json({ projects: [{ id: "prj_acme", name: "acme" }] }));
   });
+
   return tokens;
 };
 
@@ -157,14 +165,15 @@ it("tells Vercel out of reach apart from a refused token", async () => {
   await expect(listVercelProjects("slow")).resolves.toMatchObject({ kind: "unreachable" });
 });
 
-/** Two teams beside the personal account, each with a project. */
 const twoTeams: Override = ({ pathname, teamId }) => {
   if (pathname === "/v2/teams") {
     return Promise.resolve(Response.json({ teams: [{ id: "team_a" }, { id: "team_b" }] }));
   }
+
   if (teamId !== null) {
     return Promise.resolve(Response.json({ projects: [{ id: `prj_${teamId}`, name: teamId }] }));
   }
+
   return null;
 };
 
@@ -224,6 +233,7 @@ it("names the team of a project that shares its name with a personal one", async
         }),
       );
     }
+
     return teamId === null
       ? null
       : Promise.resolve(Response.json({ projects: [{ id: `prj_${teamId}`, name: "acme" }] }));
@@ -245,6 +255,7 @@ it("lists a project the personal account and its team both return once, under th
     if (pathname === "/v2/teams") {
       return Promise.resolve(Response.json({ teams: [{ id: "team_a", name: "Acme Inc" }] }));
     }
+
     return teamId === null
       ? null
       : Promise.resolve(

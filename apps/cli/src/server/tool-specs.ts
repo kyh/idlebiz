@@ -12,25 +12,14 @@ import type { JsonValue } from "@repo/domain/json";
 import { CATALOG_PAGE, PrintPlacementSchema } from "./listing";
 import { shellQuote } from "./lib/shell-quote";
 
-// Every company tool, described once: the body it parses, who may call it, and
-// what the agent is told — docs and the example are rendered from here, so a
-// renamed field cannot leave the prose teaching agents a request that now
-// answers 400. An agent calls each as a verb of the `idlebiz` command
-// (commands/tools.ts), which reads this table and nothing of the server's, and
-// the control plane serves each by its name (`toolPath`). Bodies are strict
-// because a key an agent guessed (`bet_id` for `bet`) would otherwise be dropped
-// and its optional field quietly defaulted.
-
 const EMPTY = z.strictObject({});
 const SLUG_AND_REASON = z.strictObject({ reason: KillReasonSchema, slug: z.string().min(1) });
 
-/** What every bet names, whatever it counts. */
 const WAGER = {
   budgetUsd: z.number().positive().max(1000),
   hypothesis: z.string().trim().min(1).max(600),
   product: z.string().min(1).optional(),
   title: z.string().trim().min(1).max(80),
-  // long enough for a number to answer, short enough that a dud dies within the fortnight
   windowHours: z.number().min(1).max(336),
 };
 
@@ -40,8 +29,6 @@ const WAGER = {
  */
 export const DEPLOY_TIMEOUT_MS = 5 * 60_000;
 
-// JSON quoting leaves format characters raw: a direction override would let a name or a
-// delivery visually rewrite the price the founder signs
 const signedText = (field: string, max: number) =>
   z
     .string()
@@ -63,7 +50,7 @@ export const MAX_REQUEST_BYTES = 64 * 1024;
  * agent spaced or escaped what it typed (Python's json.dumps writes each non-ASCII character as a
  * six-byte `\u` escape).
  */
-export const encodeRequest = (request: JsonValue): string => JSON.stringify(request);
+export const encodeRequest = (request: JsonValue) => JSON.stringify(request);
 
 /**
  * The longest value set_env takes, counted as its request carries it (`encodeRequest`): UTF-8,
@@ -74,7 +61,6 @@ export const encodeRequest = (request: JsonValue): string => JSON.stringify(requ
  */
 export const MAX_ENV_VALUE_BYTES = MAX_REQUEST_BYTES - 4 * 1024;
 
-/** Printful prices each variant to three addresses, and allows 120 calls a minute. */
 const MAX_PRINT_VARIANTS = 6;
 
 const USERS_FLOOR = `a users target is a whole number of visitors, at least ${MIN_BET_TARGET.users}: fewer is won by the founder's own clicks`;
@@ -89,9 +75,8 @@ export interface ToolSpec<B extends z.ZodType> {
   example: z.input<B>;
 }
 
-const tool = <B extends z.ZodType>(spec: ToolSpec<B>): ToolSpec<B> => spec;
+const tool = <B extends z.ZodType>(spec: ToolSpec<B>) => spec;
 
-// oxlint-disable-next-line sort-keys -- the order agents read them in: everyone's tools, then the lead's
 export const TOOL_SPECS = {
   ask_boss: tool({
     body: z.union(
@@ -99,7 +84,6 @@ export const TOOL_SPECS = {
         z.strictObject({ question: z.string().trim().min(1) }),
         z.strictObject({
           action: z.string().trim().min(1).max(120),
-          // models send null or "" for a field they leave empty; either is no draft
           draft: z
             .string()
             .trim()
@@ -110,7 +94,6 @@ export const TOOL_SPECS = {
         }),
       ],
       {
-        // matching neither, zod says only "Invalid input"; the agent needs the two shapes
         error: (issue) =>
           issue.code === "invalid_union"
             ? 'Send either {"question":"..."} or {"action":"...","instructions":"..."}, with an optional "draft".'
@@ -186,11 +169,9 @@ export const TOOL_SPECS = {
   }),
   create_payment_link: tool({
     body: z.strictObject({
-      // the founder reads it whole in what they sign
       afterPaymentUrl: z.url().max(500).optional(),
       amountUsd: z.number().min(0.5).max(10_000),
       bet: z.string().min(1).optional(),
-      // Stripe keeps a metadata value of at most 500 characters
       delivery: signedText("delivery", 500).optional(),
       name: SALE_NAME,
       product: z.string().min(1).optional(),
@@ -361,7 +342,6 @@ const TOOL_OUTCOME_KINDS = Object.keys(TOOL_OUTCOMES).filter(
   (kind): kind is ToolOutcomeKind => kind in TOOL_OUTCOMES,
 );
 
-/** What a call answers: how it ended, and the prose the employee reads whichever way it did. */
 const ToolOutcomeSchema = z.strictObject({ kind: z.enum(TOOL_OUTCOME_KINDS), text: z.string() });
 
 export type ToolOutcome = z.infer<typeof ToolOutcomeSchema>;
@@ -375,10 +355,10 @@ export const ToolAnswerSchema = z.discriminatedUnion("ok", [
 export type ToolAnswer = z.infer<typeof ToolAnswerSchema>;
 
 /** Where the control plane serves `name` on a run's socket: each tool is posted to its own name. */
-export const toolPath = (name: ToolName): string => `/v1/${name}`;
+export const toolPath = (name: ToolName) => `/v1/${name}`;
 
 /** The tool served at `pathname`, or null when none is. */
-export const toolAt = (pathname: string): ToolName | null =>
+export const toolAt = (pathname: string) =>
   TOOL_NAMES.find((name) => toolPath(name) === pathname) ?? null;
 
 /** How an employee reads a call's exit code, lowest first. */
@@ -389,16 +369,17 @@ export const EXIT_CODES_DOC = TOOL_OUTCOME_KINDS.toSorted(
   .join("; ");
 
 /** The verb an agent types for a tool: its name as a command-line word. */
-export const verbOf = (name: ToolName): string => name.replaceAll("_", "-");
+export const verbOf = (name: ToolName) => name.replaceAll("_", "-");
 
 /** A tool as an employee is taught to call it: its verb, and its example as the one argument. */
-export const commandOf = (name: ToolName): string => {
+export const commandOf = (name: ToolName) => {
   const body = JSON.stringify(TOOL_SPECS[name].example);
+
   return body === "{}" ? `idlebiz ${verbOf(name)}` : `idlebiz ${verbOf(name)} ${shellQuote(body)}`;
 };
 
 /** The tool list as an employee's instructions carry it; the lead's tools only for the lead. */
-export const toolDocs = (lead: boolean): string =>
+export const toolDocs = (lead: boolean) =>
   TOOL_NAMES.filter((name) => lead || TOOL_SPECS[name].leadOnly === null)
     .map((name) => `- **${name}** — ${TOOL_SPECS[name].doc}\n  \`${commandOf(name)}\``)
     .join("\n");

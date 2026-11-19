@@ -24,27 +24,29 @@ const BUDGET_MODES: readonly PickerOption<Budget["mode"]>[] = [
 const REFUSED_KEY =
   "Stripe won't let this key read charges, so no revenue is counted — grant it Read on Charges, or paste a key over it.";
 
-const stripeKeyMoved = async (): Promise<void> => {
+const stripeKeyMoved = async () => {
   await queryClient.invalidateQueries({ queryKey: stripeKeyQuery.queryKey });
 };
 
 const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
   const [draft, setDraft] = useState("");
+
   const saving = useSubmission(async (key: string) => {
     await api.stripe.saveKey({ key });
     await stripeKeyMoved();
     setDraft("");
   });
+
   const removing = useSubmission(async () => {
     await api.stripe.removeKey();
     await stripeKeyMoved();
   });
+
   const key = draft.trim();
   const sending = saving.submission.kind === "sending";
   const set = stripeKey.state !== "unset";
   const saveLabel = set ? "Replace key" : "Save";
-  // a key is replaced by pasting over it, never by removing it first: a pulse in that gap finds
-  // no key and hands every retiring link to the founder to switch off by hand
+
   const entry = (
     <div>
       <div className="flex gap-2">
@@ -68,9 +70,11 @@ const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
       <Failure submission={saving.submission} doing="save the key" />
     </div>
   );
+
   if (stripeKey.state === "unset") {
     return entry;
   }
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
@@ -102,22 +106,25 @@ const ChargingKey = ({ stripeKey }: { stripeKey: StripeKeyStatus }) => {
 
 const printfulToken = orpc.printful.tokenStatus.queryOptions();
 
-const printfulTokenMoved = async (): Promise<void> => {
+const printfulTokenMoved = async () => {
   await queryClient.invalidateQueries({ queryKey: printfulToken.queryKey });
 };
 
 const PrintfulToken = () => {
   const { data: status, error } = useQuery(printfulToken);
   const [draft, setDraft] = useState("");
+
   const saving = useSubmission(async (token: string) => {
     await api.printful.saveToken({ token });
     setDraft("");
     await printfulTokenMoved();
   });
+
   const removing = useSubmission(async () => {
     await api.printful.removeToken();
     await printfulTokenMoved();
   });
+
   if (status === undefined) {
     return error === null ? null : (
       <div role="alert" className="text-xs text-danger">
@@ -125,12 +132,12 @@ const PrintfulToken = () => {
       </div>
     );
   }
+
   const token = draft.trim();
   const sending = saving.submission.kind === "sending";
   const set = status.state === "set";
   const saveLabel = set ? "Replace token" : "Save token";
-  // Printful's tokens expire, and a card about one it turned away opens this panel while the
-  // dead token still reads as saved, so a new one can always be pasted over it
+
   const entry = (
     <div>
       <div className="flex gap-2">
@@ -154,9 +161,11 @@ const PrintfulToken = () => {
       <Failure submission={saving.submission} doing="save the token" />
     </div>
   );
+
   if (!set) {
     return entry;
   }
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
@@ -182,12 +191,9 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
   const company = useCompany();
   const stripeKey = useStripeKey();
   const savedCap = company?.budget.mode === "capped" ? String(company.budget.capUsd) : "";
-  // the draft carries the saved cap it was typed against, so a cap saved
-  // elsewhere replaces a stale draft without an effect resetting it
   const [draft, setDraft] = useState({ savedCap, value: savedCap });
   const capInput = draft.savedCap === savedCap ? draft.value : savedCap;
   const setCapInput = (value: string) => setDraft({ savedCap, value });
-  // real revenue showing at all means the key reads it
   const liveMetrics = company !== null && company.revenueUsd !== null;
   const saving = useSubmission(setBudget);
   const resetting = useSubmission(resetSpend);
@@ -197,10 +203,12 @@ export const BudgetModal = ({ onClose }: { onClose: () => void }) => {
   if (!company) {
     return null;
   }
+
   const { budget } = company;
   const out = isOutOfBudget(company);
   const parsedCap = Number(capInput);
   const capValid = capInput.trim() !== "" && Number.isFinite(parsedCap) && parsedCap >= 0;
+
   const setCap = () => {
     if (capValid) {
       saving.submit({ capUsd: parsedCap, mode: "capped" });

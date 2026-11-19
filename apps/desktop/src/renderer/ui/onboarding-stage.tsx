@@ -19,18 +19,17 @@ export const OfficeBackdrop = () => (
 
 type Facing = "front" | "back";
 
-/** The office's standing pose: walk down's first frame, or walk up's. */
 const STANDING = { back: WALK_START.up, front: WALK_START.down } satisfies Record<Facing, number>;
 
-/** One frame of a whole sheet, scaled by the sprite's `--s`, as a CSS background. */
-const frameBackground = (url: string, frame: number): CSSProperties => {
+const frameBackground = (url: string, frame: number) => {
   const column = frame % SHEET_COLUMNS;
   const row = Math.floor(frame / SHEET_COLUMNS);
+
   return {
     backgroundImage: `url(${url})`,
     backgroundPosition: `calc(var(--ob-frame-w) * ${-column} * var(--s)) calc(var(--ob-frame-h) * ${-row} * var(--s))`,
     backgroundSize: `calc(var(--ob-frame-w) * ${SHEET_COLUMNS} * var(--s)) auto`,
-  };
+  } satisfies CSSProperties;
 };
 
 export const FounderSprite = ({ seed, facing }: { seed: string; facing: Facing }) => (
@@ -62,22 +61,25 @@ export const TeamParade = ({ hires }: { hires: HireProposal[] }) => (
   </div>
 );
 
-/** The biggest cap on offer; the bar is full there. */
 const METER_FULL_USD = 50;
 
 type Tone = "tight" | "mid" | "open" | "infinite";
-const toneOf = (capUsd: number | null): Tone => {
+
+const toneOf = (capUsd: number | null) => {
   if (capUsd === null) {
-    return "infinite";
+    return "infinite" satisfies Tone;
   }
+
   if (capUsd <= 5) {
-    return "tight";
+    return "tight" satisfies Tone;
   }
-  return capUsd <= 20 ? "mid" : "open";
+
+  return (capUsd <= 20 ? "mid" : "open") satisfies Tone;
 };
 
 export const BudgetMeter = ({ capUsd }: { capUsd: number | null }) => {
   const width = capUsd === null ? 100 : Math.min(100, (capUsd / METER_FULL_USD) * 100);
+
   return (
     <div className="ob-meter px-window">
       <span className="text-xs text-fg-dim">Budget</span>

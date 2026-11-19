@@ -12,6 +12,9 @@ import {
   sumCharges,
 } from "./metrics";
 import { tempSave } from "./test-support/save";
+import { answerFetch, interceptNetwork } from "./test-support/network";
+
+interceptNetwork();
 
 const root = tempSave();
 const secretsFile = path.join(root, "vault.json");
@@ -29,64 +32,71 @@ const charge = (id: string, amount: number, metadata: Record<string, string> = {
   paid: true,
 });
 
-const revenueBet = (id: string, createdAt: number): Bet => ({
-  budgetUsd: 5,
-  claim: { metric: "revenue" },
-  createdAt,
-  hypothesis: "a paid tier sells",
-  id,
-  productId: "app",
-  readAt: null,
-  reading: null,
-  spentUsd: 0,
-  state: { kind: "open" },
-  target: 20,
-  title: id,
-  windowHours: 24,
-});
+const revenueBet = (id: string, createdAt: number) =>
+  ({
+    budgetUsd: 5,
+    claim: { metric: "revenue" },
+    createdAt,
+    hypothesis: "a paid tier sells",
+    id,
+    productId: "app",
+    readAt: null,
+    reading: null,
+    spentUsd: 0,
+    state: { kind: "open" },
+    target: 20,
+    title: id,
+    windowHours: 24,
+  }) satisfies Bet;
 
-/** Answer Stripe by endpoint, and keep what was asked. */
-const stripe = (answer: (endpoint: string) => Response): string[] => {
+const stripe = (answer: (endpoint: string) => Response) => {
   const asked: string[] = [];
-  vi.stubGlobal("fetch", (url: string) => {
+  answerFetch((url: string) => {
     const endpoint = url.replace("https://api.stripe.com", "");
     asked.push(endpoint);
+
     return Promise.resolve(answer(endpoint));
   });
+
   return asked;
 };
+
 const down = () => new Response("{}", { status: 500 });
 
-/** Count these visits over whatever span each query names, and keep the queries. */
-const visits = (at: readonly number[]): URLSearchParams[] => {
+const visits = (at: readonly number[]) => {
   const asked: URLSearchParams[] = [];
-  vi.stubGlobal("fetch", (url: string) => {
+  answerFetch((url: string) => {
     const query = new URL(url).searchParams;
     asked.push(query);
     const since = Date.parse(query.get("since") ?? "");
     const until = Date.parse(query.get("until") ?? "");
+
     const counted = at.filter(
       (t) => Number.isNaN(since) || Number.isNaN(until) || (since <= t && t <= until),
     );
+
     return Promise.resolve(Response.json({ data: { visitors: counted.length } }));
   });
+
   return asked;
 };
 
-/** What a read counts while test money does not. */
 const liveMoney = (fetchPage: Parameters<typeof sumCharges>[0]) => sumCharges(fetchPage, false);
 
 describe("sumCharges", () => {
   it("follows the list past its first hundred", async () => {
     const asked: (string | null)[] = [];
+
     const revenue = await liveMoney((after) => {
       asked.push(after);
+
       return Promise.resolve(
         after === null
           ? { data: [charge("ch_1", 1000), charge("ch_2", 500)], has_more: true }
           : { data: [charge("ch_3", 250)], has_more: false },
       );
     });
+
     expect(revenue?.total).toBe(17.5);
     expect(asked).toEqual([null, "ch_2"]);
   });
@@ -101,6 +111,7 @@ describe("sumCharges", () => {
         ],
       }),
     );
+
     expect(revenue?.total).toBe(17.5);
     expect([...(revenue?.byProduct ?? [])]).toEqual([["app", 15]]);
   });
@@ -115,6 +126,7 @@ describe("sumCharges", () => {
         ],
       }),
     );
+
     expect(revenue?.total).toBe(7);
   });
 
@@ -127,6 +139,7 @@ describe("sumCharges", () => {
         ],
       }),
     );
+
     expect(revenue?.total).toBe(10);
     expect([...(revenue?.byProduct ?? [])]).toEqual([["app", 10]]);
     expect([...(revenue?.byBet ?? [])]).toEqual([
@@ -140,6 +153,7 @@ describe("sumCharges", () => {
         data: [{ ...charge("ch_1", 5000, { bet: "x", product: "app" }), amount_captured: 1000 }],
       }),
     );
+
     expect(revenue?.total).toBe(10);
     expect([...(revenue?.byBet ?? [])]).toEqual([
       ["x", [{ cents: 1000, created: 1_700_000_000_000 }]],
@@ -152,6 +166,7 @@ describe("sumCharges", () => {
         data: [{ ...charge("ch_1", 2000, { bet: "x", product: "app" }), currency: "jpy" }],
       }),
     );
+
     expect(revenue?.total).toBe(0);
     expect(revenue?.byProduct.size).toBe(0);
     expect(revenue?.byBet.size).toBe(0);
@@ -184,6 +199,7 @@ describe("sumCharges", () => {
         after === null ? { data: [charge("ch_1", 1000)], has_more: true } : "rate limited",
       ),
     );
+
     expect(revenue).toBeNull();
   });
 
@@ -196,6 +212,7 @@ describe("sumCharges", () => {
       metadata: { bet: "x" },
       paid: true,
     };
+
     const revenue = await liveMoney(() => Promise.resolve({ data: [undated] }));
     expect(revenue).toBeNull();
   });
@@ -204,6 +221,7 @@ describe("sumCharges", () => {
     const revenue = await liveMoney(() =>
       Promise.resolve({ data: [charge("ch_1", 100)], has_more: true }),
     );
+
     expect(revenue).toBeNull();
   });
 });
@@ -252,7 +270,7 @@ describe("stripeInTestMode", () => {
 
 describe("fetchRealMetrics", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", () => Promise.resolve(new Response("{}", { status: 401 })));
+    answerFetch(() => Promise.resolve(new Response("{}", { status: 401 })));
   });
   it("reports a refused key", async () => {
     const snap = await fetchRealMetrics("rolled", [], []);
@@ -276,8 +294,9 @@ describe("fetchRealMetrics reading Stripe", () => {
 
   it("reads every Stripe answer at the pinned API version", async () => {
     const versions: (string | null)[] = [];
-    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
+    answerFetch((_url: string, init: RequestInit) => {
       versions.push(new Headers(init.headers).get("Stripe-Version"));
+
       return Promise.resolve(Response.json({ data: [], total_count: 0 }));
     });
 
@@ -306,11 +325,14 @@ describe("fetchRealMetrics reading Stripe", () => {
       if (endpoint.startsWith("/v1/charges?limit=100&created[gte]=")) {
         return Response.json({ data: [charge("ch_new", 700, { bet: "pricing" })] });
       }
+
       if (endpoint.startsWith("/v1/charges")) {
         return Response.json({ data: [charge("ch_old", 5000), charge("ch_new", 700)] });
       }
+
       return Response.json({ total_count: 1 });
     });
+
     const bets = [revenueBet("pricing", 1_700_000_000_500), revenueBet("later", 1_800_000_000_000)];
 
     const snap = await fetchRealMetrics("bets", [], bets);
@@ -329,6 +351,7 @@ describe("fetchRealMetrics reading Stripe", () => {
         ? Response.json({ data: [{ ...charge("ch_1", 700, { bet: "pricing" }), livemode: false }] })
         : Response.json({ total_count: 1 }),
     );
+
     const credential = "sk_test_flag";
     const bets = [revenueBet("pricing", 0)];
 
@@ -351,6 +374,7 @@ describe("fetchRealMetrics reading Stripe", () => {
     const asked = stripe((endpoint) =>
       endpoint.includes("created[gte]") ? down() : Response.json({ data: [charge("ch_1", 900)] }),
     );
+
     const bets = [revenueBet("pricing", 0)];
 
     const snap = await fetchRealMetrics("flaky", [], bets);
@@ -390,6 +414,7 @@ describe("fetchRealMetrics reading Stripe", () => {
         ? Response.json({ data: [charge("ch_1", 100)], has_more: true })
         : Response.json({ total_count: 3 }),
     );
+
     const credential = "capped";
 
     const snap = await fetchRealMetrics(credential, [], []);
@@ -405,12 +430,15 @@ describe("fetchRealMetrics reading Stripe", () => {
 
   it("reads again once a revenue bet's window closed after the kept read", async () => {
     vi.useFakeTimers({ now: 1_000_000, toFake: ["Date"] });
+
     const asked = stripe((endpoint) =>
       endpoint.startsWith("/v1/charges")
         ? Response.json({ data: [{ ...charge("ch_1", 700, { bet: "pricing" }), created: 900 }] })
         : Response.json({ total_count: 1 }),
     );
+
     const credential = "closing";
+
     const closing: Bet = {
       ...revenueBet("pricing", 0),
       state: { kind: "measuring", until: 1_060_000 },
@@ -444,6 +472,7 @@ describe("fetchRealMetrics reading Stripe", () => {
           })
         : Response.json({ total_count: 1 }),
     );
+
     const asleep: Bet = {
       ...revenueBet("pricing", 0),
       readAt: closes - 3_600_000,
@@ -491,6 +520,7 @@ describe("fetchRealMetrics reading Vercel", () => {
   const opened = Date.UTC(2026, 8, 21, 12);
   const closes = opened + 15 * HOUR;
   const woke = closes + 6 * HOUR;
+
   const app: Product = {
     createdAt: 0,
     description: "An app.",
@@ -503,12 +533,14 @@ describe("fetchRealMetrics reading Vercel", () => {
     vercel: { projectId: "prj_app", projectName: "app", teamId: null },
     workspaceDir: root,
   };
-  const usersBet = (id: string, state: Bet["state"]): Bet => ({
-    ...revenueBet(id, opened),
-    claim: { landingPath: `/b/${id}`, metric: "users" },
-    state,
-    target: 50,
-  });
+
+  const usersBet = (id: string, state: Bet["state"]) =>
+    ({
+      ...revenueBet(id, opened),
+      claim: { landingPath: `/b/${id}`, metric: "users" },
+      state,
+      target: 50,
+    }) satisfies Bet;
 
   beforeEach(() => writeFileSync(secretsFile, '{"VERCEL_TOKEN":"token"}'));
   afterEach(() => {
@@ -522,8 +554,10 @@ describe("fetchRealMetrics reading Vercel", () => {
       id: "shop",
       vercel: { projectId: "prj_shop", projectName: "shop", teamId: null },
     };
-    vi.stubGlobal("fetch", (url: string) => {
+
+    answerFetch((url: string) => {
       const project = new URL(url).searchParams.get("projectId");
+
       return Promise.resolve(
         project === "prj_shop" ? down() : Response.json({ data: { visitors: 400 } }),
       );
@@ -542,6 +576,7 @@ describe("fetchRealMetrics reading Vercel", () => {
       id: "shop",
       vercel: { projectId: "prj_shop", projectName: "shop", teamId: null },
     };
+
     visits([1, 2]);
 
     const snap = await fetchRealMetrics(
@@ -565,6 +600,7 @@ describe("fetchRealMetrics reading Vercel", () => {
         usersBet("promo", { kind: "open" }),
       ],
     );
+
     const until = (landing: string) =>
       asked.find((query) => query.get("filter")?.includes(landing))?.get("until");
 
@@ -580,6 +616,7 @@ describe("fetchRealMetrics reading Vercel", () => {
       ...Array.from({ length: 3 }, () => closes - HOUR),
       ...Array.from({ length: 6 }, () => closes + HOUR),
     ]);
+
     const asleep: Bet = {
       ...usersBet("launch", { kind: "measuring", until: closes }),
       readAt: lastRead,

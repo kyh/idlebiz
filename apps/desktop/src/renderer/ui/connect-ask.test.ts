@@ -27,6 +27,7 @@ it("asks for a live key while the saved one is a test one, refused or not", () =
     resumes:
       "Stripe is in test mode, where no charge counts: their task resumes once a live key replaces the test one.",
   };
+
   expect(connectAskCopy("stripe", testKey)).toEqual(copy);
   expect(connectAskCopy("stripe", { ...testKey, state: "refused" })).toEqual(copy);
 });

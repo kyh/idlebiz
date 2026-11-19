@@ -20,34 +20,41 @@ export class HttpError extends Error {
   }
 
   /** 401/403: the credential was turned away, as opposed to the service being down. */
-  get refused(): boolean {
+  get refused() {
     return this.status === 401 || this.status === 403;
   }
 }
 
-const failure = async (res: Response, url: string): Promise<HttpError> => {
+const failure = async (res: Response, url: string) => {
   try {
-    return new HttpError(res.status, url, res.headers, parseJson(await res.text()));
+    return new HttpError(
+      res.status,
+      url,
+      res.headers,
+      parseJson(await res.text()),
+    ) satisfies HttpError;
   } catch {
-    return new HttpError(res.status, url, res.headers);
+    return new HttpError(res.status, url, res.headers) satisfies HttpError;
   }
 };
 
 /** `fetch` that throws HttpError on any non-2xx status. */
-export const fetchOk = async (url: string, init: RequestInit): Promise<Response> => {
+export const fetchOk = async (url: string, init: RequestInit) => {
   const res = await fetch(url, init);
+
   if (!res.ok) {
     throw await failure(res, url);
   }
+
   return res;
 };
 
-/** The hard timeout on each JSON call below. */
 const TIMEOUT_MS = 8000;
 
 /** GET a JSON endpoint with a hard timeout; throws HttpError on any non-2xx status. */
-export const getJson = async (url: string, headers: Record<string, string>): Promise<JsonValue> => {
+export const getJson = async (url: string, headers: Record<string, string>) => {
   const res = await fetchOk(url, { headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
+
   return jsonValueSchema.parse(await res.json());
 };
 
@@ -56,14 +63,18 @@ export const postFormAnswer = async (
   url: string,
   headers: Record<string, string>,
   form: Readonly<Record<string, string>>,
-): Promise<{ body: JsonValue; headers: Headers }> => {
+) => {
   const res = await fetchOk(url, {
     body: new URLSearchParams(form),
     headers,
     method: "POST",
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
-  return { body: jsonValueSchema.parse(await res.json()), headers: res.headers };
+
+  return { body: jsonValueSchema.parse(await res.json()), headers: res.headers } satisfies {
+    body: JsonValue;
+    headers: Headers;
+  };
 };
 
 /** POST a form to a JSON endpoint with a hard timeout; throws HttpError on any non-2xx status. */
@@ -71,21 +82,23 @@ export const postForm = async (
   url: string,
   headers: Record<string, string>,
   form: Readonly<Record<string, string>>,
-): Promise<JsonValue> => {
+) => {
   const { body } = await postFormAnswer(url, headers, form);
+
   return body;
 };
 
 /** Bind `what`'s server to an ephemeral loopback port and return the port. */
-export const listenLoopback = async (server: Server, what: string): Promise<number> => {
+export const listenLoopback = async (server: Server, what: string) => {
   await listening(server, what, () => {
     server.listen(0, "127.0.0.1");
   });
-  // address() is AddressInfo | string | null; only the object form has a port
   const address = z.object({ port: z.number() }).safeParse(server.address());
+
   if (!address.success) {
     server.close();
     throw new Error("loopback server failed to bind");
   }
+
   return address.data.port;
 };

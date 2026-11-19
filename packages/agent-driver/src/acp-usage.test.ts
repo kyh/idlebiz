@@ -18,29 +18,29 @@ afterEach(() => {
   rmSync(cwd, { force: true, recursive: true });
 });
 
-const used = (tokens: number): Extract<SessionUpdate, { sessionUpdate: "usage_update" }> => ({
-  sessionUpdate: "usage_update",
-  size: 400_000,
-  used: tokens,
-});
+const used = (tokens: number) =>
+  ({
+    sessionUpdate: "usage_update",
+    size: 400_000,
+    used: tokens,
+  }) satisfies Extract<SessionUpdate, { sessionUpdate: "usage_update" }>;
 
-/**
- * A turn shaped like codex-acp's: resuming replays one usage update, the turn sends one per model
- * request (the second repeated), and the response covers only the last.
- */
 const meteredTurn = (perRequest: boolean) => {
   const meter = usageMeter(perRequest);
   meter.onUpdate(used(90_000));
   meter.startPrompt();
+
   for (const tokens of [1000, 2000, 2000, 3000]) {
     meter.onUpdate(used(tokens));
   }
+
   meter.onResponse({
     cachedReadTokens: 1500,
     inputTokens: 900,
     outputTokens: 600,
     totalTokens: 3000,
   });
+
   return meter.total();
 };
 
@@ -89,7 +89,6 @@ describe("a turn's token usage", () => {
   });
 });
 
-/** An ACP agent that runs the turn `meteredTurn` describes, over the wire. */
 const codexLikeAgent = `
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
 const used = (sessionId, tokens) =>
@@ -128,12 +127,12 @@ describe("a resumed turn the agent answered", () => {
       resumeSessionId: "stored",
       teardownGraceMs: 100,
     });
+
     expect(result).toMatchObject({ end: { kind: "completed" }, resumed: true });
     expect(result.usage).toEqual(meteredTurn(true));
   });
 });
 
-/** An agent that reports three requests' usage, then works on until the watchdog cuts the turn off. */
 const cutOffAgent = `
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
 require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
@@ -189,6 +188,7 @@ describe("priceUsage", () => {
       inputTokens: 2_000_000,
       outputTokens: 500_000,
     };
+
     expect(priceUsage(RUNNERS.codex.fallbackRates, usage)).toBeCloseTo(0.125 + 2.5 + 5);
   });
 });

@@ -35,9 +35,11 @@ const RoomLine = ({
   employees: readonly Employee[];
 }) => {
   const { from, text } = message;
+
   if (from.kind === "office") {
     return <div className="text-xs leading-snug text-fg-dim">{text}</div>;
   }
+
   return (
     <div className="text-xs leading-snug">
       <span className="text-name">
@@ -57,6 +59,7 @@ export const Teams = ({ onClose }: { onClose: () => void }) => {
 
   useEffect(() => {
     const el = scrollRef.current;
+
     if (el && newest !== undefined) {
       el.scrollTo({ top: el.scrollHeight });
     }
@@ -65,6 +68,7 @@ export const Teams = ({ onClose }: { onClose: () => void }) => {
   if (!company) {
     return null;
   }
+
   const headcount = `${employees.length} ${employees.length === 1 ? "person" : "people"}`;
   const quiet = failure ?? "Quiet so far.";
 

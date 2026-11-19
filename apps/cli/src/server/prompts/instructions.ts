@@ -1,7 +1,6 @@
 import type { BusinessTypeId, Company, Employee, Product } from "@repo/domain/domain";
 import { EXIT_CODES_DOC, toolDocs } from "../tool-specs";
 
-/** How each kind of business turns its work into a real dollar, with the tools the team has. */
 const BUSINESS_MODELS = {
   custom:
     "Whatever the business is, it earns through the same tools as every business here: create_payment_link for anything sold once, sell_print for a printed item shipped to US buyers. Pick what fits it.",
@@ -17,18 +16,19 @@ const BUSINESS_MODELS = {
 const NO_MISSION =
   "The founder gave no pitch: what the company builds is the lead's pick, tried through bets that the numbers keep or kill. The team room and each product's AGENTS.md say what it is.";
 
-// Rendered into AGENTS.md by the store, and sent to a session by `turnPrompt`.
 export const standingInstructions = (input: {
   employee: Employee;
   company: Company;
   products: readonly Product[];
   lead: boolean;
   memoryDir: string;
-}): string => {
+}) => {
   const { employee: e, company: co, products, lead, memoryDir } = input;
+
   const productList = products
     .map((p) => `- **${p.name}** (\`${p.id}\`) — ${p.description}\n  Workspace: ${p.workspaceDir}`)
     .join("\n");
+
   return `# ${e.name} — ${e.title || e.role}
 
 You are ${e.name}, the ${e.title || e.role} at "${co.name}", a startup.
@@ -171,10 +171,12 @@ export const turnPrompt = ({
   instructions: string;
   resumed: boolean;
   task: string;
-}): string => {
+}) => {
   if (!instructions || (resumed && !changed)) {
     return task;
   }
+
   const lead = resumed ? "Your standing instructions changed. They now read:\n\n" : "";
+
   return `${lead}${instructions}\n\n---\n\nYOUR TASK:\n\n${task}`;
 };

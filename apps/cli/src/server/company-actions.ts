@@ -1,3 +1,4 @@
+import { unreachable } from "@repo/domain/errors";
 import * as store from "./store/store";
 import { publishActivity } from "./activity";
 import { report } from "./lib/report";
@@ -15,7 +16,6 @@ import type {
   Company,
   Employee,
   OrderCardSubject,
-  Product,
   ProductDraft,
   Speaker,
   Task,
@@ -23,18 +23,13 @@ import type {
 import type { CompanyLink } from "./link-record";
 import { RefusalError } from "./refusal";
 
-// A change to the company that everyone should hear about: the store mutation,
-// the activity event and the team-room line, together. The scheduler, the
-// agents' tools and the founder's calls from the page all come through here, so
-// a change reads the same whoever made it.
-
 /**
  * A line in the team room, the only way one is written, so the room agents read
  * and the founder's #team feed hear the same lines. The room keeps it whole, since
  * agents act on it; only the feed's event is capped. `to` names the teammate it is
  * handed to, if any.
  */
-export const postToRoom = (from: Speaker, text: string, to: string | null = null): void => {
+export const postToRoom = (from: Speaker, text: string, to: string | null = null) => {
   const { id } = store.postTeamMessage(from, text);
   publishActivity({
     employeeId: from.kind === "employee" ? from.id : null,
@@ -44,7 +39,7 @@ export const postToRoom = (from: Speaker, text: string, to: string | null = null
   });
 };
 
-export const announceBet = (bet: Bet): void => {
+export const announceBet = (bet: Bet) => {
   publishActivity({
     kind: "bet.changed",
     message: bet.title,
@@ -54,14 +49,15 @@ export const announceBet = (bet: Bet): void => {
 };
 
 /** Give up on a live bet, from the lead's tool or the founder's panel. */
-export const killBet = (betId: string, reason: string): Bet => {
+export const killBet = (betId: string, reason: string) => {
   const killed = store.killBet(betId, reason, Date.now());
   announceBet(killed);
+
   return killed;
 };
 
 /** Start a product, from the lead's tool or the founder's panel. */
-export const startProduct = (input: ProductDraft, by: string | null): Product => {
+export const startProduct = (input: ProductDraft, by: string | null) => {
   const product = store.createProduct(input);
   publishActivity({
     employeeId: by,
@@ -73,11 +69,12 @@ export const startProduct = (input: ProductDraft, by: string | null): Product =>
     by === null ? { kind: "founder" } : { id: by, kind: "employee" },
     `🆕 New product: ${product.name} — ${product.description}`,
   );
+
   return product;
 };
 
 /** The lead names a product once they know what it is, most often the first one of a company with no pitch. */
-export const nameProduct = (productId: string, named: ProductDraft, by: Employee): Product => {
+export const nameProduct = (productId: string, named: ProductDraft, by: Employee) => {
   const product = store.nameProduct(productId, named);
   publishActivity({
     employeeId: by.id,
@@ -89,17 +86,19 @@ export const nameProduct = (productId: string, named: ProductDraft, by: Employee
     { kind: "office" },
     `🏷 ${by.name} named the product: ${product.name} — ${product.description}`,
   );
+
   return product;
 };
 
 /** Turn autopilot on or off, from the HUD or the tray. */
-export const setAutopilot = (on: boolean): Company => {
-  // the next tick would halt it again, so starting would read as the office stopping on its own
+export const setAutopilot = (on: boolean) => {
   if (on && isOutOfBudget(store.requireCompany())) {
     throw new RefusalError("Out of budget — raise the cap in Budget first.");
   }
+
   const company = store.setAutopilot(on);
   publishActivity({ kind: "autopilot.changed", payload: { on } });
+
   return company;
 };
 
@@ -107,21 +106,23 @@ export const ship = (
   task: Task,
   at: { runId: string; taskId: string; employeeId: string },
   summary: string,
-): void => {
+) => {
   const message = (summary || "shipped work").slice(0, 200);
   store.recordShip(task.productId, message);
   publishActivity({ ...at, kind: "ship", message });
   const ships = store.getCompany()?.ships ?? 0;
+
   if (ships > 0 && ships % 10 === 0) {
     postToRoom({ kind: "office" }, `🎉 Milestone: ${ships} things shipped — keep going!`);
   }
 };
 
 /** Pause autopilot at the cap; running turns finish and report their cost. */
-export const haltForBudget = (company: Company): void => {
+export const haltForBudget = (company: Company) => {
   if (!company.autopilot) {
     return;
   }
+
   store.setAutopilot(false);
   publishActivity({
     kind: "budget.exhausted",
@@ -136,19 +137,23 @@ const PUMP_CARD_TITLES = {
   "unreadable-checkouts": "Paid orders can't be read from Stripe",
 } satisfies Record<Extract<OrderCardSubject, { kind: "pump" }>["reason"], string>;
 
-/** A card's title, copy for the founder: an order is named by its id's first 8 characters in every card about it. */
-const orderCardTitle = (subject: OrderCardSubject): string => {
+const orderCardTitle = (subject: OrderCardSubject) => {
   switch (subject.kind) {
     case "order": {
       return `Order ${subject.orderId.slice(0, 8)}: ${subject.trouble}`;
     }
+
     case "link-left-on": {
       return `Switch off payment link ${subject.linkId}`;
     }
+
     case "pump": {
       return PUMP_CARD_TITLES[subject.reason];
     }
-    // no default
+
+    default: {
+      return unreachable(subject);
+    }
   }
 };
 
@@ -156,12 +161,10 @@ const orderCardTitle = (subject: OrderCardSubject): string => {
  * Hand the founder a card about paid orders: the Inbox shows it beside the team's asks, and
  * the digest counts it. None when one about the same subject still waits.
  */
-export const raiseOrderCard = (
-  subject: OrderCardSubject,
-  ask: Omit<ActionAsk, "type">,
-): Task | null => {
+export const raiseOrderCard = (subject: OrderCardSubject, ask: Omit<ActionAsk, "type">) => {
   const title = orderCardTitle(subject);
   const card = store.raiseOrderCard(subject, title, { ...ask, type: "action" });
+
   if (card) {
     publishActivity({
       kind: "order.card",
@@ -169,6 +172,7 @@ export const raiseOrderCard = (
       payload: { open: true, taskId: card.id },
     });
   }
+
   return card;
 };
 
@@ -176,13 +180,15 @@ export const raiseOrderCard = (
  * Refuse what the founder typed for the team (the room, an answer, an action's reply) when it
  * holds a key IdleBiz itself uses: every run reads those, and the prompts carry them out.
  */
-export const refuseHeldKey = (text: string): void => {
+export const refuseHeldKey = (text: string) => {
   const held = heldKeyIn(text);
+
   if (held !== null) {
     throw new RefusalError(
       `Nothing was sent: that holds IdleBiz's own ${held}, which never leaves IdleBiz, and your team reads what you send. IdleBiz already uses it for them; a key goes in where IdleBiz asks for it (the Budget panel, a product's Vercel button).`,
     );
   }
+
   if (holdsStripeSecretKey(text)) {
     throw new RefusalError(
       "Nothing was sent: that holds a Stripe secret key (sk_), which can charge, refund and pay out on your whole account, and your team reads what you send. A Stripe key the team asks for is a restricted one (rk_): Create restricted key in Stripe's dashboard, start from no permissions, and grant only what they named.",
@@ -190,12 +196,11 @@ export const refuseHeldKey = (text: string): void => {
   }
 };
 
-const replyText = (reply: ActionReply): string =>
-  reply.kind === "cant" ? reply.reason : reply.note;
+const replyText = (reply: ActionReply) => (reply.kind === "cant" ? reply.reason : reply.note);
 
-/** The founder's Done on a link's switch-off card says they switched it off in Stripe's dashboard. */
-const switchedOffByHand = (linkId: string): void => {
+const switchedOffByHand = (linkId: string) => {
   const held = store.paymentLinks().find((l) => l.link.id === linkId);
+
   if (held?.link.state.kind === "left-on") {
     store.setLinkState(held, { at: Date.now(), by: "founder", kind: "switched-off" });
   }
@@ -205,48 +210,51 @@ const switchedOffByHand = (linkId: string): void => {
  * The founder settled an order card. No run carries it on, so what they said goes to the room,
  * where whoever answers the buyer reads it.
  */
-export const settleOrderCard = (taskId: string, reply: ActionReply): Task => {
+export const settleOrderCard = (taskId: string, reply: ActionReply) => {
   const said = replyText(reply);
-  // no order card asks for a Stripe key, secret or restricted
+
   if (holdsStripeKey(said)) {
     throw new RefusalError(
       "Nothing was sent: that holds a Stripe key, and what you type here goes to the team room. A key goes in the Budget panel; press Done here with no key once it is saved.",
     );
   }
+
   refuseHeldKey(said);
   const card = store.closeOrderCard(taskId);
+
   if (!card) {
     throw new RefusalError("that order card is already settled");
   }
+
   if (reply.kind === "done" && card.subject.kind === "link-left-on") {
     switchedOffByHand(card.subject.linkId);
   }
+
   const told =
     reply.kind === "cant" ? `couldn't — ${said}` : `done${said === "" ? "" : ` — ${said}`}`;
+
   postToRoom({ kind: "founder" }, `📦 ${card.title}: ${told}`);
   publishActivity({
     kind: "order.card",
     message: card.title,
     payload: { open: false, taskId: card.id },
   });
+
   return card;
 };
 
 const office: Speaker = { kind: "office" };
 
-/**
- * Hand the founder a link Stripe would not switch off, to switch off by hand; a test-mode link
- * takes no real money, so the room hears instead. The card is raised before the link is marked,
- * since cards dedupe by subject and the mark is what stops the next sweep asking Stripe again.
- */
-const leaveOn = (held: CompanyLink, why: string): void => {
+const leaveOn = (held: CompanyLink, why: string) => {
   const { link } = held;
   const named = `${JSON.stringify(link.name)} (${link.url})`;
+
   if (link.livemode) {
     const sells =
       held.kind === "print"
         ? "it takes money, and each order paid through it still goes to Printful"
         : "it takes money";
+
     raiseOrderCard(
       { kind: "link-left-on", linkId: link.id },
       {
@@ -261,21 +269,24 @@ const leaveOn = (held: CompanyLink, why: string): void => {
       `🧪 Test payment link ${named} of retired ${link.productId} stays on: ${why}.`,
     );
   }
+
   store.setLinkState(held, { kind: "left-on", why });
 };
 
-// ten sweeps is about five minutes of pulses: long enough to ride out a burst of 429s or a blip,
-// short enough that the founder hears of a link still taking money while it matters
 const MAX_SWITCH_OFF_TRIES = 10;
 
-const switchOff = async (held: CompanyLink, key: string | null): Promise<void> => {
+const switchOff = async (held: CompanyLink, key: string | null) => {
   const { link } = held;
+
   try {
     if (key === null) {
       leaveOn(held, "IdleBiz has no Stripe key");
+
       return;
     }
+
     const done = await switchOffPaymentLink(key, link.id);
+
     switch (done.kind) {
       case "off": {
         store.setLinkState(held, { at: Date.now(), by: "idlebiz", kind: "switched-off" });
@@ -285,36 +296,44 @@ const switchOff = async (held: CompanyLink, key: string | null): Promise<void> =
         );
         break;
       }
+
       case "refused": {
         leaveOn(held, done.reason);
         break;
       }
+
       case "unanswered": {
         const tries = (link.state.kind === "retrying" ? link.state.tries : 0) + 1;
+
         if (tries >= MAX_SWITCH_OFF_TRIES) {
           leaveOn(held, `Stripe did not answer ${tries} times (${done.reason})`);
         } else {
           store.setLinkState(held, { kind: "retrying", tries, why: done.reason });
         }
+
         break;
       }
-      // no default
+
+      default: {
+        return unreachable(done);
+      }
     }
   } catch (error) {
     report(`payment link ${link.id}`, error);
   }
 };
 
-const sweepRetiredLinks = async (): Promise<void> => {
+const sweepRetiredLinks = async () => {
   if (store.getCompany() === null) {
     return;
   }
+
   const key = getSecret(STRIPE_SECRET_KEY);
+
   if (key === null && hasSecret(STRIPE_SECRET_KEY)) {
-    // a key this launch cannot open (no Keychain, or it refused) is still the founder's: its
-    // links wait for it rather than be handed over as keyless, and boot's report says why
     return;
   }
+
   const due = store
     .paymentLinks()
     .filter(
@@ -322,14 +341,15 @@ const sweepRetiredLinks = async (): Promise<void> => {
         (link.state.kind === "selling" || link.state.kind === "retrying") &&
         store.isRetiredProduct(link.productId),
     );
-  // one at a time: a burst of switch-offs is what Stripe's rate limit turns away
+
   for (const held of due) {
     await switchOff(held, key);
   }
 };
 
-const sweepReported = async (after: Promise<void>): Promise<void> => {
+const sweepReported = async (after: Promise<void>) => {
   await after;
+
   try {
     await sweepRetiredLinks();
   } catch (error) {
@@ -345,8 +365,9 @@ let lastSweep: Promise<void> = Promise.resolve();
  * Retirement asks, and so does every pulse, which finishes what a quit cut short. Each sweep
  * waits for the last, so two never ask Stripe about one link at once. Never rejects.
  */
-export const switchOffRetiredLinks = (): Promise<void> => {
+export const switchOffRetiredLinks = () => {
   lastSweep = sweepReported(lastSweep);
+
   return lastSweep;
 };
 
@@ -355,15 +376,13 @@ export const switchOffRetiredLinks = (): Promise<void> => {
  * retirement never waits on Stripe, only the answer does. `by` is the lead who called it; null
  * is the founder.
  */
-export const retireProduct = async (
-  productId: string,
-  reason: string,
-  by: string | null,
-): Promise<Product> => {
+export const retireProduct = async (productId: string, reason: string, by: string | null) => {
   const product = store.requireProduct(productId);
+
   for (const bet of store.killProduct(productId, reason, by)) {
     announceBet(bet);
   }
+
   postToRoom(
     by === null ? { kind: "founder" } : { id: by, kind: "employee" },
     `🪦 Retired ${product.name} — ${reason}`,
@@ -375,5 +394,6 @@ export const retireProduct = async (
     payload: { productId, reason },
   });
   await switchOffRetiredLinks();
+
   return product;
 };

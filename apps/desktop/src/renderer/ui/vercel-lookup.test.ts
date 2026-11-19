@@ -7,7 +7,8 @@ import type { Listing } from "./vercel-lookup";
 const project: VercelProject = { id: "prj_1", name: "acme" };
 const listed: VercelListing = { account: "kai", kind: "loaded", projects: [project] };
 
-const answered = (data: VercelListing): Listing => ({ data, error: null, isFetching: false });
+const answered = (data: VercelListing) =>
+  ({ data, error: null, isFetching: false }) satisfies Listing;
 
 describe("the Vercel picker's lookup", () => {
   it("shows a fault reading the saved token instead of asking for a paste", () => {
@@ -16,6 +17,7 @@ describe("the Vercel picker's lookup", () => {
       error: new Error("Failed to fetch"),
       isFetching: false,
     });
+
     expect(lookup).toEqual({ message: "Failed to fetch", state: "error" });
     expect(problemOf(lookup)).toBe("Failed to fetch");
   });
@@ -47,12 +49,13 @@ describe("the Vercel picker's lookup", () => {
 
 const waiting = (ask: BlockedAsk) => ({ state: { ask } });
 
-const vercelFor = (about: string | null): BlockedAsk => ({
-  integration: "vercel",
-  productId: about,
-  reason: "Vercel turned IdleBiz's token away while checking Acme's domains",
-  type: "integration",
-});
+const vercelFor = (about: string | null) =>
+  ({
+    integration: "vercel",
+    productId: about,
+    reason: "Vercel turned IdleBiz's token away while checking Acme's domains",
+    type: "integration",
+  }) satisfies BlockedAsk;
 
 describe("a product bound to Vercel", () => {
   it("takes a new token while the team waits on Vercel for it, or for no product named", () => {

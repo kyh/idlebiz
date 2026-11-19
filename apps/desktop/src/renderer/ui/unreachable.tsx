@@ -3,11 +3,10 @@ import { useSubmission } from "@/renderer/hooks/use-submission";
 import { refresh } from "@/renderer/state/store";
 import { Curtain } from "@/renderer/ui/curtain";
 
-// Not onboarding: a company main failed to report may still be on disk, and a
-// fresh start would stack a second one on it.
 export const Unreachable = ({ message }: { message: string }) => {
   const { submission, submit } = useSubmission(refresh);
   const retrying = submission.kind === "sending";
+
   return (
     <Curtain>
       <AlertDialog.Title className="text-base text-fg">

@@ -1,5 +1,3 @@
-// How the page reaches main: the contract's procedures, on the page's own origin.
-
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { ContractRouterClient } from "@orpc/contract";

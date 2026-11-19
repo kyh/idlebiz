@@ -12,13 +12,13 @@ import {
   CLAUDE_RATE_LIMITED_UPDATE,
 } from "./claude-rate-limit.fixture";
 
-// noon in Los Angeles
 const now = new Date("2026-09-23T19:00:00Z");
-const minutes = (n: number): number => now.getTime() + n * 60_000;
+const minutes = (n: number) => now.getTime() + n * 60_000;
 
 describe("classOfRequestError", () => {
   it("reads ACP's sign-in code and claude's refused logins as auth", () => {
     expect(classOfRequestError(RequestError.authRequired())).toBe("auth");
+
     for (const errorKind of ["authentication_failed", "oauth_org_not_allowed"]) {
       expect(classOfRequestError(RequestError.internalError({ errorKind }))).toBe("auth");
     }
@@ -55,6 +55,7 @@ describe("classOfRequestError", () => {
       { errorKind: "unknown" },
       "You've hit your weekly limit · resets 3pm (America/Los_Angeles)",
     );
+
     expect(classOfRequestError(weekly)).toBe("usage-limit");
     expect(classOfRequestError(RequestError.internalError({ errorKind: "server_error" }))).toBe(
       "other",
@@ -62,7 +63,6 @@ describe("classOfRequestError", () => {
     expect(classOfRequestError(RequestError.internalError(undefined, "Session not found"))).toBe(
       "other",
     );
-    // a kind this build does not know is no claim
     expect(
       classOfRequestError(RequestError.internalError({ errorKind: "brand_new" }, "Overloaded")),
     ).toBe("overloaded");
@@ -104,7 +104,7 @@ describe("rateLimitResetIn", () => {
     for (const status of ["allowed", "allowed_warning"]) {
       expect(rateLimitResetIn({ ..._meta, "_claude/rateLimit": { ...info, status } })).toBeNull();
     }
-    // still refused with no reset named: a reset an earlier update named must stand
+
     expect(rateLimitResetIn({ "_claude/rateLimit": { status: "rejected" } })).toBeUndefined();
     expect(rateLimitResetIn(null)).toBeUndefined();
     expect(rateLimitResetIn({ other: true })).toBeUndefined();

@@ -1,45 +1,39 @@
-// A packaged IdleBiz's menu-bar item and boxes as the founder meets them, on a macOS host whose
-// terminal may drive it: the item opened with a click posted at it, its menu and the boxes read and
-// clicked through System Events' UI scripting (osascript). The item is the one trigger of an update
-// a smoke can reach: the page's session comes from a handoff only the shell's window is given, and
-// the app takes no switch that installs one.
-
 import { spawnSync } from "node:child_process";
 
-// the shell's process, as System Events names it
 const PROCESS = "IdleBiz";
-// one osascript call, past its own wait for a menu to open
 const OSASCRIPT_TIMEOUT_MS = 10_000;
 
-/** Runs `script`, in `language`, with `args` as its `argv`, failing with what osascript said. */
 const osascript = (
   what: string,
   script: string,
   args: readonly string[] = [],
   language: "AppleScript" | "JavaScript" = "AppleScript",
-): string => {
+) => {
   const ran = spawnSync("/usr/bin/osascript", ["-l", language, "-", PROCESS, ...args], {
     encoding: "utf-8",
     input: script,
     timeout: OSASCRIPT_TIMEOUT_MS,
   });
+
   if (ran.error !== undefined) {
     throw new Error(`osascript did not ${what} within ${OSASCRIPT_TIMEOUT_MS}ms`, {
       cause: ran.error,
     });
   }
+
   if (ran.status !== 0) {
     throw new Error(
       `osascript could not ${what} (it exited ${ran.status ?? ran.signal}): ${ran.stderr.trim()}`,
     );
   }
+
   return ran.stdout.replace(/\n$/u, "");
 };
 
-const lines = (text: string): string[] => text.split("\n").filter((line) => line !== "");
+const lines = (text: string) => text.split("\n").filter((line) => line !== "");
 
 /** Whether System Events answers UI scripting here: without it no menu can be read or clicked. */
-export const axReady = (): boolean => {
+export const axReady = () => {
   try {
     return (
       osascript(
@@ -52,11 +46,6 @@ export const axReady = (): boolean => {
   }
 };
 
-// Posts a left click at the menu-bar item's centre, as a mouse makes one. tray-icon gives the item
-// its menu only while its own view handles a real mouse-down (its macOS `on_tray_click`), so a
-// System Events click, an accessibility press of the item's button, opens nothing. The numbers are
-// CGEventTypes.h's: a move, a left down and up, the left button, and the tap a mouse's events enter
-// at. It says where it clicked and whether macOS lets osascript post events, where macOS says
 const PRESS = `
 ObjC.import("CoreGraphics");
 function run(argv) {
@@ -76,9 +65,6 @@ function run(argv) {
 }
 `;
 
-// Waits for the menu the click opened, then reads it and clicks the first item whose name starts
-// with argv's third, or closes it; a failed read closes it too. A separator has no name, and the
-// update item's ends in an ellipsis (U+2026)
 const MENU = `
 on run argv
   set appName to item 1 of argv
@@ -116,9 +102,9 @@ on run argv
 end run
 `;
 
-/** Opens the menu-bar item's menu with a click, then has MENU read it and do `args`'s. */
-const trayMenu = (what: string, args: readonly string[]): string[] => {
+const trayMenu = (what: string, args: readonly string[]) => {
   const pressed = osascript("click IdleBiz's menu-bar item", PRESS, [], "JavaScript");
+
   try {
     return lines(osascript(what, MENU, args));
   } catch (error) {
@@ -129,12 +115,12 @@ const trayMenu = (what: string, args: readonly string[]): string[] => {
 };
 
 /** The names the menu-bar item's menu shows, in order, separators left out. */
-export const trayItems = (): string[] => trayMenu("read IdleBiz's menu-bar item", ["read"]);
+export const trayItems = () => trayMenu("read IdleBiz's menu-bar item", ["read"]);
 
 /** Clicks the menu-bar item's first item whose name starts with `prefix`, as the founder would. */
-export const clickTrayItem = (prefix: string): void => {
+export const clickTrayItem = (prefix: string) => {
   const names = trayMenu(`click "${prefix}" in IdleBiz's menu`, ["click", prefix]);
-  // as AppleScript's `starts with` matched it, ignoring case
+
   if (!names.some((name) => name.toLowerCase().startsWith(prefix.toLowerCase()))) {
     throw new Error(
       `IdleBiz's menu-bar item offers nothing starting "${prefix}":\n  ${names.join("\n  ")}`,
@@ -142,9 +128,6 @@ export const clickTrayItem = (prefix: string): void => {
   }
 };
 
-// Every UI element under `theElement`, walked through `UI elements` a level at a time and at most
-// eight deep: on CI `entire contents` listed nothing of UserNotificationCenter's AXSystemDialog,
-// where scripts that click such an alert's OK reach it as a UI element of the window
 const ELEMENTS_UNDER = `
 on elementsUnder(theElement, depth)
   set found to {}
@@ -164,14 +147,6 @@ on elementsUnder(theElement, depth)
 end elementsUnder
 `;
 
-// A box the shell shows (host.rs, updater.rs, shell.rs) is a dialog with no parent window, which
-// rfd hands CFUserNotificationDisplayAlert, so UserNotificationCenter draws it, not IdleBiz: one of
-// its windows whose header (the box's title) starts with the app's name. A window of IdleBiz's own
-// but the office's counts too, should a box ever get a parent. Its OK and texts (static, or a text
-// area for a long message) are found wherever they sit in it, a group on some macOS releases. The
-// office's window is skipped, since walking its page's whole tree would take each poll seconds.
-// The OK is kept by its contents, as MENU keeps its item: the loop's variable is only a reference
-// into a list the loop is done with
 const BOXES = `${ELEMENTS_UNDER}
 on run argv
   set appName to item 1 of argv
@@ -229,9 +204,6 @@ on run argv
 end run
 `;
 
-// every window of IdleBiz's and of UserNotificationCenter's, by process, subrole, title and count of
-// children, and each element of each but the office's by class, role, name, value and description,
-// for a failure to say what was on screen when no box was found
 const WINDOWS = `${ELEMENTS_UNDER}
 on run argv
   set appName to item 1 of argv
@@ -284,9 +256,10 @@ end run
  * Each window IdleBiz and UserNotificationCenter show now and what the ones but the office's hold,
  * or why none could be read.
  */
-export const describeWindows = (): string => {
+export const describeWindows = () => {
   try {
     const described = osascript("describe IdleBiz's and UserNotificationCenter's windows", WINDOWS);
+
     return described === "" ? "neither shows a window" : described;
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
@@ -294,17 +267,15 @@ export const describeWindows = (): string => {
 };
 
 /** The texts of every box IdleBiz shows now, "" when it shows none. */
-export const dialogText = (): string => osascript("read IdleBiz's boxes", BOXES, ["read"]);
+export const dialogText = () => osascript("read IdleBiz's boxes", BOXES, ["read"]);
 
 /** Clicks OK in a box IdleBiz shows, failing when it shows none. */
-export const dismissDialog = (): void => {
+export const dismissDialog = () => {
   if (osascript("dismiss IdleBiz's box", BOXES, ["dismiss"]) !== "dismissed") {
     throw new Error("IdleBiz shows no box with an OK button to dismiss");
   }
 };
 
-// SecurityAgent draws the Keychain's prompts: one open means a launch is held on a read of a key
-// its vault was not let read silently
 const PROMPTS = `
 on run argv
   tell application "System Events"
@@ -315,5 +286,4 @@ end run
 `;
 
 /** Whether the Keychain is asking for a password or an allow in a window of its own. */
-export const securityPromptShown = (): boolean =>
-  osascript("look for a Keychain prompt", PROMPTS) !== "0";
+export const securityPromptShown = () => osascript("look for a Keychain prompt", PROMPTS) !== "0";

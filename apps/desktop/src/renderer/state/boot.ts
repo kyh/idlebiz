@@ -30,23 +30,26 @@ export const bootOf = ({
   hasCompany: boolean;
   /** Null until main's CLI probe answers. */
   authed: boolean | null;
-}): Boot => {
+}) => {
   const issues = saveIssues.filter((issue) => issue.kind === "company");
+
   if (issues.length > 0) {
-    return { issues, kind: "unreadable" };
+    return { issues, kind: "unreadable" } satisfies Boot;
   }
+
   if (!booted) {
-    return bootFailure === null
-      ? { kind: "loading" }
-      : { kind: "unreachable", message: bootFailure };
+    return (
+      bootFailure === null ? { kind: "loading" } : { kind: "unreachable", message: bootFailure }
+    ) satisfies Boot;
   }
+
   if (!hasCompany) {
-    return { kind: "onboarding" };
+    return { kind: "onboarding" } satisfies Boot;
   }
-  // Not the office on a guess: its digest would take the founder's look and
-  // then vanish under the gate, and the absence would go unreported.
+
   if (authed === null) {
-    return { kind: "loading" };
+    return { kind: "loading" } satisfies Boot;
   }
-  return authed ? { kind: "office" } : { kind: "signed-out" };
+
+  return (authed ? { kind: "office" } : { kind: "signed-out" }) satisfies Boot;
 };

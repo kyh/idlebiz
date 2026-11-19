@@ -15,7 +15,7 @@ describe("claudeUserSettings", () => {
     rmSync(configDir, { force: true, recursive: true });
   });
 
-  const settle = (json: string): void => {
+  const settle = (json: string) => {
     writeFileSync(path.join(configDir, "settings.json"), json);
   };
 
@@ -35,6 +35,7 @@ describe("claudeUserSettings", () => {
       hooks: { Stop: [] },
       permissions: { allow: ["Bash"] },
     };
+
     settle(JSON.stringify(settings));
     expect(await claudeUserSettings(configDir)).toEqual({
       env: {
@@ -57,6 +58,7 @@ describe("claudeUserSettings", () => {
       modelOverrides: { "claude-opus-5-5": "arn:aws:bedrock:us-east-1:1:inference-profile/opus" },
       modelSettings: { "claude-opus-5": { effortLevel: "xhigh" } },
     };
+
     settle(JSON.stringify({ ...choice, availableModels: ["haiku"], theme: "dark" }));
     expect(await claudeUserSettings(configDir)).toEqual({ env: {}, settings: choice });
   });

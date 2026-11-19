@@ -10,8 +10,9 @@ export const OG_SIZE = { height: 630, width: 1200 };
 
 const INK = "#1d2136";
 
-const pngDataUrl = async (file: string): Promise<string> => {
+const pngDataUrl = async (file: string) => {
   const png = await readFile(path.join(process.cwd(), "public/office", file));
+
   return `data:image/png;base64,${png.toString("base64")}`;
 };
 
@@ -35,8 +36,9 @@ interface OgCard {
 }
 
 /** A share card: the site's window, a heading and a line beside the office's desk and cooler. */
-export const ogCard = async ({ bar, heading, line }: OgCard): Promise<ImageResponse> => {
+export const ogCard = async ({ bar, heading, line }: OgCard) => {
   const [desk, cooler] = await Promise.all([pngDataUrl("desk.png"), pngDataUrl("cooler.png")]);
+
   return new ImageResponse(
     <div
       style={{
@@ -96,14 +98,14 @@ export const ogCard = async ({ bar, heading, line }: OgCard): Promise<ImageRespo
       </div>
     </div>,
     OG_SIZE,
-  );
+  ) satisfies ImageResponse;
 };
 
 export const siteCardAlt = `${siteConfig.name} — ${siteConfig.description}`;
 
 /** A prose page's card: its title over its description. */
-export const pageCard = (page: ProsePage): Promise<ImageResponse> =>
+export const pageCard = (page: ProsePage) =>
   ogCard({ bar: new URL(siteConfig.url).host, heading: page.title, line: page.description });
 
-export const pageCardAlt = (page: ProsePage): string =>
+export const pageCardAlt = (page: ProsePage) =>
   `${page.title} | ${siteConfig.name} — ${page.description}`;

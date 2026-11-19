@@ -7,17 +7,20 @@ export interface AskBox {
   current: () => BlockedAsk | null;
 }
 
-export const askBox = (onFirst: (ask: BlockedAsk) => void): AskBox => {
+export const askBox = (onFirst: (ask: BlockedAsk) => void) => {
   let first: BlockedAsk | null = null;
+
   return {
     current: () => first,
     raise: (ask) => {
       if (first !== null) {
         return false;
       }
+
       first = ask;
       onFirst(ask);
+
       return true;
     },
-  };
+  } satisfies AskBox;
 };

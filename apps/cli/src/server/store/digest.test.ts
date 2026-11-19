@@ -10,21 +10,25 @@ const asked = (ask: BlockedAsk) =>
 describe("folding the digest", () => {
   it("counts every ship but keeps only the lines its window lists", () => {
     let d = emptyDigest(0);
+
     for (let i = 0; i < 12; i += 1) {
       d = foldDigest(d, { ...inRun, createdAt: i, kind: "ship", message: `ship ${i}` }) ?? d;
     }
+
     expect(d.shipped).toBe(12);
     expect(d.ships).toEqual(["ship 7", "ship 8", "ship 9", "ship 10", "ship 11"]);
   });
 
   it("sums runs and what they cost", () => {
     const done = { kind: "done" } as const;
+
     const once = foldDigest(emptyDigest(0), {
       ...inRun,
       createdAt: 1,
       kind: "run.end",
       payload: { costUsd: 0.25, outcome: done, settled: "done", summary: "" },
     });
+
     const twice =
       once &&
       foldDigest(once, {
@@ -33,6 +37,7 @@ describe("folding the digest", () => {
         kind: "run.end",
         payload: { costUsd: 0.5, outcome: done, settled: "done", summary: "" },
       });
+
     expect(twice).toMatchObject({ runs: 2, spentUsd: 0.75 });
   });
 

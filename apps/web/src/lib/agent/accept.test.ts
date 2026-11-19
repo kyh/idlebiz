@@ -23,6 +23,7 @@ describe("negotiateMediaType", () => {
   it("serves HTML to a browser's Accept header", () => {
     const browser =
       "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8";
+
     expect(negotiateMediaType(browser)).toBe("text/html");
   });
 

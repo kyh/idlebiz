@@ -9,27 +9,28 @@ import { firstProduct, launch, recruit } from "../test-support/store";
 
 freshSave();
 
-const listingOf = (productId: string, id: string): Listing => ({
-  betId: null,
-  costCents: 1820,
-  createdAt: 1,
-  id,
-  livemode: false,
-  name: "Launch tee",
-  paymentLink: { id: "plink_1", state: { kind: "selling" }, url: "https://buy.stripe.com/tee" },
-  placements: [
-    {
-      fileUrl: "https://acme.vercel.app/tee.png",
-      placement: "front",
-      sha256: "a".repeat(64),
-      technique: "dtg",
-    },
-  ],
-  priceCents: 2800,
-  productId,
-  shippingCents: 799,
-  variants: [{ id: 4012, label: "Black / S" }],
-});
+const listingOf = (productId: string, id: string) =>
+  ({
+    betId: null,
+    costCents: 1820,
+    createdAt: 1,
+    id,
+    livemode: false,
+    name: "Launch tee",
+    paymentLink: { id: "plink_1", state: { kind: "selling" }, url: "https://buy.stripe.com/tee" },
+    placements: [
+      {
+        fileUrl: "https://acme.vercel.app/tee.png",
+        placement: "front",
+        sha256: "a".repeat(64),
+        technique: "dtg",
+      },
+    ],
+    priceCents: 2800,
+    productId,
+    shippingCents: 799,
+    variants: [{ id: 4012, label: "Black / S" }],
+  }) satisfies Listing;
 
 describe("listings", () => {
   it("gives a namesake on any product the next id, and loads each back", () => {
@@ -178,11 +179,13 @@ describe("archives", () => {
 
   it("hand a namesake the next number after every one archived", () => {
     foundAcme();
+
     for (const slug of ["priya", "priya-2"]) {
       const emp = store.createEmployee(recruit("Priya"));
       expect(emp.id).toBe(slug);
       store.archiveEmployee(emp.id);
     }
+
     expect(store.createEmployee(recruit("Priya")).id).toBe("priya-3");
   });
 
@@ -217,10 +220,12 @@ describe("archives", () => {
     const emp = store.createEmployee(recruit("Priya"));
     const side = store.createProduct({ description: "a side bet", name: "Side" });
     const earlier = [path.join(alumniDir(), emp.id), path.join(retiredDir(), side.id)];
+
     for (const taken of earlier) {
       mkdirSync(taken, { recursive: true });
       writeFileSync(path.join(taken, "README.md"), "someone else's");
     }
+
     store.archiveEmployee(emp.id);
     store.killProduct(side.id, "dud", null);
     store.initStore();
@@ -228,6 +233,7 @@ describe("archives", () => {
     expect(store.listProducts().map((p) => p.id)).toEqual([first.id]);
     expect(existsSync(path.join(alumniDir(), `${emp.id}-2`, "AGENTS.md"))).toBe(true);
     expect(existsSync(path.join(retiredDir(), `${side.id}-2`, "PRODUCT.md"))).toBe(true);
+
     for (const taken of earlier) {
       expect(readFileSync(path.join(taken, "README.md"), "utf-8")).toBe("someone else's");
     }
@@ -239,9 +245,11 @@ describe("archives", () => {
     const task = store.createTask({ assigneeId: emp.id, origin: "founder", title: "Ship it" });
     const side = store.createProduct({ description: "a side bet", name: "Side" });
     const bet = launch(side.id);
+
     for (const archive of [alumniDir(), retiredDir()]) {
       writeFileSync(archive, "not a directory");
     }
+
     expect(() => store.archiveEmployee(emp.id)).toThrow();
     expect(() => store.killProduct(side.id, "dud", null)).toThrow();
     expect(store.listEmployees().map((e) => e.id)).toEqual([emp.id]);

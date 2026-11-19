@@ -7,81 +7,95 @@ import { updateStatus } from "./updates";
 import { isOutOfBudget } from "@repo/domain/domain";
 import { earliestReset, napLabel, usageLabel } from "@repo/domain/format";
 
-// The menu-bar icon is the shell's to draw (a template image, so the system colours it); what it
-// says, and what its menu offers, is decided here from the office.
-
 interface OfficeStatus {
   company: ReturnType<typeof store.getCompany>;
   working: number;
-  /** Asks and order cards only the founder can settle. */
   waiting: number;
   napUntil: number | undefined;
   active: boolean;
 }
 
-const officeStatus = (): OfficeStatus => {
+const officeStatus = () => {
   const company = store.getCompany();
   const working = company ? store.listEmployees().filter((e) => e.status === "working").length : 0;
+
   const waiting = company
     ? store.listOpenTasks().filter((t) => t.state.kind === "blocked").length
     : 0;
+
   return {
     active: working > 0 || company?.autopilot === true,
     company,
     napUntil: earliestReset(runnerPool.restingRunners(), Date.now()),
     waiting,
     working,
-  };
+  } satisfies OfficeStatus;
 };
 
-const officeLine = (s: OfficeStatus, company: NonNullable<OfficeStatus["company"]>): string => {
+const officeLine = (s: OfficeStatus, company: NonNullable<OfficeStatus["company"]>) => {
   const usage = usageLabel(company.spentUsd);
+
   if (s.working > 0) {
     return `${s.working} working · ${usage}`;
   }
+
   if (s.napUntil !== undefined) {
     return napLabel(s.napUntil);
   }
+
   return `${company.autopilot ? "idle" : "paused"} · ${usage}`;
 };
 
-const statusLine = (s: OfficeStatus): string => {
+const statusLine = (s: OfficeStatus) => {
   if (!s.company) {
     return "No company yet";
   }
+
   const line = officeLine(s, s.company);
+
   return s.waiting > 0 ? `✋ ${s.waiting} waiting on you · ${line}` : line;
 };
 
-// what waits on the founder leads: a menu-bar-only launch shows nothing else of it
-const badge = (s: OfficeStatus, windowless: boolean): string => {
+const badge = (s: OfficeStatus, windowless: boolean) => {
   if (!windowless) {
     return "";
   }
+
   if (s.waiting > 0) {
     return ` ✋ ${s.waiting}`;
   }
+
   if (s.working > 0) {
     return ` ● ${s.working}`;
   }
+
   if (s.napUntil !== undefined) {
     return " ☕";
   }
+
   return s.active ? " ●" : "";
 };
 
-const autopilotItem = (company: NonNullable<OfficeStatus["company"]>): TrayItem => {
+const autopilotItem = (company: NonNullable<OfficeStatus["company"]>) => {
   if (company.autopilot) {
-    return { enabled: true, kind: "autopilot", label: "Pause the office", on: false };
+    return {
+      enabled: true,
+      kind: "autopilot",
+      label: "Pause the office",
+      on: false,
+    } satisfies TrayItem;
   }
-  return isOutOfBudget(company)
-    ? {
-        enabled: false,
-        kind: "autopilot",
-        label: "Out of budget — raise the cap to start",
-        on: true,
-      }
-    : { enabled: true, kind: "autopilot", label: "Start the office", on: true };
+
+  return (
+    isOutOfBudget(company)
+      ? {
+          enabled: false,
+          kind: "autopilot",
+          label: "Out of budget — raise the cap to start",
+          on: true,
+        }
+      : { enabled: true, kind: "autopilot", label: "Start the office", on: true }
+  ) satisfies TrayItem;
 };
 
 class AppTray {
@@ -89,62 +103,62 @@ class AppTray {
   private rebuildTimer: ReturnType<typeof setTimeout> | null = null;
   private windowless = false;
 
-  start(): void {
+  start() {
     this.started = true;
     this.rebuild();
-    // status decays on its own (resting countdowns, run ends while closed)
     setInterval(() => this.rebuild(), 60_000).unref?.();
-    // and reacts to the office: debounce the activity stream into rebuilds
     activityEvents.on("activity", (event) => {
       this.scheduleRebuild();
+
       if (event.kind === "order.card" && event.payload.open) {
         this.announceCard(event.message);
       }
     });
   }
 
-  /** Notify once when the office keeps working after the founder closes its window, which hides it. */
-  setWindowless(windowless: boolean): void {
+  setWindowless(windowless: boolean) {
     if (this.windowless === windowless) {
       return;
     }
+
     this.windowless = windowless;
     const s = officeStatus();
+
     if (windowless && s.active) {
       host().notify({
         body: `${statusLine(s)} — your team keeps working in the background. The 💼 in the menu bar has status and Quit.`,
         title: "IdleBiz is still running",
       });
     }
+
     this.rebuild();
   }
 
-  /** An order card waits on the founder, who may have no window open to see it. */
-  private announceCard(title: string): void {
+  private announceCard(title: string) {
     if (!this.windowless) {
       return;
     }
+
     host().notify({
       body: `${title} — open IdleBiz to settle it.`,
       title: "An order card is waiting",
     });
   }
 
-  /** Something the menu offers changed outside the office: an update, found or begun. */
-  refresh(): void {
+  refresh() {
     this.scheduleRebuild();
   }
 
-  /** Opened at login, into the menu bar: the founder asked for that, so nothing announces it. */
-  startWindowless(): void {
+  startWindowless() {
     this.windowless = true;
     this.rebuild();
   }
 
-  private scheduleRebuild(): void {
+  private scheduleRebuild() {
     if (this.rebuildTimer) {
       return;
     }
+
     this.rebuildTimer = setTimeout(() => {
       this.rebuildTimer = null;
       this.rebuild();
@@ -152,10 +166,11 @@ class AppTray {
     this.rebuildTimer.unref?.();
   }
 
-  private rebuild(): void {
+  private rebuild() {
     if (!this.started) {
       return;
     }
+
     const s = officeStatus();
     const update = updateStatus();
     host().tray({

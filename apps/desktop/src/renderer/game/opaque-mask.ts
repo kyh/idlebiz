@@ -11,11 +11,13 @@ export const opaqueAt = (
   flip: { readonly flipX?: boolean; readonly flipY?: boolean },
   dx: number,
   dy: number,
-): boolean => {
+) => {
   if (dx < 0 || dy < 0 || dx >= mask.w || dy >= mask.h) {
     return false;
   }
+
   const lx = flip.flipX ? mask.w - 1 - dx : dx;
   const ly = flip.flipY ? mask.h - 1 - dy : dy;
+
   return mask.opaque[ly * mask.w + lx] === 1;
 };

@@ -1,9 +1,3 @@
-// What the office changes to agree with main once the page hears main again, as a pure function.
-//
-// The office takes who is in and what they do from main's events alone, and those main sent while
-// the page heard nothing are lost. So once the roster and the tasks are read again, the office is
-// set right by them: npcs.ts carries out what this decides.
-
 import type { Employee, EmployeeStatus } from "@repo/domain/domain";
 import type { Activity, Phase } from "@/renderer/game/npc-look";
 
@@ -17,20 +11,18 @@ export interface InOffice {
 }
 
 interface Resync {
-  /** On main's roster and not in the office: they come in through the door. */
   readonly arrive: readonly Employee[];
-  /** In the office and off main's roster: they leave through it. */
   readonly leave: readonly string[];
-  /** Doing something other than main says, and what that is. Nobody else is set again. */
   readonly set: readonly (readonly [id: string, state: State])[];
 }
 
 /** What someone is doing by main: their run, else an ask of theirs at their desk, else nothing. */
-export const activityOf = (status: EmployeeStatus, waiting: boolean): State => {
+export const activityOf = (status: EmployeeStatus, waiting: boolean) => {
   if (status === "working") {
-    return "working";
+    return "working" satisfies State;
   }
-  return waiting ? "blocked" : "idle";
+
+  return (waiting ? "blocked" : "idle") satisfies State;
 };
 
 /**
@@ -39,11 +31,13 @@ export const activityOf = (status: EmployeeStatus, waiting: boolean): State => {
  * one, as `activityOf` says. It applies both ways because a read made before a run's ask can
  * land after the run ended blocked, and the next read must put them back.
  */
-export const onWaitingHeard = (activity: State, waiting: boolean): State | null => {
+export const onWaitingHeard = (activity: State, waiting: boolean) => {
   if (activity === "working") {
     return null;
   }
+
   const state = waiting ? "blocked" : "idle";
+
   return state === activity ? null : state;
 };
 
@@ -56,22 +50,24 @@ export const resyncOf = (
   office: readonly InOffice[],
   roster: readonly Employee[],
   waiting: ReadonlySet<string>,
-): Resync => {
+) => {
   const here = new Map(office.map((npc) => [npc.id, npc]));
   const staying = new Set(roster.map((emp) => emp.id));
+
   return {
     arrive: roster.filter((emp) => !here.has(emp.id)),
-    leave: office
-      .filter((npc) => npc.phase !== "leaving" && !staying.has(npc.id))
-      .map((npc) => npc.id),
+    leave: office.flatMap((npc) =>
+      npc.phase !== "leaving" && !staying.has(npc.id) ? [npc.id] : [],
+    ),
     set: roster.flatMap((emp) => {
       const npc = here.get(emp.id);
       const state = activityOf(emp.status, waiting.has(emp.id));
+
       return npc && npc.phase !== "leaving" && npc.activity !== state
         ? [[emp.id, state] as const]
         : [];
     }),
-  };
+  } satisfies Resync;
 };
 
 /**
@@ -84,8 +80,9 @@ export class Arrivals {
   private readonly onTheWay = new Map<string, { spawns: number; heard: State | null }>();
 
   /** A spawn of theirs is queued. */
-  expect(id: string): void {
+  expect(id: string) {
     const arrival = this.onTheWay.get(id);
+
     if (arrival) {
       arrival.spawns += 1;
     } else {
@@ -94,40 +91,49 @@ export class Arrivals {
   }
 
   /** Whether `id` is still on the way; if so, they come in showing `state`. */
-  hear(id: string, state: State): boolean {
+  hear(id: string, state: State) {
     const arrival = this.onTheWay.get(id);
+
     if (!arrival) {
       return false;
     }
+
     arrival.heard = state;
+
     return true;
   }
 
   /** Their ask was answered while they were on the way: they come in idle, not asking. */
-  unblock(id: string): void {
+  unblock(id: string) {
     const arrival = this.onTheWay.get(id);
+
     if (arrival?.heard === "blocked") {
       arrival.heard = "idle";
     }
   }
 
   /** What they come in doing, given what the roster said: what was heard is spent. */
-  arrived(id: string, fromRoster: State): State {
+  arrived(id: string, fromRoster: State) {
     const arrival = this.onTheWay.get(id);
     const state = arrival?.heard ?? fromRoster;
+
     if (arrival) {
       arrival.heard = null;
     }
+
     return state;
   }
 
   /** A spawn of theirs ended, whether they came in or not. */
-  forget(id: string): void {
+  forget(id: string) {
     const arrival = this.onTheWay.get(id);
+
     if (!arrival) {
       return;
     }
+
     arrival.spawns -= 1;
+
     if (arrival.spawns === 0) {
       this.onTheWay.delete(id);
     }

@@ -1,22 +1,19 @@
-// What the installed app updates from, beside the dmg in each release: the archive it installs, and
-// the feed (src-tauri/tauri.conf.json's plugins.updater) naming it and its signature, the static
-// JSON tauri-plugin-updater reads. Pure, so a test holds its shape without a release. A test pack's
-// loopback feed takes the same shape (update-test-pack.ts).
-
 /** The archive the installed app installs, as each release names it. */
-export const archiveName = (version: string): string => `IdleBiz-${version}-arm64.app.tar.gz`;
+export const archiveName = (version: string) => `IdleBiz-${version}-arm64.app.tar.gz`;
 
 export const FEED_NAME = "latest.json";
 
 /** Where `version`'s assets download from, given the feed: the latest release's `latest.json`. */
-export const releaseAssets = (feed: string, version: string): string => {
+export const releaseAssets = (feed: string, version: string) => {
   const assets = feed.replace(
     /\/releases\/latest\/download\/latest\.json$/u,
     `/releases/download/v${version}`,
   );
+
   if (assets === feed) {
     throw new Error(`the updater's feed, ${feed}, is no GitHub release's latest.json`);
   }
+
   return assets;
 };
 

@@ -1,12 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, watch } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { endAllAgents, runAcpTurn } from "./acp-session";
 import { afterEach, describe, expect, it } from "vitest";
 
-// Never answers ACP and runs a child of its own, in its process group.
-const withChild = (onTerm: string): string => `
+const withChild = (onTerm: string) => `
 process.on("SIGTERM", () => { ${onTerm} });
 require("node:child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
   stdio: "ignore",
@@ -15,45 +14,54 @@ require("node:fs").writeFileSync("pid", String(process.pid));
 setInterval(() => {}, 1000);
 `;
 
-// An adapter wedged with its CLI still running.
-const WEDGED_AGENT = withChild("");
+const WEDGED_AGENT = withChild('require("node:fs").writeFileSync("termed", "");');
 
-// codex-acp: dies on SIGTERM, leaving its app-server behind.
 const ORPHANING_AGENT = withChild("process.exit(0);");
 
-const groupAlive = (pgid: number): boolean => {
+const groupAlive = (pgid: number) => {
   try {
     process.kill(-pgid, 0);
+
     return true;
   } catch {
     return false;
   }
 };
 
-const pidIn = async (dir: string): Promise<number> => {
-  for (let tries = 0; tries < 100; tries += 1) {
-    try {
-      const pid = Number(readFileSync(path.join(dir, "pid"), "utf-8"));
-      // an empty read is 0, and a signal to group 0 would land on this test runner
-      if (Number.isInteger(pid) && pid > 0) {
-        return pid;
-      }
-    } catch {
-      /* not written yet */
+const written = (dir: string, name: string, done: (text: string) => boolean) => {
+  const file = path.join(dir, name);
+  const { promise, resolve } = Promise.withResolvers<string>();
+
+  const check = () => {
+    const text = existsSync(file) ? readFileSync(file, "utf-8") : null;
+
+    if (text !== null && done(text)) {
+      watcher.close();
+      resolve(text);
     }
-    await delay(50);
-  }
-  throw new Error("the agent never started");
+  };
+
+  const watcher = watch(dir, check);
+  check();
+
+  return promise;
 };
 
-const goneWithin = async (pgid: number, ms: number): Promise<boolean> => {
+const isPid = (text: string) => Number.isInteger(Number(text)) && Number(text) > 0;
+
+const pidIn = async (dir: string) => Number(await written(dir, "pid", isPid));
+
+const goneWithin = async (pgid: number, ms: number) => {
   const deadline = Date.now() + ms;
+
   while (Date.now() < deadline) {
     if (!groupAlive(pgid)) {
       return true;
     }
+
     await delay(25);
   }
+
   return !groupAlive(pgid);
 };
 
@@ -64,6 +72,7 @@ afterEach(() => {
   if (pgid !== null && groupAlive(pgid)) {
     process.kill(-pgid, "SIGKILL");
   }
+
   pgid = null;
   rmSync(cwd, { force: true, recursive: true });
 });
@@ -71,6 +80,7 @@ afterEach(() => {
 const startTurn = (script: string, teardownGraceMs: number) => {
   cwd = mkdtempSync(path.join(tmpdir(), "idlebiz-teardown-"));
   const stop = new AbortController();
+
   const turn = runAcpTurn({
     agent: { command: [process.execPath, "-e", script], env: {}, sessionMode: () => "default" },
     cwd,
@@ -82,6 +92,7 @@ const startTurn = (script: string, teardownGraceMs: number) => {
     signal: stop.signal,
     teardownGraceMs,
   });
+
   return { stop, turn };
 };
 
@@ -129,8 +140,9 @@ describe("ending every agent before the app exits", () => {
     stop.abort();
     await turn;
 
+    const termed = written(cwd, "termed", () => true);
     const ending = endAllAgents(300);
-    await delay(100);
+    await termed;
     expect(groupAlive(pgid)).toBe(true);
 
     await ending;

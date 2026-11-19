@@ -1,10 +1,10 @@
+import { unreachable } from "@repo/domain/errors";
 import { z } from "zod";
 import { BetClaimSchema } from "@repo/domain/bets";
 import type { Bet, BetState } from "@repo/domain/bets";
 import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
-/** The fields every bet carries; a null one gets no line. */
 const BetFieldsSchema = z.object({
   budgetUsd: z.number(),
   createdAt: z.number(),
@@ -16,7 +16,6 @@ const BetFieldsSchema = z.object({
   windowHours: z.number(),
 });
 
-// State-specific fields sit flat in the metadata block, like TASK.md, so a BET.md stays hand-editable.
 const BetStatusSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("open") }),
   z.object({ status: z.literal("measuring"), until: z.number() }),
@@ -35,66 +34,87 @@ const BetDocSchema = z.object({
   metadata: z.intersection(z.intersection(BetFieldsSchema, BetStatusSchema), BetClaimSchema),
 });
 
-const statusFields = (st: BetState): z.input<typeof BetStatusSchema> => {
+const statusFields = (st: BetState) => {
   switch (st.kind) {
     case "open": {
-      return { status: "open" };
+      return { status: "open" } satisfies z.input<typeof BetStatusSchema>;
     }
+
     case "measuring": {
-      return { status: "measuring", until: st.until };
+      return { status: "measuring", until: st.until } satisfies z.input<typeof BetStatusSchema>;
     }
+
     case "won": {
-      return { closedAt: st.closedAt, moved: st.moved, status: "won" };
+      return { closedAt: st.closedAt, moved: st.moved, status: "won" } satisfies z.input<
+        typeof BetStatusSchema
+      >;
     }
+
     case "killed": {
       return {
         closedAt: st.closedAt,
         moved: st.moved ?? undefined,
         reason: st.reason,
         status: "killed",
-      };
+      } satisfies z.input<typeof BetStatusSchema>;
     }
-    // no default
+
+    default: {
+      return unreachable(st);
+    }
   }
 };
 
-const betState = (m: z.output<typeof BetStatusSchema>): BetState => {
+const betState = (m: z.output<typeof BetStatusSchema>) => {
   switch (m.status) {
     case "open": {
-      return { kind: "open" };
+      return { kind: "open" } satisfies BetState;
     }
+
     case "measuring": {
-      return { kind: "measuring", until: m.until };
+      return { kind: "measuring", until: m.until } satisfies BetState;
     }
+
     case "won": {
-      return { closedAt: m.closedAt, kind: "won", moved: m.moved };
+      return { closedAt: m.closedAt, kind: "won", moved: m.moved } satisfies BetState;
     }
+
     case "killed": {
-      return { closedAt: m.closedAt, kind: "killed", moved: m.moved ?? null, reason: m.reason };
+      return {
+        closedAt: m.closedAt,
+        kind: "killed",
+        moved: m.moved ?? null,
+        reason: m.reason,
+      } satisfies BetState;
     }
-    // no default
+
+    default: {
+      return unreachable(m);
+    }
   }
 };
 
-export const betToDoc = (b: Bet): z.input<typeof BetDocSchema> => ({
-  body: `${b.hypothesis}\n`,
-  fields: { kind: "bet", name: b.title, schema: PACKAGE_SCHEMA, slug: b.id },
-  metadata: {
-    budgetUsd: b.budgetUsd,
-    createdAt: b.createdAt,
-    productId: b.productId,
-    readAt: b.readAt ?? undefined,
-    reading: b.reading ?? undefined,
-    spentUsd: b.spentUsd,
-    target: b.target,
-    windowHours: b.windowHours,
-    ...b.claim,
-    ...statusFields(b.state),
-  },
-});
+export const betToDoc = (b: Bet) =>
+  ({
+    body: `${b.hypothesis}\n`,
+    fields: { kind: "bet", name: b.title, schema: PACKAGE_SCHEMA, slug: b.id },
+    metadata: {
+      budgetUsd: b.budgetUsd,
+      createdAt: b.createdAt,
+      productId: b.productId,
+      readAt: b.readAt ?? undefined,
+      reading: b.reading ?? undefined,
+      spentUsd: b.spentUsd,
+      target: b.target,
+      windowHours: b.windowHours,
+      ...b.claim,
+      ...statusFields(b.state),
+    },
+  }) satisfies z.input<typeof BetDocSchema>;
 
-export const docToBet = (doc: FrontmatterDoc): Bet => {
+export const docToBet = (doc: FrontmatterDoc) => {
   const { body, fields, metadata: m } = decodeDoc(BetDocSchema, doc);
+
   return {
     budgetUsd: m.budgetUsd,
     claim:
@@ -112,5 +132,5 @@ export const docToBet = (doc: FrontmatterDoc): Bet => {
     target: m.target,
     title: fields.name,
     windowHours: m.windowHours,
-  };
+  } satisfies Bet;
 };

@@ -32,7 +32,6 @@ export type NpcState = Activity["kind"];
 export type Passage = "settled" | "door";
 
 const INTERACT_RADIUS = 38;
-/** Gap between two hires walking through the door — a procession, not a spawn burst. */
 const ARRIVAL_INTERVAL_MS = 480;
 const FADE_MS = 220;
 const HOVERABLE = { useHandCursor: true };
@@ -52,16 +51,10 @@ export class NpcManager {
   private seatPlan: SeatPlan = new Map();
   private arrivals: string[] = [];
   private nextArrivalAt = 0;
-  // One spawn at a time, so hires walk in and are seated in the order they were hired, not in
-  // the order their sheets load: a sheet already held would otherwise jump the queue.
   private chain: Promise<void> = Promise.resolve();
-  /** Released while their spawn was still queued in the chain: never let them in. */
   private readonly released = new Set<string>();
-  /** What a run did while their spawn was still queued: they come in showing it. */
   private readonly arriving = new Arrivals();
-  /** Who main says waits on the founder, as last heard: whoever comes in later shows it too. */
   private waiting: ReadonlySet<string> = new Set();
-  // a restart reuses this scene: a spawn still queued must not land in the next one's office
   private disposed = false;
   private readonly scene: Phaser.Scene;
   private readonly seats: readonly Seat[];
@@ -89,32 +82,27 @@ export class NpcManager {
     });
   }
 
-  spawn(emp: Employee, passage: Passage): Promise<void> {
+  spawn(emp: Employee, passage: Passage) {
     this.arriving.expect(emp.id);
     this.chain = this.spawnAfter(this.chain, emp, passage);
+
     return this.chain;
   }
 
-  private async spawnAfter(
-    previous: Promise<void>,
-    emp: Employee,
-    passage: Passage,
-  ): Promise<void> {
+  private async spawnAfter(previous: Promise<void>, emp: Employee, passage: Passage) {
     await previous;
-    try {
-      await this.doSpawn(emp, passage);
-    } catch {
-      // a failed spawn must not hold up the hires queued behind it
-    } finally {
-      this.arriving.forget(emp.id);
-    }
+
+    await this.doSpawn(emp, passage).catch(() => null);
+    this.arriving.forget(emp.id);
   }
 
-  private async doSpawn(emp: Employee, passage: Passage): Promise<void> {
+  private async doSpawn(emp: Employee, passage: Passage) {
     if (this.disposed || this.npcs.has(emp.id)) {
       return;
     }
+
     const key = await loadCharacter(this.scene, emp.spriteSeed);
+
     if (this.disposed || this.released.delete(emp.id)) {
       return;
     }
@@ -126,7 +114,7 @@ export class NpcManager {
     const sprite = this.scene.add
       .sprite(start.x, start.y, key, idleFrame("up"))
       .setOrigin(CHAR_ORIGIN_X, CHAR_ORIGIN_Y);
-    // hoverable once they are actually in the room, not while queued unseen at the door
+
     if (passage === "settled") {
       sprite.setInteractive(HOVERABLE);
     }
@@ -135,8 +123,6 @@ export class NpcManager {
       activity: { kind: "idle" },
       anims: characterAnims(key),
       asking: false,
-      // Who this is and what runs them: the roster is mixed, and nothing else in
-      // the office says which CLI a colleague is.
       attachments: new NpcAttachments(this.scene, sprite, `${emp.name} · ${emp.runner}`),
       id: emp.id,
       nextWanderAt: this.scene.time.now + 4000 + Math.random() * 8000,
@@ -146,106 +132,111 @@ export class NpcManager {
       sprite,
       waiting: this.waiting.has(emp.id),
     };
+
     this.npcs.set(emp.id, npc);
+
     if (passage === "door") {
       sprite.setAlpha(0);
       this.arrivals.push(emp.id);
     }
+
     this.setState(emp.id, this.arriving.arrived(emp.id, activityOf(emp.status, npc.waiting)));
     applyDepth(npc);
   }
 
-  // ---- seating (the director) ----------------------------------------------
-
-  private seatFor(index: number | null | undefined): Seat | null {
+  private seatFor(index: number | null | undefined) {
     return index === null || index === undefined ? null : (this.seats[index] ?? null);
   }
 
-  /** Somewhere to stand when there is no desk: just inside the door. */
-  private standingSpot(): PixelPoint {
+  private standingSpot() {
     return randomFloor(this.grid, this.door, 64) ?? this.door;
   }
 
-  /**
-   * Re-plan seating for the roster and route anyone whose seat changed.
-   * Incumbents never move (planSeats keeps them), so in practice this is how a
-   * colleague who was standing gets the desk a released teammate freed.
-   */
-  private replan(): SeatPlan {
+  private replan() {
     const next = planSeats(this.seats.length, [...this.roster.values()], this.seatPlan);
     this.seatPlan = next;
+
     for (const [id, index] of next) {
       const npc = this.npcs.get(id);
+
       if (!npc) {
         continue;
       }
+
       const seat = this.seatFor(index);
+
       if (seat === npc.seat) {
         continue;
       }
+
       npc.seat = seat;
+
       if (npc.phase === "entering") {
         this.routeIn(npc);
       } else if (npc.phase === "settled" && npc.activity.kind !== "idle") {
         this.goToSeat(npc);
       }
     }
+
     return next;
   }
 
-  /** Let the next hire in the queue through the door. */
-  private releaseArrival(now: number): void {
+  private releaseArrival(now: number) {
     if (this.arrivals.length === 0 || now < this.nextArrivalAt) {
       return;
     }
+
     const id = this.arrivals.shift();
     const npc = id === undefined ? undefined : this.npcs.get(id);
+
     if (!npc) {
       return;
     }
+
     this.nextArrivalAt = now + ARRIVAL_INTERVAL_MS;
     npc.phase = "entering";
     npc.sprite.setPosition(this.door.x, this.door.y);
     npc.sprite.setInteractive(HOVERABLE);
     this.scene.tweens.add({ alpha: 1, duration: FADE_MS, targets: npc.sprite });
-    // whatever they were asked or told while queued shows now
     applyLook(npc);
     this.routeIn(npc);
   }
 
-  /** Walk from wherever they are to their seat (or a standing spot), then settle. */
-  private routeIn(npc: Npc): void {
+  private routeIn(npc: Npc) {
     const dest = npc.seat ?? this.standingSpot();
+
     if (!walkTo(npc, this.grid, dest, () => this.settle(npc))) {
       this.settle(npc);
     }
   }
 
-  private settle(npc: Npc): void {
+  private settle(npc: Npc) {
     npc.phase = "settled";
     npc.nextWanderAt = this.scene.time.now + 1500 + Math.random() * 3000;
     sitDown(npc);
   }
 
-  /** Back to the desk — walking, or a snap when there is no way through. */
-  private goToSeat(npc: Npc): void {
+  private goToSeat(npc: Npc) {
     const { seat } = npc;
+
     if (!seat || atSeat(npc)) {
       applyLook(npc);
+
       return;
     }
+
     if (!walkTo(npc, this.grid, seat, () => sitDown(npc))) {
       sitDown(npc);
     }
   }
 
-  /** Out through the door. Their seat is already someone else's to claim. */
-  private leave(npc: Npc): void {
+  private leave(npc: Npc) {
     npc.phase = "leaving";
     clearPending(npc);
     npc.attachments.dismiss();
     npc.sprite.disableInteractive();
-    const gone = (): void => {
+
+    const gone = () => {
       this.scene.tweens.add({
         alpha: 0,
         duration: FADE_MS,
@@ -253,32 +244,36 @@ export class NpcManager {
         targets: npc.sprite,
       });
     };
+
     if (!walkTo(npc, this.grid, this.door, gone)) {
       this.destroyNpc(npc);
     }
   }
 
-  // ---- state ---------------------------------------------------------------
-  setState(id: string, state: NpcState): void {
+  setState(id: string, state: NpcState) {
     const npc = this.npcs.get(id);
+
     if (!npc) {
       this.arriving.hear(id, state);
+
       return;
     }
+
     npc.activity =
       state === "working" ? { kind: "working", pose: DEFAULT_WORK_POSE } : { kind: state };
     clearPending(npc);
-    // idle: the run settled without a hanging question, or it was answered;
-    // working: a new run, so whatever they asked last time has been dealt with
+
     if (state !== "blocked") {
       npc.asking = false;
     }
+
     if (state === "idle") {
       npc.nextWanderAt = this.scene.time.now + 700 + Math.random() * 1800;
       applyLook(npc);
+
       return;
     }
-    // working / blocked employees belong at their computer
+
     if (npc.phase === "settled") {
       this.goToSeat(npc);
     } else {
@@ -287,8 +282,9 @@ export class NpcManager {
   }
 
   /** Work was queued for them: a blocked employee was answered, a working one carries on. */
-  unblock(id: string): void {
+  unblock(id: string) {
     const npc = this.npcs.get(id);
+
     if (!npc) {
       this.arriving.unblock(id);
     } else if (npc.activity.kind === "blocked") {
@@ -297,11 +293,13 @@ export class NpcManager {
   }
 
   /** Who main says still waits on the founder: they keep the "!" whatever they do, and nobody else does. */
-  setWaiting(waiting: ReadonlySet<string>): void {
+  setWaiting(waiting: ReadonlySet<string>) {
     this.waiting = waiting;
+
     for (const [id, npc] of this.npcs) {
       npc.waiting = waiting.has(id);
       const state = onWaitingHeard(npc.activity.kind, npc.waiting);
+
       if (state === null) {
         applyLook(npc);
       } else {
@@ -315,52 +313,62 @@ export class NpcManager {
    * missed main's events: the missing come in, the released leave, and whoever does something
    * other than main says is set (office-resync.ts).
    */
-  resync(roster: readonly Employee[], waiting: ReadonlySet<string>): void {
+  resync(roster: readonly Employee[], waiting: ReadonlySet<string>) {
     const office = [...this.npcs.values()].map(({ activity, id, phase }) => ({
       activity: activity.kind,
       id,
       phase,
     }));
+
     const { arrive, leave, set } = resyncOf(office, roster, waiting);
+
     for (const id of leave) {
       this.despawn(id, "door");
     }
+
     for (const [id, state] of set) {
       this.setState(id, state);
     }
-    // before anyone comes in, so they come in showing it
+
     this.setWaiting(waiting);
+
     for (const emp of arrive) {
       void this.spawn(emp, "door");
     }
   }
 
   /** A tool call landed: hands on the keyboard, or eyes on the screen. */
-  onTool(id: string, pose: WorkPose): void {
+  onTool(id: string, pose: WorkPose) {
     const npc = this.npcs.get(id);
+
     if (!npc || npc.activity.kind !== "working") {
       return;
     }
+
     npc.activity = { kind: "working", pose };
     applyLook(npc);
   }
 
   /** They asked the founder something mid-run: raise the "!" now, not at run end. */
-  onAsk(id: string): void {
+  onAsk(id: string) {
     const npc = this.npcs.get(id);
+
     if (!npc) {
       return;
     }
+
     npc.asking = true;
     applyLook(npc);
   }
 
   /** Real team-chat staging: an idle employee walks the message over; anyone else says it where they are. */
-  onChat(employeeId: string, message: string, to: string | null): void {
+  onChat(employeeId: string, message: string, to: string | null) {
     const npc = this.npcs.get(employeeId);
+
     if (!npc || npc.phase === "queued") {
       return;
     }
+
     if (npc.phase === "settled" && npc.activity.kind === "idle") {
       this.idle.deliver(npc, message, to);
     } else {
@@ -368,46 +376,53 @@ export class NpcManager {
     }
   }
 
-  /** Employees you can walk up to: everyone who has actually come through the door. */
-  private inRoom(): Npc[] {
+  private inRoom() {
     return [...this.npcs.values()].filter((n) => n.phase !== "queued");
   }
 
   /** Returns the employee id whose NPC is nearest the faced point (within range). */
-  interactAt(px: number, py: number): string | null {
+  interactAt(px: number, py: number) {
     let best: { id: string; d: number } | null = null;
+
     for (const npc of this.inRoom()) {
       const d = Math.hypot(npc.sprite.x - px, npc.sprite.y - py);
+
       if (d <= INTERACT_RADIUS && (!best || d < best.d)) {
         best = { d, id: npc.id };
       }
     }
+
     return best?.id ?? null;
   }
 
   /** Where an employee is standing/sitting right now, for walking over to them. */
-  positionOf(employeeId: string): PixelPoint | null {
+  positionOf(employeeId: string) {
     const npc = this.npcs.get(employeeId);
-    return npc && npc.phase !== "queued" ? { x: npc.sprite.x, y: npc.sprite.y } : null;
+
+    return (
+      npc && npc.phase !== "queued" ? { x: npc.sprite.x, y: npc.sprite.y } : null
+    ) satisfies PixelPoint | null;
   }
 
   /** Can someone standing at `point` strike up a conversation with `employeeId`? */
-  inReach(employeeId: string, point: PixelPoint): boolean {
+  inReach(employeeId: string, point: PixelPoint) {
     const at = this.positionOf(employeeId);
+
     return at !== null && Math.hypot(at.x - point.x, at.y - point.y) <= INTERACT_RADIUS;
   }
 
-  // ---- per-frame -------------------------------------------------------------
-  update(): void {
+  update() {
     const { now } = this.scene.time;
     const dt = Math.min(this.scene.game.loop.delta, 50) / 1000;
     this.releaseArrival(now);
 
     for (const npc of this.npcs.values()) {
       npc.attachments.follow(now);
+
       if (npc.phase === "queued") {
         continue;
       }
+
       if (npc.plan) {
         stepAlong(npc, npc.plan, dt);
       } else if (
@@ -417,6 +432,7 @@ export class NpcManager {
       ) {
         this.idle.wander(npc, now);
       }
+
       applyDepth(npc);
     }
   }
@@ -426,14 +442,18 @@ export class NpcManager {
    * in the office to walk out of; otherwise they are simply gone. Either way
    * their desk is free for whoever was standing.
    */
-  despawn(employeeId: string, passage: Passage): void {
+  despawn(employeeId: string, passage: Passage) {
     const npc = this.npcs.get(employeeId);
+
     if (!npc) {
       this.released.add(employeeId);
+
       return;
     }
+
     this.roster.delete(employeeId);
     this.replan();
+
     if (passage === "door" && npc.phase === "settled") {
       this.leave(npc);
     } else {
@@ -441,22 +461,22 @@ export class NpcManager {
     }
   }
 
-  private destroyNpc(npc: Npc): void {
+  private destroyNpc(npc: Npc) {
     this.npcs.delete(npc.id);
     this.arrivals = this.arrivals.filter((id) => id !== npc.id);
     npc.pendingTimer?.remove();
-    // a fade or bob still running would keep driving a destroyed object
     this.scene.tweens.killTweensOf(npc.sprite);
     npc.attachments.destroy();
     npc.sprite.destroy();
   }
 
-  destroy(): void {
+  destroy() {
     this.disposed = true;
-    // deleting the current entry mid-iteration is defined for Map
+
     for (const npc of this.npcs.values()) {
       this.destroyNpc(npc);
     }
+
     this.roster.clear();
     this.released.clear();
     this.seatPlan = new Map();

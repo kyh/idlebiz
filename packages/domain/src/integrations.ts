@@ -2,7 +2,6 @@
 export type StripeKeyStatus =
   | { state: "unset" }
   | { state: "set"; last4: string; livemode: boolean }
-  /** Saved, but the metrics pulse found Stripe turning it away (401/403) when it read charges. */
   | { state: "refused"; last4: string; livemode: boolean };
 
 /** The founder's Printful token as the renderer sees it: its last four and the store it sells through. */
@@ -30,7 +29,7 @@ export type VercelListing =
   | { kind: "unreachable"; reason: string };
 
 /** The latest production deployment of the bound Vercel project. */
-export interface VercelDeployment {
+interface VercelDeployment {
   url: string;
   state: string;
   createdAt: number;

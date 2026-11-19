@@ -1,3 +1,4 @@
+import { unreachable } from "@repo/domain/errors";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -106,8 +107,6 @@ import type {
   BusinessTypeId,
   Company,
   Employee,
-  FailureVerdict,
-  LoadReport,
   OpenTaskStatus,
   OrderCard,
   OrderCardSubject,
@@ -115,7 +114,6 @@ import type {
   ProductDraft,
   Routine,
   RunOrigin,
-  ShipLine,
   Speaker,
   Task,
   TaskIn,
@@ -142,11 +140,10 @@ import {
 } from "@repo/domain/domain";
 import type { ActivityEvent, PersistedActivity } from "@repo/domain/activity";
 
-// Synchronous cache mutations make check-and-set atomic in the main process.
-// Markdown writes use tmp+rename; activity and chat use append-only JSONL logs.
-
 const GrantSchema = z.object({ grantedAt: z.number(), key: z.string(), taskId: z.string() });
+
 type Grant = z.infer<typeof GrantSchema>;
+
 const GrantsSchema = z.array(GrantSchema);
 
 const ProposalEndSchema = z.object({
@@ -154,35 +151,26 @@ const ProposalEndSchema = z.object({
   employeeId: z.string(),
   endedAt: z.number(),
 });
+
 type ProposalEnd = z.infer<typeof ProposalEndSchema>;
 
 interface ActiveCompany {
   company: Company;
   employees: Employee[];
   tasks: Task[];
-  // Loaded only when the shipping log is opened.
   shipped: Task[] | null;
   products: Product[];
-  /** Every print-on-demand item ever listed, a retired product's too: its orders still ship. */
   listings: Listing[];
-  /** Listing ids handed out whose listing Stripe is still making: no namesake listed meanwhile may take one. */
   pendingListings: Set<string>;
-  /** Every create_payment_link link, a retired product's too: its buyers may still be owed a delivery. */
   links: ChargeLink[];
-  /** Every paid checkout on the company's links, a retired product's too: a print still ships, a delivery is still owed. */
   orders: Order[];
-  /** Sign-offs the founder gave that no run has used yet. */
   grants: Grant[];
   bets: Bet[];
-  /** How the allocator weighs bets; retuned whenever one closes. */
   policy: PolicyParams;
   routines: Routine[];
   chat: TeamMessage[];
-  /** The latest ship summaries, oldest first: what the next brief calls "recently shipped". */
   recentShips: string[];
-  /** The latest proposal to end done, kept apart so allocating never reads the shipping log. */
   lastProposal: ProposalEnd | null;
-  /** What has happened since the founder last looked. Null until they first do, so founding a company is not news. */
   sinceLastLook: Digest | null;
 }
 
@@ -194,49 +182,56 @@ interface Cache {
 
 let cache: Cache | null = null;
 
-const c = (): Cache => {
+const c = () => {
   if (!cache) {
     throw new Error("store not initialized");
   }
+
   return cache;
 };
 
-const nextId = (counter: "nextActivityId" | "nextTeamMessageId"): number => {
+const nextId = (counter: "nextActivityId" | "nextTeamMessageId") => {
   const id = c()[counter];
   c()[counter] = id + 1;
+
   return id;
 };
 
-const maybeCurrent = (): ActiveCompany | null => c().active;
+const maybeCurrent = () => c().active;
 
-/** The company this launch runs. There is only ever one, so nothing takes its id; asking with none loaded is a bug in the caller. */
-const current = (): ActiveCompany => {
+const current = () => {
   const company = c().active;
+
   if (!company) {
     throw new Error("no company is loaded");
   }
+
   return company;
 };
 
-const emptyCompany = (company: Company): ActiveCompany => ({
-  bets: [],
-  chat: [],
-  company,
-  employees: [],
-  grants: [],
-  lastProposal: null,
-  links: [],
-  listings: [],
-  orders: [],
-  pendingListings: new Set(),
-  policy: DEFAULT_POLICY,
-  products: [],
-  recentShips: [],
-  routines: [],
-  shipped: null,
-  sinceLastLook: null,
-  tasks: [],
-});
+const emptyCompany = (company: Company) => {
+  const active: ActiveCompany = {
+    bets: [],
+    chat: [],
+    company,
+    employees: [],
+    grants: [],
+    lastProposal: null,
+    links: [],
+    listings: [],
+    orders: [],
+    pendingListings: new Set(),
+    policy: DEFAULT_POLICY,
+    products: [],
+    recentShips: [],
+    routines: [],
+    shipped: null,
+    sinceLastLook: null,
+    tasks: [],
+  };
+
+  return active;
+};
 
 interface Owned {
   id: string;
@@ -245,48 +240,44 @@ interface Owned {
 const patchedRow = <T extends Owned>(list: T[], id: string, patch: Partial<T>) => {
   const idx = list.findIndex((row) => row.id === id);
   const cur = list[idx];
-  // every caller looked the row up first, so a missing one is a bug, not an outcome
+
   if (!cur) {
     throw new Error(`nothing to patch at "${id}"`);
   }
+
   return { idx, next: { ...cur, ...patch, id: cur.id } };
 };
 
-/** A change that holds only once saved, like a lock: a save that throws leaves the row as the disk has it. */
 const patchIn = <T extends Owned>(
   list: T[],
   id: string,
   patch: Partial<T>,
   save: (row: T) => void,
-): T => {
+) => {
   const { idx, next } = patchedRow(list, id, patch);
   save(next);
   list[idx] = next;
+
   return next;
 };
 
-/**
- * A record of what already happened, like a run ending or money spent: the cache takes it even
- * when the save throws. The row's next write carries it to disk, and boot recovers a task the
- * disk still has running.
- */
 const recordIn = <T extends Owned>(
   list: T[],
   id: string,
   patch: Partial<T>,
   save: (row: T) => void,
-): T => {
+) => {
   const { idx, next } = patchedRow(list, id, patch);
+
   try {
     save(next);
   } finally {
     list[idx] = next;
   }
+
   return next;
 };
 
-// ---- run state --------------------------------------------------------------
-/** What a run leaves for the next one; kept out of AGENTS.md so the instructions only change when they do. */
 const RunStateSchema = z.object({
   instructionsDigest: z.string().nullable(),
   lastRunMetrics: RunMetricsSchema.nullable(),
@@ -295,7 +286,7 @@ const RunStateSchema = z.object({
   sessionWorkspace: z.string().nullable(),
 });
 
-const saveRunState = (e: Employee): void => {
+const saveRunState = (e: Employee) => {
   const state: z.infer<typeof RunStateSchema> = {
     instructionsDigest: e.instructionsDigest,
     lastRunMetrics: e.lastRunMetrics,
@@ -303,24 +294,28 @@ const saveRunState = (e: Employee): void => {
     sessionId: e.session?.id ?? null,
     sessionWorkspace: e.session?.workspace ?? null,
   };
+
   writeJsonFile(employeeRunStateFile(e.id), state);
 };
 
-const withRunState = (e: Employee): Employee => {
+const withRunState = (e: Employee) => {
   const state = readJsonFile(employeeRunStateFile(e.id), RunStateSchema);
+
   if (state === null) {
     return e;
   }
+
   const { instructionsDigest, lastRunMetrics, lastShip, sessionId, sessionWorkspace } = state;
+
   const session =
     sessionId === null || sessionWorkspace === null
       ? null
       : { id: sessionId, workspace: sessionWorkspace };
-  return { ...e, instructionsDigest, lastRunMetrics, lastShip, session };
+
+  return { ...e, instructionsDigest, lastRunMetrics, lastShip, session } satisfies Employee;
 };
 
-// ---- persistence ------------------------------------------------------------
-const readTextIfPresent = (file: string): string | null => {
+const readTextIfPresent = (file: string) => {
   try {
     return readFileSync(file, "utf-8");
   } catch {
@@ -328,190 +323,191 @@ const readTextIfPresent = (file: string): string | null => {
   }
 };
 
-/** Durable: a COMPANY.md that does not read blocks the office. */
-const saveCompany = (co: Company): void => {
+const saveCompany = (co: Company) => {
   atomicWrite(companyFile(), serializeDoc(companyToDoc(co)), { durable: true });
 };
 
-const saveEmployee = (e: Employee, opts: { onlyIfChanged?: boolean } = {}): void => {
+const saveEmployee = (e: Employee, opts: { onlyIfChanged?: boolean } = {}) => {
   const { company, products } = current();
   const file = employeeFile(e.id);
   const text = serializeDoc(employeeToDoc(e, company, products));
+
   if (opts.onlyIfChanged && readTextIfPresent(file) === text) {
     return;
   }
+
   atomicWrite(file, text);
 };
 
-const saveTask = (t: Task): void => {
+const saveTask = (t: Task) => {
   atomicWrite(taskFile(t.id), serializeDoc(taskToDoc(t)));
 };
 
-const saveProduct = (p: Product): void => {
+const saveProduct = (p: Product) => {
   atomicWrite(productFile(p.id), serializeDoc(productToDoc(p)));
 };
 
-const saveBet = (b: Bet): void => {
+const saveBet = (b: Bet) => {
   atomicWrite(betFile(b.id), serializeDoc(betToDoc(b)));
 };
 
-const saveRoutine = (r: Routine): void => {
+const saveRoutine = (r: Routine) => {
   atomicWrite(routineFile(r.id), serializeDoc(routineToDoc(r)));
 };
 
-const shelve = (t: Task): void => {
+const shelve = (t: Task) => {
   moveDir(path.join(tasksDir(), t.id), path.join(shippedDir(), t.id));
 };
 
-/** Shipped work, answered asks, settled order cards and dropped work: shelved in shipped/, never acted on again. */
 const HISTORY: ReadonlySet<TaskStatus> = new Set(HISTORY_TASK_STATUSES);
-const isHistory = (t: Task): boolean => HISTORY.has(t.state.kind);
+const isHistory = (t: Task) => HISTORY.has(t.state.kind);
 
-/** Move a task just saved as history out of the open queue; one the move fails stays for boot to shelve. */
-const shelveClosed = (t: Task): boolean => {
+const shelveClosed = (t: Task) => {
   try {
     shelve(t);
   } catch (error) {
     report(`shelve ${t.id}`, error);
+
     return false;
   }
+
   const active = current();
   const idx = active.tasks.findIndex((task) => task.id === t.id);
+
   if (idx !== -1) {
     active.tasks.splice(idx, 1);
   }
+
   active.shipped?.push(t);
+
   return true;
 };
 
-// ---- loading ----------------------------------------------------------------
 export { loadReport } from "./load";
+
 /** Report a file boot needed but could not read, alongside the packages the store skipped. */
 export { skip as noteUnreadable } from "./load";
 
 const TEAM_CHAT_RING = 200;
 
-// One chat.jsonl line, as postTeamMessage persists it (its id assigned anew on load).
 const PersistedTeamMessageSchema = z.object({
   createdAt: z.number(),
   from: SpeakerSchema,
   text: z.string(),
 });
 
-const loadRecentChat = (active: ActiveCompany): void => {
+const loadRecentChat = (active: ActiveCompany) => {
   const rows = readJsonlTail(chatFile(), PersistedTeamMessageSchema, TEAM_CHAT_RING);
   active.chat = rows.map((row) => ({ ...row, id: nextId("nextTeamMessageId") }));
 };
 
-// ---- the company -----------------------------------------------------------
 /** The company this launch runs; null before one is founded. */
-export const getCompany = (): Company | null => maybeCurrent()?.company ?? null;
+export const getCompany = () => maybeCurrent()?.company ?? null;
 
-export const requireCompany = (): Company => current().company;
+export const requireCompany = () => current().company;
 
-const patchCompany = (patch: Partial<Company>): Company => {
+const patchCompany = (patch: Partial<Company>) => {
   const active = current();
   const co = active.company;
   const next = { ...co, ...patch, id: co.id };
   saveCompany(next);
   active.company = next;
+
   return next;
 };
 
-/** patchCompany for what already happened, as recordIn is for a row: the next company write saves it. */
-const recordCompany = (patch: Partial<Company>): Company => {
+const recordCompany = (patch: Partial<Company>) => {
   const active = current();
   const co = active.company;
   const next = { ...co, ...patch, id: co.id };
+
   try {
     saveCompany(next);
   } finally {
     active.company = next;
   }
+
   return next;
 };
 
-export const setMaxAgents = (maxAgents: number): Company =>
+export const setMaxAgents = (maxAgents: number) =>
   patchCompany({ maxAgents: Math.max(1, Math.round(maxAgents)) });
 
-export const setAutopilot = (on: boolean): Company => patchCompany({ autopilot: on });
+export const setAutopilot = (on: boolean) => patchCompany({ autopilot: on });
 
-// ---- founder approvals -------------------------------------------------------
-// Exact-command approvals survive restart and are consumed once.
-// A sign-off belongs to the task it was given for: the continuation that will
-// run the command. Company-wide, a grant the agent never used (it reworded the
-// command) would wait for anyone who later ran that exact string.
-const writeGrants = (grants: Grant[]): void => {
+const writeGrants = (grants: Grant[]) => {
   const active = current();
-  // a file that does not read is the founder's to fix: rewriting it would lose the sign-offs in it
   readJsonFileForUpdate(approvalsFile(), GrantsSchema);
-  // durable: each is a sign-off the founder gave
   writeJsonFile(approvalsFile(), grants, { durable: true });
   active.grants = grants;
 };
 
-/** The sign-offs no run has used yet; a file that does not read is named in the load report. */
-const readGrants = (): Grant[] => {
+const readGrants = () => {
   try {
-    return readJsonFileForUpdate(approvalsFile(), GrantsSchema) ?? [];
+    return (readJsonFileForUpdate(approvalsFile(), GrantsSchema) ?? []) satisfies Grant[];
   } catch (error) {
     skip("approvals", approvalsFile(), error);
+
     return [];
   }
 };
 
-export const grantApproval = (taskId: string, key: string): void => {
+export const grantApproval = (taskId: string, key: string) => {
   const { grants } = current();
+
   if (!grants.some((g) => g.taskId === taskId && g.key === key)) {
     writeGrants([...grants, { grantedAt: Date.now(), key, taskId }]);
   }
 };
 
-export const holdsApproval = (taskId: string): boolean =>
-  current().grants.some((g) => g.taskId === taskId);
+export const holdsApproval = (taskId: string) => current().grants.some((g) => g.taskId === taskId);
 
 /** Spend the sign-off, if this task holds one for exactly this. */
-export const consumeApproval = (taskId: string, key: string): boolean => {
+export const consumeApproval = (taskId: string, key: string) => {
   const { grants } = current();
   const held = grants.find((g) => g.taskId === taskId && g.key === key);
+
   if (!held) {
     return false;
   }
+
   writeGrants(grants.filter((g) => g !== held));
+
   return true;
 };
 
 /** A task that has ended takes its unused sign-offs with it. */
-export const revokeApprovals = (taskId: string): void => {
+export const revokeApprovals = (taskId: string) => {
   const { grants } = current();
+
   if (grants.some((g) => g.taskId === taskId)) {
     writeGrants(grants.filter((g) => g.taskId !== taskId));
   }
 };
 
-/** A restart ends a run as its settle would: a task no longer waiting to run keeps no sign-off. */
-const dropEndedGrants = (active: ActiveCompany): void => {
+const dropEndedGrants = (active: ActiveCompany) => {
   const ended = new Set(
     active.tasks
       .filter((t) => t.state.kind === "dead" || t.state.kind === "blocked")
       .map((t) => t.id),
   );
+
   const kept = active.grants.filter((g) => !ended.has(g.taskId));
+
   if (kept.length < active.grants.length) {
     writeGrants(kept);
   }
 };
 
-/** A running spend total, kept to a hundredth of a cent so many small runs do not drift. */
-const addSpend = (totalUsd: number, costUsd: number): number =>
+const addSpend = (totalUsd: number, costUsd: number) =>
   Math.round((totalUsd + Math.max(0, costUsd)) * 10_000) / 10_000;
 
-export const recordSpend = (costUsd: number): Company =>
+export const recordSpend = (costUsd: number) =>
   recordCompany({ spentUsd: addSpend(current().company.spentUsd, costUsd) });
 
-export const setBudget = (budget: Budget): Company => patchCompany({ budget });
+export const setBudget = (budget: Budget) => patchCompany({ budget });
 
-export const resetSpend = (): Company => patchCompany({ spentUsd: 0 });
+export const resetSpend = () => patchCompany({ spentUsd: 0 });
 
 interface MetricsSnapshot {
   users: number | null;
@@ -523,50 +519,54 @@ interface MetricsPatch {
   revenueUsd?: number;
 }
 
-/** What a snapshot changes. A null keeps the last reported value through provider failures, and a number that did not move writes nothing. */
 const metricsPatch = (
   held: { users: number | null; revenueUsd: number | null },
   snapshot: MetricsSnapshot,
-): MetricsPatch => {
+) => {
   const patch: MetricsPatch = {};
+
   if (snapshot.users !== null) {
     const users = Math.max(0, Math.round(snapshot.users));
+
     if (users !== held.users) {
       patch.users = users;
     }
   }
+
   if (snapshot.revenue !== null) {
     const revenueUsd = Math.round(snapshot.revenue * 100) / 100;
+
     if (revenueUsd !== held.revenueUsd) {
       patch.revenueUsd = revenueUsd;
     }
   }
+
   return patch;
 };
 
-export const setRealMetrics = (snapshot: MetricsSnapshot): Company => {
+export const setRealMetrics = (snapshot: MetricsSnapshot) => {
   const co = current().company;
   const patch = metricsPatch(co, snapshot);
+
   return Object.keys(patch).length === 0 ? co : patchCompany(patch);
 };
 
-// ---- routines --------------------------------------------------------------
-const routineRecord = (input: RoutineDefinition, id: string): Routine => ({
-  id,
-  instruction: input.instruction,
-  intervalHours: input.intervalHours,
-  lastRunAt: null,
-  name: input.name,
-  role: input.role,
-});
+const routineRecord = (input: RoutineDefinition, id: string) =>
+  ({
+    id,
+    instruction: input.instruction,
+    intervalHours: input.intervalHours,
+    lastRunAt: null,
+    name: input.name,
+    role: input.role,
+  }) satisfies Routine;
 
-export const listRoutines = (): Routine[] => [...current().routines];
+export const listRoutines = () => [...current().routines] satisfies Routine[];
 
-export const markRoutineRun = (routineId: string): void => {
+export const markRoutineRun = (routineId: string) => {
   patchIn(current().routines, routineId, { lastRunAt: Date.now() }, saveRoutine);
 };
 
-// ---- employees -------------------------------------------------------------
 export interface FoundingHire {
   name: string;
   role: string;
@@ -578,57 +578,66 @@ export interface FoundingHire {
 
 type EmployeeInput = FoundingHire & { deskIndex: number };
 
-const employeeRecord = (input: EmployeeInput, id: string): Employee => ({
-  createdAt: Date.now(),
-  deskIndex: input.deskIndex,
-  id,
-  instructionsDigest: null,
-  lastRunMetrics: null,
-  lastShip: null,
-  name: input.name,
-  persona: input.persona,
-  role: input.role,
-  runner: input.runner,
-  session: null,
-  spriteSeed: input.spriteSeed,
-  status: "idle",
-  title: input.title,
-});
+const employeeRecord = (input: EmployeeInput, id: string) =>
+  ({
+    createdAt: Date.now(),
+    deskIndex: input.deskIndex,
+    id,
+    instructionsDigest: null,
+    lastRunMetrics: null,
+    lastShip: null,
+    name: input.name,
+    persona: input.persona,
+    role: input.role,
+    runner: input.runner,
+    session: null,
+    spriteSeed: input.spriteSeed,
+    status: "idle",
+    title: input.title,
+  }) satisfies Employee;
 
-export const createEmployee = (hire: EmployeeInput): Employee => {
+export const createEmployee = (hire: EmployeeInput) => {
   const { company, employees: list } = current();
+
   if (list.length >= company.maxAgents) {
     throw new RefusalError(`the office is at its ${company.maxAgents}-seat cap`);
   }
+
   const id = uniqueSlug(
     hire.name,
     list.map((e) => e.id),
     heldIn(agentsDir(), alumniDir()),
   );
+
   const employee = employeeRecord(hire, id);
   mkdirSync(employeeMemoryDir(id), { recursive: true });
   saveEmployee(employee);
   list.push(employee);
+
   return employee;
 };
 
-export const getEmployee = (id: string): Employee | null =>
+export const getEmployee = (id: string) =>
   maybeCurrent()?.employees.find((employee) => employee.id === id) ?? null;
 
-export const employeeInstructions = (employeeId: string): string => {
+export const employeeInstructions = (employeeId: string) => {
   const e = getEmployee(employeeId);
+
   if (!e) {
     throw new RefusalError(`employee ${employeeId} not found`);
   }
+
   const { company, products } = current();
+
   return employeeBody(e, company, products);
 };
 
-export const listEmployees = (): Employee[] => [...current().employees];
+export const listEmployees = () => [...current().employees] satisfies Employee[];
 
 /** A run started or settled. Memory only: a fresh boot has no live runs, so disk would only lie. */
-export const setEmployeeStatus = (id: string, status: Employee["status"]): void => {
+export const setEmployeeStatus = (id: string, status: Employee["status"]) => {
   const emp = getEmployee(id);
+
   if (emp) {
     emp.status = status;
   }
@@ -641,52 +650,53 @@ export const setEmployeeStatus = (id: string, status: Employee["status"]): void 
 export const noteRunEnd = (
   id: string,
   session: Pick<Employee, "session" | "instructionsDigest">,
-): void => {
+) => {
   const { active } = c();
+
   if (!active) {
     return;
   }
+
   const { revenueUsd, users } = active.company;
   const lastRunMetrics = { at: Date.now(), revenueUsd, users };
   recordIn(active.employees, id, { ...session, lastRunMetrics }, saveRunState);
 };
 
-const newestFirst = (a: Task, b: Task): number => b.createdAt - a.createdAt;
+const newestFirst = (a: Task, b: Task) => b.createdAt - a.createdAt;
 
-/** Everything the company shelved as history, read from disk the first time it is asked for. */
-const shippedOf = (active: ActiveCompany): Task[] => {
+const shippedOf = (active: ActiveCompany) => {
   active.shipped ??= loadPackages("task", shippedDir(), shippedTaskFile, docToTask);
+
   return active.shipped;
 };
 
-export const listShippedTasks = (): Task[] => shippedOf(current()).toSorted(newestFirst);
+export const listShippedTasks = () => shippedOf(current()).toSorted(newestFirst);
 
 const RELEASED = " was released";
 
-/**
- * Where a released employee's open task goes. An ask a bet funds, the continuation carrying
- * the founder's answer to one (with any sign-off it holds), or a dead letter, goes to the lead,
- * so an answer or a retry still reaches someone. Other unstarted work is dropped, so it holds no
- * bet's slot and never runs on the lead unasked. A run in flight settles on its own; null
- * leaves it be.
- */
-const rehomed = (t: Task, leaverName: string, lead: string | null, now: number): Task | null => {
-  const dropped = (): Task => ({
-    ...t,
-    ...entering({ kind: "dropped", reason: `${leaverName}${RELEASED}` }, now),
-  });
+const rehomed = (t: Task, leaverName: string, lead: string | null, now: number) => {
+  const dropped = () =>
+    ({
+      ...t,
+      ...entering({ kind: "dropped", reason: `${leaverName}${RELEASED}` }, now),
+    }) satisfies Task;
+
   switch (t.state.kind) {
     case "todo":
     case "queued": {
-      return t.betId !== null && t.answers !== null ? { ...t, assigneeId: lead } : dropped();
+      return (
+        t.betId !== null && t.answers !== null ? { ...t, assigneeId: lead } : dropped()
+      ) satisfies Task | null;
     }
+
     case "blocked": {
-      // a departing lead's blocked proposal would read as the next lead's, and hold every new bet
-      return t.betId === null ? dropped() : { ...t, assigneeId: lead };
+      return (t.betId === null ? dropped() : { ...t, assigneeId: lead }) satisfies Task | null;
     }
+
     case "dead": {
-      return { ...t, assigneeId: lead };
+      return { ...t, assigneeId: lead } satisfies Task | null;
     }
+
     case "running":
     case "done":
     case "superseded":
@@ -694,29 +704,33 @@ const rehomed = (t: Task, leaverName: string, lead: string | null, now: number):
     case "dropped": {
       return null;
     }
-    // no default
+
+    default: {
+      return unreachable(t.state);
+    }
   }
 };
 
 interface HandedOver {
-  /** Now the lead's. */
   rehomed: number;
   dropped: number;
 }
 
-/** Hand every open task the leaver holds to the lead or to history, as `rehomed` places it. */
-const handOver = (active: ActiveCompany, leaverId: string, leaverName: string): HandedOver => {
+const handOver = (active: ActiveCompany, leaverId: string, leaverName: string) => {
   const lead = active.company.leaderId;
   const now = Date.now();
   const moved: HandedOver = { dropped: 0, rehomed: 0 };
+
   for (const t of active.tasks.filter((task) => task.assigneeId === leaverId)) {
     const next = rehomed(t, leaverName, lead, now);
+
     if (!next) {
       continue;
     }
-    // one refused save must not keep the rest on the leaver; the next boot hands that one on
+
     try {
       recordIn(active.tasks, t.id, next, saveTask);
+
       if (isHistory(next)) {
         shelveClosed(next);
         moved.dropped += 1;
@@ -727,70 +741,75 @@ const handOver = (active: ActiveCompany, leaverId: string, leaverName: string): 
       report(`hand over task ${t.id}`, error);
     }
   }
+
   return moved;
 };
 
 /** Archive the employee package and hand their open work on, as `handOver` counts it. The lead stays. */
-export const archiveEmployee = (
-  employeeId: string,
-): ({ employee: Employee } & HandedOver) | null => {
+export const archiveEmployee = (employeeId: string) => {
   const emp = getEmployee(employeeId);
+
   if (!emp) {
     return null;
   }
+
   const active = current();
+
   if (active.company.leaderId === employeeId) {
     throw new RefusalError(`${emp.name} leads the team, and a lead is never released.`);
   }
+
   moveDir(employeeAgentDir(employeeId), archiveTo(alumniDir(), employeeId));
   const idx = active.employees.findIndex((e) => e.id === employeeId);
+
   if (idx !== -1) {
     active.employees.splice(idx, 1);
   }
-  return { employee: emp, ...handOver(active, employeeId, emp.name) };
+
+  return { employee: emp, ...handOver(active, employeeId, emp.name) } satisfies
+    | ({ employee: Employee } & HandedOver)
+    | null;
 };
 
-// ---- products --------------------------------------------------------------
-/** A product as it starts, the first as much as any: nothing shipped, no numbers yet. */
-const newProduct = (
-  id: string,
-  named: Pick<Product, "createdAt" | "description" | "name">,
-): Product => ({
-  ...named,
-  id,
-  lastShipAt: null,
-  revenueUsd: null,
-  ships: 0,
-  users: null,
-  vercel: null,
-  workspaceDir: productWorkspace(id),
-});
+const newProduct = (id: string, named: Pick<Product, "createdAt" | "description" | "name">) =>
+  ({
+    ...named,
+    id,
+    lastShipAt: null,
+    revenueUsd: null,
+    ships: 0,
+    users: null,
+    vercel: null,
+    workspaceDir: productWorkspace(id),
+  }) satisfies Product;
 
-const firstProduct = (co: Company): Product =>
+const firstProduct = (co: Company) =>
   newProduct(uniqueSlug(co.name, [], heldIn(productsDir(), retiredDir())), {
     createdAt: co.createdAt,
     description: co.mission ?? UNNAMED_PRODUCT_DESCRIPTION,
     name: co.name,
   });
 
-export const getProduct = (id: string): Product | null =>
+export const getProduct = (id: string) =>
   maybeCurrent()?.products.find((product) => product.id === id) ?? null;
 
-export const requireProduct = (id: string): Product => {
+export const requireProduct = (id: string) => {
   const p = getProduct(id);
+
   if (!p) {
     throw new RefusalError(`no product ${id}`);
   }
+
   return p;
 };
 
-export const listProducts = (): Product[] => [...current().products];
+export const listProducts = () => [...current().products] satisfies Product[];
 
 /**
  * Whether `id` is a product of this company, live, retired or one boot could not read: a
  * retired product's paid orders still ship, and an unread one's are kept for when it reads again.
  */
-export const madeProduct = (id: string): boolean =>
+export const madeProduct = (id: string) =>
   current().products.some((product) => product.id === id) ||
   [productsDir(), retiredDir()].some((dir) => safeReaddir(dir).includes(id));
 
@@ -799,48 +818,53 @@ export const madeProduct = (id: string): boolean =>
  * boot could not read is missing from the loaded ones but still in products/, so it never reads
  * as retired, and its payment links are never switched off for it.
  */
-export const isRetiredProduct = (id: string): boolean =>
+export const isRetiredProduct = (id: string) =>
   heldIn(retiredDir())(id) && !heldIn(productsDir())(id);
 
-/** A product's payment links outlive it: Stripe may make one while its product retires. */
-const requireMadeProduct = (id: string): void => {
+const requireMadeProduct = (id: string) => {
   if (!madeProduct(id)) {
     throw new RefusalError(`no product ${id}`);
   }
 };
 
-const patchProduct = (id: string, patch: Partial<Product>): Product =>
+const patchProduct = (id: string, patch: Partial<Product>) =>
   patchIn(current().products, id, patch, saveProduct);
 
 /** Past the cap a new product has to replace a killed one, whoever starts it: the founder's panel too. */
-export const createProduct = (named: ProductDraft): Product => {
+export const createProduct = (named: ProductDraft) => {
   const { products: list } = current();
+
   if (!portfolioHasRoom(list.length)) {
     throw new RefusalError(
       `The company already runs ${MAX_LIVE_PRODUCTS} products; kill_product one before starting another.`,
     );
   }
+
   const id = uniqueSlug(
     named.name,
     list.map((p) => p.id),
     heldIn(productsDir(), retiredDir()),
   );
+
   const product = newProduct(id, {
     createdAt: Date.now(),
     description: named.description.trim(),
     name: named.name.trim(),
   });
+
   mkdirSync(product.workspaceDir, { recursive: true });
   saveProduct(product);
   list.push(product);
+
   for (const e of listEmployees()) {
     saveEmployee(e);
   }
+
   return product;
 };
 
 /** What a tool is told when it names a product the company does not have. */
-export const noSuchProduct = (productId: string): string =>
+export const noSuchProduct = (productId: string) =>
   `No product "${productId}" here — the products are ${listProducts()
     .map((p) => p.id)
     .join(", ")}.`;
@@ -849,7 +873,7 @@ export const noSuchProduct = (productId: string): string =>
  * Give a live product the name and description the lead picked for it. Its slug stays, since
  * its workspace, bets, links and orders are all keyed by it.
  */
-export const nameProduct = (productId: string, named: ProductDraft): Product => {
+export const nameProduct = (productId: string, named: ProductDraft) => {
   if (getProduct(productId) === null) {
     throw new RefusalError(
       isRetiredProduct(productId)
@@ -857,68 +881,77 @@ export const nameProduct = (productId: string, named: ProductDraft): Product => 
         : noSuchProduct(productId),
     );
   }
+
   const draft = ProductDraftSchema.safeParse(named);
+
   if (!draft.success) {
     throw new RefusalError(z.prettifyError(draft.error));
   }
+
   if (draft.data.description === UNNAMED_PRODUCT_DESCRIPTION) {
     throw new RefusalError("Describe what the product is, in a line of your own.");
   }
+
   const product = patchProduct(productId, draft.data);
-  // every agent's instructions list the products by name
+
   for (const e of listEmployees()) {
     saveEmployee(e);
   }
+
   return product;
 };
 
 /** One project per product: two on one would each count its visitors, and each deploy replace the other's site. */
-export const setProductVercel = (productId: string, vercel: VercelBinding | null): Product => {
+export const setProductVercel = (productId: string, vercel: VercelBinding | null) => {
   const holder =
     vercel &&
     current().products.find((p) => p.id !== productId && p.vercel?.projectId === vercel.projectId);
+
   if (vercel && holder) {
     throw new RefusalError(
       `${holder.name} is already bound to the Vercel project ${vercel.projectName}; pick another project, or disconnect ${holder.name} from it first.`,
     );
   }
+
   return patchProduct(productId, { vercel });
 };
 
 /** Real numbers per product, from the pulse. */
-export const setProductMetrics = (productId: string, snapshot: MetricsSnapshot): void => {
+export const setProductMetrics = (productId: string, snapshot: MetricsSnapshot) => {
   const product = getProduct(productId);
   const patch = product ? metricsPatch(product, snapshot) : {};
+
   if (Object.keys(patch).length > 0) {
     patchProduct(productId, patch);
   }
 };
 
-// ---- listings ---------------------------------------------------------------
-export const listListings = (): Listing[] => [...current().listings];
+export const listListings = () => [...current().listings] satisfies Listing[];
 
 /** Listing ids are unique across the company's products (`newListingId`). */
-export const getListing = (id: string): Listing | null =>
-  current().listings.find((l) => l.id === id) ?? null;
+export const getListing = (id: string) => current().listings.find((l) => l.id === id) ?? null;
 
 /**
  * A new listing's id: its name's slug, free among every product's listings, skipped ones on disk
  * and those still being made. Held until `releaseListingId`, once the listing is kept or never made.
  */
-export const newListingId = (name: string): string => {
+export const newListingId = (name: string) => {
   const { listings, pendingListings } = current();
+
   const id = uniqueSlug(name, [...listings.map((l) => l.id), ...pendingListings], (slug) =>
     existsSync(listingFile(slug)),
   );
+
   pendingListings.add(id);
+
   return id;
 };
 
-export const releaseListingId = (id: string): void => {
+export const releaseListingId = (id: string) => {
   maybeCurrent()?.pendingListings.delete(id);
 };
 
-const saveListing = (listing: Listing): void => {
+const saveListing = (listing: Listing) => {
   writeJsonFile(listingFile(listing.id), listing);
 };
 
@@ -927,23 +960,23 @@ const saveListing = (listing: Listing): void => {
  * throws, and even when its product retired while Stripe made it: money may come through that
  * link either way, until the sweep switches it off.
  */
-export const recordListing = (listing: Listing): void => {
+export const recordListing = (listing: Listing) => {
   requireMadeProduct(listing.productId);
   const { listings } = current();
+
   if (listings.some((l) => l.id === listing.id)) {
     throw new Error(`a listing ${listing.id} is already kept`);
   }
+
   listings.push(listing);
   saveListing(listing);
 };
 
-// ---- payment links ----------------------------------------------------------
-export const listChargeLinks = (): ChargeLink[] => [...current().links];
+export const listChargeLinks = () => [...current().links] satisfies ChargeLink[];
 
-export const getChargeLink = (id: string): ChargeLink | null =>
-  current().links.find((l) => l.id === id) ?? null;
+export const getChargeLink = (id: string) => current().links.find((l) => l.id === id) ?? null;
 
-const saveChargeLink = (link: ChargeLink): void => {
+const saveChargeLink = (link: ChargeLink) => {
   writeJsonFile(linkFile(link.id), link);
 };
 
@@ -952,58 +985,70 @@ const saveChargeLink = (link: ChargeLink): void => {
  * save throws, and even when its product retired while Stripe made it: the sweep must still find
  * it to switch it off.
  */
-export const recordChargeLink = (link: ChargeLink): void => {
+export const recordChargeLink = (link: ChargeLink) => {
   requireMadeProduct(link.productId);
   const { links } = current();
+
   if (links.some((l) => l.id === link.id)) {
     throw new Error(`a payment link ${link.id} is already kept`);
   }
+
   links.push(link);
   saveChargeLink(link);
 };
 
 /** Every payment link the company made, a listing's and create_payment_link's alike. */
-export const paymentLinks = (): CompanyLink[] => {
+export const paymentLinks = () => {
   const { links, listings } = current();
+
   return [
-    ...listings.map((listing): CompanyLink => ({
-      kind: "print",
-      link: {
-        ...listing.paymentLink,
-        livemode: listing.livemode,
-        name: listing.name,
-        productId: listing.productId,
-      },
-      listing,
-    })),
-    ...links.map((link): CompanyLink => ({ kind: "charge", link })),
-  ];
+    ...listings.map(
+      (listing) =>
+        ({
+          kind: "print",
+          link: {
+            ...listing.paymentLink,
+            livemode: listing.livemode,
+            name: listing.name,
+            productId: listing.productId,
+          },
+          listing,
+        }) satisfies CompanyLink,
+    ),
+    ...links.map((link) => ({ kind: "charge", link }) satisfies CompanyLink),
+  ] satisfies CompanyLink[];
 };
 
 /** What retiring a link's product did to it at Stripe. It happened, so the cache keeps it even when the save throws. */
-export const setLinkState = (held: CompanyLink, state: LinkState): void => {
+export const setLinkState = (held: CompanyLink, state: LinkState) => {
   const { links, listings } = current();
+
   switch (held.kind) {
     case "charge": {
       recordIn(links, held.link.id, { state }, saveChargeLink);
       break;
     }
+
     case "print": {
       const cached = listings.find((l) => l.id === held.listing.id);
+
       if (cached === undefined) {
         throw new Error(`no listing ${held.listing.id} is kept`);
       }
+
       recordIn(listings, cached.id, { paymentLink: { ...cached.paymentLink, state } }, saveListing);
       break;
     }
-    // no default
+
+    default: {
+      return unreachable(held);
+    }
   }
 };
 
-// ---- orders -----------------------------------------------------------------
-export const listOrders = (): Order[] => [...current().orders];
+export const listOrders = () => [...current().orders] satisfies Order[];
 
-const saveOrder = (order: Order): void => {
+const saveOrder = (order: Order) => {
   writeJsonFile(orderFile(order.id), order);
 };
 
@@ -1012,14 +1057,17 @@ const saveOrder = (order: Order): void => {
  * nothing is sent for it, so a restart always finds what it may already have sent. Only a sale
  * needs its listing: an unreadable order may be one whose listing this save lost.
  */
-export const recordOrder = (order: Order): void => {
+export const recordOrder = (order: Order) => {
   const { orders } = current();
+
   if (order.kind === "sale" && getListing(order.listingId)?.productId !== order.productId) {
     throw new Error(`no listing ${order.listingId} of ${order.productId} is kept`);
   }
+
   if (orders.some((o) => o.id === order.id)) {
     throw new Error(`order ${order.id} is already kept`);
   }
+
   saveOrder(order);
   orders.push(order);
 };
@@ -1031,53 +1079,50 @@ export const recordOrder = (order: Order): void => {
 export const updateSale = (
   id: string,
   patch: Partial<Pick<Sale, "costCents" | "printfulStatus" | "stage">>,
-): Sale => {
+) => {
   const { orders } = current();
   const idx = orders.findIndex((o) => o.id === id);
   const sale = orders[idx];
+
   if (sale?.kind !== "sale") {
     throw new Error(`no sale ${id} is kept`);
   }
+
   const next: Sale = { ...sale, ...patch };
   orders[idx] = next;
   saveOrder(next);
+
   return next;
 };
 
-/**
- * Where reads of Stripe's checkouts go on from, in seconds (Stripe's `created[gt]`): one per key
- * that has read, since a key of another mode or account lists none of this one's sessions.
- */
 const OrdersCursorSchema = z.object({
   byKey: z.record(z.string(), z.number().int()),
 });
+
 export type OrdersCursor = z.infer<typeof OrdersCursorSchema>;
 
 /** Null before the first read. */
-export const ordersCursor = (): OrdersCursor | null =>
-  readJsonFile(ordersCursorFile(), OrdersCursorSchema);
+export const ordersCursor = () => readJsonFile(ordersCursorFile(), OrdersCursorSchema);
 
-export const setOrdersCursor = (cursor: OrdersCursor): void => {
+export const setOrdersCursor = (cursor: OrdersCursor) => {
   current();
   writeJsonFile(ordersCursorFile(), OrdersCursorSchema.parse(cursor));
 };
 
 /** Where work no bet pays for lands: the product that has waited longest for a ship. */
-export const attentionProduct = (): Product | null => {
+export const attentionProduct = () => {
   const { products } = current();
+
   return products.toSorted((a, b) => (a.lastShipAt ?? 0) - (b.lastShipAt ?? 0))[0] ?? null;
 };
 
-// ---- bets ------------------------------------------------------------------
-export const listBets = (): Bet[] => [...current().bets];
+export const listBets = () => [...current().bets] satisfies Bet[];
 
-export const getBet = (id: string): Bet | null =>
-  maybeCurrent()?.bets.find((bet) => bet.id === id) ?? null;
+export const getBet = (id: string) => maybeCurrent()?.bets.find((bet) => bet.id === id) ?? null;
 
-export const allocationPolicy = (): PolicyParams => current().policy;
+export const allocationPolicy = () => current().policy;
 
-const patchBet = (id: string, patch: Partial<Bet>): Bet =>
-  patchIn(current().bets, id, patch, saveBet);
+const patchBet = (id: string, patch: Partial<Bet>) => patchIn(current().bets, id, patch, saveBet);
 
 /**
  * Open a bet, on a product with room for another. A users bet lands on its own
@@ -1094,29 +1139,35 @@ export const openBet = (
     budgetUsd: number;
     windowHours: number;
   } & ({ metric: "users"; landingPath: string | null } | { metric: "revenue" }),
-): Bet => {
+) => {
   const active = current();
   const product = active.products.find((p) => p.id === input.productId);
+
   if (!product) {
     throw new RefusalError(noSuchProduct(input.productId));
   }
+
   if (!productHasRoom(active.bets, product.id)) {
     throw new RefusalError(
       `${product.name} already carries ${MAX_LIVE_BETS_PER_PRODUCT} live bets; wait for a verdict or kill one first.`,
     );
   }
+
   const refusal =
     input.metric === "users" && input.landingPath !== null
       ? namedPathRefusal(input.landingPath)
       : null;
+
   if (refusal !== null) {
     throw new RefusalError(refusal);
   }
+
   const id = uniqueSlug(
     input.title,
     active.bets.map((b) => b.id),
     heldIn(betsDir()),
   );
+
   const bet: Bet = {
     budgetUsd: input.budgetUsd,
     claim:
@@ -1135,17 +1186,22 @@ export const openBet = (
     title: input.title.trim(),
     windowHours: input.windowHours,
   };
+
   const rival = active.bets.find((b) => holdsItsPath(b) && claimsCollide(b, bet));
+
   if (rival?.claim.metric === "users") {
     const holds = isClosed(rival)
       ? "is closed, but its links still send visitors"
       : "already counts visitors";
+
     throw new RefusalError(
       `"${rival.title}" (${rival.id}) ${holds} under ${rival.claim.landingPath} on ${product.name}; a bet landing there too could not be told apart from it. Leave landingPath out to get a path of its own.`,
     );
   }
+
   saveBet(bet);
   active.bets.push(bet);
+
   return bet;
 };
 
@@ -1155,57 +1211,55 @@ export const openBet = (
  * time is stamped when the reading moves, and by the first read after a
  * measuring bet's window closed, which is the one the evaluator waits for.
  */
-export const setBetReading = (betId: string, reading: number | null, at: number): void => {
+export const setBetReading = (betId: string, reading: number | null, at: number) => {
   const bet = getBet(betId);
+
   if (!bet || isClosed(bet) || reading === null) {
     return;
   }
+
   const { state, readAt } = bet;
+
   const firstSinceClose =
     state.kind === "measuring" && at >= state.until && (readAt === null || readAt < state.until);
+
   if (reading !== bet.reading || firstSinceClose) {
     patchBet(betId, { readAt: at, reading });
   }
 };
 
-export const recordBetSpend = (betId: string, costUsd: number): void => {
+export const recordBetSpend = (betId: string, costUsd: number) => {
   const bet = getBet(betId);
+
   if (bet) {
     recordIn(current().bets, betId, { spentUsd: addSpend(bet.spentUsd, costUsd) }, saveBet);
   }
 };
 
 /** Runs queued or running per bet: each will bill it, and none has yet. */
-export const runsInFlight = (): ReadonlyMap<string, number> => {
+export const runsInFlight = () => {
   const counts = new Map<string, number>();
+
   for (const t of current().tasks) {
     if (t.betId !== null && (t.state.kind === "queued" || t.state.kind === "running")) {
       counts.set(t.betId, (counts.get(t.betId) ?? 0) + 1);
     }
   }
+
   return counts;
 };
 
-const dropTask = (taskId: string, reason: string, now: number): void => {
+const dropTask = (taskId: string, reason: string, now: number) => {
   shelveClosed(
     patchIn(current().tasks, taskId, entering({ kind: "dropped", reason }, now), saveTask),
   );
 };
 
-/**
- * Drop the matching work that is waiting into history: no failure, and nothing
- * the founder can revive, since it would only bill a bet or product that takes
- * no more work. A running task finishes its run, and is dropped if that run
- * fails, parks (`failTask`, `parkTask`), asks the founder once its bet has
- * closed (`settleTask`) or never settles before the app restarts
- * (`recoverInterrupted`); on a measuring bet, the founder's answered step is
- * dropped only when its run fails. A dead letter goes too: `claimTask` would refuse every retry of it.
- */
-const dropWork = (match: (t: Task) => boolean, reason: string, now: number): void => {
+const dropWork = (match: (t: Task) => boolean, reason: string, now: number) => {
   for (const t of current().tasks.filter(match)) {
     const { kind } = t.state;
+
     if (kind === "todo" || kind === "queued" || kind === "blocked" || kind === "dead") {
-      // one refused save must not keep the rest from dropping; `lockTaskForRun` drops it before it runs
       try {
         dropTask(t.id, reason, now);
       } catch (error) {
@@ -1225,56 +1279,59 @@ const STOP_REASON = {
   retired: "product retired",
 } satisfies Record<Stop, string>;
 
-/**
- * Why the task takes no more runs: its bet stopped taking work, or its product retired, and a
- * run would land in the company's folder, billing what takes no more work. Null while it runs on.
- */
-const stopOf = (t: Task): Stop | null => {
+const stopOf = (t: Task) => {
   const bet = t.betId === null ? null : getBet(t.betId);
+
   if (bet && bet.state.kind !== "open") {
-    return bet.state.kind === "measuring" ? "measuring" : "closed";
+    return (bet.state.kind === "measuring" ? "measuring" : "closed") satisfies Stop | null;
   }
-  return t.productId !== null && isRetiredProduct(t.productId) ? "retired" : null;
+
+  return (
+    t.productId !== null && isRetiredProduct(t.productId) ? "retired" : null
+  ) satisfies Stop | null;
 };
 
-const retune = (active: ActiveCompany): void => {
+const retune = (active: ActiveCompany) => {
   const next = dream(active.policy, active.bets);
+
   if (next !== active.policy) {
     writeJsonFile(policyFile(), next);
     active.policy = next;
   }
 };
 
-/**
- * What a measuring bet keeps: work waiting on the founder, or carrying their answer while it
- * can still run, since that step may be the one that moves the number.
- */
-const keptWhileMeasuring = (t: Task): boolean =>
+const keptWhileMeasuring = (t: Task) =>
   t.state.kind === "blocked" || (t.answers !== null && t.state.kind !== "dead");
 
 /** The work is shipped: stop spending and let the number answer. */
-export const measureBet = (betId: string, now: number): Bet => {
+export const measureBet = (betId: string, now: number) => {
   const bet = getBet(betId);
+
   if (!bet || bet.state.kind !== "open") {
     throw new RefusalError(`no open bet "${betId}"`);
   }
+
   const measuring = patchBet(betId, { state: { kind: "measuring", until: windowEnd(bet, now) } });
   dropWork((t) => t.betId === betId && !keptWhileMeasuring(t), STOP_REASON.measuring, now);
+
   return measuring;
 };
 
-const closeAsKilled = (bet: Bet, reason: string, now: number): Bet =>
+const closeAsKilled = (bet: Bet, reason: string, now: number) =>
   patchBet(bet.id, { state: { closedAt: now, kind: "killed", moved: bet.reading, reason } });
 
 /** Someone gives up on a bet before its window does. */
-export const killBet = (betId: string, reason: string, now: number): Bet => {
+export const killBet = (betId: string, reason: string, now: number) => {
   const bet = getBet(betId);
+
   if (!bet || isClosed(bet)) {
     throw new RefusalError(`no live bet "${betId}"`);
   }
+
   const killed = closeAsKilled(bet, reason, now);
   dropWork((t) => t.betId === betId, BET_KILLED, now);
   retune(current());
+
   return killed;
 };
 
@@ -1285,15 +1342,19 @@ const UNSETTLED = "spent out, and the lead's settle run neither measured nor kil
  * again would bill the bet another run on every tick. No window ran, so it closes unmeasured and
  * nothing learns from it. Null when the bet already left open.
  */
-export const closeUnsettledBet = (betId: string, now: number): Bet | null => {
+export const closeUnsettledBet = (betId: string, now: number) => {
   const bet = getBet(betId);
+
   if (bet?.state.kind !== "open") {
     return null;
   }
+
   const closed = patchBet(betId, {
     state: { closedAt: now, kind: "killed", moved: null, reason: UNSETTLED },
   });
+
   dropWork((t) => t.betId === betId, STOP_REASON.closed, now);
+
   return closed;
 };
 
@@ -1302,41 +1363,49 @@ export const closeUnsettledBet = (betId: string, now: number): Bet | null => {
  * whose state changed. A verdict the save refuses is reported and leaves that bet as the disk has
  * it, to be judged again on the next tick, without holding back the others'.
  */
-export const judgeBets = (now: number, pulsingSince: number | null): Bet[] => {
+export const judgeBets = (now: number, pulsingSince: number | null) => {
   const active = current();
   const changed: Bet[] = [];
+
   for (const bet of active.bets) {
     const state = judge(bet, now, pulsingSince);
+
     if (state === bet.state) {
       continue;
     }
+
     try {
       changed.push(patchBet(bet.id, { state }));
     } catch (error) {
       report(`judge bet ${bet.id}`, error);
     }
   }
-  const closed = new Set(changed.filter(isClosed).map((b) => b.id));
+
+  const closed = new Set(changed.flatMap((b) => (isClosed(b) ? [b.id] : [])));
+
   if (closed.size > 0) {
     dropWork((t) => t.betId !== null && closed.has(t.betId), STOP_REASON.closed, now);
+
     try {
       retune(active);
     } catch (error) {
       report("retune policy", error);
     }
   }
+
   return changed;
 };
 
 const RECENT_SHIPS = 6;
 const RecentShipsSchema = z.array(z.string());
 
-export const recentShips = (): readonly string[] => current().recentShips;
+export const recentShips = () => current().recentShips;
 
-export const recordShip = (productId: string | null, summary: string): void => {
+export const recordShip = (productId: string | null, summary: string) => {
   const active = current();
   recordCompany({ ships: active.company.ships + 1 });
   const product = productId === null ? null : getProduct(productId);
+
   if (product) {
     recordIn(
       active.products,
@@ -1345,8 +1414,9 @@ export const recordShip = (productId: string | null, summary: string): void => {
       saveProduct,
     );
   }
-  // the counters are the record; the brief's list follows them
+
   const ships = [...active.recentShips, summary].slice(-RECENT_SHIPS);
+
   try {
     writeJsonFile(recentShipsFile(), ships);
   } finally {
@@ -1354,27 +1424,30 @@ export const recordShip = (productId: string | null, summary: string): void => {
   }
 };
 
-// ---- the company room ------------------------------------------------------
-export const postTeamMessage = (from: Speaker, text: string): TeamMessage => {
+export const postTeamMessage = (from: Speaker, text: string) => {
   const active = current();
+
   const msg: Omit<TeamMessage, "id"> = {
     createdAt: Date.now(),
     from,
     text,
   };
+
   const ring = active.chat;
   const stored: TeamMessage = { ...msg, id: nextId("nextTeamMessageId") };
   ring.push(stored);
+
   if (ring.length > TEAM_CHAT_RING) {
     ring.splice(0, ring.length - TEAM_CHAT_RING);
   }
+
   appendJsonl(chatFile(), msg);
+
   return stored;
 };
 
-export const recentTeamMessages = (limit = 20): TeamMessage[] => current().chat.slice(-limit);
+export const recentTeamMessages = (limit = 20) => current().chat.slice(-limit);
 
-// ---- tasks -----------------------------------------------------------------
 interface NewTask {
   productId?: string | null;
   betId?: string | null;
@@ -1384,20 +1457,21 @@ interface NewTask {
   assigneeId?: string | null;
 }
 
-/** `answers` is the ask a continuation carries the founder's answer to, which only an answer sets. */
 const addTask = (
   t: NewTask,
   provenance: TaskProvenance,
   state: TaskIn<"todo" | "blocked">["state"],
   answers: string | null = null,
-): Task => {
+) => {
   const { tasks: list } = current();
   const now = Date.now();
+
   const id = uniqueSlug(
     t.title,
     list.map((x) => x.id),
     heldIn(tasksDir(), shippedDir()),
   );
+
   const task: Task = {
     answers,
     assigneeId: t.assigneeId ?? null,
@@ -1413,37 +1487,38 @@ const addTask = (
     ...provenance,
     ...entering(state, now),
   };
+
   saveTask(task);
   list.push(task);
+
   return task;
 };
 
-export const createTask = ({ origin, ...brief }: NewTask & { origin: RunOrigin }): Task =>
+export const createTask = ({ origin, ...brief }: NewTask & { origin: RunOrigin }) =>
   addTask(brief, { origin }, { kind: "todo" });
 
 /** An open task by id. Shipped work is history, not something to act on. */
-export const getTask = (id: string): Task | null =>
-  maybeCurrent()?.tasks.find((task) => task.id === id) ?? null;
+export const getTask = (id: string) => maybeCurrent()?.tasks.find((task) => task.id === id) ?? null;
 
 /** The company's open queue: everything not yet history, newest first. */
-export const listOpenTasks = (): Task[] => current().tasks.toSorted(newestFirst);
+export const listOpenTasks = () => current().tasks.toSorted(newestFirst);
 
 /** Open tasks by assignee and status, newest first. History is the shipping log's. */
 export const queryTasks = (query: {
   assigneeId?: string | undefined;
   status?: readonly OpenTaskStatus[] | undefined;
-}): Task[] => {
+}) => {
   const { assigneeId, status } = query;
+
   return listOpenTasks()
     .filter((t) => assigneeId === undefined || t.assigneeId === assigneeId)
     .filter((t) => status === undefined || status.some((s) => s === t.state.kind));
 };
 
-/** A shipping log line's summary; the brief a task ran on stays on disk. */
 const SHIP_LINE_CHARS = 1500;
 
 /** Every ship with something to say, newest first: the Products panel's log. */
-export const shippingLog = (): ShipLine[] =>
+export const shippingLog = () =>
   listShippedTasks()
     .filter(taskIn("done"))
     .flatMap(({ assigneeId, completedAt, createdAt, id, productId, state, title }) =>
@@ -1462,33 +1537,39 @@ export const shippingLog = (): ShipLine[] =>
     )
     .toSorted((a, b) => b.completedAt - a.completedAt);
 
-export const openTasksFor = (employeeId: string): Task[] =>
-  maybeCurrent()?.tasks.filter((task) => task.assigneeId === employeeId) ?? [];
+export const openTasksFor = (employeeId: string) =>
+  (maybeCurrent()?.tasks.filter((task) => task.assigneeId === employeeId) ?? []) satisfies Task[];
 
 /**
  * The employee's latest proposal to end done, unless one they were asked for since is still
  * open: what came of the last time they were asked for the next bet.
  */
-export const lastProposalDone = (employeeId: string): ProposalEnd | null => {
+export const lastProposalDone = (employeeId: string) => {
   const { lastProposal: last, tasks } = current();
+
   if (last?.employeeId !== employeeId) {
     return null;
   }
+
   const askedSince = tasks.some(
     (t) => t.assigneeId === employeeId && t.origin === "propose" && t.createdAt > last.briefedAt,
   );
+
   return askedSince ? null : last;
 };
 
 const TASK_PRIORITY_ORDER = { high: 0, low: 2, medium: 1 } satisfies Record<TaskPriority, number>;
 
 /** Queued tasks eligible to start now (a backoff retry waits for nextAttemptAt). */
-export const listQueuedTasks = (): Task[] => {
+export const listQueuedTasks = () => {
   const now = Date.now();
+
   const out = (maybeCurrent()?.tasks ?? []).filter((task) => {
     const { state } = task;
+
     return state.kind === "queued" && (state.nextAttemptAt === null || state.nextAttemptAt <= now);
   });
+
   return out.toSorted(
     (a, b) =>
       TASK_PRIORITY_ORDER[a.priority] - TASK_PRIORITY_ORDER[b.priority] ||
@@ -1496,40 +1577,39 @@ export const listQueuedTasks = (): Task[] => {
   );
 };
 
-const patchTask = (id: string, patch: Partial<Task>): Task =>
+const patchTask = (id: string, patch: Partial<Task>) =>
   patchIn(current().tasks, id, patch, saveTask);
 
-/** How a task leaves a run that has ended, or an ask that was answered: it happened, saved or not. */
-const recordTask = (id: string, patch: Partial<Task>): Task =>
+const recordTask = (id: string, patch: Partial<Task>) =>
   recordIn(current().tasks, id, patch, saveTask);
 
 /** How a run can leave its task: shipped, or waiting on the founder. Only an answer supersedes one. */
 type SettledByRun = Extract<TaskState, { kind: "done" | "blocked" }>;
 
-/** How much of a ship's summary a dialogue quotes back to its author. */
 const LAST_SHIP_CHARS = 500;
 
-/** Kept in run-state so a dialogue can offer to build on it without reading the shipping log. */
-const noteShip = (t: Task): void => {
-  // a run can settle after its employee was released
+const noteShip = (t: Task) => {
   if (t.state.kind !== "done" || !t.state.summary || !t.assigneeId || !getEmployee(t.assigneeId)) {
     return;
   }
+
   const lastShip = {
     summary: t.state.summary.slice(0, LAST_SHIP_CHARS),
     taskId: t.id,
     title: t.title,
   };
+
   recordIn(current().employees, t.assigneeId, { lastShip }, saveRunState);
 };
 
-/** Losing it costs one more proposal, never a settle, so a failed write is only reported. */
-const noteProposalDone = (t: Task, endedAt: number): void => {
+const noteProposalDone = (t: Task, endedAt: number) => {
   if (t.origin !== "propose" || t.assigneeId === null) {
     return;
   }
+
   const last: ProposalEnd = { briefedAt: t.createdAt, employeeId: t.assigneeId, endedAt };
   current().lastProposal = last;
+
   try {
     writeJsonFile(lastProposalFile(), last);
   } catch (error) {
@@ -1537,22 +1617,23 @@ const noteProposalDone = (t: Task, endedAt: number): void => {
   }
 };
 
-// Persist before shelving so boot can recover a crash between the two writes.
 const close = (
   taskId: string,
   state: SettledByRun | Extract<TaskState, { kind: "superseded" }>,
-): void => {
+) => {
   const now = Date.now();
   const t = recordTask(taskId, entering(state, now));
+
   if (state.kind === "done") {
     noteProposalDone(t, now);
   }
+
   if (isHistory(t) && shelveClosed(t)) {
     noteShip(t);
   }
 };
 
-const heldBy = (t: Task | null, runId: string): Task | null =>
+const heldBy = (t: Task | null, runId: string) =>
   t && t.state.kind === "running" && t.state.runId === runId ? t : null;
 
 /**
@@ -1560,30 +1641,39 @@ const heldBy = (t: Task | null, runId: string): Task | null =>
  * count. Refused for work whose bet or product stopped taking it, but for the founder's step on
  * a measuring bet: a dead letter there is no such step.
  */
-export const claimTask = (taskId: string, employeeId: string): Task | null => {
+export const claimTask = (taskId: string, employeeId: string) => {
   const t = getTask(taskId);
+
   if (!t || !getEmployee(employeeId)) {
     return null;
   }
+
   const { kind } = t.state;
+
   const claimable =
     t.origin !== "order" && (kind === "todo" || kind === "blocked" || kind === "dead");
+
   if (!claimable || (t.assigneeId !== null && t.assigneeId !== employeeId)) {
     return null;
   }
+
   const stop = stopOf(t);
+
   if (stop !== null && (stop !== "measuring" || kind === "dead")) {
     throw new RefusalError(
       `"${t.title}" won't run again: its ${STOP_REASON[stop]}, so a run would only bill what takes no more work. The lead can delegate it again under a live bet.`,
     );
   }
+
   const patch: Partial<Task> = {
     assigneeId: employeeId,
     state: { kind: "queued", lastError: null, nextAttemptAt: null },
   };
+
   if (kind === "dead") {
     patch.attempts = 0;
   }
+
   return patchTask(taskId, patch);
 };
 
@@ -1591,24 +1681,29 @@ export const claimTask = (taskId: string, employeeId: string): Task | null => {
  * Acquire execution lock: queued -> running, stamp runId. Null if lost race, backing off, waiting
  * on a product boot could not read, or dropped as work its bet or product no longer takes.
  */
-export const lockTaskForRun = (taskId: string, runId: string): Task | null => {
+export const lockTaskForRun = (taskId: string, runId: string) => {
   const t = getTask(taskId);
+
   if (!t || t.state.kind !== "queued") {
     return null;
   }
+
   if (t.state.nextAttemptAt !== null && t.state.nextAttemptAt > Date.now()) {
     return null;
   }
-  // its run would land in shared/, away from the product's code; it runs once the file reads again
+
   if (t.productId !== null && getProduct(t.productId) === null && !isRetiredProduct(t.productId)) {
     return null;
   }
-  // measuring keeps a claimed ask and an answer's continuation, so only a closed bet or a retired product drops here
+
   const stop = stopOf(t);
+
   if (stop !== null && stop !== "measuring") {
     dropTask(taskId, STOP_REASON[stop], Date.now());
+
     return null;
   }
+
   return patchTask(taskId, entering({ kind: "running", runId }, Date.now()));
 };
 
@@ -1616,19 +1711,21 @@ interface Dropped {
   kind: "dropped";
 }
 
-/** A run whose bet or product stopped taking work while it ran drops its task rather than leave it waiting; null while both take it. */
-const droppedWhenStopped = (t: Task, attempts: number): Dropped | null => {
+const droppedWhenStopped = (t: Task, attempts: number) => {
   const stop = stopOf(t);
+
   if (stop === null) {
     return null;
   }
+
   shelveClosed(
     recordTask(t.id, {
       attempts,
       ...entering({ kind: "dropped", reason: STOP_REASON[stop] }, Date.now()),
     }),
   );
-  return { kind: "dropped" };
+
+  return { kind: "dropped" } satisfies Dropped | null;
 };
 
 /**
@@ -1637,27 +1734,29 @@ const droppedWhenStopped = (t: Task, attempts: number): Dropped | null => {
  * answer would only bill what takes no more work. One on a measuring bet stays, since that step
  * may be what moves the number.
  */
-export const settleTask = (
-  taskId: string,
-  runId: string,
-  state: SettledByRun,
-): SettledByRun | Dropped | null => {
+export const settleTask = (taskId: string, runId: string, state: SettledByRun) => {
   const t = heldBy(getTask(taskId), runId);
+
   if (!t) {
     return null;
   }
+
   const stop = state.kind === "blocked" ? stopOf(t) : null;
   const dropped = stop !== null && stop !== "measuring" ? droppedWhenStopped(t, t.attempts) : null;
+
   if (dropped) {
     return dropped;
   }
+
   close(taskId, state);
+
   return state;
 };
 
 const failed = (t: Task, lastError: string) => {
   const now = Date.now();
   const verdict = afterFailure(t.attempts, now);
+
   const task: Task =
     verdict.kind === "dead"
       ? { ...t, attempts: verdict.attempts, ...entering({ kind: "dead", lastError }, now) }
@@ -1666,25 +1765,27 @@ const failed = (t: Task, lastError: string) => {
           attempts: verdict.attempts,
           state: { kind: "queued", lastError, nextAttemptAt: verdict.retryAt },
         };
+
   return { task, verdict };
 };
 
 /** A run failed: the task takes its next verdict. Only the owning run may; null when it no longer holds the lock. */
-export const failTask = (
-  taskId: string,
-  runId: string,
-  error: string,
-): FailureVerdict | Dropped | null => {
+export const failTask = (taskId: string, runId: string, error: string) => {
   const t = heldBy(getTask(taskId), runId);
+
   if (!t) {
     return null;
   }
+
   const next = failed(t, error);
   const dropped = droppedWhenStopped(t, next.verdict.attempts);
+
   if (dropped) {
     return dropped;
   }
+
   recordTask(taskId, next.task);
+
   return next.verdict;
 };
 
@@ -1694,23 +1795,23 @@ export const failTask = (
  * longer holds the lock. One carrying the founder's answer on a measuring bet stays too,
  * since that step may be what moves the number.
  */
-export const parkTask = (
-  taskId: string,
-  runId: string,
-  until: number,
-  lastError: string,
-): { kind: "parked" } | Dropped | null => {
+export const parkTask = (taskId: string, runId: string, until: number, lastError: string) => {
   const t = heldBy(getTask(taskId), runId);
+
   if (!t) {
     return null;
   }
+
   const carriesAnswer = t.answers !== null && stopOf(t) === "measuring";
   const dropped = carriesAnswer ? null : droppedWhenStopped(t, t.attempts);
+
   if (dropped) {
     return dropped;
   }
+
   recordTask(taskId, { state: { kind: "queued", lastError, nextAttemptAt: until } });
-  return { kind: "parked" };
+
+  return { kind: "parked" } satisfies { kind: "parked" } | Dropped | null;
 };
 
 /**
@@ -1718,11 +1819,13 @@ export const parkTask = (
  * shelve the ask as superseded by it. In that order: a crash between the two
  * writes leaves an ask to answer again, never an answer nobody carries.
  */
-export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task | null => {
+export const resolveBlockedWithAnswer = (taskId: string, answer: string) => {
   const t = getTask(taskId);
+
   if (!t || t.origin === "order" || t.state.kind !== "blocked" || !t.assigneeId) {
     return null;
   }
+
   const next = addTask(
     {
       betId: t.betId,
@@ -1735,7 +1838,9 @@ export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task |
     { kind: "todo" },
     taskId,
   );
+
   close(taskId, { by: next.id, kind: "superseded" });
+
   return next;
 };
 
@@ -1744,15 +1849,12 @@ export const resolveBlockedWithAnswer = (taskId: string, answer: string): Task |
  * about the same subject still waits, however it is titled, so a pump that finds the same
  * trouble again raises no second.
  */
-export const raiseOrderCard = (
-  subject: OrderCardSubject,
-  title: string,
-  ask: ActionAsk,
-): Task | null => {
+export const raiseOrderCard = (subject: OrderCardSubject, title: string, ask: ActionAsk) => {
   const waiting = current().tasks.some(
     (t) =>
       t.origin === "order" && t.state.kind === "blocked" && isDeepStrictEqual(t.subject, subject),
   );
+
   return waiting
     ? null
     : addTask(
@@ -1763,24 +1865,30 @@ export const raiseOrderCard = (
 };
 
 /** The founder settled an order card: history, which no run carries on. Null for any other task. */
-export const closeOrderCard = (taskId: string): OrderCard | null => {
+export const closeOrderCard = (taskId: string) => {
   const t = getTask(taskId);
+
   if (t?.origin !== "order" || t.state.kind !== "blocked") {
     return null;
   }
+
   const closed: OrderCard = { ...t, ...entering({ kind: "settled" }, Date.now()) };
   shelveClosed(recordTask(taskId, closed));
+
   return closed;
 };
 
 /** The product an employee is on: their latest task's, else the company's first. */
-export const productOfEmployee = (employeeId: string): Product | null => {
+export const productOfEmployee = (employeeId: string) => {
   const emp = getEmployee(employeeId);
+
   if (!emp) {
     return null;
   }
+
   const [latest] = openTasksFor(employeeId).toSorted(newestFirst);
   const fromTask = latest?.productId ? getProduct(latest.productId) : null;
+
   return fromTask ?? maybeCurrent()?.products[0] ?? null;
 };
 
@@ -1794,40 +1902,48 @@ export const productOfEmployee = (employeeId: string): Product | null => {
  * founder. Its listings, links and orders stay: main switches its links off at Stripe
  * (`switchOffRetiredLinks`), and every paid order still ships. Returns the bets it took down.
  */
-export const killProduct = (productId: string, reason: string, by: string | null): Bet[] => {
+export const killProduct = (productId: string, reason: string, by: string | null) => {
   const product = requireProduct(productId);
   const active = current();
+
   if (active.products.length === 1) {
     throw new RefusalError(
       `${product.name} is the only product — start its successor with create_product first.`,
     );
   }
+
   const busy = active.tasks.find(
     (t) => t.productId === productId && t.state.kind === "running" && t.assigneeId !== by,
   );
+
   if (busy) {
     const runner = busy.assigneeId === null ? null : getEmployee(busy.assigneeId);
     throw new RefusalError(
       `${runner?.name ?? "A teammate"} is mid-run on ${product.name} — kill its bets so no new work lands there, then retire it once they're idle.`,
     );
   }
+
   moveDir(path.join(productsDir(), productId), archiveTo(retiredDir(), productId));
   const now = Date.now();
+
   const killed = active.bets
     .filter((b) => b.productId === productId && !isClosed(b))
     .map((bet) => closeAsKilled(bet, `product retired: ${reason}`, now));
+
   if (killed.length > 0) {
     retune(active);
   }
+
   dropWork((t) => t.productId === productId, STOP_REASON.retired, now);
   active.products.splice(active.products.indexOf(product), 1);
+
   for (const e of active.employees) {
     saveEmployee(e, { onlyIfChanged: true });
   }
+
   return killed;
 };
 
-// ---- founding and boot -------------------------------------------------------
 /** Publish a complete company with one directory rename; boot ignores staging directories. */
 export const foundCompany = (input: {
   name: string;
@@ -1837,13 +1953,15 @@ export const foundCompany = (input: {
   founderSpriteSeed: string;
   budget: Budget;
   hires: readonly FoundingHire[];
-}): Company => {
+}) => {
   if (c().active) {
     throw new RefusalError("a company is already active");
   }
+
   if (existsSync(companyDir())) {
     throw new RefusalError("an existing company save must be loaded or repaired before founding");
   }
+
   const co: Company = {
     autopilot: true,
     budget: input.budget,
@@ -1862,88 +1980,103 @@ export const foundCompany = (input: {
     users: null,
     workspaceDir: sharedDir(),
   };
+
   const active = emptyCompany(co);
   active.shipped = [];
+
   if (input.hires.length > co.maxAgents) {
     throw new RefusalError(`the office is at its ${co.maxAgents}-seat cap`);
   }
+
   active.products.push(firstProduct(co));
+
   for (const [deskIndex, hire] of input.hires.entries()) {
     const employeeId = uniqueSlug(
       hire.name,
       active.employees.map((employee) => employee.id),
     );
+
     active.employees.push(employeeRecord({ deskIndex, ...hire }, employeeId));
   }
+
   co.leaderId = leadOf(active.employees);
+
   for (const routine of defaultRoutines(input.businessType)) {
     const routineId = uniqueSlug(
       routine.name,
       active.routines.map((existing) => existing.id),
     );
+
     active.routines.push(routineRecord(routine, routineId));
   }
 
   const staging = mkdtempSync(path.join(rootDir(), ".founding-"));
-  // Only disk destinations change; persisted workspace paths refer to the final company.
-  const staged = (file: string): string => path.join(staging, path.relative(companyDir(), file));
-  // durable, so the company/ one rename publishes never holds an empty file after an OS crash
-  const stage = (file: string, text: string): void => {
+  const staged = (file: string) => path.join(staging, path.relative(companyDir(), file));
+
+  const stage = (file: string, text: string) => {
     atomicWrite(staged(file), text, { durable: true });
   };
+
   try {
     mkdirSync(staged(sharedDir()), { recursive: true });
     mkdirSync(staged(tasksDir()), { recursive: true });
     mkdirSync(staged(agentsDir()), { recursive: true });
+
     for (const product of active.products) {
       mkdirSync(staged(product.workspaceDir), { recursive: true });
       stage(productFile(product.id), serializeDoc(productToDoc(product)));
     }
+
     for (const employee of active.employees) {
       mkdirSync(staged(employeeMemoryDir(employee.id)), { recursive: true });
       stage(employeeFile(employee.id), serializeDoc(employeeToDoc(employee, co, active.products)));
     }
+
     for (const routine of active.routines) {
       stage(routineFile(routine.id), serializeDoc(routineToDoc(routine)));
     }
+
     stage(companyFile(), serializeDoc(companyToDoc(co)));
     moveDir(staging, companyDir());
   } catch (error) {
     rmSync(staging, { force: true, recursive: true });
     throw error;
   }
+
   c().active = active;
+
   return co;
 };
 
-/** The root's one company, or null when it holds none or one that does not read, which the load report names. */
-const readCompany = (): Company | null => {
+const readCompany = () => {
   if (!existsSync(companyDir())) {
     return null;
   }
+
   try {
     return docToCompany(parseDoc(readFileSync(companyFile(), "utf-8")));
   } catch (error) {
     skip("company", companyFile(), error);
+
     return null;
   }
 };
 
-/**
- * A run the last launch never saw settle: dropped with a bet or product that stopped taking
- * work, but for one carrying the founder's answer on a measuring bet, else counted as failed.
- */
-const recoverInterrupted = (task: Task, now: number): Task => {
+const recoverInterrupted = (task: Task, now: number) => {
   const stop = stopOf(task);
   const carriesAnswer = task.answers !== null && stop === "measuring";
+
   if (stop !== null && !carriesAnswer) {
-    return { ...task, ...entering({ kind: "dropped", reason: STOP_REASON[stop] }, now) };
+    return {
+      ...task,
+      ...entering({ kind: "dropped", reason: STOP_REASON[stop] }, now),
+    } satisfies Task;
   }
+
   return failed(task, "Interrupted by app restart").task;
 };
 
-/** Shelve the history among `tasks`, returning the open work. */
-const shelveLoadedHistory = (active: ActiveCompany, tasks: Task[]): Task[] => {
+const shelveLoadedHistory = (active: ActiveCompany, tasks: Task[]) => {
   for (const task of tasks.filter(isHistory)) {
     try {
       shelve(task);
@@ -1952,49 +2085,52 @@ const shelveLoadedHistory = (active: ActiveCompany, tasks: Task[]): Task[] => {
       skip("task", taskFile(task.id), error);
     }
   }
+
   return tasks.filter((task) => !isHistory(task));
 };
 
-/** A running TASK.md that names no run, which only a hand edit leaves, put back on the queue: no run holds it. */
-const relockLost = (doc: FrontmatterDoc): FrontmatterDoc =>
-  doc.metadata.status === "running" && doc.metadata.runId === undefined
+const relockLost = (doc: FrontmatterDoc) =>
+  (doc.metadata.status === "running" && doc.metadata.runId === undefined
     ? { ...doc, metadata: { ...doc.metadata, lastError: "run lock lost", status: "queued" } }
-    : doc;
+    : doc) satisfies FrontmatterDoc;
 
-/** Queued and running belong to someone; a file giving them nobody (a hand edit, a release with no lead to take it) is work to pick up. */
-const isUnowned = (task: Task): boolean =>
+const isUnowned = (task: Task) =>
   task.assigneeId === null && (task.state.kind === "queued" || task.state.kind === "running");
 
-/** What boot makes of a task the last launch left, or null when it stands as it is. */
-const recoveredAtBoot = (task: Task, now: number): Task | null => {
+const recoveredAtBoot = (task: Task, now: number) => {
   if (isUnowned(task)) {
-    return { ...task, state: { kind: "todo" } };
+    return { ...task, state: { kind: "todo" } } satisfies Task | null;
   }
+
   return task.state.kind === "running" ? recoverInterrupted(task, now) : null;
 };
 
-/** Recover the runs the last launch never saw settle, and the work it left nobody holding. */
-const recoverInterruptedRuns = (active: ActiveCompany): void => {
+const recoverInterruptedRuns = (active: ActiveCompany) => {
   const now = Date.now();
+
   for (const [i, task] of active.tasks.entries()) {
     const recovered = recoveredAtBoot(task, now);
+
     if (recovered) {
       active.tasks[i] = recovered;
       saveTask(recovered);
     }
   }
+
   active.tasks = shelveLoadedHistory(active, active.tasks);
 };
 
-const loadActiveCompany = (company: Company): ActiveCompany => {
+const loadActiveCompany = (company: Company) => {
   const active = emptyCompany(company);
   active.employees = loadPackages("employee", agentsDir(), employeeFile, docToEmployee)
     .map(withRunState)
     .toSorted(byAge);
   active.bets = loadPackages("bet", betsDir(), betFile, docToBet).toSorted(byAge);
+
   const tasks = loadPackages("task", tasksDir(), taskFile, (doc) =>
     docToTask(relockLost(doc)),
   ).toSorted(byAge);
+
   active.tasks = shelveLoadedHistory(active, tasks);
   active.products = loadPackages("product", productsDir(), productFile, docToProduct).toSorted(
     byAge,
@@ -2009,20 +2145,17 @@ const loadActiveCompany = (company: Company): ActiveCompany => {
   active.sinceLastLook = readJsonFile(sinceLastLookFile(), DigestSchema);
   active.recentShips = readJsonFile(recentShipsFile(), RecentShipsSchema) ?? [];
   active.lastProposal = readJsonFile(lastProposalFile(), ProposalEndSchema);
+
   return active;
 };
 
-/** Whether the company lost its last product; one boot could not read is still its own. */
-const lacksProduct = (active: ActiveCompany): boolean =>
+const lacksProduct = (active: ActiveCompany) =>
   active.products.length === 0 && !holdsPackage(productsDir(), productFile);
 
-/**
- * Whether the save named no lead on the roster and one was elected; unsaved. A lead whose
- * package boot merely could not read stays lead, so fixing the file brings them back as one.
- */
-const electMissingLead = (active: ActiveCompany): boolean => {
+const electMissingLead = (active: ActiveCompany) => {
   const { company, employees } = active;
   const { leaderId } = company;
+
   if (
     employees.length === 0 ||
     employees.some((e) => e.id === leaderId) ||
@@ -2030,12 +2163,13 @@ const electMissingLead = (active: ActiveCompany): boolean => {
   ) {
     return false;
   }
+
   active.company = { ...company, leaderId: leadOf(employees) };
+
   return true;
 };
 
-/** A company always has a product to work on; one that lost its last is given its mission back as one. */
-const ensureFirstProduct = (active: ActiveCompany): void => {
+const ensureFirstProduct = (active: ActiveCompany) => {
   if (lacksProduct(active)) {
     const first = firstProduct(active.company);
     mkdirSync(first.workspaceDir, { recursive: true });
@@ -2044,15 +2178,10 @@ const ensureFirstProduct = (active: ActiveCompany): void => {
   }
 };
 
-/**
- * A release cut short (a quit, a refused save) left the leaver's asks and dead letters on
- * their id, which no claim reaches: an answer queued a continuation nobody runs. Whoever an open
- * task names off the roster, with no package under agents/ that boot merely could not read, is
- * released now, known only by that id, to the lead elected before.
- */
-const releaseOrphanedTasks = (active: ActiveCompany): void => {
+const releaseOrphanedTasks = (active: ActiveCompany) => {
   const roster = new Set(active.employees.map((e) => e.id));
   const unread = heldIn(agentsDir());
+
   const leavers = new Set(
     active.tasks.flatMap((t) =>
       t.assigneeId === null || roster.has(t.assigneeId) || unread(t.assigneeId)
@@ -2060,19 +2189,22 @@ const releaseOrphanedTasks = (active: ActiveCompany): void => {
         : [t.assigneeId],
     ),
   );
+
   for (const leaver of leavers) {
     handOver(active, leaver, leaver);
   }
 };
 
-export const initStore = (): LoadReport => {
+export const initStore = () => {
   ensureAppDirs();
   resetLoadReport();
   cache = { active: null, nextActivityId: 1, nextTeamMessageId: 1 };
   const company = readCompany();
+
   if (!company) {
     return loadReport();
   }
+
   try {
     const active = loadActiveCompany(company);
     cache.active = active;
@@ -2080,10 +2212,13 @@ export const initStore = (): LoadReport => {
     ensureFirstProduct(active);
     dropEndedGrants(active);
     mkdirSync(company.workspaceDir, { recursive: true });
+
     if (electMissingLead(active)) {
       saveCompany(active.company);
     }
+
     releaseOrphanedTasks(active);
+
     for (const employee of active.employees) {
       try {
         saveEmployee(employee, { onlyIfChanged: true });
@@ -2095,13 +2230,13 @@ export const initStore = (): LoadReport => {
     cache.active = null;
     skip("company", companyFile(), error);
   }
+
   return loadReport();
 };
 
-// ---- activity log ----------------------------------------------------------
-/** Losing it costs one count in the founder's summary, never the event, so a failed write is only reported. */
-const saveSinceLastLook = (active: ActiveCompany, next: Digest): void => {
+const saveSinceLastLook = (active: ActiveCompany, next: Digest) => {
   active.sinceLastLook = next;
+
   try {
     writeJsonFile(sinceLastLookFile(), next);
   } catch (error) {
@@ -2110,27 +2245,32 @@ const saveSinceLastLook = (active: ActiveCompany, next: Digest): void => {
 };
 
 /** The founder has the office in view as of `at`: what came before is seen, and the count starts over. */
-export const markSeen = (at: number): void => {
+export const markSeen = (at: number) => {
   saveSinceLastLook(current(), emptyDigest(at));
 };
 
-export const logActivity = (row: PersistedActivity, persist: boolean): ActivityEvent => {
+export const logActivity = (row: PersistedActivity, persist: boolean) => {
   const entry: ActivityEvent = { ...row, id: nextId("nextActivityId") };
   const { active } = c();
+
   if (!persist || !active) {
     return entry;
   }
+
   appendJsonl(activityFile(), row);
   const folded = active.sinceLastLook && foldDigest(active.sinceLastLook, row);
+
   if (folded) {
     saveSinceLastLook(active, folded);
   }
+
   return entry;
 };
 
 /** The digest, and the look itself: reading it starts the next one. Null before a first look. */
-export const takeDigest = (): Digest | null => {
+export const takeDigest = () => {
   const since = current().sinceLastLook;
   markSeen(Date.now());
+
   return since;
 };
