@@ -39,22 +39,29 @@ export const askLine = (ask: BlockedAsk, who: string) => {
   }
 };
 
-type NameOf = (employeeId: string) => string | null;
+/** What `alertOf` reads of the office as it is: who an employee is, and what a task waits on. */
+export interface AlertLookup {
+  company: Company | null;
+  nameOf: (employeeId: string) => string | null;
+  /** The ask a task waits on now, or null for one that waits on nothing. */
+  waitingOn: (taskId: string) => BlockedAsk | null;
+}
 
 /**
  * What a closed window tells the founder about an event, as a line, or null for one that needs
- * nothing of them. An approval a standing sign-off answers needs nothing: the room says it was.
+ * nothing of them. An ask alerts once its run ends on it, when the Inbox shows it, and not if a
+ * standing sign-off has already answered it: the room says it was.
  */
 // oxlint-disable-next-line complexity -- a case a kind, so a new kind fails to compile here rather than go unheard
-export const alertOf = (e: ActivityEvent, company: Company | null, nameOf: NameOf) => {
+export const alertOf = (e: ActivityEvent, { company, nameOf, waitingOn }: AlertLookup) => {
   switch (e.kind) {
-    case "run.ask": {
-      const { ask } = e.payload;
+    case "run.end": {
+      const ask = e.payload.settled === "blocked" ? waitingOn(e.taskId) : null;
 
       const standing =
-        ask.type === "approval" && company?.standingSignOffs.includes(ask.rule) === true;
+        ask?.type === "approval" && company?.standingSignOffs.includes(ask.rule) === true;
 
-      return standing ? null : askLine(ask, nameOf(e.employeeId) ?? "Your team");
+      return ask === null || standing ? null : askLine(ask, nameOf(e.employeeId) ?? "Your team");
     }
 
     case "order.card": {
@@ -85,7 +92,7 @@ export const alertOf = (e: ActivityEvent, company: Company | null, nameOf: NameO
     case "ship":
     case "status":
     case "run.start":
-    case "run.end":
+    case "run.ask":
     case "task.retry":
     case "runner.resting":
     case "org.hired":

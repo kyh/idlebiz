@@ -307,7 +307,10 @@ peer.on("tray", trayClickSchema, ({ on }) => {
   }
 });
 
-peer.on("inbox", z.null(), askForInbox);
+peer.on("inbox", z.null(), () => {
+  askForInbox();
+  broadcast("opening", null);
+});
 
 peer.on("update", z.null(), () => {
   void installFromMenu();

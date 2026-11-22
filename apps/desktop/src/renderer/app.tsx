@@ -2,6 +2,7 @@ import { unreachable } from "@repo/domain/errors";
 import { useEffect, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { api } from "@/renderer/api";
+import { listen } from "@/renderer/page-events";
 import { PhaserGame } from "@/renderer/game/phaser-game";
 import { queryClient, useBoot } from "@/renderer/state/queries";
 import { bootShown, initStore, setGame } from "@/renderer/state/store";
@@ -85,8 +86,12 @@ const MenuOpening = ({ onOverlay }: { onOverlay: (overlay: Overlay) => void }) =
 
     void look();
     window.addEventListener("focus", onFocus);
+    const unlisten = listen("opening", onFocus);
 
-    return () => window.removeEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      unlisten();
+    };
   }, [onOverlay]);
 
   return null;

@@ -101,6 +101,12 @@ const autopilotItem = (company: NonNullable<OfficeStatus["company"]>) => {
 
 const nameOf = (employeeId: string) => store.getEmployee(employeeId)?.name ?? null;
 
+const waitingOn = (taskId: string) => {
+  const task = store.getTask(taskId);
+
+  return task?.state.kind === "blocked" ? task.state.ask : null;
+};
+
 const waitingItems = () => {
   if (!store.getCompany()) {
     return [];
@@ -143,7 +149,7 @@ class AppTray {
     activityEvents.on("activity", (event) => {
       this.scheduleRebuild();
 
-      const line = alertOf(event, store.getCompany(), nameOf);
+      const line = alertOf(event, { company: store.getCompany(), nameOf, waitingOn });
 
       if (line !== null) {
         this.alert(line);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityEvent } from "@repo/domain/activity";
-import type { Company } from "@repo/domain/domain";
+import type { BlockedAsk, Company } from "@repo/domain/domain";
 import { alertOf, askLine, noteOf } from "./founder-alerts";
 
 const company = (standingSignOffs: Company["standingSignOffs"]) =>
@@ -26,15 +26,28 @@ const company = (standingSignOffs: Company["standingSignOffs"]) =>
 
 const nameOf = (id: string) => (id === "priya" ? "Priya" : null);
 
-const deployAsk = {
-  createdAt: 1,
-  employeeId: "priya",
-  id: 1,
-  kind: "run.ask",
-  payload: { ask: { command: "deploy acme to production", rule: "deploy", type: "approval" } },
-  runId: "r1",
-  taskId: "t1",
-} satisfies ActivityEvent;
+const deploy = {
+  command: "deploy acme to production",
+  rule: "deploy",
+  type: "approval",
+} satisfies BlockedAsk;
+
+const lookup = (standingSignOffs: Company["standingSignOffs"], waiting: BlockedAsk | null) => ({
+  company: company(standingSignOffs),
+  nameOf,
+  waitingOn: (taskId: string) => (taskId === "t1" ? waiting : null),
+});
+
+const endedOn = (settled: "blocked" | "done") =>
+  ({
+    createdAt: 1,
+    employeeId: "priya",
+    id: 1,
+    kind: "run.end",
+    payload: { costUsd: 0, outcome: { kind: "done" }, settled, summary: "" },
+    runId: "r1",
+    taskId: "t1",
+  }) satisfies ActivityEvent;
 
 describe("what a closed window tells the founder", () => {
   it("names each kind of ask by what it needs", () => {
@@ -65,21 +78,42 @@ describe("what a closed window tells the founder", () => {
     expect(line.endsWith("…")).toBe(true);
   });
 
-  it("asks for a sign-off unless the founder gave it in advance", () => {
-    expect(alertOf(deployAsk, company([]), nameOf)).toBe("Sign off: deploy acme to production");
-    expect(alertOf(deployAsk, company(["payments"]), nameOf)).toBe(
+  it("asks for a sign-off once its run ends on it, unless the founder gave it in advance", () => {
+    expect(alertOf(endedOn("blocked"), lookup([], deploy))).toBe(
       "Sign off: deploy acme to production",
     );
-    expect(alertOf(deployAsk, company(["deploy"]), nameOf)).toBeNull();
+    expect(alertOf(endedOn("blocked"), lookup(["payments"], deploy))).toBe(
+      "Sign off: deploy acme to production",
+    );
+    expect(alertOf(endedOn("blocked"), lookup(["deploy"], deploy))).toBeNull();
+    expect(alertOf(endedOn("blocked"), lookup([], null))).toBeNull();
+    expect(alertOf(endedOn("done"), lookup([], deploy))).toBeNull();
+  });
+
+  it("says nothing while the run that asked is still going", () => {
+    expect(
+      alertOf(
+        {
+          createdAt: 1,
+          employeeId: "priya",
+          id: 6,
+          kind: "run.ask",
+          payload: { ask: deploy },
+          runId: "r1",
+          taskId: "t1",
+        },
+        lookup([], deploy),
+      ),
+    ).toBeNull();
   });
 
   it("tells of an open order card, a spent budget and a verdict, and nothing routine", () => {
     const card = { createdAt: 1, id: 2, kind: "order.card", message: "Paid orders wait" } as const;
-    expect(alertOf({ ...card, payload: { open: true, taskId: "t2" } }, company([]), nameOf)).toBe(
+    expect(alertOf({ ...card, payload: { open: true, taskId: "t2" } }, lookup([], null))).toBe(
       "Order card: Paid orders wait",
     );
     expect(
-      alertOf({ ...card, payload: { open: false, taskId: "t2" } }, company([]), nameOf),
+      alertOf({ ...card, payload: { open: false, taskId: "t2" } }, lookup([], null)),
     ).toBeNull();
     expect(
       alertOf(
@@ -89,8 +123,7 @@ describe("what a closed window tells the founder", () => {
           kind: "budget.exhausted",
           payload: { budget: { capUsd: 5, mode: "capped" }, spentUsd: 5 },
         },
-        company([]),
-        nameOf,
+        lookup([], null),
       ),
     ).toMatch(/^Out of budget/u);
     expect(
@@ -102,8 +135,7 @@ describe("what a closed window tells the founder", () => {
           message: "Launch post",
           payload: { betId: "b1", state: { closedAt: 1, kind: "won", moved: 3 } },
         },
-        company([]),
-        nameOf,
+        lookup([], null),
       ),
     ).toBe("Bet won: Launch post");
     expect(
@@ -116,8 +148,7 @@ describe("what a closed window tells the founder", () => {
           message: "running",
           taskId: "t1",
         },
-        company([]),
-        nameOf,
+        lookup([], null),
       ),
     ).toBeNull();
   });
