@@ -1,6 +1,3 @@
-// One employee in the office and what they do on their own: walk a planned path, show
-// what npc-look decides, sit down, sort among the furniture. The roster, the seating and
-// the door they share with everyone else are npcs.ts's.
 import type Phaser from "phaser";
 import { idleFrame, risenOriginY, SEAT_CROP } from "@/renderer/game/character-sheet";
 import type { CharacterAnims } from "@/renderer/game/character-sheet";
@@ -51,39 +48,40 @@ export interface Npc {
   pendingTimer?: Phaser.Time.TimerEvent | undefined;
 }
 
-/** px/s */
 const NPC_SPEED = 64;
 
-const setDepthIfChanged = (sprite: Phaser.GameObjects.Sprite, depth: number): void => {
+const setDepthIfChanged = (sprite: Phaser.GameObjects.Sprite, depth: number) => {
   if (sprite.depth !== depth) {
     sprite.setDepth(depth);
   }
 };
 
-const riseIfChanged = (sprite: Phaser.GameObjects.Sprite, rise: number): void => {
+const riseIfChanged = (sprite: Phaser.GameObjects.Sprite, rise: number) => {
   const originY = risenOriginY(rise);
+
   if (sprite.originY !== originY) {
     sprite.setOrigin(CHAR_ORIGIN_X, originY);
   }
 };
 
-export const clearPending = (npc: Npc): void => {
+export const clearPending = (npc: Npc) => {
   npc.pendingTimer?.remove();
   npc.pendingTimer = undefined;
 };
 
-export const atSeat = (npc: Npc): boolean => {
+export const atSeat = (npc: Npc) => {
   const { seat } = npc;
+
   return seat !== null && Math.hypot(npc.sprite.x - seat.x, npc.sprite.y - seat.y) < 4;
 };
 
-export const standFacing = (npc: Npc, dir: Dir): void => {
+export const standFacing = (npc: Npc, dir: Dir) => {
   npc.sprite.anims.stop();
   npc.sprite.setFrame(idleFrame(dir));
 };
 
 /** Put what npc-look decides on the sprite and over their head. */
-export const applyLook = (npc: Npc): void => {
+export const applyLook = (npc: Npc) => {
   const { emote, stance } = lookOf({
     activity: npc.activity,
     asking: npc.asking,
@@ -92,9 +90,10 @@ export const applyLook = (npc: Npc): void => {
     waiting: npc.waiting,
     walking: npc.plan !== null,
   });
+
   npc.attachments.showEmote(emote);
+
   if (stance?.kind === "typing") {
-    // the sheet has no typing strip: walking in place, facing the screen, reads as typing
     npc.sprite.play(npc.anims.walk[stance.facing], true);
   } else if (stance) {
     standFacing(npc, stance.facing);
@@ -102,53 +101,59 @@ export const applyLook = (npc: Npc): void => {
 };
 
 /** The chair is solid, so a walk to it ends beside it; the sitter is placed on it. */
-export const sitDown = (npc: Npc): void => {
+export const sitDown = (npc: Npc) => {
   if (npc.seat) {
     npc.sprite.setPosition(npc.seat.x, npc.seat.y);
   }
+
   applyLook(npc);
 };
 
 /** Set off for `to`, calling `onArrive` there; false when there is no way through. */
-export const walkTo = (
-  npc: Npc,
-  grid: WalkGrid,
-  to: PixelPoint,
-  onArrive?: () => void,
-): boolean => {
+export const walkTo = (npc: Npc, grid: WalkGrid, to: PixelPoint, onArrive?: () => void) => {
   const start = nearestFloor(grid, npc.sprite.x, npc.sprite.y);
+
   if (!start) {
     return false;
   }
+
   if (Math.hypot(npc.sprite.x - start.x, npc.sprite.y - start.y) > 2) {
     npc.sprite.setPosition(start.x, start.y);
   }
+
   const path = findPath(grid, npc.sprite, to);
+
   if (!path || path.length === 0) {
     return false;
   }
-  // a step-away scheduled by the last arrival would replace this walk and drop its arrival
+
   clearPending(npc);
   npc.plan = { onArrive, path };
+
   return true;
 };
 
 /** One frame along the plan; the arrival hook runs once the last waypoint is reached. */
-export const stepAlong = (npc: Npc, plan: WalkPlan, dt: number): void => {
+export const stepAlong = (npc: Npc, plan: WalkPlan, dt: number) => {
   const [waypoint] = plan.path;
+
   if (!waypoint) {
     npc.plan = null;
     applyLook(npc);
-    // an arrival pose (POI facing / sitting) overrides the default look
     plan.onArrive?.();
+
     return;
   }
+
   const step = stepToward(npc.sprite, waypoint, NPC_SPEED * dt);
+
   if (step.kind === "arrive") {
     npc.sprite.setPosition(waypoint.x, waypoint.y);
     plan.path.shift();
+
     return;
   }
+
   npc.sprite.x += step.dx;
   npc.sprite.y += step.dy;
   npc.sprite.play(npc.anims.walk[step.facing], true);
@@ -161,19 +166,24 @@ export const stepAlong = (npc: Npc, plan: WalkPlan, dt: number): void => {
  * chair back they stay under it, risen so their head clears it. Walkers y-sort normally,
  * on their soles.
  */
-export const applyDepth = (npc: Npc): void => {
+export const applyDepth = (npc: Npc) => {
   const { seat } = npc;
+
   if (!npc.plan && npc.phase === "settled" && seat && atSeat(npc)) {
     if (!npc.sprite.isCropped) {
       npc.sprite.setCrop(SEAT_CROP.x, SEAT_CROP.y, SEAT_CROP.w, SEAT_CROP.h);
     }
+
     riseIfChanged(npc.sprite, seat.rise);
     setDepthIfChanged(npc.sprite, seat.depth);
+
     return;
   }
+
   if (npc.sprite.isCropped) {
     npc.sprite.setCrop();
   }
+
   riseIfChanged(npc.sprite, 0);
   setDepthIfChanged(npc.sprite, characterDepth(npc.sprite.y));
 };

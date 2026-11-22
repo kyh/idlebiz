@@ -132,7 +132,6 @@ test("a token pasted into vault.json is used", async ({ launch, root }) => {
   await writeVault(root, { ...(await readVault(root)), VERCEL_TOKEN: token });
 
   const { page } = await launch({ keys: "refused" });
-  // only a token main read reaches Vercel, which here refuses every one
   await expect(page.getByRole("button", { name: /vercel refused/iu })).toBeVisible();
 });
 

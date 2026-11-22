@@ -3,5 +3,6 @@ export const TypeCursor = ({ done, more }: { done: boolean; more: boolean }) => 
   if (!done) {
     return <span className="px-live-dot">▌</span>;
   }
+
   return more ? <span className="px-more ml-1 text-accent-lo select-none">▼</span> : null;
 };

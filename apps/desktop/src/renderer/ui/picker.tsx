@@ -30,6 +30,7 @@ export const Picker = <T extends string>({
     value={value === null ? [] : [value]}
     onValueChange={([key]) => {
       const picked = options.find((o) => o.value === key);
+
       if (picked) {
         onChange(picked.value);
       }

@@ -1,7 +1,3 @@
-// What an employee shows while standing still, as a pure function: the stance of their
-// body and the emote over their head, from where they are in their day and what the
-// scheduler says they are doing. Walking is animated by the movement code; npc.ts puts
-// the rest on the sprite.
 import type { WorkPose } from "@/renderer/game/office-poses";
 import type { Dir } from "@repo/domain/character-frame";
 
@@ -35,7 +31,6 @@ export interface Stance {
 
 interface Look {
   readonly emote: Emote | null;
-  /** null leaves the body alone: they are still outside, or a walk is animating it. */
   readonly stance: Stance | null;
 }
 
@@ -52,32 +47,38 @@ export interface Situation {
   readonly desk: Dir | null;
 }
 
-const emoteOf = ({ activity, asking, waiting }: Situation): Emote | null => {
+const emoteOf = ({ activity, asking, waiting }: Situation) => {
   if (activity.kind === "blocked" || asking || waiting) {
-    return "alert";
+    return "alert" satisfies Emote | null;
   }
-  return activity.kind === "working" && activity.pose === "thinking" ? "think" : null;
+
+  return (
+    activity.kind === "working" && activity.pose === "thinking" ? "think" : null
+  ) satisfies Emote | null;
 };
 
-const stanceOf = ({ activity, desk }: Situation): Stance => {
+const stanceOf = ({ activity, desk }: Situation) => {
   if (activity.kind === "idle") {
-    return { facing: "down", kind: "still" };
+    return { facing: "down", kind: "still" } satisfies Stance;
   }
+
   if (desk && activity.kind === "working" && activity.pose === "typing") {
-    return { facing: desk, kind: "typing" };
+    return { facing: desk, kind: "typing" } satisfies Stance;
   }
-  // reading / thinking / blocked: still, facing the screen (or the room, deskless)
-  return { facing: desk ?? "down", kind: "still" };
+
+  return { facing: desk ?? "down", kind: "still" } satisfies Stance;
 };
 
-export const lookOf = (situation: Situation): Look => {
-  // still outside: an emote here would hang over the door with nobody under it
+export const lookOf = (situation: Situation) => {
   if (situation.phase === "queued") {
-    return { emote: null, stance: null };
+    return { emote: null, stance: null } satisfies Look;
   }
+
   const emote = emoteOf(situation);
+
   if (situation.phase !== "settled" || situation.walking) {
-    return { emote, stance: null };
+    return { emote, stance: null } satisfies Look;
   }
-  return { emote, stance: stanceOf(situation) };
+
+  return { emote, stance: stanceOf(situation) } satisfies Look;
 };

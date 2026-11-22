@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { RefusalError } from "./refusal";
 import { getSecret, heldKeyIn, heldKeys, setSecret } from "./vault/vault";
 import {
@@ -11,6 +11,9 @@ import {
 } from "./printful-token";
 import { tempSave } from "./test-support/save";
 import { keychainVault } from "./test-support/vault";
+import { answerFetch, failFetch, interceptNetwork } from "./test-support/network";
+
+interceptNetwork();
 
 const root = tempSave();
 
@@ -27,7 +30,6 @@ beforeEach(() => {
 const ORDERS = { data: [{ name: "View and manage orders", value: "orders" }] };
 const ONE_STORE = { data: [{ id: 42, name: "Acme Prints", type: "native" }] };
 
-/** Printful answering the scope and store reads; keeps what each call asked, with which headers. */
 const printful = ({
   scopes = ORDERS,
   stores = ONE_STORE,
@@ -38,11 +40,13 @@ const printful = ({
   status?: number;
 } = {}) => {
   const asked: { url: string; headers: Headers }[] = [];
-  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+  answerFetch((url: string, init?: RequestInit) => {
     asked.push({ headers: new Headers(init?.headers), url });
     const body = url.endsWith("/v2/oauth-scopes") ? scopes : stores;
+
     return Promise.resolve(Response.json(status === 200 ? body : { detail: "no" }, { status }));
   });
+
   return asked;
 };
 
@@ -142,7 +146,7 @@ describe("saving the Printful token", () => {
   });
 
   it("refuses a token while Printful is out of reach, saving nothing", async () => {
-    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("fetch failed")));
+    failFetch();
     await expect(savePrintfulToken(TOKEN)).rejects.toThrow(
       "Printful couldn't be reached (fetch failed) — nothing was saved; try again.",
     );

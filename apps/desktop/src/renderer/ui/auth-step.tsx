@@ -4,13 +4,15 @@ import type { Auth } from "@/renderer/hooks/use-auth-flow";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { Failure } from "@/renderer/ui/failure";
 
-const loginLabel = (phase: Auth["phase"]): string => {
+const loginLabel = (phase: Auth["phase"]) => {
   if (phase === "logging-in") {
     return "Setting up…";
   }
+
   if (phase === "login-failed") {
     return "Try again";
   }
+
   return "Set up workforce";
 };
 
@@ -19,6 +21,7 @@ export const CancelLogin = () => {
   const { submission, submit } = useSubmission(async () => {
     await api.agents.cancelLogin();
   });
+
   return (
     <span className="flex flex-col items-end">
       <button
@@ -44,9 +47,10 @@ export const AuthStep = ({
   aside?: React.ReactNode;
 }) => {
   const attempt = linesOf(auth);
-  // the onboarding's sign-in is done once any runner is ready, so here done means connected
+
   const lines =
     auth.phase === "signed-in" && attempt.length > 0 ? [...attempt, "Connected ✓"] : attempt;
+
   return (
     <div className="flex w-full flex-col gap-2">
       {lines.length > 0 ? (

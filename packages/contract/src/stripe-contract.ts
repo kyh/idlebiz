@@ -1,5 +1,3 @@
-// The founder's Stripe key: it charges, and it reads the revenue it brings in.
-
 import { oc, type } from "@orpc/contract";
 import { z } from "zod";
 import type { StripeKeyStatus } from "@repo/domain/integrations";

@@ -8,7 +8,7 @@ export interface Rates {
 }
 
 /** Approximate USD for a run whose CLI didn't report a dollar cost. */
-export const priceUsage = (rates: Rates, usage: AgentUsage): number =>
+export const priceUsage = (rates: Rates, usage: AgentUsage) =>
   (usage.inputTokens * rates.input +
     usage.cachedTokens * rates.cachedInput +
     usage.outputTokens * rates.output) /

@@ -1,5 +1,3 @@
-// The team: the roster, the founder's direct word to one, and what one can be asked.
-
 import { oc, type } from "@orpc/contract";
 import { z } from "zod";
 import type { ChatOption, Employee } from "@repo/domain/domain";

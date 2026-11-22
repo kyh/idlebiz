@@ -15,18 +15,22 @@ const hires: HireProposal[] = [
 ];
 
 type Next = Extract<FlowEvent, { kind: "next" }>;
-const forward = (auth: Next["auth"] = "signed-in"): Next => ({
-  auth,
-  companyName: "Acme AI",
-  founderName: "Ada",
-  kind: "next",
-});
 
-const replay = (events: FlowEvent[]): Flow => {
+const forward = (auth: Next["auth"] = "signed-in") =>
+  ({
+    auth,
+    companyName: "Acme AI",
+    founderName: "Ada",
+    kind: "next",
+  }) satisfies Next;
+
+const replay = (events: FlowEvent[]) => {
   let flow = START;
+
   for (const e of events) {
     flow = nextFlow(flow, e);
   }
+
   return flow;
 };
 
@@ -47,6 +51,7 @@ describe("the founding flow", () => {
       forward(),
       forward(),
     ]);
+
     expect(founding).toEqual({ hires, step: "finalize" });
   });
 
@@ -78,9 +83,11 @@ describe("the founding flow", () => {
       { failure: null, hires, step: "budget" },
       { hires, step: "finalize" },
     ];
+
     for (const flow of steps) {
       expect(nextFlow(flow, { kind: "back" })).toBe(flow);
     }
+
     expect(nextFlow({ step: "pitch" }, { kind: "back" })).toEqual({ step: "biztype" });
   });
 

@@ -7,47 +7,45 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ControlPlane, SOCKET_PATH_MAX_BYTES, runSocketPath, socketDirs } from "./control-plane";
 import type { ToolOutcome } from "./tool-specs";
 
-// short, so a socket's path under it fits macOS's limit wherever TMPDIR is
 const box = mkdtempSync(path.join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ib-cp-"));
 const root = path.join(box, "save");
 const home = path.join(box, "home");
 const controlPlane = new ControlPlane(() => root, home);
 
 beforeAll(() => controlPlane.start());
+
 afterAll(() => {
   controlPlane.stop();
   rmSync(box, { force: true, recursive: true });
 });
 
-const done = (text: string): Promise<ToolOutcome> => Promise.resolve({ kind: "done", text });
+const done = (text: string) => Promise.resolve<ToolOutcome>({ kind: "done", text });
 
-/** A file's permission bits, as `ls` would spell them in octal. */
-const permissions = (file: string): string => statSync(file).mode.toString(8).slice(-3);
+const permissions = (file: string) => statSync(file).mode.toString(8).slice(-3);
 
 interface Answer {
   status: number | undefined;
   body: string;
 }
 
-/** A request on `socket` carrying `token`: a POST of `body`, or a GET when it is null. */
 const call = (
   socket: string,
   route: string,
   token: string,
   body: string | null,
-  beforeBody: () => void = () => {
-    /* empty */
-  },
-): Promise<Answer> =>
+  beforeBody: () => void = () => {},
+) =>
   // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
-  new Promise((resolve, reject) => {
+  new Promise<Answer>((resolve, reject) => {
     const headers: OutgoingHttpHeaders = {
       authorization: `Bearer ${token}`,
       "content-type": "application/json",
     };
+
     if (body !== null) {
       headers.expect = "100-continue";
     }
+
     const req = request(
       {
         headers,
@@ -65,14 +63,16 @@ const call = (
         );
       },
     );
+
     req.on("error", reject);
+
     if (body === null) {
       req.end();
+
       return;
     }
+
     req.on("continue", () => {
-      // Node dispatches the request handler before the client receives 100 Continue.
-      // Authentication has run, and the handler is waiting for this body.
       beforeBody();
       req.end(body);
     });
@@ -84,10 +84,13 @@ describe("run-scoped control-plane requests", () => {
     "checks the run token after reading the body (released: %s)",
     async (released) => {
       const calls: string[] = [];
+
       const handle = await controlPlane.registerRun((name, raw) => {
         calls.push(`${name} ${JSON.stringify(raw)}`);
+
         return done("created");
       });
+
       try {
         const { status } = await call(
           handle.socket,
@@ -100,6 +103,7 @@ describe("run-scoped control-plane requests", () => {
             }
           },
         );
+
         expect(status).toBe(released ? 401 : 200);
         expect(calls).toEqual(
           released ? [] : ['create_product {"description":"Ships widgets","name":"Widget"}'],
@@ -112,10 +116,13 @@ describe("run-scoped control-plane requests", () => {
 
   it("refuses a request still reading its body when the plane stops", async () => {
     const calls: string[] = [];
+
     const handle = await controlPlane.registerRun((name) => {
       calls.push(name);
+
       return done("created");
     });
+
     try {
       const { status } = await call(
         handle.socket,
@@ -126,6 +133,7 @@ describe("run-scoped control-plane requests", () => {
           controlPlane.stop();
         },
       );
+
       expect(status).toBe(401);
       expect(calls).toEqual([]);
     } finally {
@@ -137,10 +145,13 @@ describe("run-scoped control-plane requests", () => {
   it("serves an answer a tool gives only once its work is done", async () => {
     const { promise: called, resolve: arrive } = Promise.withResolvers<string>();
     const { promise: deployed, resolve: finish } = Promise.withResolvers<ToolOutcome>();
+
     const handle = await controlPlane.registerRun((name) => {
       arrive(name);
+
       return deployed;
     });
+
     try {
       const answer = call(handle.socket, "/v1/deploy", handle.env.IDLEBIZ_RUN_TOKEN, "{}");
       expect(await called).toBe("deploy");
@@ -162,10 +173,13 @@ describe("run-scoped control-plane requests", () => {
     ["not JSON", "{name: KEY}"],
   ])("refuses a request %s as the caller's to fix", async (_why, body) => {
     const calls: string[] = [];
+
     const handle = await controlPlane.registerRun((name) => {
       calls.push(name);
+
       return done("set");
     });
+
     try {
       const res = await call(handle.socket, "/v1/set_env", handle.env.IDLEBIZ_RUN_TOKEN, body);
       expect(res.status).toBe(400);
@@ -178,26 +192,32 @@ describe("run-scoped control-plane requests", () => {
 
   it("knows a run by the socket it was reached on: another run's token there is refused", async () => {
     const heard: string[] = [];
+
     const lead = await controlPlane.registerRun((name) => {
       heard.push(`lead ${name}`);
+
       return done("ok");
     });
+
     const teammate = await controlPlane.registerRun((name) => {
       heard.push(`teammate ${name}`);
+
       return done("ok");
     });
+
     try {
       expect(lead.socket).not.toBe(teammate.socket);
       expect(lead.env.IDLEBIZ_RUN_TOKEN).not.toBe(teammate.env.IDLEBIZ_RUN_TOKEN);
-      // a teammate that read the lead's token from its env still reaches only its own socket
       const crossed = await call(teammate.socket, "/v1/open_bet", lead.env.IDLEBIZ_RUN_TOKEN, "{}");
       expect(crossed.status).toBe(401);
+
       const own = await call(
         teammate.socket,
         "/v1/read_team_chat",
         teammate.env.IDLEBIZ_RUN_TOKEN,
         "{}",
       );
+
       expect(own.status).toBe(200);
       expect(heard).toEqual(["teammate read_team_chat"]);
     } finally {
@@ -214,12 +234,13 @@ describe("run-scoped control-plane requests", () => {
     expect(permissions(handle.socket)).toBe("600");
     expect(permissions(path.dirname(handle.socket))).toBe("700");
     const token = handle.env.IDLEBIZ_RUN_TOKEN;
-    // a tool is served at its name, posted, and nowhere else
+
     const missing = await Promise.all([
       call(handle.socket, "/v1/nothing", token, "{}"),
       call(handle.socket, "/v1/read-team-chat", token, "{}"),
       call(handle.socket, "/v1/read_team_chat", token, null),
     ]);
+
     expect(missing.map(({ status }) => status)).toEqual([404, 404, 404]);
     handle.release();
     expect(existsSync(handle.socket)).toBe(false);
@@ -231,10 +252,12 @@ describe("run-scoped control-plane requests", () => {
       "control plane not started",
     );
     const { inSave, aside } = socketDirs(root, home);
+
     for (const dir of [inSave, aside]) {
       mkdirSync(dir, { recursive: true });
       writeFileSync(path.join(dir, "stale"), "");
     }
+
     await controlPlane.start();
     expect(existsSync(path.join(inSave, "stale"))).toBe(false);
     expect(existsSync(path.join(aside, "stale"))).toBe(false);
@@ -261,7 +284,6 @@ describe("runSocketPath", () => {
     expect(socket).toBe(path.join(socketDirs(long, "/Users/me").aside, id));
     expect(socket.startsWith("/Users/me/.idlebiz-run/")).toBe(true);
     expect(Buffer.byteLength(socket)).toBeLessThanOrEqual(SOCKET_PATH_MAX_BYTES);
-    // another save gets a folder of its own
     expect(path.dirname(runSocketPath(`${long}2`, "/Users/me", id))).not.toBe(path.dirname(socket));
   });
 
@@ -273,7 +295,6 @@ describe("runSocketPath", () => {
   });
 
   it("counts bytes, not characters", () => {
-    // 2 bytes each: fits by characters, not by bytes
     const save = `/${"é".repeat(45)}`;
     expect(save.length + "/.run/".length + id.length).toBeLessThanOrEqual(SOCKET_PATH_MAX_BYTES);
     expect(runSocketPath(save, "/Users/me", id).startsWith("/Users/me/.idlebiz-run/")).toBe(true);

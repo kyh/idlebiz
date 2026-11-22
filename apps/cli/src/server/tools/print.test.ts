@@ -23,6 +23,9 @@ import { readPrintFile } from "../print-listing";
 import { printfulCatalog, printfulQuote } from "../printful";
 import { stripeListingAccess, stripeShippedLink } from "../stripe-links";
 import { productionHosts } from "../vercel";
+import { answerFetch, interceptNetwork } from "../test-support/network";
+
+interceptNetwork();
 
 const root = freshSave();
 
@@ -38,6 +41,7 @@ const PRINT = {
   priceUsd: 28,
   variantIds: [4012, 4013],
 };
+
 const PRINT_ACTION = `sell "Launch tee" (variants 4012, 4013) printing front (dtg) https://acme-site.vercel.app/print/tee-1.png sha256:${DESIGN_SHA} at $28.00 via Printful on acme`;
 
 interface Sent {
@@ -48,8 +52,7 @@ interface Sent {
   idempotencyKey: string | null;
 }
 
-/** Stripe's answer to a key reading a list, one it grants or turned away with `status`. */
-const listAnswer = (status: number): Response =>
+const listAnswer = (status: number) =>
   status === 200
     ? Response.json({ data: [] })
     : Response.json(
@@ -61,7 +64,6 @@ const listAnswer = (status: number): Response =>
         { status },
       );
 
-/** Stripe's answer to a key reading checkouts, charges or shipping rates, as the key's grants have it. */
 const stripeRead = (
   pathname: string,
   grants: { charges: number; checkouts: number; shippingRates: number },
@@ -73,11 +75,6 @@ const stripeRead = (
     ]).get(pathname) ?? grants.shippingRates,
   );
 
-/**
- * Vercel, the product's own site, Printful and Stripe, as far as listing a print goes. Printful
- * charges $16.40 to California and $18.20 elsewhere, $4.75 and $7.99 of it shipping, and
- * finishes each estimate as soon as it is asked.
- */
 const fakeSellers = ({
   fileType = "image/png",
   linkTimesOut = false,
@@ -86,29 +83,36 @@ const fakeSellers = ({
   charges = 200,
 } = {}) => {
   const sent: Sent[] = [];
-  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+  answerFetch((url: string, init?: RequestInit) => {
     const { host, pathname } = new URL(url);
     const method = init?.method ?? "GET";
     sent.push({
-      form: init?.body instanceof URLSearchParams ? Object.fromEntries(init.body) : {},
+      form: Object.fromEntries(new URLSearchParams(z.string().catch("").parse(init?.body))),
       host,
       idempotencyKey: new Headers(init?.headers).get("idempotency-key"),
       method,
       path: pathname,
     });
+
     if (host === "api.vercel.com") {
       return Promise.resolve(
         Response.json({ domains: [{ name: "acme-site.vercel.app", verified: true }] }),
       );
     }
+
     if (host === "acme-site.vercel.app") {
-      return Promise.resolve(new Response(DESIGN, { headers: { "content-type": fileType } }));
+      return Promise.resolve(
+        new Response(new Uint8Array(DESIGN), { headers: { "content-type": fileType } }),
+      );
     }
+
     if (host === "api.stripe.com" && method === "GET") {
       return Promise.resolve(stripeRead(pathname, { charges, checkouts, shippingRates }));
     }
+
     if (host === "api.printful.com" && pathname.startsWith("/v2/catalog-variants/")) {
       const id = Number(pathname.split("/").at(-1));
+
       return Promise.resolve(
         Response.json({
           data: {
@@ -121,39 +125,48 @@ const fakeSellers = ({
         }),
       );
     }
+
     if (host === "api.printful.com") {
       const california = z.string().parse(init?.body).includes('"CA"');
+
       const costs = california
         ? { currency: "USD", shipping: "4.75", total: "16.40" }
         : { currency: "USD", shipping: "7.99", total: "18.20" };
+
       return Promise.resolve(
         Response.json({ data: { costs, failure_reasons: [], id: "t", status: "completed" } }),
       );
     }
+
     if (linkTimesOut && pathname === "/v1/payment_links") {
       return Promise.resolve(new Response(null, { status: 504 }));
     }
+
     const made = new Map([
       ["/v1/payment_links", { id: "plink_1", url: LISTED_URL }],
       ["/v1/prices", { id: "price_1" }],
       ["/v1/shipping_rates", { id: "shr_1" }],
     ]).get(pathname);
+
     return Promise.resolve(Response.json(made ?? {}, { status: made ? 200 : 404 }));
   });
+
   return sent;
 };
 
 type Keys = Partial<Record<"stripe" | "vercel" | "printful", boolean>>;
 
-/** A run of Priya's on Acme, bound to its Vercel project, with the founder's keys saved but those `missing`. */
 const sellingRun = (missing: Keys = {}, sellers: Parameters<typeof fakeSellers>[0] = {}) => {
   const secrets = new Map<string, string>();
+
   if (!missing.stripe) {
     secrets.set("STRIPE_SECRET_KEY", "sk_test_founder");
   }
+
   if (!missing.vercel) {
     secrets.set("VERCEL_TOKEN", TOKEN);
   }
+
   if (!missing.printful) {
     secrets.set("PRINTFUL_TOKEN", "pf_founder_token");
     writeFileSync(
@@ -161,10 +174,12 @@ const sellingRun = (missing: Keys = {}, sellers: Parameters<typeof fakeSellers>[
       JSON.stringify({ id: 42, name: "Acme Prints" }),
     );
   }
+
   writeFileSync(path.join(root, "vault.json"), JSON.stringify(Object.fromEntries(secrets)));
   const run = runAs("priya");
   store.setProductVercel("acme", VERCEL);
   const sent = fakeSellers(sellers);
+
   const ctx: RunContext = {
     ...run.ctx,
     createPrintLink: stripeShippedLink,
@@ -175,6 +190,7 @@ const sellingRun = (missing: Keys = {}, sellers: Parameters<typeof fakeSellers>[
     readPrintFile,
     run: { ...run.ctx.run, productId: "acme" },
   };
+
   return { ...run, ctx, sent };
 };
 
@@ -208,9 +224,11 @@ describe("sell_print", () => {
     );
     const tags = { bet: bet.id, listing: "launch-tee", product: "acme" };
     const stripe = outward(sent).filter((s) => s.host === "api.stripe.com");
+
     for (const { idempotencyKey } of stripe) {
       expect(idempotencyKey).toMatch(/^idlebiz-[0-9a-f]{64}$/u);
     }
+
     expect(
       stripe.map((s) => ({ form: s.form, host: s.host, method: s.method, path: s.path })),
     ).toEqual([
@@ -256,6 +274,7 @@ describe("sell_print", () => {
         path: "/v1/payment_links",
       },
     ]);
+
     const listing = {
       betId: bet.id,
       costCents: 1820,
@@ -272,6 +291,7 @@ describe("sell_print", () => {
         { id: 4013, label: "Black / M" },
       ],
     };
+
     expect(store.listListings()).toMatchObject([listing]);
     store.initStore();
     expect(store.listListings()).toMatchObject([listing]);
@@ -299,7 +319,6 @@ describe("sell_print", () => {
     async (priceUsd) => {
       const { ctx, asked, sent } = sellingRun();
 
-      // (1820 + 30) / 0.956 = 1935.1…, less the $7.99 the buyer pays for shipping
       expect(await answerText(ctx, "sell_print", { ...PRINT, priceUsd })).toBe(
         `$${priceUsd} would lose money on every sale: Printful charges up to $18.20 to print one sold at that price and ship it to the US addresses IdleBiz prices it for, the buyer pays $7.99 of that as shipping, and Stripe keeps up to 4.4% + $0.30. Every price under $11.37 loses money: price it above that, with the margin the bet needs.`,
       );
@@ -369,6 +388,7 @@ describe("sell_print", () => {
   it("keeps both of two namesakes listed at once, each under an id of its own", async () => {
     const { ctx } = sellingRun();
     const other = { ...ctx, run: { ...ctx.run, taskId: `${ctx.run.taskId}-other` } };
+
     for (const { run } of [ctx, other]) {
       store.grantApproval(run.taskId, PRINT_ACTION);
     }
@@ -380,15 +400,18 @@ describe("sell_print", () => {
     for (const answer of answers) {
       expect(answer).toContain('Listed "Launch tee" on Acme');
     }
+
     expect(store.listListings().map((l) => l.id)).toEqual(["launch-tee", "launch-tee-2"]);
   });
 
   it("sends Stripe the same keys when a listing is tried again, so nothing is made twice", async () => {
     const { ctx } = sellingRun();
+
     const keysOf = async () => {
       const sent = fakeSellers({ linkTimesOut: true });
       store.grantApproval(ctx.run.taskId, PRINT_ACTION);
       expect(await answerText(ctx, "sell_print", PRINT)).toContain("Stripe made no payment link");
+
       return outward(sent)
         .filter((s) => s.host === "api.stripe.com")
         .map((s) => s.idempotencyKey);
@@ -402,20 +425,30 @@ describe("sell_print", () => {
 
   it("lists it when signed for again after Stripe answered the link's create with a failure", async () => {
     const { ctx } = sellingRun();
-    const sellers = globalThis.fetch;
     let failures = 1;
-    replayingStripe((endpoint): StripeAnswer => {
+    replayingStripe((endpoint) => {
       if (endpoint !== "/v1/payment_links") {
-        return { body: { id: endpoint === "/v1/prices" ? "price_1" : "shr_1" }, status: 200 };
+        return {
+          body: { id: endpoint === "/v1/prices" ? "price_1" : "shr_1" },
+          status: 200,
+        } satisfies StripeAnswer;
       }
+
       if (failures > 0) {
         failures -= 1;
-        return { body: { error: { message: "An unknown error occurred" } }, status: 500 };
+
+        return {
+          body: { error: { message: "An unknown error occurred" } },
+          status: 500,
+        } satisfies StripeAnswer;
       }
-      return { body: { id: "plink_1", url: LISTED_URL }, status: 200 };
-    }, sellers);
+
+      return { body: { id: "plink_1", url: LISTED_URL }, status: 200 } satisfies StripeAnswer;
+    });
+
     const call = () => {
       store.grantApproval(ctx.run.taskId, PRINT_ACTION);
+
       return answerText(ctx, "sell_print", PRINT);
     };
 
@@ -425,15 +458,18 @@ describe("sell_print", () => {
   });
 
   it("lists nothing, saying the link may stand on Stripe, when Stripe answered the link's create in a shape IdleBiz does not read", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     const { ctx } = sellingRun();
-    const sellers = globalThis.fetch;
-    replayingStripe((endpoint): StripeAnswer => {
+    replayingStripe((endpoint) => {
       if (endpoint !== "/v1/payment_links") {
-        return { body: { id: endpoint === "/v1/prices" ? "price_1" : "shr_1" }, status: 200 };
+        return {
+          body: { id: endpoint === "/v1/prices" ? "price_1" : "shr_1" },
+          status: 200,
+        } satisfies StripeAnswer;
       }
-      return { body: { id: "plink_1" }, status: 200 };
-    }, sellers);
+
+      return { body: { id: "plink_1" }, status: 200 } satisfies StripeAnswer;
+    });
     store.grantApproval(ctx.run.taskId, PRINT_ACTION);
 
     const listed = await callTool(ctx, "sell_print", PRINT);
@@ -522,6 +558,7 @@ describe("sell_print", () => {
 
   it("asks for a new Printful token once Printful turns the saved one away", async () => {
     const { ctx, asked } = sellingRun();
+
     const answers = new Map([
       ["api.printful.com", () => Response.json({ detail: "expired" }, { status: 401 })],
       [
@@ -533,7 +570,8 @@ describe("sell_print", () => {
         () => new Response(DESIGN, { headers: { "content-type": "image/png" } }),
       ],
     ]);
-    vi.stubGlobal("fetch", (url: string) =>
+
+    answerFetch((url: string) =>
       Promise.resolve(answers.get(new URL(url).host)?.() ?? new Response(null, { status: 404 })),
     );
 
@@ -584,17 +622,19 @@ const CATALOG_TEE = {
   type: "T-SHIRT",
 };
 
-/** Priya's run with the founder's keys, reading a catalog that answers `read`. */
 const catalogRun = (read: CatalogRead, missing: Keys = {}) => {
   const run = sellingRun(missing);
   const queries: CatalogQuery[] = [];
+
   const ctx: RunContext = {
     ...run.ctx,
     printCatalog: (query) => {
       queries.push(query);
+
       return Promise.resolve(read);
     },
   };
+
   return { ...run, ctx, queries };
 };
 
@@ -606,6 +646,7 @@ describe("printful_catalog", () => {
       products: [CATALOG_TEE],
       total: 120,
     });
+
     expect(await answerText(ctx, "printful_catalog", {})).toBe(
       `Printful's catalog, from product 1 of 120 that ship to the US (id: name — techniques; discontinued ones left out). Pass "product":<id> for its placements and variants. Pass "offset":50 for the next page.\n71: Unisex Staple T-Shirt (Bella + Canvas 3001) — dtg`,
     );
@@ -621,6 +662,7 @@ describe("printful_catalog", () => {
         { id: 4013, label: "Black / M" },
       ],
     });
+
     expect(await answerText(ctx, "printful_catalog", { product: 71 })).toBe(
       "71: Unisex Staple T-Shirt\nPlacements, as sell_print's placement (technique): front (dtg)\nVariants, as sell_print's variantIds (id: colour / size):\n4012: Black / S\n4013: Black / M",
     );

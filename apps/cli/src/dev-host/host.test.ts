@@ -1,12 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { mainEnv } from "./host";
 
-// What of the terminal's env a development main gets: the e2e suite's stand-ins ride in on it, and
-// a developer's provider login must not, or a run could bill it.
-
-const quiet = (): void => {
-  // the dev host's lines go nowhere here
-};
+const quiet = () => {};
 
 describe("main's env under the dev host", () => {
   it("drops the terminal's variables node loads code by as it starts", () => {
@@ -17,7 +12,6 @@ describe("main's env under the dev host", () => {
     expect(env.NODE_OPTIONS).toBeUndefined();
     expect(env.OPENSSL_CONF).toBeUndefined();
     expect(env.IDLEBIZ_DEV_HOST_KEPT).toBe("kept");
-    // what the host itself hands main is its own to hand
     expect(env.NODE_ENV).toBe("development");
   });
 
@@ -26,11 +20,13 @@ describe("main's env under the dev host", () => {
     vi.stubEnv("CLAUDE_CODE_USE_BEDROCK", "1");
     vi.stubEnv("OPENAI_API_KEY", "another");
     vi.stubEnv("PATH", "/usr/bin:/bin");
+
     const env = mainEnv({
       env: { ANTHROPIC_BASE_URL: "http://127.0.0.1:1" },
       inherit: (name) => !/^(?:ANTHROPIC_|CLAUDE_|OPENAI_)/u.test(name),
       log: quiet,
     });
+
     expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
     expect(env.CLAUDE_CODE_USE_BEDROCK).toBeUndefined();
     expect(env.OPENAI_API_KEY).toBeUndefined();

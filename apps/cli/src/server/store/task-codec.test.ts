@@ -19,10 +19,9 @@ const base = {
   title: "Ship the thing",
 } satisfies Omit<Task, "state">;
 
-/** The task's TASK.md, as boot reads it back. */
 const written = (t: Task) => parseDoc(serializeDoc(taskToDoc(t)));
 
-const roundTrip = (t: Task): Task => docToTask(written(t));
+const roundTrip = (t: Task) => docToTask(written(t));
 
 describe("task codec", () => {
   it.each<TaskState>([
@@ -103,13 +102,15 @@ describe("task codec", () => {
   });
 });
 
-const blocked = (ask: BlockedAsk): Task => ({
-  ...base,
-  state: { ask, kind: "blocked", summary: null },
-});
+const blocked = (ask: BlockedAsk) =>
+  ({
+    ...base,
+    state: { ask, kind: "blocked", summary: null },
+  }) satisfies Task;
 
-const askSavedAs = (blockedQuestion: string): TaskState => {
+const askSavedAs = (blockedQuestion: string) => {
   const doc = written(blocked({ question: "?", type: "question" }));
+
   return docToTask({ ...doc, metadata: { ...doc.metadata, blockedQuestion } }).state;
 };
 

@@ -13,19 +13,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SYSTEM_PATH as LAUNCHD_PATH } from "./founder-env";
 import { adoptShellPath, runShell } from "./shell-path";
 
-const adopted = (): string[] => process.env.PATH?.split(path.delimiter) ?? [];
+const adopted = () => process.env.PATH?.split(path.delimiter) ?? [];
 
-const alive = (pid: number): boolean => {
+const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
+
     return true;
   } catch {
     return false;
   }
 };
 
-// The founder's login shell is zsh under a stand-in home, whose startup puts folders on PATH,
-// one not made yet.
 describe.skipIf(process.platform !== "darwin")("adoptShellPath", () => {
   const touched = ["HOME", "PATH", "SHELL", "ZDOTDIR"];
   const previous = Object.fromEntries(touched.map((key) => [key, process.env[key]]));
@@ -54,6 +53,7 @@ describe.skipIf(process.platform !== "darwin")("adoptShellPath", () => {
         process.env[key] = value;
       }
     }
+
     rmSync(box, { force: true, recursive: true });
   });
 
@@ -132,9 +132,6 @@ describe.skipIf(process.platform !== "darwin")("adoptShellPath", () => {
   });
 });
 
-// The founder's login shell is bash, which runs what main's env names before any startup file: a
-// function exported in it, and a trace whose prompt runs a command. Main's env is launchd's in the
-// app, which any process of the founder's sets for the next launch.
 describe.skipIf(!existsSync("/bin/bash"))("adoptShellPath's login shell", () => {
   let box = "";
 
@@ -166,7 +163,6 @@ describe.skipIf(!existsSync("/bin/bash"))("adoptShellPath's login shell", () => 
     expect(existsSync(traced)).toBe(false);
   });
 
-  // an rc file that starts an ssh agent when it finds none, and notes the one it found
   const agentProfile = () => {
     const seen = path.join(box, "agent-seen");
     const started = path.join(box, "agent-started");
@@ -174,6 +170,7 @@ describe.skipIf(!existsSync("/bin/bash"))("adoptShellPath's login shell", () => 
       path.join(box, "home/.bash_profile"),
       `if [ -z "$SSH_AUTH_SOCK" ]; then /usr/bin/touch ${started}; fi\nprintf %s "$SSH_AUTH_SOCK" > ${seen}\nexport PATH="$HOME/bin:$PATH"\n`,
     );
+
     return { seen, started };
   };
 
@@ -190,6 +187,7 @@ describe.skipIf(!existsSync("/bin/bash"))("adoptShellPath's login shell", () => 
 
   it("starts with no ssh agent but launchd's, so an rc file's keys go to no socket a run made", async () => {
     const { seen } = agentProfile();
+
     for (const planted of [
       path.join(box, "ssh-x/agent.1"),
       "/private/tmp/com.apple.launchd.ib/Listeners/../../ib/agent",
@@ -212,6 +210,7 @@ describe("runShell", () => {
 
   it("starts the shell on the env it is handed alone", async () => {
     vi.stubEnv("IDLEBIZ_SHELL_CANARY", "main's");
+
     try {
       await expect(
         runShell("/bin/sh", ["-c", 'echo "[$IDLEBIZ_SHELL_CANARY] $HANDED"'], 5000, {

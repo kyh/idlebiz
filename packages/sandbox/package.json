@@ -5,7 +5,11 @@
   "description": "The Seatbelt sandbox a coding agent's run starts under on macOS: the profile, this machine's paths, the boot check and the denials it reports",
   "type": "module",
   "exports": {
-    "./*": "./src/*.ts"
+    "./check": "./src/check.ts",
+    "./denials": "./src/denials.ts",
+    "./fixture": "./src/sandbox.fixture.ts",
+    "./machine": "./src/machine.ts",
+    "./profile": "./src/profile.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

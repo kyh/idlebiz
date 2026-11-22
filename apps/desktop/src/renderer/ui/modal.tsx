@@ -7,11 +7,12 @@ import { cn } from "cn";
 const openModals = new Set<symbol>();
 
 /** Overlapping overlays keep Phaser's keyboard suspended until the last one closes. */
-export const useModal = (): void => {
+export const useModal = () => {
   useEffect(() => {
     const modal = Symbol("modal");
     openModals.add(modal);
     setModalOpen(true);
+
     return () => {
       openModals.delete(modal);
       setModalOpen(openModals.size > 0);
@@ -20,6 +21,7 @@ export const useModal = (): void => {
 };
 
 type ModalWidth = "lg" | "xl" | "2xl" | "3xl";
+
 const WIDTH_CLASS = {
   "2xl": "max-w-2xl",
   "3xl": "max-w-3xl",
@@ -46,8 +48,8 @@ export const Modal = ({
   children: ReactNode;
 }) => {
   useModal();
-  // focus rests on the window itself, not on Done, so nothing looks pressed on open
   const popup = useRef<HTMLDivElement>(null);
+
   return (
     <Dialog.Root
       open

@@ -6,6 +6,9 @@ import { PULSE_MS } from "./metrics";
 import { companyDir } from "./paths";
 import { metricsPulse } from "./metrics-pulse";
 import { foundAcme, freshSave, hire } from "./test-support/save";
+import { answerFetch, interceptNetwork } from "./test-support/network";
+
+interceptNetwork();
 
 const root = freshSave();
 
@@ -50,6 +53,7 @@ describe("a pulse", () => {
     writeFileSync(path.join(root, "vault.json"), JSON.stringify({ STRIPE_SECRET_KEY: "sk_pulse" }));
     foundAcme([hire("Priya")]);
     const productId = store.listProducts()[0]?.id ?? "";
+
     const bet = store.openBet({
       budgetUsd: 5,
       hypothesis: "a paid tier sells",
@@ -59,6 +63,7 @@ describe("a pulse", () => {
       title: "Paid tier",
       windowHours: 24,
     });
+
     const sale = {
       amount_captured: 700,
       amount_refunded: 0,
@@ -70,13 +75,15 @@ describe("a pulse", () => {
       metadata: { bet: bet.id, product: productId },
       paid: true,
     };
-    vi.stubGlobal("fetch", (url: string) =>
+
+    answerFetch((url: string) =>
       Promise.resolve(
         Response.json(url.includes("/v1/charges") ? { data: [sale] } : { total_count: 1 }),
       ),
     );
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     chmodSync(companyDir(), 0o555);
+
     try {
       metricsPulse.now();
       await vi.waitFor(() => expect(store.getBet(bet.id)?.reading).toBe(7));
@@ -85,6 +92,7 @@ describe("a pulse", () => {
       chmodSync(companyDir(), 0o755);
       logged.mockRestore();
     }
+
     expect(store.getProduct(productId)?.revenueUsd).toBe(7);
     expect(store.getCompany()?.revenueUsd).toBeNull();
   });

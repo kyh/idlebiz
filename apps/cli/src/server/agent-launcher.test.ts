@@ -12,7 +12,6 @@ describe("the launcher a run calls idlebiz through", () => {
   let base = "";
 
   beforeEach(() => {
-    // a folder whose name a shell would split and unquote, as an app moved somewhere odd might
     base = mkdtempSync(path.join(tmpdir(), "idlebiz launcher's $HOME "));
   });
 
@@ -25,12 +24,13 @@ describe("the launcher a run calls idlebiz through", () => {
     writeFileSync(cli, "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n");
     const bin = path.join(base, "bin");
     writeAgentLauncher(bin, process.execPath, cli);
-    // run as a program, so it is one
+
     const { stdout } = await execFileAsync(path.join(bin, "idlebiz"), [
       "ask-boss",
       `{"question":"Can't we ship?"}`,
       "$HOME",
     ]);
+
     expect(JSON.parse(stdout)).toEqual(["ask-boss", `{"question":"Can't we ship?"}`, "$HOME"]);
   });
 

@@ -13,22 +13,23 @@ import type { ActivityEvent } from "@repo/domain/activity";
 import { broadcast, pageEvents } from "./broadcast";
 import { listenLoopback } from "./http";
 
-// the page router's `events`, alone, behind the RPC handler main serves the page with
 const router = { events: implement(contract).events.handler(({ signal }) => pageEvents(signal)) };
-
-type Client = ContractRouterClient<Pick<typeof contract, "events">>;
 
 let server: Server | null = null;
 
-/** A page's client of a main serving only the event stream, over loopback. */
-const serve = async (): Promise<Client> => {
+const serve = async () => {
   const handler = new RPCHandler(router);
+
   const http = createServer((request, response) => {
     void handler.handle(request, response, { context: {}, prefix: RPC_PREFIX });
   });
+
   server = http;
   const port = await listenLoopback(http, "a test's server");
-  return createORPCClient(new RPCLink({ origin: `http://127.0.0.1:${port}`, url: RPC_PREFIX }));
+
+  return createORPCClient<ContractRouterClient<Pick<typeof contract, "events">>>(
+    new RPCLink({ origin: `http://127.0.0.1:${port}`, url: RPC_PREFIX }),
+  );
 };
 
 afterEach(async () => {
@@ -41,15 +42,16 @@ afterEach(async () => {
   }
 });
 
-const ended = (costUsd: number): ActivityEvent => ({
-  createdAt: 1,
-  employeeId: "lead",
-  id: 7,
-  kind: "run.end",
-  payload: { costUsd, outcome: { kind: "done" }, settled: "done", summary: "" },
-  runId: "r1",
-  taskId: "t1",
-});
+const ended = (costUsd: number) =>
+  ({
+    createdAt: 1,
+    employeeId: "lead",
+    id: 7,
+    kind: "run.end",
+    payload: { costUsd, outcome: { kind: "done" }, settled: "done", summary: "" },
+    runId: "r1",
+    taskId: "t1",
+  }) satisfies ActivityEvent;
 
 describe("main's events", () => {
   it("reach a page subscribed over the contract, each under its name", async () => {
@@ -67,9 +69,9 @@ describe("main's events", () => {
   it("drop and log an event its schema refuses, and the stream goes on", async () => {
     const client = await serve();
     const stream = await client.events();
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
+
     try {
-      // a cost worked out of something missing: JSON would have sent it as null
       broadcast("activity", ended(Number.NaN));
       broadcast("activity", ended(0.5));
       const heard = await stream.next();
@@ -78,6 +80,7 @@ describe("main's events", () => {
     } finally {
       logged.mockRestore();
     }
+
     await stream.return();
   });
 });

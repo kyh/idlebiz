@@ -56,6 +56,7 @@ describe("pageGraph", () => {
     const breadcrumb = pageGraph(aboutPage)["@graph"].find(
       (node) => node["@type"] === "BreadcrumbList",
     );
+
     expect(breadcrumb?.["@type"]).toBe("BreadcrumbList");
     expect(breadcrumb).toHaveProperty("itemListElement", [
       { "@type": "ListItem", item: "https://idlebiz.com", name: "IdleBiz", position: 1 },

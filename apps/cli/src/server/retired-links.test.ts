@@ -1,7 +1,7 @@
+import { z } from "zod";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OrderCard } from "@repo/domain/domain";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { ChargeLink } from "./link-record";
 import type { Listing } from "./listing";
 import type { Sale } from "./order";
@@ -17,6 +17,9 @@ import { switchOffBeforeReset } from "./reset-links";
 import { foundAcme, freshSave } from "./test-support/save";
 import { fileVault, keychainVault } from "./test-support/vault";
 import { setSecret, vaultFile } from "./vault/vault";
+import { answerFetch, interceptNetwork } from "./test-support/network";
+
+interceptNetwork();
 
 const root = freshSave();
 
@@ -31,7 +34,6 @@ const SANDBOX = "plink_sandbox";
 type Answer = "off" | "refused" | "busy" | "down";
 
 interface StripeSetup {
-  /** How Stripe answers a switch-off of each link; one not named is switched off. */
   answers?: Partial<Record<string, Answer>>;
 }
 
@@ -41,36 +43,41 @@ interface SwitchOff {
   form: Record<string, string>;
 }
 
-/** Stripe's payment links, faked at fetch: every switch-off asked, with the key it came with. */
 const fakeStripe = ({ answers = {} }: StripeSetup = {}) => {
   const switchOffs: SwitchOff[] = [];
   const world = { switchOffs };
-  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+  answerFetch((url: string, init?: RequestInit) => {
     const { host, pathname } = new URL(url);
     const id = /^\/v1\/payment_links\/(?<id>\w+)$/u.exec(pathname)?.groups?.id;
+
     if (host !== "api.stripe.com" || id === undefined || init?.method !== "POST") {
       return Promise.reject(new Error(`unexpected call to ${url}`));
     }
+
     world.switchOffs.push({
       auth: new Headers(init.headers).get("Authorization"),
-      form: init.body instanceof URLSearchParams ? Object.fromEntries(init.body) : {},
+      form: Object.fromEntries(new URLSearchParams(z.string().catch("").parse(init.body))),
       id,
     });
     const answer = answers[id] ?? "off";
+
     if (answer === "down") {
       return Promise.reject(new TypeError("fetch failed"));
     }
+
     if (answer === "busy") {
       return Promise.resolve(
         Response.json({ error: { message: "Too many requests" } }, { status: 429 }),
       );
     }
+
     return Promise.resolve(
       answer === "refused"
         ? Response.json({ error: { message: `No such payment_link: '${id}'` } }, { status: 404 })
         : Response.json({ active: false, id }),
     );
   });
+
   return world;
 };
 
@@ -78,71 +85,74 @@ const saveKey = (key: string | null) => {
   writeFileSync(vaultFile(), JSON.stringify(key === null ? {} : { STRIPE_SECRET_KEY: key }));
 };
 
-const listingOn = (productId: string): Listing => ({
-  betId: null,
-  costCents: 1820,
-  createdAt: 1,
-  id: "launch-tee",
-  livemode: true,
-  name: "Launch tee",
-  paymentLink: { id: TEE, state: { kind: "selling" }, url: "https://buy.stripe.com/tee" },
-  placements: [
-    {
-      fileUrl: "https://acme.vercel.app/tee.png",
-      placement: "front",
-      sha256: "a".repeat(64),
-      technique: "dtg",
-    },
-  ],
-  priceCents: 2800,
-  productId,
-  shippingCents: 799,
-  variants: [{ id: 4012, label: "Black / S" }],
-});
+const listingOn = (productId: string) =>
+  ({
+    betId: null,
+    costCents: 1820,
+    createdAt: 1,
+    id: "launch-tee",
+    livemode: true,
+    name: "Launch tee",
+    paymentLink: { id: TEE, state: { kind: "selling" }, url: "https://buy.stripe.com/tee" },
+    placements: [
+      {
+        fileUrl: "https://acme.vercel.app/tee.png",
+        placement: "front",
+        sha256: "a".repeat(64),
+        technique: "dtg",
+      },
+    ],
+    priceCents: 2800,
+    productId,
+    shippingCents: 799,
+    variants: [{ id: 4012, label: "Black / S" }],
+  }) satisfies Listing;
 
-const chargeLinkOn = (productId: string, id: string, livemode = true): ChargeLink => ({
-  betId: null,
-  cents: 900,
-  createdAt: 2,
-  delivery: null,
-  id,
-  livemode,
-  name: livemode ? "Pro plan" : "Sandbox plan",
-  productId,
-  state: { kind: "selling" },
-  url: `https://buy.stripe.com/${id}`,
-});
+const chargeLinkOn = (productId: string, id: string, livemode = true) =>
+  ({
+    betId: null,
+    cents: 900,
+    createdAt: 2,
+    delivery: null,
+    id,
+    livemode,
+    name: livemode ? "Pro plan" : "Sandbox plan",
+    productId,
+    state: { kind: "selling" },
+    url: `https://buy.stripe.com/${id}`,
+  }) satisfies ChargeLink;
 
-/** Acme with a side product selling a print and a plan, and the founder's live key saved. */
 const openShop = () => {
   foundAcme([], { businessType: "ecommerce", mission: "sell tees" });
   const side = store.createProduct({ description: "a side bet", name: "Side" });
   store.recordListing(listingOn(side.id));
   store.recordChargeLink(chargeLinkOn(side.id, PRO));
   saveKey("rk_live_founder");
+
   return { side };
 };
 
-/** The founder's cards, by title: cards raised in one millisecond list in no fixed order. */
-const cards = (): OrderCard[] =>
+const cards = () =>
   store
     .listOpenTasks()
     .flatMap((t) => (t.origin === "order" && t.state.kind === "blocked" ? [t] : []))
     .toSorted((a, b) => a.title.localeCompare(b.title));
 
-const cardAbout = (orderId: string): OrderCard => {
+const cardAbout = (orderId: string) => {
   const card = cards().find((t) => t.subject.kind === "order" && t.subject.orderId === orderId);
+
   if (!card) {
     throw new Error(`order ${orderId} must have had a card`);
   }
+
   return card;
 };
 
 const SETTLE = { action: "Settle it", draft: null, instructions: "", type: "action" } as const;
 
-/** The checkout of an order whose card for `trouble` waits on the founder. */
 const owed = (id: string, trouble: string) => {
   store.raiseOrderCard({ kind: "order", orderId: id, trouble }, `Order ${id}: ${trouble}`, SETTLE);
+
   return `cs_${id}`;
 };
 
@@ -323,7 +333,6 @@ describe("retiring a product", () => {
 
   it("finishes after a restart what a quit cut short, and asks Stripe nothing once it is done", async () => {
     const { side } = openShop();
-    // the retirement is on disk, but the app quit before Stripe was asked
     store.killProduct(side.id, "dud", null);
     store.initStore();
     const stripe = fakeStripe();
@@ -345,34 +354,34 @@ describe("retiring a product", () => {
   });
 });
 
-/** A paid print order of `productId`'s tee, at `stage`. */
-const teeOrder = (productId: string, id: string, stage: Sale["stage"]): Sale => ({
-  collectedCents: 3599,
-  costCents: null,
-  createdAt: 3,
-  email: "buyer@example.com",
-  id,
-  kind: "sale",
-  listingId: "launch-tee",
-  livemode: true,
-  paymentIntent: null,
-  printfulStatus: null,
-  productId,
-  quantity: 1,
-  recipient: {
-    address1: "1 Main St",
-    address2: null,
-    city: "Springfield",
-    countryCode: "US",
-    name: "Pat Buyer",
-    phone: null,
-    stateCode: "IL",
-    zip: "62701",
-  },
-  sessionId: `cs_${id}`,
-  stage,
-  variant: { id: 4012, label: "Black / S" },
-});
+const teeOrder = (productId: string, id: string, stage: Sale["stage"]) =>
+  ({
+    collectedCents: 3599,
+    costCents: null,
+    createdAt: 3,
+    email: "buyer@example.com",
+    id,
+    kind: "sale",
+    listingId: "launch-tee",
+    livemode: true,
+    paymentIntent: null,
+    printfulStatus: null,
+    productId,
+    quantity: 1,
+    recipient: {
+      address1: "1 Main St",
+      address2: null,
+      city: "Springfield",
+      countryCode: "US",
+      name: "Pat Buyer",
+      phone: null,
+      stateCode: "IL",
+      zip: "62701",
+    },
+    sessionId: `cs_${id}`,
+    stage,
+    variant: { id: 4012, label: "Black / S" },
+  }) satisfies Sale;
 
 describe("resetting the company", () => {
   it("switches off every live link still taking money, so nothing charges once the save is gone", async () => {
@@ -403,6 +412,7 @@ describe("resetting the company", () => {
 
   it("names each paid order whose card still waits on the founder, and none they settled", async () => {
     const { side } = openShop();
+
     const paid = {
       collectedCents: 900,
       createdAt: 3,
@@ -410,6 +420,7 @@ describe("resetting the company", () => {
       paymentIntent: null,
       productId: side.id,
     };
+
     const delivery = "Email the buyer the PDF";
     store.recordOrder({
       ...paid,
@@ -453,6 +464,7 @@ describe("resetting the company", () => {
 
   it("names a held print only while its card still waits, never one the founder settled", async () => {
     const { side } = openShop();
+
     const hold = (id: string) => {
       store.recordOrder(
         teeOrder(side.id, id, { kind: "held", printfulId: 7, why: "Printful wants more" }),
@@ -464,6 +476,7 @@ describe("resetting the company", () => {
         SETTLE,
       );
     };
+
     hold("held-open");
     hold("heldover");
     settleOrderCard(cardAbout("heldover").id, { kind: "done", note: "refunded" });
@@ -510,6 +523,7 @@ describe("an order card", () => {
       { kind: "order", orderId: "guide-owed", trouble: "deliver it" },
       { action: "Send the buyer the guide", draft: null, instructions: "" },
     );
+
     for (const card of cards()) {
       const file = taskFile(card.id);
       const named = `name: ${JSON.stringify(card.title)}`;
@@ -521,6 +535,7 @@ describe("an order card", () => {
         ),
       );
     }
+
     store.initStore();
     expect(cards().map((c) => c.title.startsWith("Reworded "))).toEqual([true, true]);
 

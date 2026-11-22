@@ -44,7 +44,7 @@ export interface ProsePage {
 export const isPlainRun = (run: Run): run is string => typeof run === "string";
 
 /** A heading's anchor as GitHub derives one: lowercased, punctuation dropped, each space a hyphen. */
-export const headingSlug = (text: string): string =>
+export const headingSlug = (text: string) =>
   text
     .toLowerCase()
     .replaceAll(/[^\p{L}\p{N} _-]/gu, "")
@@ -54,50 +54,57 @@ export const headingSlug = (text: string): string =>
  * Each heading's anchor on a page, in document order. A repeat is numbered from 1, as GitHub
  * numbers one, so a link in the Markdown twin lands where the same link on the page does.
  */
-export const headingAnchors = (blocks: readonly ProseBlock[]): Map<ProseBlock, string> => {
+export const headingAnchors = (blocks: readonly ProseBlock[]) => {
   const taken = new Map<string, number>();
   const anchors = new Map<ProseBlock, string>();
+
   for (const block of blocks) {
     if (block.kind !== "heading" && block.kind !== "subheading") {
       continue;
     }
+
     const base = headingSlug(block.text);
     let anchor = base;
+
     while (taken.has(anchor)) {
       const repeat = (taken.get(base) ?? 0) + 1;
       taken.set(base, repeat);
       anchor = `${base}-${repeat}`;
     }
+
     taken.set(anchor, 0);
     anchors.set(block, anchor);
   }
+
   return anchors;
 };
 
-const p = (...runs: Run[]): ProseBlock => ({ kind: "paragraph", runs });
-const h2 = (text: string): ProseBlock => ({ kind: "heading", text });
-const h3 = (text: string): ProseBlock => ({ kind: "subheading", text });
-const ul = (...items: Run[][]): ProseBlock => ({ items, kind: "bullets" });
-const li = (...runs: Run[]): Run[] => runs;
-const strong = (text: string): Run => ({ kind: "strong", text });
-const link = (text: string, href: string): Run => ({ href, kind: "link", text });
-const table = (columns: string[], rows: string[][]): ProseBlock => ({
-  columns,
-  kind: "table",
-  rows,
-});
-const rule: ProseBlock = { kind: "rule" };
-/** The in-page link to a heading, as `headingAnchors` gives its first occurrence. */
-const anchor = (heading: string): `#${string}` => `#${headingSlug(heading)}`;
+const p = (...runs: Run[]) => ({ kind: "paragraph", runs }) satisfies ProseBlock;
+const h2 = (text: string) => ({ kind: "heading", text }) satisfies ProseBlock;
+const h3 = (text: string) => ({ kind: "subheading", text }) satisfies ProseBlock;
+const ul = (...items: Run[][]) => ({ items, kind: "bullets" }) satisfies ProseBlock;
+const li = (...runs: Run[]) => runs;
+const strong = (text: string) => ({ kind: "strong", text }) satisfies Run;
+const link = (text: string, href: string) => ({ href, kind: "link", text }) satisfies Run;
 
-/** A top-level section of a legal page: its heading, then what it says. */
+const table = (columns: string[], rows: string[][]) =>
+  ({
+    columns,
+    kind: "table",
+    rows,
+  }) satisfies ProseBlock;
+
+const rule: ProseBlock = { kind: "rule" };
+const anchor = (heading: string) => `#${headingSlug(heading)}` satisfies `#${string}`;
+
 interface Section {
   blocks: ProseBlock[];
   title: string;
 }
 
-const section = (title: string, ...blocks: ProseBlock[]): Section => ({ blocks, title });
-const sectionBlocks = (sections: Section[]): ProseBlock[] =>
+const section = (title: string, ...blocks: ProseBlock[]) => ({ blocks, title }) satisfies Section;
+
+const sectionBlocks = (sections: Section[]) =>
   sections.flatMap((part) => [h2(part.title), ...part.blocks]);
 
 const emailUs = link(siteConfig.email, `mailto:${siteConfig.email}`);
@@ -218,7 +225,6 @@ export const contactPage: ProsePage = {
   title: "Contact",
 };
 
-/** The date both legal documents took effect, as an ISO date for the sitemap and JSON-LD. */
 const legalRevisedIso = "2026-10-29";
 
 /** The last change to the home page and to the pages without a revision date of their own. */
@@ -1275,11 +1281,10 @@ export const prosePages: ProsePage[] = [aboutPage, contactPage, privacyPage];
 export const servedPages: ProsePage[] = [...prosePages, termsPage];
 
 /** The ISO date a page was last revised: the legal documents carry their own, the rest the site's. */
-export const pageRevisedOn = (page: ProsePage): string =>
+export const pageRevisedOn = (page: ProsePage) =>
   page === privacyPage || page === termsPage ? legalRevisedIso : siteUpdatedIso;
 
-export const findProsePage = (path: string): ProsePage | undefined =>
-  servedPages.find((page) => page.path === path);
+export const findProsePage = (path: string) => servedPages.find((page) => page.path === path);
 
 /** For agents only: llms.txt and the Markdown home and 404 pages list these. */
 export const siteLinks: LinkItem[] = [

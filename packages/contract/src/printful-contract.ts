@@ -1,5 +1,3 @@
-// The founder's Printful token, which prints and ships what the company sells.
-
 import { oc, type } from "@orpc/contract";
 import { z } from "zod";
 import type { PrintfulTokenStatus } from "@repo/domain/integrations";

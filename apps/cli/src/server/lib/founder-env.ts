@@ -1,12 +1,6 @@
-// Who the founder is, and the env main hands what it starts outside a run's sandbox. Main's own env is
-// launchd's in the packaged app, which any process of the founder's sets for every app opened after
-// it (`launchctl setenv`).
-
 /** macOS's own PATH, as launchd sets it by default: folders SIP keeps and no run writes. */
 export const SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 
-// who the founder is and how they read text, as login(1) hands a shell: nothing a program reads to
-// load more
 const ACCOUNT_NAMES = [
   "HOME",
   "USER",
@@ -23,7 +17,7 @@ const PROXY = /^(?:https?|all|no)_proxy$/iu;
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-const picked = (env: Env, keep: (name: string) => boolean): Record<string, string> =>
+const picked = (env: Env, keep: (name: string) => boolean) =>
   Object.fromEntries(
     Object.entries(env).filter(
       (entry): entry is [string, string] => entry[1] !== undefined && keep(entry[0]),
@@ -42,11 +36,8 @@ export const unsandboxedEnv = (env: Env, extra: Readonly<Record<string, string>>
 });
 
 /** The founder's proxies, in either case: one can route a download, never answer for its host. */
-export const proxiesOf = (env: Env): Record<string, string> =>
-  picked(env, (name) => PROXY.test(name));
+export const proxiesOf = (env: Env) => picked(env, (name) => PROXY.test(name));
 
-// launchd's own ssh agent, in a folder the sandbox keeps every run from making or writing
-// (`AGENT_SOCKET_WRITES`, sandbox.ts)
 const LAUNCHD_AGENT = /^\/private\/tmp\/com\.apple\.launchd\.[^/]+\/Listeners$/u;
 
 /**
@@ -54,13 +45,16 @@ const LAUNCHD_AGENT = /^\/private\/tmp\/com\.apple\.launchd\.[^/]+\/Listeners$/u
  * rc file that starts an agent when it finds none would leave one running after every login-shell
  * probe. Any other is left out, so an rc file's `ssh-add` never hands keys to a socket a run made.
  */
-export const launchdAgentOf = (env: Env): Record<string, string> => {
+export const launchdAgentOf = (env: Env) => {
   const agent = env.SSH_AUTH_SOCK;
-  return agent !== undefined && LAUNCHD_AGENT.test(agent) ? { SSH_AUTH_SOCK: agent } : {};
+
+  return (
+    agent !== undefined && LAUNCHD_AGENT.test(agent) ? { SSH_AUTH_SOCK: agent } : {}
+  ) satisfies Record<string, string>;
 };
 
 /** What of `env` is named with one of `prefixes`: a runner's provider settings. */
-export const namedWith = (env: Env, prefixes: readonly string[]): Record<string, string> =>
+export const namedWith = (env: Env, prefixes: readonly string[]) =>
   picked(env, (name) => prefixes.some((prefix) => name.startsWith(prefix)));
 
 /**
@@ -72,14 +66,17 @@ export const identityRefusal = (
   home: string,
   shell: string | undefined,
   account: { readonly homedir: string; readonly shell: string | null },
-): string | null => {
+) => {
   if (home !== account.homedir) {
     return `IdleBiz was started with ${home} as your home folder, but macOS says yours is ${account.homedir}: it opens a save and sandboxes runs only under the home folder that is yours.`;
   }
+
   const started = shell ?? "";
   const yours = account.shell ?? "";
+
   if (started !== yours) {
     return `IdleBiz was started with ${started === "" ? "no shell" : started} as your shell, but macOS says yours is ${yours === "" ? "none" : yours}: it looks for your coding CLIs only on the PATH your own shell sets.`;
   }
+
   return null;
 };

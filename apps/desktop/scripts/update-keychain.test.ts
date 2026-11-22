@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { cdhashIn, parseSearchList, partitionList } from "./update-keychain.ts";
 
-// what `security list-keychains -d user` and `codesign -dvvv` print, as a Mac prints them
 const LISTED = `    "/Users/runner/Library/Keychains/login.keychain-db"
     "/Users/runner/Library/Keychains/with space.keychain-db"
 `;
+
 const DESCRIBED = `Executable=/private/var/folders/x/T/IdleBiz.app/Contents/MacOS/IdleBiz
 Identifier=com.idlebiz.desktop
 Format=app bundle with Mach-O thin (arm64)

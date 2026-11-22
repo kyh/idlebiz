@@ -8,8 +8,9 @@ export interface KeepAwake {
  * lid still sleeps the Mac, and a run in flight then waits for it to wake. Holding the display awake
  * would keep a screen lit that nobody is watching.
  */
-export const keepAwake = (tell: (on: boolean) => void): KeepAwake => {
+export const keepAwake = (tell: (on: boolean) => void) => {
   let held = false;
+
   return {
     hold: (live) => {
       if (live !== held) {
@@ -17,5 +18,5 @@ export const keepAwake = (tell: (on: boolean) => void): KeepAwake => {
         tell(live);
       }
     },
-  };
+  } satisfies KeepAwake;
 };

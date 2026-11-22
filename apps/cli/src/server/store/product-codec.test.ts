@@ -7,7 +7,7 @@ import { tempSave } from "../test-support/save";
 
 tempSave();
 
-const roundTrip = (p: Product): Product => docToProduct(parseDoc(serializeDoc(productToDoc(p))));
+const roundTrip = (p: Product) => docToProduct(parseDoc(serializeDoc(productToDoc(p))));
 
 const widget: Product = {
   createdAt: 1_699_000_000_000,

@@ -42,7 +42,7 @@ describe("company tools", () => {
   });
 
   it("answers with the store's refusal, as refused, rather than failing the call", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     const { ctx } = runAs("mae");
     expect(await callTool(ctx, "kill_bet", { reason: "dud", slug: "no-such-bet" })).toEqual({
       kind: "refused",
@@ -60,15 +60,17 @@ describe("company tools", () => {
   });
 
   it("answers a fault too, so the run goes on, and reports it", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     const { ctx } = runAs("mae");
     const fault = new TypeError("cannot read the queue");
+
     const broken: RunContext = {
       ...ctx,
       assign: () => {
         throw fault;
       },
     };
+
     expect(await callTool(broken, "delegate", HANDOFF)).toEqual({
       kind: "fault",
       text: fault.message,
@@ -90,10 +92,12 @@ describe("company tools", () => {
     expect(await callTool(ctx, "ask_boss", { question: "Ship it?" })).toMatchObject({
       kind: "done",
     });
+
     const unsent = await callTool(ctx, "request_integration", {
       kind: "vercel",
       reason: "to deploy",
     });
+
     expect(unsent?.kind).toBe("refused");
     expect(unsent?.text).toContain("The founder was not asked");
     expect(asked).toEqual([{ question: "Ship it?", type: "question" }]);
@@ -102,7 +106,6 @@ describe("company tools", () => {
 });
 
 describe("an idlebiz verb, through the control plane to the tools", () => {
-  // short, so a socket's path under it fits macOS's limit wherever TMPDIR is
   const box = mkdtempSync(path.join(process.platform === "darwin" ? "/tmp" : tmpdir(), "ib-verb-"));
   const plane = new ControlPlane(() => path.join(box, "save"), path.join(box, "home"));
 
@@ -112,24 +115,21 @@ describe("an idlebiz verb, through the control plane to the tools", () => {
     rmSync(box, { force: true, recursive: true });
   });
 
-  /** `argv` typed in `ctx`'s run: the exit code it left, and what it wrote to stdout and stderr. */
   const typed = async (ctx: RunContext, argv: readonly string[]) => {
     const handle = await plane.registerRun((name, raw) => callTool(ctx, name, raw));
     vi.stubEnv("IDLEBIZ_API_SOCKET", handle.env.IDLEBIZ_API_SOCKET);
     vi.stubEnv("IDLEBIZ_RUN_TOKEN", handle.env.IDLEBIZ_RUN_TOKEN);
-    const out: string[] = [];
-    const err: string[] = [];
-    const stdout = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
-      out.push(String(chunk));
-      return true;
-    });
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
-      err.push(String(chunk));
-      return true;
-    });
+    const stdout = vi.spyOn(process.stdout, "write");
+    const stderr = vi.spyOn(process.stderr, "write");
+
     try {
       const code = await runCli(argv);
-      return { code, err: err.join(""), out: out.join("") };
+
+      return {
+        code,
+        err: stderr.mock.calls.map(([chunk]) => String(chunk)).join(""),
+        out: stdout.mock.calls.map(([chunk]) => String(chunk)).join(""),
+      };
     } finally {
       stdout.mockRestore();
       stderr.mockRestore();
@@ -185,15 +185,17 @@ describe("an idlebiz verb, through the control plane to the tools", () => {
   });
 
   it("exits 2 on a fault, printing it, and reports it", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi.spyOn(console, "error");
     const { ctx } = runAs("mae");
     const fault = new TypeError("cannot read the queue");
+
     const broken: RunContext = {
       ...ctx,
       assign: () => {
         throw fault;
       },
     };
+
     expect(await typed(broken, ["delegate", JSON.stringify(HANDOFF)])).toEqual({
       code: 2,
       err: "",

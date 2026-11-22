@@ -5,7 +5,19 @@
   "description": "The game's shared vocabulary, pure and isomorphic: the company and its people, products and tasks, the bets and their judge, money's formatting, the activity grammar, and the JSON and error helpers both the server and the page parse with. No node, no DOM, no transport.",
   "type": "module",
   "exports": {
-    "./*": "./src/*.ts"
+    "./activity": "./src/activity.ts",
+    "./bets": "./src/bets.ts",
+    "./character-frame": "./src/character-frame.ts",
+    "./character-seed": "./src/character-seed.ts",
+    "./digest": "./src/digest.ts",
+    "./domain": "./src/domain.ts",
+    "./errors": "./src/errors.ts",
+    "./format": "./src/format.ts",
+    "./hire": "./src/hire.ts",
+    "./hold-rules": "./src/hold-rules.ts",
+    "./integrations": "./src/integrations.ts",
+    "./json": "./src/json.ts",
+    "./runners": "./src/runners.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

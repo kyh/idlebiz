@@ -17,29 +17,25 @@ import {
 
 const desktop = path.resolve(import.meta.dirname, "..");
 
-// the shell's updater as tauri.conf.json builds every release with it
 const { updater } = z
   .object({ plugins: z.object({ updater: z.record(z.string(), z.unknown()) }) })
   .parse(
     parseJson(readFileSync(path.join(desktop, "src-tauri", "tauri.conf.json"), "utf-8")),
   ).plugins;
+
 const [endpoint] = z.object({ endpoints: z.tuple([z.string()]) }).parse(updater).endpoints;
 
-// a minisign file as tauri writes a public key or a signature: base64 of lines whose second is
-// base64 of "Ed", the key's ID and then the key or the signature
-const minisign = (...lines: string[]): string =>
-  Buffer.from(`${lines.join("\n")}\n`).toString("base64");
+const minisign = (...lines: string[]) => Buffer.from(`${lines.join("\n")}\n`).toString("base64");
+
 const ED25519 = Buffer.from("Ed");
 
-// stand-ins for public halves, each byte of the ID and the key one number: nothing is generated,
-// and nothing signs with them
-const pubkeyOf = (id: number, key: number, comment = "minisign public key"): string =>
+const pubkeyOf = (id: number, key: number, comment = "minisign public key") =>
   minisign(
     `untrusted comment: ${comment}`,
     Buffer.concat([ED25519, Buffer.alloc(8, id), Buffer.alloc(32, key)]).toString("base64"),
   );
-// a stand-in for an archive's .sig, carrying the ID of the key it names as its signer
-const signatureOf = (id: number): string =>
+
+const signatureOf = (id: number) =>
   minisign(
     "untrusted comment: signature from tauri secret key",
     Buffer.concat([ED25519, Buffer.alloc(8, id), Buffer.alloc(64, 9)]).toString("base64"),
@@ -51,30 +47,28 @@ const RELEASE_PUBKEY = pubkeyOf(1, 1);
 const THROWAWAY_PUBKEY = pubkeyOf(2, 2);
 const FEED = `http://127.0.0.1:43123/${FEED_NAME}`;
 
-// a Mac's paths, made up: no test reads the founder's home or a key
 const checkout = "/work/idlebiz";
+
 const context = {
   checkout,
   identity: "-",
   installed: ["/Applications", "/home/founder/Applications"],
   pubkey: RELEASE_PUBKEY,
-  real: (file: string): string => path.resolve(file),
+  real: (file: string) => path.resolve(file),
   release: false,
   releaseOut: path.join(checkout, "apps", "desktop", ".output", "bin"),
   scratch: "/scratch",
   updaterKey: "/home/founder/.tauri/idlebiz.key",
 };
 
-// a resolver through one link, `from` naming `to`, as realPathOf answers on a Mac
-const through =
-  (from: string, to: string) =>
-  (file: string): string => {
-    const relative = path.relative(from, file);
-    return relative.startsWith("..") ? path.resolve(file) : path.join(to, relative);
-  };
+const through = (from: string, to: string) => (file: string) => {
+  const relative = path.relative(from, file);
 
-// the update, which names its key
+  return relative.startsWith("..") ? path.resolve(file) : path.join(to, relative);
+};
+
 const [updateSchema] = updateTestSpecSchema.options;
+
 const spec = updateSchema.parse({
   archive: true,
   feed: FEED,
@@ -84,7 +78,6 @@ const spec = updateSchema.parse({
   version: "0.0.11",
 });
 
-// the pack an update is tested from, which signs nothing
 const updated = updateTestSpecSchema.parse({
   archive: false,
   feed: FEED,
@@ -93,7 +86,6 @@ const updated = updateTestSpecSchema.parse({
   version: "0.0.10",
 });
 
-// every feed but a loopback one's latest.json on an explicit port
 const OFF_LOOPBACK = [
   endpoint,
   `https://127.0.0.1:43123/${FEED_NAME}`,
@@ -225,13 +217,12 @@ describe("a test pack's spec", () => {
 
   it("refuses a key that is the release's through a link", () => {
     const link = "/scratch/update-test/linked.key";
-    const real = (file: string): string => (file === link ? context.updaterKey : file);
+    const real = (file: string) => (file === link ? context.updaterKey : file);
     expect(() => {
       refuseUpdateTest({ ...spec, key: link }, { ...context, real });
     }).toThrow("a throwaway key made in scratch");
   });
 
-  // the release's key a link elsewhere: a key beside the link and one beside its target
   it.each(["/home/founder/.tauri/test.key", "/Volumes/Keys/test.key"])(
     "refuses %s, beside the release's key or the file it links to",
     (key) => {
@@ -248,6 +239,7 @@ describe("a test pack's spec", () => {
       checkout: "/work/linked",
       real: through("/work/linked", checkout),
     };
+
     expect(() => {
       refuseUpdateTest({ ...spec, key: path.join(checkout, "a.key") }, linked);
     }).toThrow("never in the checkout");
@@ -269,6 +261,7 @@ describe("a test pack's spec", () => {
       real: through("/work/linked-bin", context.releaseOut),
       releaseOut: "/work/linked-bin",
     };
+
     expect(() => {
       refuseUpdateTest({ ...spec, outDir: path.join(context.releaseOut, "next") }, linked);
     }).toThrow("which publishing uploads");
@@ -318,7 +311,6 @@ describe("a test pack's config", () => {
     expect(updateTestConfig(null)).toEqual({});
   });
 
-  // what every release is built from: a dangerous* key here would ship to every install
   it("leaves tauri.conf.json's updater an endpoint and a pubkey, and nothing else", () => {
     expect(Object.keys(updater).toSorted()).toEqual(["endpoints", "pubkey"]);
   });

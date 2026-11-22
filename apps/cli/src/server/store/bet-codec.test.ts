@@ -5,23 +5,23 @@ import type { Bet, BetClaim, BetState } from "@repo/domain/bets";
 
 const LANDING: BetClaim = { landingPath: "/b/launch-post", metric: "users" };
 
-const bet = (state: BetState, claim: BetClaim = LANDING): Bet => ({
-  budgetUsd: 5,
-  claim,
-  createdAt: 1,
-  hypothesis: "a launch post brings visitors",
-  id: "launch-post",
-  productId: "app",
-  readAt: 7,
-  reading: 12,
-  spentUsd: 1.25,
-  state,
-  target: 50,
-  title: "Launch post",
-  windowHours: 48,
-});
+const bet = (state: BetState, claim: BetClaim = LANDING) =>
+  ({
+    budgetUsd: 5,
+    claim,
+    createdAt: 1,
+    hypothesis: "a launch post brings visitors",
+    id: "launch-post",
+    productId: "app",
+    readAt: 7,
+    reading: 12,
+    spentUsd: 1.25,
+    state,
+    target: 50,
+    title: "Launch post",
+    windowHours: 48,
+  }) satisfies Bet;
 
-/** The bet's BET.md, as boot reads it back. */
 const written = (b: Bet) => parseDoc(serializeDoc(betToDoc(b)));
 
 describe("bet codec", () => {

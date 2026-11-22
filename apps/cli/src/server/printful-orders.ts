@@ -13,9 +13,6 @@ import type { JsonValue } from "@repo/domain/json";
 import type { PrintPlacement } from "./listing";
 import type { Recipient } from "./order";
 
-// Printful's v2 orders, placed in main with the founder's token. v2 makes every order a draft,
-// which charges nothing; confirming one is what charges the founder's Printful billing method.
-
 const OrderReadSchema = z.object({
   data: z.object({
     costs: z.object({
@@ -41,8 +38,9 @@ export interface PrintfulOrder {
   costs: PrintfulCosts;
 }
 
-const orderOf = (answer: JsonValue): PrintfulOrder => {
+const orderOf = (answer: JsonValue) => {
   const { costs, id, status } = OrderReadSchema.parse(answer).data;
+
   return {
     costs:
       costs.calculation_status === "done"
@@ -50,7 +48,7 @@ const orderOf = (answer: JsonValue): PrintfulOrder => {
         : { kind: costs.calculation_status },
     id,
     status,
-  };
+  } satisfies PrintfulOrder;
 };
 
 /** One paid order as Printful is asked to print it: the listing's variant and design, at the listing's retail prices. */
@@ -68,9 +66,9 @@ interface DraftOrder {
   retailShippingCents: number;
 }
 
-const draftBody = (draft: DraftOrder): JsonValue => {
+const draftBody = (draft: DraftOrder) => {
   const { recipient: to } = draft;
-  // a field the buyer left empty is left out, not sent as null
+
   const recipient = Object.fromEntries(
     Object.entries({
       address1: to.address1,
@@ -84,6 +82,7 @@ const draftBody = (draft: DraftOrder): JsonValue => {
       zip: to.zip,
     }).filter((field): field is [string, string] => field[1] !== null),
   );
+
   return {
     external_id: draft.externalId,
     order_items: [
@@ -103,7 +102,7 @@ const draftBody = (draft: DraftOrder): JsonValue => {
     recipient,
     retail_costs: { currency: "USD", shipping: dollars(draft.retailShippingCents) },
     shipping: "STANDARD",
-  };
+  } satisfies JsonValue;
 };
 
 /** Printful's order calls, each answered as what the order pump acts on. */
@@ -137,6 +136,7 @@ export const printfulOrders: PrintfulOrders = {
   discard: (id, credential) =>
     answeringPrintful("discard", async () => {
       await printfulDelete(`/v2/orders/${id}`, credential);
+
       return null;
     }),
   lookup: (externalId, credential) =>

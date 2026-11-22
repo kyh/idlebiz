@@ -37,6 +37,7 @@ const company: Company = {
   users: null,
   workspaceDir: "/tmp/acme",
 };
+
 const employee: Employee = {
   createdAt: 0,
   deskIndex: 0,
@@ -53,6 +54,7 @@ const employee: Employee = {
   status: "idle",
   title: "Founding Engineer",
 };
+
 const product: Product = {
   createdAt: 0,
   description: "the app",
@@ -86,12 +88,13 @@ const briefFor = (
     stripeTestMode,
   }).description;
 
-const line = (from: TeamMessage["from"], text: string): TeamMessage => ({
-  createdAt: 0,
-  from,
-  id: 0,
-  text,
-});
+const line = (from: TeamMessage["from"], text: string) =>
+  ({
+    createdAt: 0,
+    from,
+    id: 0,
+    text,
+  }) satisfies TeamMessage;
 
 describe("the team room as the team reads it", () => {
   it("names the founder and a teammate, and gives the office's news no speaker", () => {
@@ -103,6 +106,7 @@ describe("the team room as the team reads it", () => {
       ],
       (id) => (id === "lead" ? "Priya" : "someone"),
     );
+
     expect(room).toBe("- 🎲 New bet: Launch post\n- founder: ship it\n- Priya: on it");
   });
 });
@@ -120,6 +124,7 @@ describe("the brief's real numbers", () => {
       { ...product, users: 300 },
       { ...product, id: "site", name: "Site", users: null },
     ]);
+
     expect(text).toContain("Revenue: $12.50 lifetime");
     expect(text).toContain("Users: 340 visitors");
     expect(text).toContain("- App: 300 visitors");
@@ -138,6 +143,7 @@ describe("the brief's real numbers", () => {
       revenueUsd: 10,
       users: 340,
     });
+
     expect(text).toContain("+$2.50 since your last run");
     expect(text).toContain("unchanged since your last run");
   });
@@ -148,6 +154,7 @@ describe("the brief's budget", () => {
     const text = briefFor({ ...company, budget: { capUsd: 10, mode: "capped" }, spentUsd: 9 }, [
       product,
     ]);
+
     expect(text).toContain("AI budget: $9.00 of $10.00 spent.");
     expect(text).not.toContain("critical work only");
   });
@@ -164,7 +171,7 @@ const proposal = (
   newProduct: boolean,
   co: Company = company,
   focus: Product = product,
-): string =>
+) =>
   autonomousBrief({
     assignment: { kind: "propose", newProduct, product: focus, widen },
     bets: [],
@@ -231,6 +238,7 @@ describe("the brief that carries the founder's answer", () => {
     state: { kind: "todo" },
     title: "Add checkout",
   };
+
   const briefOn = (ask: BlockedAsk, t: Task = task) =>
     continuationBrief(t, ask, "Yes, go ahead.").description;
 
@@ -248,6 +256,7 @@ describe("the brief that carries the founder's answer", () => {
       instructions: "Post it.\nSend me its URL.",
       type: "action",
     };
+
     const text = continuationBrief(task, ask, "Done.\nhttps://x.dev/1").description;
     expect(text).toContain("> Post it.\n> Send me its URL.");
     expect(text).toContain("> ````\n> Run it:\n> ```\n> npx acme\n> ```\n> ````");

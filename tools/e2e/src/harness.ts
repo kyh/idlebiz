@@ -10,7 +10,6 @@ import { startStandInModel } from "idlebiz/stand-in-model";
 import type { StandInModel } from "idlebiz/stand-in-model";
 import { isProviderEnv, standInRunnerEnv } from "idlebiz/stand-in-runners";
 import { PersistedActivitySchema } from "@repo/domain/activity";
-import type { PersistedActivity } from "@repo/domain/activity";
 import type { Company, Employee, Product } from "@repo/domain/domain";
 import type { HireProposal } from "@repo/domain/hire";
 import type { RunnerId } from "@repo/domain/runners";
@@ -21,9 +20,6 @@ import type { Contract } from "@repo/contract/contract";
 import { RPC_PREFIX } from "@repo/contract/routes";
 import { jsonRecordSchema, parseJson } from "@repo/domain/json";
 import type { JsonRecord, JsonValue } from "@repo/domain/json";
-
-/** The page's API, as the page calls it. */
-type Api = ContractRouterClient<Contract>;
 
 interface Launched {
   page: Page;
@@ -70,12 +66,15 @@ interface Fixtures {
  * What the company on `root` logged, oldest first: nothing before it is founded. Only whole lines,
  * so a read while main appends one never sees half of it.
  */
-export const loggedActivity = async (root: string): Promise<PersistedActivity[]> => {
+export const loggedActivity = async (root: string) => {
   const log = path.join(root, "company", "activity.jsonl");
+
   if (!existsSync(log)) {
     return [];
   }
+
   const text = await readFile(log, "utf-8");
+
   return text
     .slice(0, text.lastIndexOf("\n") + 1)
     .split("\n")
@@ -83,44 +82,37 @@ export const loggedActivity = async (root: string): Promise<PersistedActivity[]>
     .map((line) => PersistedActivitySchema.parse(parseJson(line)));
 };
 
-/** Each run the company on `root` logged starting, by id, and each it logged ending, with how. */
-const runsLogged = async (
-  root: string,
-): Promise<{ started: string[]; ended: { runId: string; outcome: string }[] }> => {
+const runsLogged = async (root: string) => {
   const rows = await loggedActivity(root);
+
   return {
     ended: rows.flatMap((row) =>
       row.kind === "run.end" ? [{ outcome: row.payload.outcome.kind, runId: row.runId }] : [],
     ),
     started: rows.flatMap((row) => (row.kind === "run.start" ? [row.runId] : [])),
-  };
+  } satisfies { started: string[]; ended: { runId: string; outcome: string }[] };
 };
 
-/** What main gets for one call in place of the API's answer (stub-services.ts). */
 interface Canned {
   host: string;
   route: string;
   status: number;
-  /** The answer's JSON text. */
   body: string;
 }
 
-const canned = (host: string, route: string, body: JsonValue, status = 200): Canned => ({
-  body: JSON.stringify(body),
-  host,
-  route,
-  status,
-});
+const canned = (host: string, route: string, body: JsonValue, status = 200) =>
+  ({
+    body: JSON.stringify(body),
+    host,
+    route,
+    status,
+  }) satisfies Canned;
 
 const STRIPE = "api.stripe.com";
 const VERCEL = "api.vercel.com";
 const PRINTFUL = "api.printful.com";
 const NOTHING = { data: [], has_more: false, object: "list" };
 
-/**
- * The Stripe, Vercel and Printful of an account that takes any key: one project, no money, no
- * visitors, one store that may place orders.
- */
 const TAKING: readonly Canned[] = [
   canned(STRIPE, "/v1/charges", NOTHING),
   canned(STRIPE, "/v1/payment_links", NOTHING),
@@ -135,26 +127,26 @@ const TAKING: readonly Canned[] = [
   canned(VERCEL, "/v9/projects", { projects: [{ id: "prj_e2e", name: "e2e-tip-jar" }] }),
 ];
 
-/** What Stripe and Vercel answer a key they never issued, with a 401. */
 const STRIPE_REFUSAL = {
   error: { message: "Invalid API Key provided", type: "invalid_request_error" },
 };
+
 const VERCEL_REFUSAL = { error: { code: "forbidden", message: "Not authorized" } };
 
-/** TAKING, but each Stripe and Vercel call turned away. */
 const REFUSING: readonly Canned[] = TAKING.map((answer) => {
   if (answer.host === STRIPE) {
     return canned(STRIPE, answer.route, STRIPE_REFUSAL, 401);
   }
+
   if (answer.host === VERCEL) {
     return canned(VERCEL, answer.route, VERCEL_REFUSAL, 401);
   }
+
   return answer;
 });
 
 const ANSWERS: Record<Keys, readonly Canned[]> = { refused: REFUSING, taken: TAKING };
 
-// loaded into main before its own code, by every launch: it answers from ANSWERS
 const STUB_SERVICES = fileURLToPath(new URL("stub-services.ts", import.meta.url));
 
 const start = async (
@@ -163,19 +155,19 @@ const start = async (
   options: LaunchOptions,
   standIn: Readonly<Record<string, string>>,
   log: (line: string) => void,
-): Promise<Launched> => {
+) => {
   const host = await startDevHost({
     env: { IDLEBIZ_E2E_CANNED: JSON.stringify(ANSWERS[options.keys ?? "taken"]), ...standIn },
-    // the terminal's own logins stay out, so a run reaches the stand-in or nothing
     inherit: (name) => !isProviderEnv(name),
     log,
     nodeArgs: ["--import", STUB_SERVICES],
     root,
   });
+
   let context: BrowserContext | null = null;
   let closing: Promise<void> | null = null;
-  // each step whatever the one before it did, so a context that will not close still lets main go
-  const close = async (): Promise<void> => {
+
+  const close = async () => {
     closing ??= (async () => {
       try {
         await context?.close();
@@ -185,13 +177,14 @@ const start = async (
     })();
     await closing;
   };
+
   try {
     context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(await host.handoff());
-    return { close, page };
+
+    return { close, page } satisfies Launched;
   } catch (error) {
-    // a launch that failed part way leaks nothing it made: the context, main
     await close();
     throw error;
   }
@@ -205,34 +198,40 @@ export const test = base.extend<Fixtures & Options>({
       const launched = await start(root, browser, options, standIn, (line) => {
         lines.push(line);
       });
+
       open.push(launched);
+
       return launched;
     });
+
     for (const launched of open) {
       await launched.close();
     }
+
     await testInfo.attach("main", { body: lines.join("\n"), contentType: "text/plain" });
   },
   // oxlint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from this pattern; the model has none
   model: async ({}, provide) => {
     const model = await startStandInModel();
+
     try {
       await provide(model);
     } finally {
       await model.close();
     }
   },
-  // torn down after every launch, so each main has stopped its runs before the save is read
   root: async ({ model, runs }, provide, testInfo) => {
     const root = await mkdtemp(path.join(tmpdir(), "idlebiz-e2e-"));
+
     try {
       await provide(root);
-      // one that skipped, on the sandbox's refusal, did so before it ran any of them
       const scripted = testInfo.status === "skipped" ? 0 : runs;
       const { ended, started } = await runsLogged(root);
+
       if (scripted !== "settled") {
         expect(started, `only the runs the test scripts start: ${scripted}`).toHaveLength(scripted);
       }
+
       expect(ended.map(({ runId }) => runId).toSorted(), "every run that started ended").toEqual(
         started.toSorted(),
       );
@@ -242,10 +241,12 @@ export const test = base.extend<Fixtures & Options>({
       ).toEqual([]);
       expect(model.leaks, "no login but the stand-in's reached the model").toEqual([]);
       expect(model.unexpected, "the model was asked nothing it does not answer").toEqual([]);
+
       if (scripted === 0) {
         const turns = model.requests.filter(
           ({ protocol }) => protocol === "messages" || protocol === "responses",
         );
+
         expect(
           turns.map(({ path: asked }) => asked),
           "a test that runs nothing asks the model nothing",
@@ -258,8 +259,8 @@ export const test = base.extend<Fixtures & Options>({
   runners: [["claude", "codex"], { option: true }],
   runs: [0, { option: true }],
   standIn: async ({ model, runners }, provide) => {
-    // outside the save, which a run's sandbox closes to it
     const scratch = await mkdtemp(path.join(tmpdir(), "idlebiz-e2e-runners-"));
+
     try {
       await provide(await standInRunnerEnv({ model, runners, scratch }));
     } finally {
@@ -274,7 +275,7 @@ export { expect } from "@playwright/test";
  * A screenshot every run keeps, green or red, for whoever reads the run after it with no window:
  * `test-results/screens/<name>.png`, attached to its test as well.
  */
-export const keyShot = async (page: Page, name: string): Promise<void> => {
+export const keyShot = async (page: Page, name: string) => {
   const info = test.info();
   const file = path.join(info.project.outputDir, "screens", `${name}.png`);
   await page.screenshot({ animations: "disabled", caret: "hide", path: file });
@@ -285,11 +286,14 @@ export const keyShot = async (page: Page, name: string): Promise<void> => {
  * The page's API to the server, called from the test with what main asks of every call: the
  * cookie the page's handoff set, from the page's own origin.
  */
-export const apiOf = async (page: Page): Promise<Api> => {
+export const apiOf = async (page: Page) => {
   const { origin } = new URL(page.url());
   const cookies = await page.context().cookies(origin);
   const cookie = cookies.map(({ name, value }) => `${name}=${value}`).join("; ");
-  return createORPCClient(new RPCLink({ headers: { cookie, origin }, origin, url: RPC_PREFIX }));
+
+  return createORPCClient<ContractRouterClient<Contract>>(
+    new RPCLink({ headers: { cookie, origin }, origin, url: RPC_PREFIX }),
+  );
 };
 
 const HIRES: HireProposal[] = [
@@ -317,11 +321,9 @@ export interface Founded {
   product: Product;
 }
 
-/** Where claude keeps the managed settings that outrank every other tier of its own. */
 const CLAUDE_MANAGED = "/Library/Application Support/ClaudeCode";
 
-/** Whether this Mac's claude has managed settings, whose env or key helper outrank the stand-in's. */
-const claudeManaged = (): boolean =>
+const claudeManaged = () =>
   ["managed-settings.json", "managed-settings.d"].some((name) =>
     existsSync(path.join(CLAUDE_MANAGED, name)),
   );
@@ -331,9 +333,8 @@ const claudeManaged = (): boolean =>
  * on a Mac whose claude has managed settings. On a Mac a CLI the stand-in does not sign in fails
  * it.
  */
-export const sandboxedRunsOrSkip = async (page: Page): Promise<void> => {
+export const sandboxedRunsOrSkip = async (page: Page) => {
   const api = await apiOf(page);
-  // the first report waits on the sandbox's check, so a refusal is in it
   const report = await api.save.report();
   const sandboxing = report.skipped.find(({ kind }) => kind === "sandbox");
   test.skip(process.platform !== "darwin" && sandboxing !== undefined, sandboxing?.error);
@@ -355,9 +356,10 @@ export const sandboxedRunsOrSkip = async (page: Page): Promise<void> => {
  * a tick that lands before autopilot is off. The window that founded it never learns of it:
  * relaunch to see it.
  */
-export const foundCompany = async (page: Page): Promise<Founded> => {
+export const foundCompany = async (page: Page) => {
   await sandboxedRunsOrSkip(page);
   const api = await apiOf(page);
+
   const company = await api.onboarding.found({
     budget: { capUsd: 0, mode: "capped" },
     businessType: "custom",
@@ -367,19 +369,21 @@ export const foundCompany = async (page: Page): Promise<Founded> => {
     mission: "Prove the office boots without spending a cent.",
     name: "E2E Test Co",
   });
+
   await api.company.setAutopilot({ running: false });
   const [product] = await api.products.list();
+
   if (!product) {
     throw new Error("a founded company has no product");
   }
-  return { company, employees: await api.employees.list(), product };
+
+  return { company, employees: await api.employees.list(), product } satisfies Founded;
 };
 
-/** Where a development launch's vault keeps its keys (apps/cli/src/server/vault/vault.ts). */
-const vaultFile = (root: string): string => path.join(root, "vault.json");
+const vaultFile = (root: string) => path.join(root, "vault.json");
 
-export const readVault = async (root: string): Promise<JsonRecord> =>
+export const readVault = async (root: string) =>
   jsonRecordSchema.parse(parseJson(await readFile(vaultFile(root), "utf-8")));
 
-export const writeVault = (root: string, keys: JsonRecord): Promise<void> =>
+export const writeVault = (root: string, keys: JsonRecord) =>
   writeFile(vaultFile(root), JSON.stringify(keys, null, 2), { mode: 0o600 });

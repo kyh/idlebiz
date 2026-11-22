@@ -1,5 +1,3 @@
-// The save itself: what boot made of it, its folder, and the reset that deletes it.
-
 import { oc, type } from "@orpc/contract";
 import type { LoadReport } from "@repo/domain/domain";
 import type { Done } from "./done";

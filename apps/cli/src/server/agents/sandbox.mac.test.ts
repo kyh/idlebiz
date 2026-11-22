@@ -11,7 +11,6 @@ const root = tempSave();
 
 const onMac = process.platform === "darwin";
 
-// each check starts real sandboxed processes, which take seconds each on a CI runner
 vi.setConfig({ testTimeout: 30_000 });
 
 describe.skipIf(!onMac)("sandboxRuns", () => {
@@ -23,6 +22,7 @@ describe.skipIf(!onMac)("sandboxRuns", () => {
     process.env.PATH = path.join(box, "no-bin");
     process.env.HOME = path.join(box, "home");
     mkdirSync(path.join(box, "home"));
+
     for (const key of ["CLAUDE_BIN", "CODEX_BIN", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) {
       // oxlint-disable-next-line typescript/no-dynamic-delete -- process.env stringifies an assigned undefined; delete is the only unset
       delete process.env[key];
@@ -37,6 +37,7 @@ describe.skipIf(!onMac)("sandboxRuns", () => {
         process.env[key] = value;
       }
     }
+
     rmSync(box, { force: true, recursive: true });
   });
 
@@ -119,12 +120,14 @@ describe.skipIf(!onMac)("sandboxRuns", () => {
       handleRpc: () => Promise.resolve(false),
       page: { kind: "dev", origin: "http://localhost:1" },
     });
+
     try {
       const sandbox = await sandboxOf([]);
       expect(sandbox.closedPorts).toEqual([9222, 9229, 31_100, page.port]);
     } finally {
       await page.stop();
     }
+
     const after = await sandboxOf([]);
     expect(after.closedPorts).toEqual([9222, 9229, 31_100]);
   });

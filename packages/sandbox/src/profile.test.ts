@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { realPathOf, sandboxFor } from "./machine";
 import { sandboxedCommand, signInCommand } from "./profile";
 import type { Sandbox } from "./profile";
-import { SANDBOX as SANDBOX_FIXTURE } from "./fixture";
+import { SANDBOX as SANDBOX_FIXTURE } from "./sandbox.fixture";
 import { readBack } from "./read-back";
 
 const SANDBOX: Sandbox = {
@@ -23,6 +23,7 @@ describe("sandboxedCommand", () => {
     const { bin, flag, profile, runs } = readBack(
       sandboxedCommand(SANDBOX, "claude", ["node", "a.js"]),
     );
+
     expect([bin, flag]).toEqual(["/usr/bin/sandbox-exec", "-p"]);
     expect(profile).toMatch(/^\(version 1\)\n\(allow default\)/u);
     expect(runs).toEqual(["node", "a.js"]);
@@ -30,9 +31,11 @@ describe("sandboxedCommand", () => {
 
   it("hands every path over as a parameter, never quoted into the profile", () => {
     const odd = '/Users/me/we"ird) (allow file-read*';
+
     const { denied, profile } = readBack(
       sandboxedCommand({ ...SANDBOX, unreadable: [{ match: "subpath", path: odd }] }, "claude", []),
     );
+
     expect(profile).not.toContain('we"ird');
     expect(denied("file-read* file-write*")).toEqual([odd, "/Users/me/.codex"]);
   });
@@ -40,12 +43,14 @@ describe("sandboxedCommand", () => {
   it("denies every write, then allows each runner the scratch folders and its own state, never the other's", () => {
     const claude = readBack(sandboxedCommand(SANDBOX, "claude", []));
     const codex = readBack(sandboxedCommand(SANDBOX, "codex", []));
+
     for (const { lines } of [claude, codex]) {
       expect(lines.indexOf("(deny file-write*)")).toBeGreaterThan(-1);
       expect(lines.indexOf("(deny file-write*)")).toBeLessThan(
         lines.findIndex((line) => line.startsWith("(allow file-write* (subpath (param")),
       );
     }
+
     expect(claude.allowed("file-write*")).toEqual(
       expect.arrayContaining([
         "/private/tmp",
@@ -58,7 +63,6 @@ describe("sandboxedCommand", () => {
     expect(claude.denied("file-read* file-write*")).toContain("/Users/me/.codex");
     expect(codex.allowed("file-write*")).toContain("/Users/me/.codex/auth.json");
     expect(codex.denied("file-read* file-write*")).toContain("/Users/me/.claude");
-    // the home is closed before its state reopens, so a home in TMPDIR holds too
     expect(claude.lineOf("deny", "file-write*", "/Users/me/.claude")).toBeLessThan(
       claude.lineOf("allow", "file-write*", "/Users/me/.claude/sessions"),
     );
@@ -88,6 +92,7 @@ describe("sandboxedCommand", () => {
 
   it("closes the pasteboard, where the founder pastes a key, to every run whichever program asks, and leaves it to a sign-in", () => {
     const pasteboard = '(deny mach-lookup (global-name "com.apple.pasteboard.1"))';
+
     for (const runner of ["claude", "codex"] as const) {
       expect(readBack(sandboxedCommand(SANDBOX, runner, [])).lines).toContain(pasteboard);
       expect(readBack(signInCommand(SANDBOX, runner, [])).lines).not.toContain(pasteboard);
@@ -104,6 +109,7 @@ describe("sandboxedCommand", () => {
       runsAsFounder: [{ match: "subpath", path: "/private/tmp/shims" }],
       writable: [{ match: "subpath", path: WORKSPACE }],
     };
+
     const { lineOf, lines, denied } = readBack(sandboxedCommand(sandbox, "claude", []));
     const scratch = lineOf("allow", "file-write*", "/private/tmp");
     const save = lineOf("deny", "file-write*", "/Users/me/.idlebiz");
@@ -122,7 +128,6 @@ describe("sandboxedCommand", () => {
     expect(home).toBeGreaterThan(-1);
     const ownProject = lineOf("allow", "file-write*", "/Users/me/.claude/projects/-w");
     expect(ownProject).toBeGreaterThan(home);
-    // what the founder's tools run on opening a folder holds in the run's own project too
     expect(ownProject).toBeLessThan(opened);
     expect(readBack(sandboxedCommand(sandbox, "codex", [])).params).not.toContain(
       "/Users/me/.claude/projects/-w",
@@ -131,6 +136,7 @@ describe("sandboxedCommand", () => {
 
   it("lets no run open anything through LaunchServices, and only a sign-in open the browser", () => {
     const opensNothing = "(deny lsopen)";
+
     for (const runner of ["claude", "codex"] as const) {
       expect(readBack(sandboxedCommand(SANDBOX, runner, [])).lines).toContain(opensNothing);
       expect(readBack(signInCommand(SANDBOX, runner, [])).lines).not.toContain(opensNothing);
@@ -143,9 +149,9 @@ describe("sandboxedCommand", () => {
       "(deny job-creation)",
       "(deny user-preference-write)",
     ];
+
     for (const runner of ["claude", "codex"] as const) {
       const { lines } = readBack(sandboxedCommand(SANDBOX, runner, []));
-      // whole operations, and no later rule names one, so none reopens inside a folder
       expect(lines.filter((line) => /file-mount|job-creation|user-preference/u.test(line))).toEqual(
         doneForIt,
       );
@@ -157,6 +163,7 @@ describe("sandboxedCommand", () => {
 
   it("connects to no socket but DNS's, syslog's, the run's own folders' and its runner's agent-browser namespace", () => {
     const agent = "/private/tmp/cc-socks";
+
     const { allowed, denied, lines, lineOf, profile } = readBack(
       sandboxedCommand(
         {
@@ -168,6 +175,7 @@ describe("sandboxedCommand", () => {
         [],
       ),
     );
+
     const none = lines.indexOf("(deny network-outbound (remote unix-socket))");
     expect(none).toBeGreaterThan(-1);
     expect(lines[none + 1]).toBe(
@@ -184,14 +192,15 @@ describe("sandboxedCommand", () => {
 
   it("lets a run connect to its own line to the company, and names no other run's", () => {
     const own = "/Users/me/.idlebiz/.run/0123456789ab";
+
     const { allowed, denied } = readBack(
       sandboxedCommand({ ...SANDBOX, apiSocket: [{ match: "subpath", path: own }] }, "codex", []),
     );
+
     expect(allowed("network-outbound")).toEqual([
       "/Users/me/.agent-browser/namespaces/idlebiz-x",
       own,
     ]);
-    // the save, the socket's folder, stays closed to its writes
     expect(denied("file-write*")).toContain("/Users/me/.idlebiz");
     expect(allowed("file-write*")).not.toContain(own);
     expect(readBack(sandboxedCommand(SANDBOX, "codex", [])).allowed("network-outbound")).toEqual([
@@ -203,11 +212,14 @@ describe("sandboxedCommand", () => {
     const labelled = readBack(
       sandboxedCommand({ ...SANDBOX, label: 'run:ann/t") (allow default' }, "claude", []),
     );
+
     const denies = labelled.lines.filter((line) => line.startsWith("(deny "));
     expect(denies.length).toBeGreaterThan(10);
+
     for (const line of denies) {
       expect(line).toMatch(/ \(with message \(param "LABEL"\)\)\)$/u);
     }
+
     expect(labelled.profile).not.toContain("run:ann");
     const argv = sandboxedCommand({ ...SANDBOX, label: "run:ann/t" }, "claude", ["true"]);
     expect(argv.slice(-3)).toEqual(["-D", "LABEL=run:ann/t", "true"]);
@@ -240,10 +252,8 @@ describe("sandboxedCommand", () => {
       scratch: [],
       unreadable: [],
     };
+
     const { lines } = readBack(sandboxedCommand(bare, "claude", []));
-    // each on purpose: lsopen whole, since an app LaunchServices starts runs unsandboxed; mounts,
-    // launchd's jobs and cfprefsd's writes whole, since each lands outside the sandbox whichever
-    // program asks; writes whole, since a run writes only where a later rule allows it
     expect(lines.filter((line) => /^\((?:allow|deny) [\w* -]+\)$/u.test(line))).toEqual([
       "(allow default)",
       "(deny lsopen)",
@@ -267,7 +277,7 @@ describe("a runner's home moved out of HOME", () => {
     rmSync(box, { force: true, recursive: true });
   });
 
-  const sandboxMoving = (env: Record<string, string>): Promise<Sandbox> =>
+  const sandboxMoving = (env: Record<string, string>) =>
     sandboxFor({
       clis: [],
       closedPorts: [],
@@ -297,7 +307,6 @@ describe("a runner's home moved out of HOME", () => {
     expect(
       readBack(sandboxedCommand(sandbox, "codex", [])).denied("file-read* file-write*"),
     ).toEqual(expect.arrayContaining([moved, ...usual]));
-    // a claude run writes none of it, and its sign-in records the login in the moved home alone
     expect(readBack(sandboxedCommand(sandbox, "claude", [])).denied("file-write*")).toEqual(
       expect.arrayContaining(usual),
     );
@@ -308,10 +317,12 @@ describe("a runner's home moved out of HOME", () => {
 
   it("keeps codex's from claude's runs too, and names a home moved to where it was once", async () => {
     const moved = path.join(box, "stand-in/codex");
+
     const sandbox = await sandboxMoving({
       CLAUDE_CONFIG_DIR: path.join(home, ".claude"),
       CODEX_HOME: moved,
     });
+
     expect(sandbox.runners.codex.home).toEqual([
       { match: "subpath", path: moved },
       { match: "subpath", path: path.join(home, ".codex") },
@@ -319,7 +330,6 @@ describe("a runner's home moved out of HOME", () => {
     expect(
       readBack(sandboxedCommand(sandbox, "claude", [])).denied("file-read* file-write*"),
     ).toEqual(expect.arrayContaining([moved, path.join(home, ".codex")]));
-    // moved to its own folder, claude keeps its account file there, so the one beside it is theirs
     expect(sandbox.runners.claude.home).toEqual([
       { match: "subpath", path: path.join(home, ".claude") },
       { match: "prefix", path: path.join(home, ".claude.json") },

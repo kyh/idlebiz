@@ -24,9 +24,7 @@ import type { Overlay } from "@/renderer/ui/overlay";
 import { earliestReset, formatCompact, napLabel, usageLabel } from "@repo/domain/format";
 import { cn } from "cn";
 
-// VG5000 has no alert glyph; the colored emoji is intentional.
 const ALERT_GLYPH = "❗";
-// These glyphs exist in VG5000; 📥 and ● would use a fallback font.
 const INBOX_GLYPH = "✉";
 const LIVE_GLYPH = "◉";
 
@@ -42,10 +40,8 @@ const Stat = ({
   label: string;
   value: string;
   sub?: string;
-  /** The figure's colour, as a px-kit text class. */
   accent?: string | undefined;
   title?: string;
-  /** A bust beside the figures, for a plate that is about a person. */
   face?: ReactNode;
   onClick: () => void;
 }) => (
@@ -73,6 +69,7 @@ const Scoreboard = ({
 }) => {
   const out = isOutOfBudget(company);
   const usage = usageLabel(company.spentUsd);
+
   return (
     <div className="pointer-events-none absolute top-3 left-3 z-10 flex items-stretch gap-2">
       <Stat
@@ -96,8 +93,10 @@ const Scoreboard = ({
     </div>
   );
 };
+
 const InboxButton = ({ needsYou, onClick }: { needsYou: number; onClick: () => void }) => {
   const hasCount = needsYou > 0;
+
   return (
     <button
       type="button"
@@ -131,7 +130,6 @@ const CompanyPlates = ({
   nap: string | null;
   onOpen: (overlay: Overlay) => void;
 }) => {
-  // the plate shows the company's first product; the panel behind it shows them all
   const [lead] = products;
   const status = useProductStatus(lead?.id);
   const deploy = deploymentOf(status);
@@ -140,6 +138,7 @@ const CompanyPlates = ({
   const working = employees.filter((e) => e.status === "working").length;
   const teamSub = working > 0 ? `${working} working` : (nap ?? "idle");
   const leader = employees.find((e) => e.id === company.leaderId);
+
   return (
     <div className="pointer-events-none absolute top-3 right-3 z-10 flex items-stretch gap-2">
       <Stat
@@ -167,10 +166,11 @@ const CompanyPlates = ({
   );
 };
 
-const autopilotTitle = (company: Company, submission: Submission): string => {
+const autopilotTitle = (company: Company, submission: Submission) => {
   if (submission.kind === "failed") {
     return `Could not switch autopilot: ${submission.message}`;
   }
+
   return company.autopilot
     ? "Autopilot on — the company runs itself. Click to pause."
     : "Autopilot paused. Click to resume.";
@@ -184,6 +184,7 @@ const RunControls = ({
   onOpen: (overlay: Overlay) => void;
 }) => {
   const { submission, submit } = useSubmission(setAutopilot);
+
   return (
     <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-stretch gap-2">
       <button
@@ -220,17 +221,19 @@ const RunControls = ({
   );
 };
 
-/** A runner signed out while another is still signed in: the gate never shows, so this is where it is signed in again. */
 const SignedOutRunners = ({ company, employees }: { company: Company; employees: Employee[] }) => {
   const { signedOut } = useAuth();
   const { auth, login } = useAuthFlow();
   const waiting = employees.filter((e) => signedOut.includes(e.runner));
+
   if (waiting.length === 0) {
     return null;
   }
+
   const runners = [...new Set(waiting.map((e) => RUNNER_NAMES[e.runner]))].join(" and ");
   const leadWaits = waiting.some((e) => e.id === company.leaderId);
   const lines = linesOf(auth);
+
   return (
     <div
       role="alert"
@@ -270,12 +273,14 @@ export const Hud = ({ onOpen }: { onOpen: (overlay: Overlay) => void }) => {
   const products = useProducts();
   const resting = useResting();
   const now = useNow();
+
   if (!company) {
     return null;
   }
-  // a CLI on cooldown: the office naps until the earliest reset
+
   const until = earliestReset(resting, now);
   const nap = until === undefined ? null : napLabel(until);
+
   return (
     <>
       <Scoreboard company={company} onOpen={onOpen} />

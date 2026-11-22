@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ASSET_TOKEN } from "./asset-token";
 
-const tokensIn = (text: string): string[] =>
-  [...text.matchAll(ASSET_TOKEN)].map(([token]) => token);
+const tokensIn = (text: string) => [...text.matchAll(ASSET_TOKEN)].map(([token]) => token);
 
 describe("a file path in agent text", () => {
   it.each([

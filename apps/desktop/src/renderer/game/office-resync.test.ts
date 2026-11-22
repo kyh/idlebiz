@@ -3,34 +3,35 @@ import type { Employee } from "@repo/domain/domain";
 import { Arrivals, activityOf, onWaitingHeard, resyncOf } from "./office-resync";
 import type { InOffice } from "./office-resync";
 
-const employee = (id: string, status: Employee["status"] = "idle"): Employee => ({
-  createdAt: 0,
-  deskIndex: 0,
-  id,
-  instructionsDigest: null,
-  lastRunMetrics: null,
-  lastShip: null,
-  name: id,
-  persona: "",
-  role: "engineer",
-  runner: "claude",
-  session: null,
-  spriteSeed: id,
-  status,
-  title: "Engineer",
-});
+const employee = (id: string, status: Employee["status"] = "idle") =>
+  ({
+    createdAt: 0,
+    deskIndex: 0,
+    id,
+    instructionsDigest: null,
+    lastRunMetrics: null,
+    lastShip: null,
+    name: id,
+    persona: "",
+    role: "engineer",
+    runner: "claude",
+    session: null,
+    spriteSeed: id,
+    status,
+    title: "Engineer",
+  }) satisfies Employee;
 
-const settled = (id: string, activity: InOffice["activity"] = "idle"): InOffice => ({
-  activity,
-  id,
-  phase: "settled",
-});
+const settled = (id: string, activity: InOffice["activity"] = "idle") =>
+  ({
+    activity,
+    id,
+    phase: "settled",
+  }) satisfies InOffice;
 
 const nobody: ReadonlySet<string> = new Set();
 
 describe("onWaitingHeard", () => {
   it("brings to their desk whoever an ask waits on, though a read from before it said otherwise", () => {
-    // the run ended blocked, then a read made before the ask landed and set them free
     expect(onWaitingHeard("idle", true)).toBe("blocked");
   });
 
@@ -57,6 +58,7 @@ describe("resyncOf", () => {
       [employee("lead"), employee("mae")],
       nobody,
     );
+
     expect(arrive).toEqual([employee("mae")]);
     expect(leave).toEqual(["bob"]);
     expect(set).toEqual([]);
@@ -73,6 +75,7 @@ describe("resyncOf", () => {
       [employee("lead", "working"), employee("mae", "idle"), employee("kai", "working")],
       nobody,
     );
+
     expect(set).toEqual([
       ["lead", "working"],
       ["mae", "idle"],
@@ -102,7 +105,6 @@ describe("someone on the way in", () => {
 
     expect(arrivals.hear("mae", "working")).toBe(true);
     expect(arrivals.arrived("mae", "idle")).toBe("working");
-    // in the office now, and their spawn over: the next run's news sets them there
     arrivals.forget("mae");
     expect(arrivals.hear("mae", "idle")).toBe(false);
   });

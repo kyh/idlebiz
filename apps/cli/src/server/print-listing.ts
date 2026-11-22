@@ -3,12 +3,6 @@ import type { PrintQuote } from "./printful";
 import { errorMessage } from "@repo/domain/errors";
 import { formatCents } from "@repo/domain/format";
 
-// Stripe keeps 2.9% + 30¢ of a US card payment, and 1.5% more of a card issued abroad, which a
-// US shipping address does not rule out. What the buyer pays, the price plus the shipping the
-// link charges, has to cover Printful's dearest estimate (print, shipping and tax to any sampled
-// US address) once Stripe has taken its share:
-//   (price + shipping) × (1 − 4.4%) − 30¢ ≥ cost
-//   price ≥ (cost + 30¢) / (1 − 4.4%) − shipping
 const STRIPE_SHARE = 0.044;
 const STRIPE_FIXED_CENTS = 30;
 
@@ -16,18 +10,16 @@ const STRIPE_FIXED_CENTS = 30;
 export const STRIPE_FEE_LABEL = `${(STRIPE_SHARE * 100).toFixed(1)}% + ${formatCents(STRIPE_FIXED_CENTS)}`;
 
 /** What is left of a payment, in cents, once Stripe has taken its dearest fee. */
-export const netOfStripeCents = (collectedCents: number): number =>
+export const netOfStripeCents = (collectedCents: number) =>
   Math.floor(collectedCents * (1 - STRIPE_SHARE)) - STRIPE_FIXED_CENTS;
 
 /**
  * The lowest price, in cents, at which a sale costing the quote loses nothing. Tax on the price
  * itself only rises with it, so every price under this one loses money.
  */
-export const priceFloorCents = ({ costCents, shippingCents }: PrintQuote): number =>
+export const priceFloorCents = ({ costCents, shippingCents }: PrintQuote) =>
   Math.ceil((costCents + STRIPE_FIXED_CENTS) / (1 - STRIPE_SHARE)) - shippingCents;
 
-// long enough to read a large print file, short enough that a site streaming forever cannot
-// hold the call
 const FILE_TIMEOUT_MS = 60_000;
 
 /** A print file as the product serves it now: the digest of its bytes, or why Printful could not print it. */
@@ -39,34 +31,45 @@ export type PrintFileRead = { kind: "image"; sha256: string } | { kind: "unfit";
  * a file on the product's own domain needs none, and a single-page app answers any path with
  * its page, which is why the type is read too.
  */
-export const readPrintFile = async (url: string): Promise<PrintFileRead> => {
+export const readPrintFile = async (url: string) => {
   try {
     const res = await fetch(url, {
       redirect: "manual",
       signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
     });
+
     if (res.status !== 200 || res.body === null) {
       await res.body?.cancel();
-      return { kind: "unfit", reason: `it answers ${res.status}` };
+
+      return { kind: "unfit", reason: `it answers ${res.status}` } satisfies PrintFileRead;
     }
+
     const type = res.headers.get("content-type") ?? "";
+
     if (!type.startsWith("image/")) {
       await res.body.cancel();
-      return { kind: "unfit", reason: `it serves ${type || "no content type"}, not an image` };
+
+      return {
+        kind: "unfit",
+        reason: `it serves ${type || "no content type"}, not an image`,
+      } satisfies PrintFileRead;
     }
+
     const hash = createHash("sha256");
     const reader = res.body.getReader();
     let chunk = await reader.read();
+
     while (!chunk.done) {
-      // fetch types a body's chunks as any, though it only ever streams bytes
       if (!(chunk.value instanceof Uint8Array)) {
         throw new TypeError("the file's body is not bytes");
       }
+
       hash.update(chunk.value);
       chunk = await reader.read();
     }
-    return { kind: "image", sha256: hash.digest("hex") };
+
+    return { kind: "image", sha256: hash.digest("hex") } satisfies PrintFileRead;
   } catch (error) {
-    return { kind: "unfit", reason: errorMessage(error) };
+    return { kind: "unfit", reason: errorMessage(error) } satisfies PrintFileRead;
   }
 };

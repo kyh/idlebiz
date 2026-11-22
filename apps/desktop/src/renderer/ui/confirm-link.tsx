@@ -19,6 +19,7 @@ export const ConfirmLink = ({
 }) => {
   const [arming, setArming] = useState(false);
   const { submission, submit } = useSubmission(onConfirm);
+
   if (!arming) {
     return (
       <button
@@ -31,6 +32,7 @@ export const ConfirmLink = ({
       </button>
     );
   }
+
   return (
     <span className={cn("flex flex-col items-end", className)}>
       <span className="flex items-baseline gap-2">

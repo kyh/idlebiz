@@ -11,8 +11,6 @@ import { CLAUDE_INSTALLER, cancelLogin, startLogin } from "./onboarding";
 const LOGIN_URL = { type: "url", url: "https://claude.test/oauth/authorize" } as const;
 const CANCELLED = { message: "Setup cancelled.", type: "error" } as const;
 
-// A login that never finishes: it starts a helper, writes its own pid and the helper's to the
-// file it is handed, prints where to sign in and waits, holding on through a SIGTERM.
 const NEVER_FINISHES = `
 const { spawn } = require("node:child_process");
 const helper = spawn("sleep", ["600"], { stdio: "ignore" });
@@ -22,55 +20,53 @@ console.log("Opening ${LOGIN_URL.url}");
 setInterval(() => {}, 1000);
 `;
 
-/** A claude CLI that is installed and signed out, until the login `argv` runs to success. */
 const signedOutClaude = (argv: Argv) => {
   let authed = false;
-  const probe = (): RunnerProbe => ({
-    authed,
-    bin: "claude",
-    id: "claude",
-    installed: true,
-    version: "1.0.0",
-  });
+
+  const probe = () =>
+    ({
+      authed,
+      bin: "claude",
+      id: "claude",
+      installed: true,
+      version: "1.0.0",
+    }) satisfies RunnerProbe;
+
   return {
-    needsSignIn: (p: RunnerProbe): boolean => p.installed && !p.authed,
-    refresh: (): Promise<RunnerProbe[]> => Promise.resolve([probe()]),
-    sandboxRefusal: (): Promise<string | null> => Promise.resolve(null),
-    sandboxedSignIn: (): Promise<Argv> => Promise.resolve(argv),
-    signedInAgain: (): void => {
+    needsSignIn: (p: RunnerProbe) => p.installed && !p.authed,
+    refresh: () => Promise.resolve([probe()]),
+    sandboxRefusal: () => Promise.resolve(null),
+    sandboxedSignIn: () => Promise.resolve(argv),
+    signedInAgain: () => {
       authed = true;
     },
   };
 };
 
-/** A claude whose login never finishes, writing its pids to `pids`. */
+const QUICK = { stopGraceMs: 200 };
+
 const neverFinishing = (pids: string) =>
   signedOutClaude([process.execPath, "-e", NEVER_FINISHES, pids]);
 
-/** No CLI installed, nor made by `installer`, which installs nothing. */
 const noneInstalled = (installer: Argv) => ({
   ...signedOutClaude([process.execPath, "-e", ""]),
   installer,
-  refresh: (): Promise<RunnerProbe[]> =>
-    Promise.resolve([{ bin: "claude", id: "claude", installed: false }]),
+  refresh: () =>
+    Promise.resolve<RunnerProbe[]>([{ bin: "claude", id: "claude", installed: false }]),
 });
 
-// A command that prints each name in its env on a line of its own, and its PATH.
 const PRINTS_ITS_ENV: Argv = [
   process.execPath,
   "-e",
   'for (const name of Object.keys(process.env)) console.log("env " + name); console.log("PATH is " + (process.env.PATH ?? ""));',
 ];
 
-/** What a command that `PRINTS_ITS_ENV` printed, as the setup heard it. */
-const printed = (heard: readonly AuthFlowEvent[]): string[] =>
+const printed = (heard: readonly AuthFlowEvent[]) =>
   heard.flatMap((e) => (e.type === "progress" ? [e.message] : []));
 
-/** The names of the env a command that `PRINTS_ITS_ENV` was started on. */
-const namesIn = (heard: readonly AuthFlowEvent[]): string[] =>
+const namesIn = (heard: readonly AuthFlowEvent[]) =>
   printed(heard).flatMap((line) => (line.startsWith("env ") ? [line.slice("env ".length)] : []));
 
-// what a `launchctl setenv` could have left in main's env, which is launchd's in the app
 const LAUNCHD_SET = [
   "BASH_ENV",
   "BASH_FUNC_curl%%",
@@ -80,25 +76,25 @@ const LAUNCHD_SET = [
   "GH_TOKEN",
 ] as const;
 
-const setByLaunchd = (base: string): void => {
+const setByLaunchd = (base: string) => {
   for (const name of LAUNCHD_SET) {
     vi.stubEnv(name, path.join(base, "planted"));
   }
 };
 
-const pidsIn = (file: string): number[] => readFileSync(file, "utf-8").split(" ").map(Number);
+const pidsIn = (file: string) => readFileSync(file, "utf-8").split(" ").map(Number);
 
-const alive = (pid: number): boolean => {
+const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
+
     return true;
   } catch {
     return false;
   }
 };
 
-/** Waits out the group's grace: the login holds on through SIGTERM, so only SIGKILL ends it. */
-const goneIn = async (file: string): Promise<void> => {
+const goneIn = async (file: string) => {
   await vi.waitFor(
     () => {
       expect(pidsIn(file).filter(alive)).toEqual([]);
@@ -115,7 +111,6 @@ describe("Claude Code's installer", () => {
     expect(options).toBe("set -o pipefail");
     const commands = pipeline.split("|").map((command) => command.trim().split(" "));
     expect(commands.map(([program]) => program)).toEqual(["/usr/bin/curl", "/bin/bash"]);
-    // curl reads a .curlrc unless -q comes first
     expect(commands[0]?.[1]).toBe("-q");
   });
 });
@@ -145,7 +140,7 @@ describe("a CLI's sign-in", () => {
   it("is stopped with what it started when cancelled, and ends in an error that frees the next", async () => {
     const pids = path.join(base, "pids");
     const heard: AuthFlowEvent[] = [];
-    const settled = startLogin(neverFinishing(pids), (e) => heard.push(e));
+    const settled = startLogin(neverFinishing(pids), (e) => heard.push(e), QUICK);
     await vi.waitFor(() => {
       expect(heard).toContainEqual(LOGIN_URL);
     });
@@ -159,25 +154,28 @@ describe("a CLI's sign-in", () => {
     const after: AuthFlowEvent[] = [];
     cancelLogin((e) => after.push(e));
     expect(after).toEqual([{ message: "No setup was under way.", type: "error" }]);
-  }, 10_000);
+  });
 
   it("ends at once when cancelled while it is still looking for the CLIs", async () => {
     const heard: AuthFlowEvent[] = [];
+
     const stillLooking = {
       ...signedOutClaude([process.execPath, "-e", ""]),
-      refresh: (): Promise<RunnerProbe[]> => Promise.withResolvers<RunnerProbe[]>().promise,
+      refresh: () => Promise.withResolvers<RunnerProbe[]>().promise,
     };
+
+    const started = performance.now();
     const settled = startLogin(stillLooking, (e) => heard.push(e));
 
     cancelLogin((e) => heard.push(e));
     await settled;
 
     expect(heard).toEqual([CANCELLED]);
-  }, 1000);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
 
   it("says it was cancelled when cancelled while it installs a CLI", async () => {
     const heard: AuthFlowEvent[] = [];
-    // an installer whose download never ends
     const installing = noneInstalled([process.execPath, "-e", "setInterval(() => {}, 1000)"]);
     const settled = startLogin(installing, (e) => heard.push(e));
     await vi.waitFor(() => {
@@ -191,7 +189,7 @@ describe("a CLI's sign-in", () => {
     await settled;
 
     expect(heard.at(-1)).toEqual(CANCELLED);
-  }, 10_000);
+  });
 
   it("installs a CLI on the account's names, the system's PATH and the founder's proxies alone", async () => {
     setByLaunchd(base);
@@ -236,7 +234,7 @@ describe("a CLI's sign-in", () => {
   it("is stopped with what it started once its time is up, and says so", async () => {
     const pids = path.join(base, "pids");
     const heard: AuthFlowEvent[] = [];
-    await startLogin(neverFinishing(pids), (e) => heard.push(e), 2000);
+    await startLogin(neverFinishing(pids), (e) => heard.push(e), { ...QUICK, deadlineMs: 1500 });
 
     expect(heard).toContainEqual(LOGIN_URL);
     expect(heard.at(-1)).toEqual({
@@ -244,19 +242,19 @@ describe("a CLI's sign-in", () => {
       type: "error",
     });
     await goneIn(pids);
-  }, 10_000);
+  });
 
   it("gives way to a retry, which stops it and speaks for both", async () => {
     const first = path.join(base, "first");
     const second = path.join(base, "second");
     const heardFirst: AuthFlowEvent[] = [];
     const heardSecond: AuthFlowEvent[] = [];
-    const firstSettled = startLogin(neverFinishing(first), (e) => heardFirst.push(e));
+    const firstSettled = startLogin(neverFinishing(first), (e) => heardFirst.push(e), QUICK);
     await vi.waitFor(() => {
       expect(heardFirst).toContainEqual(LOGIN_URL);
     });
 
-    const secondSettled = startLogin(neverFinishing(second), (e) => heardSecond.push(e));
+    const secondSettled = startLogin(neverFinishing(second), (e) => heardSecond.push(e), QUICK);
     await firstSettled;
     expect(heardFirst.at(-1)).toEqual(LOGIN_URL);
     await vi.waitFor(() => {
@@ -269,5 +267,5 @@ describe("a CLI's sign-in", () => {
     await secondSettled;
     expect(heardSecond.at(-1)).toEqual(CANCELLED);
     await goneIn(second);
-  }, 15_000);
+  });
 });

@@ -11,15 +11,13 @@ import type { PickerOption } from "@/renderer/ui/picker";
 import { SaveIssues } from "@/renderer/ui/save-issues";
 import { MAX_AGENTS, MaxAgentsSchema } from "@repo/domain/domain";
 import type { LaunchAtLogin, UpdateStatus } from "@repo/domain/domain";
-import { errorMessage } from "@repo/domain/errors";
+import { errorMessage, unreachable } from "@repo/domain/errors";
 
 const LOGIN_CHOICES: readonly PickerOption<"off" | "on">[] = [
   { label: "Off", value: "off" },
   { label: "On", value: "on" },
 ];
 
-// Registered but switched off, or never registered: neither choice is pressed, so Off can
-// still take the registration away.
 const LOGIN_PRESSED: Record<Exclude<LaunchAtLogin, "unavailable">, "off" | "on" | null> = {
   "not-found": null,
   off: "off",
@@ -37,11 +35,11 @@ const LOGIN_LINES: Record<LaunchAtLogin, string> = {
   unavailable: "Only the installed app can open at login.",
 };
 
-// read again each time Settings opens: System Settings can switch the login item meanwhile
 const launchAtLogin = orpc.app.launchAtLogin.queryOptions({ staleTime: 0 });
 
 const LaunchAtLoginSetting = () => {
   const { data: state, error } = useQuery(launchAtLogin);
+
   const setting = useSubmission(async (on: boolean) => {
     await setAnswer(launchAtLogin.queryKey, await api.app.setLaunchAtLogin({ on }));
   });
@@ -74,35 +72,45 @@ const LaunchAtLoginSetting = () => {
   );
 };
 
-const updateLine = (status: UpdateStatus): string => {
+const updateLine = (status: UpdateStatus) => {
   switch (status.kind) {
     case "off": {
       return status.why;
     }
+
     case "checking": {
       return "Checking for a newer IdleBiz…";
     }
+
     case "current": {
       return "IdleBiz is up to date. It checks again every six hours.";
     }
+
     case "available": {
       return `IdleBiz ${status.version} is ready. Updating stops the office's runs, installs it and opens IdleBiz again.`;
     }
+
     case "installing": {
       return `Downloading IdleBiz ${status.version}. IdleBiz opens again on it shortly.`;
     }
+
     case "failed": {
       return `Couldn't check for updates: ${status.reason}`;
     }
-    // no default
+
+    default: {
+      return unreachable(status);
+    }
   }
 };
 
 const UpdateSetting = () => {
   const { data: status, error } = useQuery(updateQuery);
+
   const installing = useSubmission(async () => {
     await api.app.installUpdate();
   });
+
   const pressed = installing.submission.kind === "sending" || installing.submission.kind === "sent";
 
   return (
@@ -137,19 +145,23 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
   const saveIssues = useSaveIssues();
   const [confirm, setConfirm] = useState("");
   const [cap, setCap] = useState<string | null>(null);
+
   const savingCap = useSubmission(async (n: number) => {
     await setMaxAgents(n);
     setCap(null);
   });
+
   const resetting = useSubmission(() => api.save.reset());
 
   if (!company) {
     return null;
   }
+
   const armed = confirm.trim() === company.name;
   const capValue = cap ?? String(company.maxAgents);
   const parsedCap = MaxAgentsSchema.safeParse(Number(capValue));
   const newCap = parsedCap.success && parsedCap.data !== company.maxAgents ? parsedCap.data : null;
+
   const demolishing =
     resetting.submission.kind === "sending" || resetting.submission.kind === "sent";
 

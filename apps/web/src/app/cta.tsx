@@ -14,6 +14,7 @@ export const Cta = (
       </Link>
     );
   }
+
   return (
     <button type="button" onClick={props.onClick} className={CTA_CLASS}>
       {props.children}

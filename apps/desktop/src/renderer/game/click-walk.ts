@@ -28,13 +28,6 @@ export interface Colleagues {
   inReach: (employeeId: string, point: PixelPoint) => boolean;
 }
 
-/**
- * Somewhere the player clicked, and why.
- *
- * `points` are the remaining waypoints; `index` is the one being walked to. `talkTo` is
- * set when the click landed on a colleague — we walk over and then start the conversation,
- * so clicking someone across the room means "go talk to them", not "go stand near them".
- */
 interface Route {
   readonly points: readonly PixelPoint[];
   index: number;
@@ -72,113 +65,124 @@ export class ClickWalk {
     this.talk = talk;
   }
 
-  onPointerDown(to: PixelPoint): void {
+  onPointerDown(to: PixelPoint) {
     const { walker, colleagues } = this;
     const clicked = colleagues.interactAt(to.x, to.y);
+
     if (clicked) {
-      // near enough to talk from where we stand: don't make them walk first
       if (colleagues.inReach(clicked, walker.position)) {
         this.cancel();
         this.faceToward(colleagues.positionOf(clicked) ?? to);
         this.talk(clicked);
+
         return;
       }
+
       const at = colleagues.positionOf(clicked);
+
       if (at) {
         this.start(at, clicked);
+
         return;
       }
     }
+
     this.start(to, null);
   }
 
   /** One frame along the route. False when there is no route, or it just ended. */
-  update(dt: number): boolean {
+  update(dt: number) {
     const { route } = this;
+
     if (!route) {
       return false;
     }
+
     if (this.follow(route, dt)) {
       return true;
     }
+
     this.arrive(route);
+
     return false;
   }
 
-  cancel(): void {
+  cancel() {
     this.route = null;
     this.marker?.destroy();
     this.marker = undefined;
   }
 
-  /**
-   * Walk to `to`, then talk to `talkTo` if set.
-   *
-   * findPath already snaps an unwalkable goal to the nearest floor, so clicking a desk
-   * walks you up to it rather than doing nothing — which is what a player means by it.
-   */
-  private start(to: PixelPoint, talkTo: string | null): void {
+  private start(to: PixelPoint, talkTo: string | null) {
     const points = findPath(this.grid, this.walker.position, to);
+
     if (!points || points.length === 0) {
-      // nowhere to stand over there; don't leave a marker lying
       this.cancel();
+
       return;
     }
+
     this.route = { index: 0, points, talkTo };
     const goal = points.at(-1);
+
     if (goal) {
       this.mark(goal);
     }
   }
 
-  /** Advance along the route. Returns false when there's no further to go. */
-  private follow(route: Route, dt: number): boolean {
+  private follow(route: Route, dt: number) {
     const point = route.points[route.index];
+
     if (!point) {
       return false;
     }
+
     const { walker } = this;
     const step = stepToward(walker.position, point, WALK_SPEED * dt);
+
     if (step.kind === "arrive") {
       walker.place(point);
       route.index += 1;
+
       return route.index < route.points.length;
     }
+
     const { x: wasX, y: wasY } = walker.position;
     walker.move(step.dx, step.dy);
-    // the path is walkable by construction, so being stuck means a body wedged on a
-    // corner. Give up rather than shove forever.
+
     if (walker.position.x === wasX && walker.position.y === wasY) {
       return false;
     }
+
     walker.walk(step.facing);
+
     return true;
   }
 
-  private arrive(route: Route): void {
+  private arrive(route: Route) {
     this.cancel();
     const { talkTo } = route;
+
     if (!talkTo) {
       return;
     }
-    // they may have wandered off mid-walk; only talk if they're actually still here
+
     if (!this.colleagues.inReach(talkTo, this.walker.position)) {
       return;
     }
+
     this.faceToward(this.colleagues.positionOf(talkTo) ?? this.walker.position);
     this.talk(talkTo);
   }
 
-  private faceToward(point: PixelPoint): void {
+  private faceToward(point: PixelPoint) {
     const { position } = this.walker;
     this.walker.face(facingToward(point.x - position.x, point.y - position.y));
   }
 
-  /** A flat diamond where you clicked — flat so it reads as lying on the floor. */
-  private mark(at: PixelPoint): void {
+  private mark(at: PixelPoint) {
     this.marker?.destroy();
     const g = this.scene.add.graphics();
-    // above every floor decal, below anyone standing on it
     g.setDepth(DEPTH.entityBase - 1);
     g.lineStyle(2, 0x86_c0_ee, 1);
     g.beginPath();

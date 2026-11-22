@@ -3,24 +3,26 @@ import { standingInstructions, turnPrompt } from "./instructions";
 import { BUSINESS_TYPE_IDS } from "@repo/domain/domain";
 import type { BusinessTypeId, Company, Employee } from "@repo/domain/domain";
 
-const company = (businessType: BusinessTypeId): Company => ({
-  autopilot: true,
-  budget: { mode: "infinite" },
-  businessType,
-  createdAt: 0,
-  founderName: "Ada",
-  founderSpriteSeed: "s",
-  id: "acme",
-  leaderId: "lead",
-  maxAgents: 12,
-  mission: "a deal-flow newsletter",
-  name: "Acme",
-  revenueUsd: null,
-  ships: 0,
-  spentUsd: 0,
-  users: null,
-  workspaceDir: "/tmp/acme",
-});
+const company = (businessType: BusinessTypeId) =>
+  ({
+    autopilot: true,
+    budget: { mode: "infinite" },
+    businessType,
+    createdAt: 0,
+    founderName: "Ada",
+    founderSpriteSeed: "s",
+    id: "acme",
+    leaderId: "lead",
+    maxAgents: 12,
+    mission: "a deal-flow newsletter",
+    name: "Acme",
+    revenueUsd: null,
+    ships: 0,
+    spentUsd: 0,
+    users: null,
+    workspaceDir: "/tmp/acme",
+  }) satisfies Company;
+
 const employee: Employee = {
   createdAt: 0,
   deskIndex: 0,
@@ -37,7 +39,8 @@ const employee: Employee = {
   status: "idle",
   title: "Analyst",
 };
-const instructionsFor = (businessType: BusinessTypeId, lead = false): string =>
+
+const instructionsFor = (businessType: BusinessTypeId, lead = false) =>
   standingInstructions({
     company: company(businessType),
     employee,
@@ -55,6 +58,7 @@ describe("standingInstructions", () => {
       memoryDir: "/tmp/memory",
       products: [],
     });
+
     expect(text).toMatch(
       /## Company mission\nThe founder gave no pitch: what the company builds is the lead's pick/u,
     );
@@ -77,9 +81,11 @@ describe("standingInstructions", () => {
     const sections = BUSINESS_TYPE_IDS.map(
       (type) => /## How Acme makes money\n(?<how>.+)\n/u.exec(instructionsFor(type))?.groups?.how,
     );
+
     for (const how of sections) {
       expect(how).toMatch(/create_payment_link/u);
     }
+
     expect(new Set(sections).size).toBe(BUSINESS_TYPE_IDS.length);
   });
 
@@ -102,6 +108,7 @@ describe("standingInstructions", () => {
         const pushing = instructionsFor(type, lead)
           .split("\n")
           .filter((line) => /\bpush/iu.test(line));
+
         expect(pushing).toEqual([
           expect.stringMatching(/^- Pushing code: nobody on the team pushes\./u),
         ]);
@@ -147,6 +154,7 @@ describe("standingInstructions", () => {
 
 describe("turnPrompt", () => {
   const instructions = "Mark every bet link with its path.";
+
   const prompt = (resumed: boolean, changed: boolean) =>
     turnPrompt({ changed, instructions, resumed, task: "work" });
 

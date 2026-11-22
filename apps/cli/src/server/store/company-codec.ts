@@ -29,13 +29,11 @@ export class SaveFormatError extends Error {
   }
 }
 
-/** Only a capped budget names its cap. */
 const BudgetFieldsSchema = z.discriminatedUnion("budgetMode", [
   z.object({ budgetMode: z.literal("infinite") }),
   z.object({ budgetCapUsd: z.number().nonnegative(), budgetMode: z.literal("capped") }),
 ]);
 
-/** A null field gets no line. */
 const CompanyDocSchema = z.object({
   body: z.string(),
   fields: packageFields("company").extend({ description: z.string().min(1).optional() }),
@@ -58,16 +56,19 @@ const CompanyDocSchema = z.object({
   ),
 });
 
-const budgetFields = (budget: Budget): z.input<typeof BudgetFieldsSchema> =>
-  budget.mode === "capped"
+const budgetFields = (budget: Budget) =>
+  (budget.mode === "capped"
     ? { budgetCapUsd: budget.capUsd, budgetMode: "capped" }
-    : { budgetMode: "infinite" };
+    : { budgetMode: "infinite" }) satisfies z.input<typeof BudgetFieldsSchema>;
 
-const budgetOf = (m: z.output<typeof BudgetFieldsSchema>): Budget =>
-  m.budgetMode === "capped" ? { capUsd: m.budgetCapUsd, mode: "capped" } : { mode: "infinite" };
+const budgetOf = (m: z.output<typeof BudgetFieldsSchema>) =>
+  (m.budgetMode === "capped"
+    ? { capUsd: m.budgetCapUsd, mode: "capped" }
+    : { mode: "infinite" }) satisfies Budget;
 
-export const companyToDoc = (co: Company): z.input<typeof CompanyDocSchema> => {
+export const companyToDoc = (co: Company) => {
   const mission = co.mission === "" ? null : co.mission;
+
   return {
     body: mission === null ? `# ${co.name}\n` : `# ${co.name}\n\n${mission}\n`,
     fields: {
@@ -86,28 +87,30 @@ export const companyToDoc = (co: Company): z.input<typeof CompanyDocSchema> => {
       founderSpriteSeed: co.founderSpriteSeed,
       leaderId: co.leaderId ?? undefined,
       maxAgents: co.maxAgents,
-      // real metrics: absent keys mean "no source has ever reported"
       revenueUsd: co.revenueUsd ?? undefined,
       ships: co.ships,
       spentUsd: co.spentUsd,
       users: co.users ?? undefined,
       ...budgetFields(co.budget),
     },
-  };
+  } satisfies z.input<typeof CompanyDocSchema>;
 };
 
-/** The format a COMPANY.md is stamped with; null when it carries none. */
-const formatOf = (doc: FrontmatterDoc): number | null => {
+const formatOf = (doc: FrontmatterDoc) => {
   const stamp = z.number().safeParse(doc.metadata.format);
+
   return stamp.success ? stamp.data : null;
 };
 
-export const docToCompany = (doc: FrontmatterDoc): Company => {
+export const docToCompany = (doc: FrontmatterDoc) => {
   const format = formatOf(doc);
+
   if (format !== SAVE_FORMAT) {
     throw new SaveFormatError(format);
   }
+
   const { fields, metadata: m } = decodeDoc(CompanyDocSchema, doc);
+
   return {
     autopilot: m.autopilot,
     budget: budgetOf(m),
@@ -125,5 +128,5 @@ export const docToCompany = (doc: FrontmatterDoc): Company => {
     spentUsd: m.spentUsd,
     users: m.users ?? null,
     workspaceDir: sharedDir(),
-  };
+  } satisfies Company;
 };

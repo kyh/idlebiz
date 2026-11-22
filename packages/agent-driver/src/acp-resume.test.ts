@@ -5,11 +5,7 @@ import { runAcpTurn } from "./acp-session";
 import type { AcpTurnOptions } from "./acp-session";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-/**
- * An ACP agent advertising `capabilities` that answers session/resume with `resumeAnswer`
- * (both JSON), and replies to a prompt with the text it was sent.
- */
-const scriptedAgent = (capabilities: string, resumeAnswer: string): string => `
+const scriptedAgent = (capabilities: string, resumeAnswer: string) => `
 const send = (m) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\\n");
 require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
   const { id, method, params } = JSON.parse(line);
@@ -85,7 +81,6 @@ describe("resuming a stored session", () => {
   });
 });
 
-/** A turn's text saying whether its stored session was resumed. */
 const sayResumed = (resumed: boolean) => `resumed: ${resumed}`;
 
 describe("the turn's text", () => {

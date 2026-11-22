@@ -27,6 +27,7 @@ import { cn } from "cn";
 const ShipRowView = ({ t, by }: { t: ShipLine; by: string }) => {
   const [open, setOpen] = useState(false);
   const firstLine = t.summary.split("\n").find((l) => l.trim() !== "") ?? "";
+
   return (
     <div className="px-inset p-2.5">
       <button
@@ -50,6 +51,7 @@ const ShipRowView = ({ t, by }: { t: ShipLine; by: string }) => {
     </div>
   );
 };
+
 const ShipRow = memo(ShipRowView);
 
 const ShippingLog = ({
@@ -64,10 +66,13 @@ const ShippingLog = ({
   if (log.isPending) {
     return <div className="text-sm text-fg-dim">Loading…</div>;
   }
+
   if (log.isError) {
     return <div className="text-sm text-fg-dim">{errorMessage(log.error)}</div>;
   }
+
   const shown = log.data.filter((t) => selected === null || t.productId === selected);
+
   if (shown.length === 0) {
     return (
       <div className="text-sm text-fg-dim">
@@ -75,6 +80,7 @@ const ShippingLog = ({
       </div>
     );
   }
+
   return shown.map((t) => (
     <ShipRow key={t.id} t={t} by={employeeName(employees, t.assigneeId, "team")} />
   ));
@@ -89,7 +95,6 @@ const ProductCard = ({
 }: {
   product: Product;
   selected: boolean;
-  /** The last product stays: a company with none is handed a fresh one at boot. */
   retirable: boolean;
   onSelect: () => void;
   onOpen: (overlay: Overlay) => void;
@@ -98,10 +103,11 @@ const ProductCard = ({
   const state = productStateOf(status);
   const deploy = deploymentOf(status);
   const opening = useSubmission(() => api.products.open({ productId: product.id }));
-  // main answers with `product.killed`, and that event refetches what moved
+
   const retire = async () => {
     await api.products.kill({ productId: product.id, reason: "the founder retired it" });
   };
+
   return (
     <div className="px-inset flex min-w-0 flex-col gap-1.5 p-2.5">
       <button type="button" onClick={onSelect} className="text-left">
@@ -164,13 +170,16 @@ const NewProduct = () => {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+
   const { submission, submit } = useSubmission(async () => {
     await createProduct(name, description);
     setName("");
     setDescription("");
     setOpen(false);
   });
+
   const busy = submission.kind === "sending";
+
   if (!open) {
     return (
       <button
@@ -182,6 +191,7 @@ const NewProduct = () => {
       </button>
     );
   }
+
   return (
     <div className="px-inset flex flex-col gap-1.5 p-2.5">
       <input
@@ -233,7 +243,7 @@ export const Ships = ({
   if (!company) {
     return null;
   }
-  // a pick retired since reads as none: the whole company
+
   const selectedProduct = products.find((p) => p.id === picked);
   const selected = selectedProduct?.id ?? null;
   const selectedName = selectedProduct ? ` · ${selectedProduct.name}` : "";

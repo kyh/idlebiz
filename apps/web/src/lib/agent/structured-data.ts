@@ -89,7 +89,6 @@ const application = {
   video: { "@id": VIDEO_ID },
 } satisfies JsonLdNode;
 
-/** The office clip the home page shares as og:video. */
 const video = {
   "@id": VIDEO_ID,
   "@type": "VideoObject",
@@ -143,5 +142,5 @@ export const pageGraph = (page: ProsePage) =>
   }) satisfies JsonLdNode;
 
 /** Escapes `<` so no value can close the surrounding `<script>` early. */
-export const serializeJsonLd = (node: JsonLdNode): string =>
+export const serializeJsonLd = (node: JsonLdNode) =>
   JSON.stringify(node).replaceAll("<", "\\u003c");

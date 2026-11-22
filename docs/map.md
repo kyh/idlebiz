@@ -117,6 +117,6 @@ is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
   through the dev host, each with the CLIs the adapters bundle signed in to a stand-in model on
   loopback: `apps/cli/src/server/test-support/stand-in-model.ts`, which the gate suites and
   `IDLEBIZ_STAND_IN=1 pnpm dev:browser` share, and `stand-in-runners.ts`; `src/stub-services.ts`
-  answers every launch's Stripe, Vercel and Printful calls from canned JSON). `src/runs.spec.ts`
+  answers every launch's Stripe, Vercel and Printful calls from canned JSON). `src/runs.test.ts`
   drives the run loop once per runner, and `src/office-probe.ts` holds what the specs read of the
   office scene.

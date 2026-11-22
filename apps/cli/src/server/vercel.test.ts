@@ -1,6 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { tempSave } from "./test-support/save";
 import { latestDeployment, productionHosts, visitQuery, webAnalyticsVisitors } from "./vercel";
+import { answerFetch, interceptNetwork } from "./test-support/network";
+
+interceptNetwork();
 
 tempSave();
 
@@ -30,22 +33,25 @@ describe("visitQuery", () => {
   });
 });
 
-/** Answer every Vercel call with `answer`, and count the calls. */
 const vercel = (answer: () => Promise<Response>) => {
   const seen = { calls: 0 };
-  vi.stubGlobal("fetch", () => {
+  answerFetch(() => {
     seen.calls += 1;
+
     return answer();
   });
+
   return seen;
 };
+
 const status = (code: number) => () => Promise.resolve(new Response("{}", { status: code }));
 
 describe("webAnalyticsVisitors", () => {
   it("counts the project's visitors in its team, as the founder", async () => {
     const asked: { url: URL; auth: string | null }[] = [];
-    vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    answerFetch((url: string, init?: RequestInit) => {
       asked.push({ auth: new Headers(init?.headers).get("authorization"), url: new URL(url) });
+
       return Promise.resolve(Response.json({ data: { visitors: 7 } }));
     });
 
@@ -133,8 +139,9 @@ describe("productionHosts", () => {
 
   it("lists the verified domains production answers on, as a URL's host reads", async () => {
     const asked: string[] = [];
-    vi.stubGlobal("fetch", (url: string) => {
+    answerFetch((url: string) => {
       asked.push(url);
+
       return Promise.resolve(
         Response.json({
           domains: [

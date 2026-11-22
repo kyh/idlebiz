@@ -3,23 +3,26 @@ import { z } from "zod";
 import { createPeer } from "./rpc";
 import type { Peer } from "./rpc";
 
-// two peers wired back to back, as main and the shell are over a pipe
 const pair = () => {
   const strays: string[] = [];
   const failures: string[] = [];
   const peers = new Map<"a" | "b", Peer>();
+
   const a = createPeer({
     failed: (method, reason) => failures.push(`a:${method}: ${reason}`),
     stray: (line) => strays.push(`a:${line}`),
     write: (line) => peers.get("b")?.receive(line),
   });
+
   const b = createPeer({
     failed: (method, reason) => failures.push(`b:${method}: ${reason}`),
     stray: (line) => strays.push(`b:${line}`),
     write: (line) => peers.get("a")?.receive(line),
   });
+
   peers.set("a", a);
   peers.set("b", b);
+
   return { a, b, failures, strays };
 };
 
@@ -57,11 +60,13 @@ describe("the relay's JSON-RPC peer", () => {
 
   it("takes an answer with neither a result nor an error as no answer at all", async () => {
     const written: string[] = [];
+
     const asker = createPeer({
       failed: () => {},
       stray: () => {},
       write: (line) => written.push(line),
     });
+
     const asked = asker.request("host.copyText", { text: "x" }, z.null());
     asker.receive(JSON.stringify({ id: 1, jsonrpc: "2.0" }));
     await expect(asked).rejects.toThrow(/neither one result nor one error/u);
@@ -75,6 +80,7 @@ describe("the relay's JSON-RPC peer", () => {
       if (on === "refused") {
         throw new Error("over budget");
       }
+
       heard.push(on);
     });
     a.notify("tray", "refused");
@@ -85,11 +91,13 @@ describe("the relay's JSON-RPC peer", () => {
 
   it("fails what is in flight, and what is asked after, once the other end is gone", async () => {
     const strays: string[] = [];
+
     const lonely = createPeer({
       failed: () => {},
       stray: (line) => strays.push(line),
       write: () => {},
     });
+
     const asked = lonely.request("hello", null, z.null());
     lonely.close("the shell is gone");
     await expect(asked).rejects.toThrow("the shell is gone");

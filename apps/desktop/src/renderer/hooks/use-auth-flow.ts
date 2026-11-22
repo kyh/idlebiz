@@ -1,3 +1,4 @@
+import { unreachable } from "@repo/domain/errors";
 import { useEffect, useEffectEvent, useState } from "react";
 import { api } from "@/renderer/api";
 import { useSubmission } from "@/renderer/hooks/use-submission";
@@ -15,55 +16,67 @@ export type Auth =
 
 export type Attempt = Extract<Auth, { lines: readonly string[] }>;
 
-export const linesOf = (a: Auth): readonly string[] => ("lines" in a ? a.lines : []);
-const withLine = (attempt: Attempt | null, line: string): readonly string[] => [
+export const linesOf = (a: Auth) => ("lines" in a ? a.lines : []);
+
+const withLine = (attempt: Attempt | null, line: string) => [
   ...(attempt?.lines ?? []).slice(-3),
   line,
 ];
 
-const probed = (authed: boolean | null): Auth => {
+const probed = (authed: boolean | null) => {
   if (authed === null) {
-    return { phase: "checking" };
+    return { phase: "checking" } satisfies Auth;
   }
-  return authed ? { lines: [], phase: "signed-in" } : { phase: "signed-out" };
+
+  return (authed ? { lines: [], phase: "signed-in" } : { phase: "signed-out" }) satisfies Auth;
 };
 
 /**
  * A login's progress after one event. Done adds no line: another runner may be what signed in
  * while the one the founder is signing in to failed, and its last line says how to finish it.
  */
-export const nextAttempt = (attempt: Attempt | null, e: AuthFlowEvent): Attempt => {
+export const nextAttempt = (attempt: Attempt | null, e: AuthFlowEvent) => {
   switch (e.type) {
     case "url": {
       return {
         lines: withLine(attempt, "Your browser opened — authorize there, then come back."),
         phase: "logging-in",
-      };
+      } satisfies Attempt;
     }
+
     case "progress": {
-      return { lines: withLine(attempt, e.message), phase: "logging-in" };
+      return { lines: withLine(attempt, e.message), phase: "logging-in" } satisfies Attempt;
     }
+
     case "done": {
-      return { lines: attempt?.lines ?? [], phase: "signed-in" };
+      return { lines: attempt?.lines ?? [], phase: "signed-in" } satisfies Attempt;
     }
+
     case "error": {
-      return { lines: withLine(attempt, `Hmm — ${e.message}`), phase: "login-failed" };
+      return {
+        lines: withLine(attempt, `Hmm — ${e.message}`),
+        phase: "login-failed",
+      } satisfies Attempt;
     }
-    // no default
+
+    default: {
+      return unreachable(e);
+    }
   }
 };
 
 /** A login main never started: the ask itself failed, so no event will ever say how it went. */
-export const withStart = (auth: Auth, start: Submission): Auth =>
-  start.kind === "failed" && auth.phase === "logging-in" && auth.lines.length === 0
+export const withStart = (auth: Auth, start: Submission) =>
+  (start.kind === "failed" && auth.phase === "logging-in" && auth.lines.length === 0
     ? { lines: [`Hmm — ${start.message}`], phase: "login-failed" }
-    : auth;
+    : auth) satisfies Auth;
 
 /** Main's CLI probe until a login starts here, then that login's progress. */
 export const useAuthFlow = (onSignedIn?: () => void) => {
   const { authed } = useAuth();
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const signedIn = useEffectEvent(() => onSignedIn?.());
+
   const starting = useSubmission(async () => {
     await api.agents.startLogin();
   });
@@ -72,6 +85,7 @@ export const useAuthFlow = (onSignedIn?: () => void) => {
     () =>
       listen("auth", (e: AuthFlowEvent) => {
         setAttempt((a) => nextAttempt(a, e));
+
         if (e.type === "done") {
           signedIn();
         }
@@ -83,5 +97,6 @@ export const useAuthFlow = (onSignedIn?: () => void) => {
     setAttempt({ lines: [], phase: "logging-in" });
     starting.submit();
   };
+
   return { auth: withStart(attempt ?? probed(authed), starting.submission), login };
 };

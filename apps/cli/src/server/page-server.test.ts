@@ -24,9 +24,9 @@ interface Asked {
   body?: string;
 }
 
-const ask = (port: number, asked: Asked): Promise<Answer> =>
+const ask = (port: number, asked: Asked) =>
   // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
-  new Promise((resolve, reject) => {
+  new Promise<Answer>((resolve, reject) => {
     const req = request(
       {
         headers: { host: `127.0.0.1:${port}`, ...asked.headers },
@@ -48,43 +48,48 @@ const ask = (port: number, asked: Asked): Promise<Answer> =>
         });
       },
     );
+
     req.on("error", reject);
     req.end(asked.body);
   });
 
-/** The cookie a fresh handoff sets, as the page sends it back. */
-const signIn = async (server: PageServer): Promise<string> => {
+const signIn = async (server: PageServer) => {
   const { pathname, search } = new URL(server.handoff().handoffUrl);
   const answer = await ask(server.port, { path: `${pathname}${search}` });
   const [setCookie] = answer.headers["set-cookie"] ?? [];
   const [pair] = setCookie?.split(";") ?? [];
+
   if (pair === undefined) {
     throw new Error("the handoff set no cookie");
   }
+
   return pair;
 };
 
-// the calls the page router would have answered, by path: the page server only routes them
 const calls: string[] = [];
 
 const EVENTS = `${RPC_PREFIX}/events`;
 
-const start = (page: PageSource): Promise<PageServer> =>
+const start = (page: PageSource) =>
   startPageServer({
     handleRpc: (incoming, outgoing) => {
       const called = incoming.url ?? "";
+
       if (called === EVENTS) {
-        // as the router's event stream does: open until the page or main lets go
         outgoing.writeHead(200, { "content-type": "text/event-stream" });
         outgoing.write(": open\n\n");
+
         return Promise.resolve(true);
       }
+
       if (called !== `${RPC_PREFIX}/company/get`) {
         return Promise.resolve(false);
       }
+
       calls.push(called);
       outgoing.writeHead(200, { "content-type": "application/json" });
       outgoing.end(JSON.stringify({ json: null }));
+
       return Promise.resolve(true);
     },
     page,
@@ -108,24 +113,29 @@ afterEach(async () => {
   await rm(dir, { force: true, recursive: true });
 });
 
-const built = async (): Promise<PageServer> => {
+const built = async () => {
   const server = await start({ dir, kind: "built" });
   servers.push(server);
+
   return server;
 };
 
 describe("main's page server", () => {
   it("answers no host but its own on loopback", async () => {
     const server = await built();
+
     const rebound = await ask(server.port, {
       headers: { host: `evil.example:${server.port}` },
       path: "/assets/office.js",
     });
+
     expect(rebound.status).toBe(421);
+
     const named = await ask(server.port, {
       headers: { host: `localhost:${server.port}` },
       path: "/assets/office.js",
     });
+
     expect(named.status).toBe(200);
   });
 
@@ -163,16 +173,19 @@ describe("main's page server", () => {
     expect(script.status).toBe(200);
     expect(script.headers["content-type"]).toBe("text/javascript; charset=utf-8");
     expect(script.headers["x-content-type-options"]).toBe("nosniff");
+
     for (const refused of ["/notes.txt", "/assets/missing.js", "/%2e%2e/escape.js", "/%E0%A4%A"]) {
       const answer = await ask(server.port, { path: refused });
       expect(answer.status, refused).toBe(404);
     }
+
     const posted = await ask(server.port, { method: "POST", path: "/assets/office.js" });
     expect(posted.status).toBe(405);
   });
 
   it("answers main's calls for the signed-in page, from its own origin alone", async () => {
     const server = await built();
+
     const call = (headers: Record<string, string>) =>
       ask(server.port, {
         body: JSON.stringify({ json: null }),
@@ -180,11 +193,11 @@ describe("main's page server", () => {
         method: "POST",
         path: `${RPC_PREFIX}/company/get`,
       });
+
     const anonymous = await call({ "sec-fetch-site": "same-origin" });
     expect(anonymous.status).toBe(401);
     expect(parseJson(anonymous.body)).toMatchObject({ ok: false });
     const cookie = await signIn(server);
-    // another 127.0.0.1 port carries the cookie: the same site, never the same origin
     const sameSite = await call({ cookie, "sec-fetch-site": "same-site" });
     expect(sameSite.status).toBe(403);
     const otherOrigin = await call({ cookie, origin: "http://127.0.0.1:1" });
@@ -196,17 +209,20 @@ describe("main's page server", () => {
     const byOrigin = await call({ cookie, origin: server.origin });
     expect(byOrigin.status).toBe(200);
     expect(calls).toEqual([`${RPC_PREFIX}/company/get`, `${RPC_PREFIX}/company/get`]);
+
     const unknown = await ask(server.port, {
       headers: { cookie, "sec-fetch-site": "same-origin" },
       method: "POST",
       path: `${RPC_PREFIX}/company/nothing`,
     });
+
     expect(unknown.status).toBe(404);
   });
 
   it("ends a page's open event stream as it stops", async () => {
     const server = await built();
     const cookie = await signIn(server);
+
     // oxlint-disable-next-line promise/avoid-new -- wraps a callback API
     const ended = new Promise<string>((resolve, reject) => {
       const req = request(
@@ -226,9 +242,11 @@ describe("main's page server", () => {
           res.on("close", () => resolve(text));
         },
       );
+
       req.on("error", reject);
       req.end();
     });
+
     expect(await ended).toBe(": open\n\n");
   });
 
@@ -237,14 +255,15 @@ describe("main's page server", () => {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(`vite answered ${req.url ?? ""}`);
     });
+
     const vitePort = await listenLoopback(vite, "a stand-in dev server");
+
     try {
       const server = await start({ kind: "dev", origin: `http://localhost:${vitePort}` });
       servers.push(server);
       const anonymous = await ask(server.port, { path: "/@fs/etc/hosts" });
       expect(anonymous.status).toBe(401);
       const cookie = await signIn(server);
-      // `/` on the dev server is `pnpm dev:browser`'s way in, so the document is asked for by name
       const document = await ask(server.port, { headers: { cookie }, path: "/" });
       expect(document.body).toBe("vite answered /index.html");
       const module = await ask(server.port, { headers: { cookie }, path: "/src/main.tsx?t=1" });
@@ -268,6 +287,7 @@ describe("the page's dev server", () => {
   it("is a loopback http origin, and nothing else", () => {
     expect(devPageOrigin("http://localhost:31100")).toBe("http://localhost:31100");
     expect(devPageOrigin("http://127.0.0.1:31100/")).toBe("http://127.0.0.1:31100");
+
     for (const refused of [
       "https://localhost:31100",
       "http://example.com:31100",

@@ -1,5 +1,3 @@
-// The team room: its recent lines, and the founder's word to it.
-
 import { oc, type } from "@orpc/contract";
 import { z } from "zod";
 import type { TeamMessage } from "@repo/domain/domain";

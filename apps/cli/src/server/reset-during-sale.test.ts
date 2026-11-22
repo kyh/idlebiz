@@ -9,8 +9,10 @@ import { callTool } from "./tools";
 import { switchOffBeforeReset } from "./reset-links";
 import { unaskedIntegrations } from "./test-support/integrations";
 import { foundAcme, hire, tempSave } from "./test-support/save";
+import { answerFetch, interceptNetwork } from "./test-support/network";
 
-// A file of its own: once a reset begins, this process makes no payment link again.
+interceptNetwork();
+
 const root = tempSave();
 
 afterAll(() => {
@@ -22,25 +24,31 @@ describe("a reset while Stripe makes a signed payment link", () => {
     store.initStore();
     const company = foundAcme([hire("Priya")]);
     const employee = store.getEmployee("priya");
+
     if (!employee) {
       throw new Error("no priya");
     }
+
     writeFileSync(
       path.join(root, "vault.json"),
       JSON.stringify({ STRIPE_SECRET_KEY: "rk_live_founder" }),
     );
     const switchedOff: string[] = [];
-    vi.stubGlobal("fetch", (url: string) => {
+    answerFetch((url: string) => {
       const id = /\/v1\/payment_links\/(?<id>\w+)$/u.exec(new URL(url).pathname)?.groups?.id;
+
       if (id === undefined) {
         return Promise.reject(new Error(`unexpected call to ${url}`));
       }
+
       switchedOff.push(id);
+
       return Promise.resolve(Response.json({ active: false, id }));
     });
     const stripe = Promise.withResolvers<Awaited<ReturnType<PaymentLinker>>>();
     let links = 0;
     const asked: unknown[] = [];
+
     const ctx: RunContext = {
       ...unaskedIntegrations,
       asks: askBox((ask) => asked.push(ask)),
@@ -48,6 +56,7 @@ describe("a reset while Stripe makes a signed payment link", () => {
       company,
       createPaymentLink: () => {
         links += 1;
+
         return stripe.promise;
       },
       employee,
@@ -55,6 +64,7 @@ describe("a reset while Stripe makes a signed payment link", () => {
       run: { betId: null, origin: "founder", productId: "acme", runId: "run", taskId: "task" },
       runners: { pickRunner: () => "claude", restingRunner: () => null, signedIn: () => true },
     };
+
     const link = { amountUsd: 9, name: "Pro plan" };
     store.grantApproval("task", 'payment link "Pro plan" at $9.00 on acme');
 

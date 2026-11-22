@@ -49,7 +49,6 @@ export interface RunnerAdapter {
   typedFailures?: true;
 }
 
-/** A model choice that does not read is left to claude's default, not the run's sign-in with it. */
 const ignoredIfBad = <T extends z.ZodType>(schema: T) =>
   z
     .unknown()
@@ -103,27 +102,25 @@ interface SessionStart {
 
 const claudeAuthStatus = z.object({ loggedIn: z.boolean() });
 
-/** `claude auth status` prints JSON with a loggedIn flag, after whatever else it says. */
-const claudeLoggedIn = (output: string): boolean => {
+const claudeLoggedIn = (output: string) => {
   const start = output.indexOf("{");
+
   if (start === -1) {
     return false;
   }
+
   try {
     const parsed = claudeAuthStatus.safeParse(
       JSON.parse(output.slice(start, output.lastIndexOf("}") + 1)),
     );
+
     return parsed.success && parsed.data.loggedIn;
   } catch {
     return false;
   }
 };
 
-/**
- * What a claude session loads is docs/runs.md's "A claude session". With bypass off, no settings
- * tier can start a session in it.
- */
-const claudeSession = ({ skills, teamNotes, userSettings }: SessionSetup): SessionStart => {
+const claudeSession = ({ skills, teamNotes, userSettings }: SessionSetup) => {
   const meta: NonNullable<SessionStart["meta"]> = {
     claudeCode: {
       options: {
@@ -134,31 +131,25 @@ const claudeSession = ({ skills, teamNotes, userSettings }: SessionSetup): Sessi
           ...userSettings,
           disableBundledSkills: true,
           disableClaudeAiConnectors: true,
-          // No ask rule: one forces a prompt even in auto mode, which would take the judging from
-          // claude's classifier. Plan mode's exit asks to approve a plan, which nobody answers.
           permissions: {
             deny: ["mcp__*", "EnterPlanMode", "ExitPlanMode"],
           },
-          // Off: the run is already inside a Seatbelt profile, and one cannot apply inside
-          // another. On, every command would fail, and a sandboxed one would skip the Bash ask.
+          // WARNING: off, since sandbox-exec cannot nest: on, every command in a run fails.
           sandbox: { autoAllowBashIfSandboxed: false, enabled: false },
         },
         strictMcpConfig: true,
       },
     },
   };
+
   if (teamNotes !== null) {
     meta.systemPrompt = { append: teamNotes };
   }
-  return { meta, readDirs: [] };
+
+  return { meta, readDirs: [] } satisfies SessionStart;
 };
 
-/**
- * codex has no setting that leaves all the player's skills out: the sandbox keeps its runs from
- * reading them, and their plugins' are left out with plugins. codex-acp hands `.agents/skills` in
- * each folder a session is handed to codex as a skill root, so IdleBiz's folder is handed over.
- */
-const codexSession = ({ skills }: SessionSetup): SessionStart => ({ readDirs: [skills] });
+const codexSession = ({ skills }: SessionSetup) => ({ readDirs: [skills] }) satisfies SessionStart;
 
 export const RUNNERS = {
   claude: {
@@ -168,9 +159,6 @@ export const RUNNERS = {
     cli: { command: "claude", override: "CLAUDE_BIN" },
     fallbackRates: { cachedInput: 0.3, input: 3, output: 15 },
     loginArgs: ["auth", "login"],
-    // Bedrock's bearer token signs only for Bedrock, AWS access keys for the whole account, and
-    // the sandbox hides ~/.aws, so Bedrock is only that token; Vertex reads the path of Google's key
-    // file, which works only outside the sandboxed logins (not gcloud's default credentials)
     providerEnv: [
       "ANTHROPIC_",
       "CLAUDE_",
@@ -178,24 +166,19 @@ export const RUNNERS = {
       "GOOGLE_APPLICATION_CREDENTIALS",
     ],
     session: claudeSession,
-    // Auto mode's check runs on Anthropic's servers, which a gateway at ANTHROPIC_BASE_URL may not
-    // pass through, and then every action it checks is refused: behind one, Manual asks instead.
     sessionMode: (env) =>
       env.ANTHROPIC_BASE_URL === undefined || env.ANTHROPIC_BASE_URL === "" ? "auto" : "default",
   },
   codex: {
     acpEntry: "@agentclientprotocol/codex-acp/dist/index.js",
-    // `codex login status` says how codex is signed in, and exits 1 when it is not
     authProbe: { args: ["login", "status"], loggedIn: (out) => !/not logged in/iu.test(out) },
     binEnvVar: "CODEX_PATH",
     cli: { command: "codex", override: "CODEX_BIN" },
     fallbackRates: { cachedInput: 0.125, input: 1.25, output: 10 },
     loginArgs: ["login"],
-    // Bedrock as for claude; the Azure provider codex documents reads AZURE_OPENAI_API_KEY
     providerEnv: ["OPENAI_", "CODEX_", "AWS_BEARER_TOKEN_BEDROCK", "AZURE_OPENAI_"],
     session: codexSession,
-    // No sandbox of codex's own, which cannot start inside the run's. Its auto review judges only
-    // what that sandbox would stop, so with none it has nothing to judge, and codex asks nothing.
+    // WARNING: the one mode with no sandbox of codex's own, since sandbox-exec cannot nest.
     sessionMode: () => "agent-full-access",
     typedFailures: true,
     usagePerRequest: true,

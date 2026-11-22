@@ -6,12 +6,10 @@ import { Failure } from "@/renderer/ui/failure";
 import { SaveIssues } from "@/renderer/ui/save-issues";
 import type { LoadSkip } from "@repo/domain/domain";
 
-// No onboarding here: founding refuses while the save's folder is there.
-// A save only a newer build can read must be left as it is: editing or moving it
-// loses what that build added, so it gets no Fix-or-move advice and no folder button.
 export const SaveUnreadable = ({ issues }: { issues: LoadSkip[] }) => {
   const newer = issues.every((issue) => issue.newerBuild);
   const opening = useSubmission(() => api.save.openFolder());
+
   return (
     <Curtain>
       <AlertDialog.Title className="text-base text-fg">

@@ -50,10 +50,11 @@ const os = implement(contract).use(async ({ next, path }) => {
 });
 
 export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
-  const vercelConnected = (connection: VercelConnection): void => {
+  const vercelConnected = (connection: VercelConnection) => {
     metricsPulse.now();
     founder.resumeVercelAsks(connection);
   };
+
   return os.router({
     agents: {
       cancelLogin: os.agents.cancelLogin.handler(() => {
@@ -70,15 +71,14 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
         void startLogin(runnerPool, (e) => {
           broadcast("auth", e);
         });
+
         return { started: true };
       }),
     },
     app: {
-      // the window is refused every permission, the clipboard's included: the shell writes it
       copyText: os.app.copyText.handler(async ({ input }) => {
         await host().copyText(input.text);
       }),
-      // a release build's window has no console: what the page raised is kept with main's own
       fault: os.app.fault.handler(({ input: { message, stack, where } }) => {
         report(`page:${where}`, stack === undefined ? message : `${message}\n${stack}`);
       }),
@@ -98,9 +98,11 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       setAutopilot: os.company.setAutopilot.handler(({ input }) => setAutopilot(input.running)),
       setBudget: os.company.setBudget.handler(({ input }) => {
         const company = store.setBudget(input.budget);
+
         if (isOutOfBudget(company)) {
           haltForBudget(company);
         }
+
         return store.requireCompany();
       }),
       setMaxAgents: os.company.setMaxAgents.handler(({ input }) =>
@@ -115,16 +117,16 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       list: os.employees.list.handler(() => store.listEmployees()),
       options: os.employees.options.handler(({ input }) => {
         const emp = store.getEmployee(input.employeeId);
+
         if (!emp) {
           throw new RefusalError(`no employee ${input.employeeId}`);
         }
+
         return chatOptions(emp, store.openTasksFor(input.employeeId));
       }),
     },
     events: os.events.handler(({ signal }) => pageEvents(signal)),
     onboarding: {
-      // one call, whole or not at all: the roster's CLIs are chosen first, so a machine with
-      // nothing signed in fails before a folder exists
       found: os.onboarding.found.handler(({ input: { hires, ...company } }) =>
         store.foundCompany({
           ...company,
@@ -133,6 +135,7 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       ),
       hires: os.onboarding.hires.handler(async ({ input }) => {
         const candidates = await generateCandidates(input);
+
         return candidates.map((candidate, i) =>
           Object.assign(candidate, {
             spriteSeed: spriteSeedFor(candidate.role, candidate.name, `-${i}`),
@@ -161,9 +164,9 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       openFolder: os.save.openFolder.handler(async () => {
         await host().open({ kind: "path", target: rootDir() });
       }),
-      // the first report waits on the sandbox's check, so a refusal is in it
       report: os.save.report.handler(async () => {
         const refusal = await runnerPool.sandboxRefusal();
+
         return notingSandbox(store.loadReport(), refusal);
       }),
       reset: os.save.reset.handler(() => resetGame()),

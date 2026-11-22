@@ -9,7 +9,7 @@ import {
 import { privacyPage, servedPages, termsPage } from "./site-content";
 import type { ProsePage } from "./site-content";
 
-const h2Sections = (markdown: string): string[] =>
+const h2Sections = (markdown: string) =>
   markdown.split("\n").filter((line) => line.startsWith("## "));
 
 describe("renderLlmsTxt", () => {
@@ -32,6 +32,7 @@ describe("renderLlmsTxt", () => {
     for (const page of servedPages) {
       expect(llms).toContain(`(https://idlebiz.com${page.path})`);
     }
+
     expect(llms).toContain("- [Terms of Use](https://idlebiz.com/terms): ");
     expect(llms).not.toMatch(/\]\(\//u);
   });
@@ -80,6 +81,7 @@ describe("renderProsePageMarkdown", () => {
       schemaType: "WebPage",
       title: "Table",
     };
+
     expect(renderProsePageMarkdown(page)).toContain(String.raw`| this \| that |`);
   });
 
@@ -127,6 +129,7 @@ describe("what the site claims the app does", () => {
   it("names where the CLIs keep each run's transcript, since deleting ~/.idlebiz leaves them", () => {
     const markdown = renderProsePageMarkdown(privacyPage);
     const cut = markdown.indexOf("## Your choices");
+
     for (const at of ["~/.claude/projects", "~/.codex/sessions"]) {
       expect(markdown.slice(0, cut)).toContain(at);
       expect(markdown.slice(cut)).toContain(at);

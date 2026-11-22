@@ -108,8 +108,36 @@ orient a reader and link into them, never telling a mechanic again.
 - **Strict TS everywhere** — no `any`, no non-null `!`, no `as` but `as const` (parse at the
   boundary or narrow with a guard) — and clippy pedantic in Rust. Kebab-case filenames. Make
   illegal states unrepresentable.
-- **Lint and the compiler are clean gates**: fix the code, don't add config overrides; a disable
-  comment states why.
+- **Lint and the compiler are clean gates**: ultracite's core, react, anti-slop and landmines
+  presets, every rule an error. Fix the code, don't add config overrides; a disable comment states
+  why. The rules set otherwise, each for its reason:
+  - `require-safety-comment-for-type-assertion` is off: it asks for a `// SAFETY:` comment that
+    no-comments refuses, and no assertion needs one, since `consistent-type-assertions` refuses
+    every one (`as const` asserts no other type and stays legal).
+  - `no-await-in-loop` is off: sequential awaits are deliberate (ordered agent turns, paced writes).
+  - `consistent-return` is off: a bare `return` in a `T | undefined` helper is deliberate.
+  - `no-confusing-void-expression` is off: `() => set(x)` is the house style for handlers.
+  - `promise-function-async`, `strict-void-return` are off: a dropped or misplaced promise is
+    `no-floating-promises`' and `no-misused-promises`' to catch.
+  - `strict-boolean-expressions` is off: truthiness checks on optionals are idiomatic here.
+  - `switch-exhaustiveness-check` takes a `default` as exhaustive: a default is how a consumer says
+    every other kind means nothing to it.
+  - landmines' allow maps: the gate, stand-in-runner and Mac sandbox suites keep their raised
+    timeouts, since each drives a real CLI or macOS service; `machine.mac.test.ts` keeps three
+    fixed waits that watch for something not happening, which no signal shows; and
+    `test-support/network.ts` starts MSW 3 strictly by `onUnhandledFrame`, a name the rule predates.
+  - `no-test-doubles` is off for the renderer's `report-fault` and `state/store` suites: the page
+    calls main at a path relative to its origin, which Node's fetch cannot take, so they hand the
+    page the real router as its fetch (happy-dom, which can, breaks on main's event stream).
+- **No prose comments, no annotated return types** (landmines): a comment is a functional
+  directive, a single-line `// WARNING:` for a dangerous recurring footgun, or TSDoc on an export,
+  and a reason lives here, in `docs/` or in the commit. A return type is inferred: pin a contract
+  with `satisfies` at the return or a typed variable, which recursion needs. A switch that names
+  every case ends in `default: return unreachable(x)` (`@repo/domain/errors`), so a case added to
+  the union fails to compile there.
+- **Tests run the real thing**: requests are answered through MSW (`test-support/network.ts`,
+  strict, so one nothing answers fails), spies only observe, a wait is on a signal, and a test is
+  a `.test.ts` beside its subject. A package exports each entrypoint by name, never `./*`.
 - **The store is one synchronous object.** Don't split it by entity or make it async: its
   synchronous check-and-set is what makes the task lock correct.
 - **Every write is whole; few are durable.** No reader sees half a file, but only one whose loss

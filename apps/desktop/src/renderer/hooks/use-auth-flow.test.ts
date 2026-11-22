@@ -3,22 +3,26 @@ import type { AuthFlowEvent } from "@repo/domain/domain";
 import { nextAttempt, withStart } from "./use-auth-flow";
 import type { Attempt } from "./use-auth-flow";
 
-const replay = (events: AuthFlowEvent[]): Attempt => {
+const replay = (events: AuthFlowEvent[]) => {
   let attempt: Attempt = { lines: [], phase: "logging-in" };
+
   for (const e of events) {
     attempt = nextAttempt(attempt, e);
   }
+
   return attempt;
 };
 
 it("keeps a signed-out runner's terminal command when another runner makes the sign-in done", () => {
   const instruction = "Couldn't finish automatically. In a terminal, run: codex login";
+
   const auth = replay([
     { message: "Signing in to Codex — your browser will open…", type: "progress" },
     { message: instruction, type: "progress" },
     { message: "Workforce ready: Claude Code.", type: "progress" },
     { type: "done" },
   ]);
+
   expect(auth).toEqual({
     lines: [
       "Signing in to Codex — your browser will open…",
@@ -31,8 +35,11 @@ it("keeps a signed-out runner's terminal command when another runner makes the s
 
 it("keeps the last four lines of a long attempt", () => {
   const auth = replay(
-    ["a", "b", "c", "d", "e"].map((message): AuthFlowEvent => ({ message, type: "progress" })),
+    ["a", "b", "c", "d", "e"].map(
+      (message) => ({ message, type: "progress" }) satisfies AuthFlowEvent,
+    ),
   );
+
   expect(auth).toEqual({ lines: ["b", "c", "d", "e"], phase: "logging-in" });
 });
 

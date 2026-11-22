@@ -1,17 +1,3 @@
-// Records the landing page's og:video: the office filling the frame, drawn from the desktop
-// app's own files (office-design.json, the employee sheets, px-kit and its VG5000, the
-// wordmark), the camera drifting slowly down over the desks and back while the team types,
-// walks to the cooler and along the corridors, with the HUD's revenue plate counting up each
-// sale in the top left and the IdleBiz logo and its line in the bottom right.
-//
-// The real office needs a signed-in CLI, so this draws the same art the same way the scene
-// does (placed sprites, floor-contact sorting, seated busts) on a canvas, one frame at a time
-// on a fixed clock, screenshots each and hands them to ffmpeg. Not part of any build:
-//
-//   pnpm -F @repo/web og:video
-//
-// Writes public/og/og.mp4 and its poster public/og/og.jpg. Needs Playwright's Chromium
-// (PLAYWRIGHT_CHROMIUM names another build) and ffmpeg on PATH.
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { once } from "node:events";
@@ -31,6 +17,7 @@ import {
   WALK_START,
 } from "@repo/domain/character-frame";
 import type { Dir } from "@repo/domain/character-frame";
+import { unreachable } from "@repo/domain/errors";
 import { usageLabel } from "@repo/domain/format";
 import { chromium } from "playwright";
 import { z } from "zod";
@@ -39,31 +26,18 @@ const WEB_ROOT = path.resolve(import.meta.dirname, "..");
 const REPO_ROOT = path.resolve(WEB_ROOT, "../..");
 const OUT_DIR = path.join(WEB_ROOT, "public/og");
 
-/** 8s holds whole cycles of the 6-frame walk strip at 9fps, so the loop has no seam. */
 const VIDEO = { fps: 24, height: 630, seconds: 8, width: 1200 } as const;
-/** Captured at twice the clip's size, then scaled down, so the office's pixels stay even. */
 const CAPTURE_SCALE = 2;
-/**
- * CSS px per office px: 2.5 covers the frame's width with the office's 512 (480 of them show),
- * and is a whole 5 device px at the capture's scale, so every sprite pixel stays square.
- */
 const SCALE = 2.5;
-/**
- * The camera, as the office px at the frame's top left: centred across, drifting from the
- * whiteboards down to the back corridor and home again over the loop, on a cosine so it
- * eases at both ends and meets itself at the seam.
- */
 const CAMERA = { bottom: 86, top: 34, x: 16 } as const;
 
-// What the office scene uses: walk speed and walk-strip rate (npc.ts, characters.ts), the
-// seated bust's lift (seat-depth.ts) and depth bands (office-depth.ts).
 const NPC_SPEED = 64;
 const WALK_FPS = 9;
 const BEHIND_CHAIR_RISE = 12;
 const DEPTH = { entityBase: 1000, ground: 0, overhead: 2000 } as const;
 const STACK_STEP = 1e-3;
 
-const characterDepth = (y: number): number => DEPTH.entityBase + y + SOLE_OFFSET;
+const characterDepth = (y: number) => DEPTH.entityBase + y + SOLE_OFFSET;
 
 const placedSchema = {
   flipX: z.boolean().optional(),
@@ -72,7 +46,9 @@ const placedSchema = {
   x: z.number(),
   y: z.number(),
 };
+
 const dirSchema = z.enum(["down", "left", "right", "up"]);
+
 const officeSchema = z.object({
   objects: z.array(
     z.discriminatedUnion("layer", [
@@ -137,7 +113,6 @@ interface FrameSpec {
 interface SceneSetup {
   frame: { columns: number; h: number; originX: number; originY: number; w: number };
   objects: Placed[];
-  /** Device px per office px, and the canvas's size in device px. */
   scale: number;
   seats: Seat[];
   sheets: string[];
@@ -150,14 +125,16 @@ declare global {
   }
 }
 
-const paintOrder = (layout: z.infer<typeof officeSchema>): Placed[] =>
+const paintOrder = (layout: z.infer<typeof officeSchema>) =>
   layout.objects.map((obj, index) => {
     let depth = DEPTH.ground + STACK_STEP * (index + 1);
+
     if (obj.layer === "object") {
       depth = DEPTH.entityBase + obj.anchorY + 0.5;
     } else if (obj.layer === "overhead") {
       depth = DEPTH.overhead + STACK_STEP * (index + 1);
     }
+
     return {
       depth,
       flipX: obj.flipX ?? false,
@@ -168,21 +145,16 @@ const paintOrder = (layout: z.infer<typeof officeSchema>): Placed[] =>
     };
   });
 
-// ---- the browser half: runs in the page, so it closes over nothing ----
-
-/**
- * Loads the art, works out where each seated bust sorts (seat-depth.ts: just above the
- * topmost furniture it overlaps, read from each image's opaque pixels; facing up, behind the
- * chair back) and installs `window.ogScene.draw`.
- */
-const mountScene = async (setup: SceneSetup): Promise<number[]> => {
+const mountScene = async (setup: SceneSetup) => {
   // oxlint-disable-next-line unicorn/consistent-function-scoping -- page.evaluate sends this function alone, so its helpers live inside it
-  const load = async (src: string): Promise<HTMLImageElement> => {
+  const load = async (src: string) => {
     const img = new Image();
     img.src = src;
     await img.decode();
+
     return img;
   };
+
   const sources = [...new Set([...setup.objects.map((obj) => obj.src), ...setup.sheets])];
   const images = new Map<string, HTMLImageElement>();
   await Promise.all(sources.map(async (src) => images.set(src, await load(src))));
@@ -190,44 +162,58 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
   await document.fonts.ready;
 
   const opaque = new Map<string, Uint8ClampedArray>();
-  const alphaOf = (img: HTMLImageElement, src: string): Uint8ClampedArray => {
+
+  const alphaOf = (img: HTMLImageElement, src: string) => {
     const known = opaque.get(src);
+
     if (known) {
       return known;
     }
+
     const scratch = document.createElement("canvas");
     scratch.width = img.naturalWidth;
     scratch.height = img.naturalHeight;
     const sctx = scratch.getContext("2d");
+
     const data = sctx
       ? (sctx.drawImage(img, 0, 0),
         sctx.getImageData(0, 0, img.naturalWidth, img.naturalHeight).data)
       : new Uint8ClampedArray(0);
+
     opaque.set(src, data);
+
     return data;
   };
 
   const seatDepths = setup.seats.map((seat) => {
     const base = 1000 + seat.y + (62 - setup.frame.h * setup.frame.originY);
+
     if (seat.facing === "up") {
       return base;
     }
+
     let depth = base;
+
     for (const obj of setup.objects) {
       const img = images.get(obj.src);
+
       if (!img || obj.depth <= depth || obj.depth >= 2000) {
         continue;
       }
+
       const x0 = Math.floor(Math.max(seat.x - 10, obj.x));
       const x1 = Math.ceil(Math.min(seat.x + 10, obj.x + img.naturalWidth));
       const bustTop = seat.y - (Math.ceil(setup.frame.h * setup.frame.originY) - 18);
       const y0 = Math.floor(Math.max(bustTop, obj.y));
       const y1 = Math.ceil(Math.min(seat.y, obj.y + img.naturalHeight));
+
       if (x1 <= x0 || y1 <= y0) {
         continue;
       }
+
       const alpha = alphaOf(img, obj.src);
       let hit = false;
+
       for (let y = y0; y < y1 && !hit; y += 1) {
         for (let x = x0; x < x1 && !hit; x += 1) {
           let lx = Math.floor(x - obj.x);
@@ -237,10 +223,12 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
           hit = (alpha[(ly * img.naturalWidth + lx) * 4 + 3] ?? 0) > 0;
         }
       }
+
       if (hit) {
         depth = Math.max(depth, obj.depth);
       }
     }
+
     return depth + 0.25;
   });
 
@@ -248,6 +236,7 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
   const revenue = document.querySelector("#revenue");
   const usage = document.querySelector("#usage");
   const sale = document.querySelector("#sale");
+
   if (
     !(canvas instanceof HTMLCanvasElement) ||
     !(revenue instanceof HTMLElement) ||
@@ -256,14 +245,16 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
   ) {
     throw new TypeError("the scene page is missing an element");
   }
+
   canvas.width = setup.view.width;
   canvas.height = setup.view.height;
   const ctx = canvas.getContext("2d");
+
   if (!ctx) {
     throw new Error("no 2d context");
   }
 
-  const blit = (img: HTMLImageElement, obj: Placed): void => {
+  const blit = (img: HTMLImageElement, obj: Placed) => {
     ctx.save();
     ctx.translate(
       obj.x + (obj.flipX ? img.naturalWidth : 0),
@@ -292,15 +283,20 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
         depth: number;
         paint: () => void;
       }
+
       const items: Item[] = setup.objects.flatMap((obj) => {
         const img = images.get(obj.src);
+
         return img ? [{ depth: obj.depth, paint: () => blit(img, obj) }] : [];
       });
+
       for (const sprite of spec.sprites) {
         const img = images.get(sprite.sheet);
+
         if (!img) {
           continue;
         }
+
         const { columns, h, originX, originY, w } = setup.frame;
         const sx = (sprite.frame % columns) * w;
         const sy = Math.floor(sprite.frame / columns) * h;
@@ -312,7 +308,9 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
           paint: () => ctx.drawImage(img, sx, sy, w, drawH, left, top, w, drawH),
         });
       }
+
       items.sort((a, b) => a.depth - b.depth);
+
       for (const item of items) {
         item.paint();
       }
@@ -324,24 +322,25 @@ const mountScene = async (setup: SceneSetup): Promise<number[]> => {
       sale.style.transform = `translateY(${String(-(spec.sale?.lift ?? 0))}px)`;
     },
   };
+
   return seatDepths;
 };
 
-// ---- the timeline: who is where at time t ----
-
-const sheetPath = (n: number): string =>
+const sheetPath = (n: number) =>
   `/apps/desktop/public/characters/employee-sheet-${String(n).padStart(2, "0")}.png`;
 
-const walkFrame = (dir: Dir, t: number): number =>
+const walkFrame = (dir: Dir, t: number) =>
   WALK_START[dir] + (Math.floor(t * WALK_FPS) % STRIP_FRAMES);
 
-const facingOf = (from: Point, to: Point): Dir => {
+const facingOf = (from: Point, to: Point) => {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
+
   if (Math.abs(dx) > Math.abs(dy)) {
-    return dx < 0 ? "left" : "right";
+    return (dx < 0 ? "left" : "right") satisfies Dir;
   }
-  return dy < 0 ? "up" : "down";
+
+  return (dy < 0 ? "up" : "down") satisfies Dir;
 };
 
 type Leg =
@@ -354,18 +353,22 @@ interface Actor {
   sheet: number;
 }
 
-const legSeconds = (leg: Leg): number => {
+const legSeconds = (leg: Leg) => {
   if (leg.kind !== "walk") {
     return leg.seconds;
   }
+
   let length = 0;
+
   for (let i = 1; i < leg.path.length; i += 1) {
     const a = leg.path[i - 1];
     const b = leg.path[i];
+
     if (a && b) {
       length += Math.hypot(b.x - a.x, b.y - a.y);
     }
   }
+
   return length / NPC_SPEED;
 };
 
@@ -374,22 +377,32 @@ interface Step {
   facing: Dir;
 }
 
-const alongPath = (pathPoints: Point[], distance: number): Step => {
+const alongPath = (pathPoints: Point[], distance: number) => {
   let left = distance;
+
   for (let i = 1; i < pathPoints.length; i += 1) {
     const a = pathPoints[i - 1];
     const b = pathPoints[i];
+
     if (!a || !b) {
       continue;
     }
+
     const length = Math.hypot(b.x - a.x, b.y - a.y);
+
     if (left <= length || i === pathPoints.length - 1) {
       const f = length === 0 ? 1 : Math.min(1, left / length);
-      return { at: { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }, facing: facingOf(a, b) };
+
+      return {
+        at: { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f },
+        facing: facingOf(a, b),
+      } satisfies Step;
     }
+
     left -= length;
   }
-  return { at: pathPoints[0] ?? { x: 0, y: 0 }, facing: "down" };
+
+  return { at: pathPoints[0] ?? { x: 0, y: 0 }, facing: "down" } satisfies Step;
 };
 
 const legSprite = (
@@ -399,14 +412,15 @@ const legSprite = (
   sheet: string,
   seats: Seat[],
   seatDepths: number[],
-): SpriteDraw | null => {
+) => {
   switch (leg.kind) {
     case "seated": {
       const seat = seats[leg.seat];
+
       if (!seat) {
         return null;
       }
-      // the sheet has no typing strip: walking in place, facing the screen, reads as typing
+
       return {
         crop: true,
         depth: seatDepths[leg.seat] ?? characterDepth(seat.y),
@@ -415,8 +429,9 @@ const legSprite = (
         sheet,
         x: seat.x,
         y: seat.y,
-      };
+      } satisfies SpriteDraw | null;
     }
+
     case "stand": {
       return {
         crop: false,
@@ -426,10 +441,12 @@ const legSprite = (
         sheet,
         x: leg.at.x,
         y: leg.at.y,
-      };
+      } satisfies SpriteDraw | null;
     }
+
     case "walk": {
       const { at, facing } = alongPath(leg.path, (t - since) * NPC_SPEED);
+
       return {
         crop: false,
         depth: characterDepth(at.y),
@@ -438,38 +455,40 @@ const legSprite = (
         sheet,
         x: at.x,
         y: at.y,
-      };
+      } satisfies SpriteDraw | null;
     }
-    // no default
+
+    default: {
+      return unreachable(leg);
+    }
   }
 };
 
-const spriteAt = (
-  actor: Actor,
-  t: number,
-  seats: Seat[],
-  seatDepths: number[],
-): SpriteDraw | null => {
+const spriteAt = (actor: Actor, t: number, seats: Seat[], seatDepths: number[]) => {
   let start = 0;
+
   for (const leg of actor.legs) {
     const seconds = legSeconds(leg);
+
     if (t < start + seconds || leg === actor.legs.at(-1)) {
       return legSprite(leg, start, t, sheetPath(actor.sheet), seats, seatDepths);
     }
+
     start += seconds;
   }
+
   return null;
 };
 
-/** A walk there and the same walk back. */
-const outAndBack = (points: Point[]): [Leg, Leg] => [
-  { kind: "walk", path: points },
-  { kind: "walk", path: points.toReversed() },
-];
+const outAndBack = (points: Point[]) => {
+  const legs: [Leg, Leg] = [
+    { kind: "walk", path: points },
+    { kind: "walk", path: points.toReversed() },
+  ];
 
-// Work seats are office-design.json's, by index: [0]-[2] face down, [3]-[9] face up across the
-// two rows of desks, [10] faces left in the back room, out of frame. [5] is the one who gets up
-// for the cooler; [9], under the logo, stays empty.
+  return legs;
+};
+
 const SEATED = [
   { seat: 0, sheet: 4 },
   { seat: 1, sheet: 9 },
@@ -480,15 +499,18 @@ const SEATED = [
   { seat: 7, sheet: 11 },
   { seat: 8, sheet: 17 },
 ] as const;
+
 const COOLER_SEAT = 5;
 
 const actors: Actor[] = [
-  ...SEATED.map(({ seat, sheet }): Actor => ({
-    legs: [{ kind: "seated", seat, seconds: VIDEO.seconds }],
-    sheet,
-  })),
+  ...SEATED.map(
+    ({ seat, sheet }) =>
+      ({
+        legs: [{ kind: "seated", seat, seconds: VIDEO.seconds }],
+        sheet,
+      }) satisfies Actor,
+  ),
   {
-    // up from the desk, along the corridor to the cooler, a drink, and back
     legs: [
       { kind: "seated", seat: COOLER_SEAT, seconds: 0.6 },
       ...outAndBack([
@@ -502,8 +524,6 @@ const actors: Actor[] = [
     sheet: 2,
   },
   {
-    // down the left aisle and along the back corridor between two desks, a look, and back, at the far
-    // end as the camera reaches the bottom of its drift
     legs: [
       { at: { x: 40, y: 232 }, facing: "up", kind: "stand", seconds: 0.3 },
       ...outAndBack([
@@ -516,7 +536,6 @@ const actors: Actor[] = [
     sheet: 7,
   },
   {
-    // across the front corridor to chat at a desk, and back
     legs: [
       { at: { x: 96, y: 200 }, facing: "right", kind: "stand", seconds: 0.8 },
       ...outAndBack([
@@ -529,8 +548,6 @@ const actors: Actor[] = [
   },
 ];
 
-// ---- the HUD's revenue plate ----
-
 const SALES = [
   { amount: 29, at: 0.9 },
   { amount: 9, at: 2.4 },
@@ -538,41 +555,42 @@ const SALES = [
   { amount: 9, at: 5.2 },
   { amount: 29, at: 6.4 },
 ] as const;
+
 const REVENUE_START = 1284;
 const USAGE = { from: 41.2, to: 43.6 } as const;
-/** How long a sale takes to count onto the plate, and the loop's roll back to its start. */
 const TICK_SECONDS = 0.5;
 const ROLLBACK = { from: 7.65, to: 7.95 } as const;
 const SALE_FLOAT_SECONDS = 1.1;
 
-const easeOut = (f: number): number => 1 - (1 - f) ** 3;
-const clamp01 = (f: number): number => Math.min(1, Math.max(0, f));
+const easeOut = (f: number) => 1 - (1 - f) ** 3;
+const clamp01 = (f: number) => Math.min(1, Math.max(0, f));
 
-/** How far the loop's roll back has gone: 0 until it starts, 1 once both figures are home. */
-const rolledBack = (t: number): number =>
-  clamp01((t - ROLLBACK.from) / (ROLLBACK.to - ROLLBACK.from));
+const rolledBack = (t: number) => clamp01((t - ROLLBACK.from) / (ROLLBACK.to - ROLLBACK.from));
 
-const revenueAt = (t: number): number => {
+const revenueAt = (t: number) => {
   const counted = SALES.reduce(
     (sum, sale) => sum + sale.amount * easeOut(clamp01((t - sale.at) / TICK_SECONDS)),
     REVENUE_START,
   );
+
   return counted + (REVENUE_START - counted) * rolledBack(t);
 };
 
-const usageAt = (t: number): number =>
+const usageAt = (t: number) =>
   USAGE.from + (USAGE.to - USAGE.from) * clamp01(t / ROLLBACK.from) * (1 - rolledBack(t));
 
-const cameraAt = (t: number): Point => ({
-  x: CAMERA.x,
-  y:
-    CAMERA.top +
-    ((CAMERA.bottom - CAMERA.top) * (1 - Math.cos((2 * Math.PI * t) / VIDEO.seconds))) / 2,
-});
+const cameraAt = (t: number) =>
+  ({
+    x: CAMERA.x,
+    y:
+      CAMERA.top +
+      ((CAMERA.bottom - CAMERA.top) * (1 - Math.cos((2 * Math.PI * t) / VIDEO.seconds))) / 2,
+  }) satisfies Point;
 
-const frameAt = (t: number, seats: Seat[], seatDepths: number[]): FrameSpec => {
+const frameAt = (t: number, seats: Seat[], seatDepths: number[]) => {
   const sprites = actors.flatMap((actor) => spriteAt(actor, t, seats, seatDepths) ?? []);
   const recent = SALES.findLast((s) => t >= s.at && t < s.at + SALE_FLOAT_SECONDS);
+
   const sale = recent
     ? {
         lift: 22 * easeOut((t - recent.at) / SALE_FLOAT_SECONDS),
@@ -580,23 +598,22 @@ const frameAt = (t: number, seats: Seat[], seatDepths: number[]): FrameSpec => {
         text: `+$${String(recent.amount)}`,
       }
     : null;
+
   return {
     camera: cameraAt(t),
     revenue: `$${Math.round(revenueAt(t)).toLocaleString("en-US")}`,
     sale,
     sprites,
     usage: usageLabel(usageAt(t)),
-  };
+  } satisfies FrameSpec;
 };
 
-// ---- the page and the capture ----
-
-/** The wordmark's art inside its canvas, in its own px: the page crops the margin away. */
 const WORDMARK = { art: { h: 728, w: 1029, x: 257, y: 166 }, width: 1513 } as const;
 const LOGO_WIDTH = 250;
 
-const scenePage = (): string => {
+const scenePage = () => {
   const logoScale = LOGO_WIDTH / WORDMARK.art.w;
+
   return `<!doctype html>
 <html><head><meta charset="utf-8">
 <link rel="stylesheet" href="/packages/px-kit/px-kit.css">
@@ -642,38 +659,42 @@ const MIME = new Map([
   [".webp", "image/webp"],
   [".woff2", "font/woff2"],
 ]);
+
 const SERVED = ["apps/desktop/public/", "packages/px-kit/"];
 const addressSchema = z.object({ port: z.number() });
 
-const respond = async (
-  pathname: string,
-  page: string,
-): Promise<{ body: Buffer | string; type: string } | null> => {
+const respond = async (pathname: string, page: string) => {
   if (pathname === "/") {
-    return { body: page, type: "text/html" };
+    return { body: page, type: "text/html" } satisfies {
+      body: Buffer | string;
+      type: string;
+    } | null;
   }
+
   const file = path.join(REPO_ROOT, pathname);
   const relative = path.relative(REPO_ROOT, file);
   const type = MIME.get(path.extname(file));
+
   if (!type || relative.includes("..") || !SERVED.some((dir) => relative.startsWith(dir))) {
     return null;
   }
+
   try {
-    return { body: await readFile(file), type };
+    return { body: await readFile(file), type } satisfies {
+      body: Buffer | string;
+      type: string;
+    } | null;
   } catch {
     return null;
   }
 };
 
-const answer = async (
-  request: IncomingMessage,
-  response: ServerResponse,
-  page: string,
-): Promise<void> => {
+const answer = async (request: IncomingMessage, response: ServerResponse, page: string) => {
   const reply = await respond(
     decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname),
     page,
   );
+
   if (reply) {
     response.writeHead(200, { "Content-Type": reply.type }).end(reply.body);
   } else {
@@ -681,26 +702,27 @@ const answer = async (
   }
 };
 
-/** The scene page and the repo files it draws, on a loopback port of its own. */
-const serve = async (page: string): Promise<{ server: Server; url: string }> => {
-  // respond() answers every failure as a 404, so the request's promise never rejects
+const serve = async (page: string) => {
   const server = createServer((request, response) => {
     void answer(request, response, page);
   });
+
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   const { port } = addressSchema.parse(server.address());
-  return { server, url: `http://127.0.0.1:${port}/` };
+
+  return { server, url: `http://127.0.0.1:${port}/` } satisfies { server: Server; url: string };
 };
 
-const ffmpeg = (args: string[]): void => {
+const ffmpeg = (args: string[]) => {
   const run = spawnSync("ffmpeg", ["-y", "-loglevel", "error", ...args], { stdio: "inherit" });
+
   if (run.status !== 0) {
     throw new Error(`ffmpeg exited ${String(run.status)}`);
   }
 };
 
-const main = async (): Promise<void> => {
+const main = async () => {
   const layout = officeSchema.parse(
     JSON.parse(
       await readFile(
@@ -709,12 +731,18 @@ const main = async (): Promise<void> => {
       ),
     ),
   );
-  const seats = layout.seats.map((seat): Seat => ({
-    facing: seat.role === "work" ? seat.facing : "down",
-    x: seat.x,
-    y: seat.y,
-  }));
+
+  const seats = layout.seats.map(
+    (seat) =>
+      ({
+        facing: seat.role === "work" ? seat.facing : "down",
+        x: seat.x,
+        y: seat.y,
+      }) satisfies Seat,
+  );
+
   const view = { height: VIDEO.height * CAPTURE_SCALE, width: VIDEO.width * CAPTURE_SCALE };
+
   const setup: SceneSetup = {
     frame: {
       columns: SHEET_COLUMNS,
@@ -734,14 +762,17 @@ const main = async (): Promise<void> => {
   const frames = await mkdtemp(path.join(tmpdir(), "idlebiz-og-"));
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM;
   const browser = await chromium.launch(executablePath ? { executablePath } : {});
+
   try {
     const page = await browser.newPage({
       deviceScaleFactor: CAPTURE_SCALE,
       viewport: { height: VIDEO.height, width: VIDEO.width },
     });
+
     await page.goto(url);
     const seatDepths = await page.evaluate(mountScene, setup);
     const total = VIDEO.fps * VIDEO.seconds;
+
     for (let index = 0; index < total; index += 1) {
       const spec = frameAt(index / VIDEO.fps, seats, seatDepths);
       await page.evaluate((frame) => window.ogScene?.draw(frame), spec);
@@ -750,6 +781,7 @@ const main = async (): Promise<void> => {
         path: path.join(frames, `frame-${String(index).padStart(4, "0")}.png`),
       });
     }
+
     await mkdir(OUT_DIR, { recursive: true });
     const video = path.join(OUT_DIR, "og.mp4");
     const scale = `scale=${String(VIDEO.width)}:${String(VIDEO.height)}:flags=lanczos`;
@@ -775,7 +807,6 @@ const main = async (): Promise<void> => {
       "-an",
       video,
     ]);
-    // the poster is the moment the third sale lands
     ffmpeg([
       "-i",
       path.join(frames, "frame-0096.png"),

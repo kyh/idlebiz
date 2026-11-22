@@ -1,49 +1,67 @@
+import { unreachable } from "@repo/domain/errors";
 import type { PersistedActivity } from "@repo/domain/activity";
 import { DIGEST_SHIPS_SHOWN } from "@repo/domain/digest";
 import type { Digest } from "@repo/domain/digest";
 
 /** Nothing has happened yet since the founder looked at `since`. */
-export const emptyDigest = (since: number): Digest => ({
-  actions: 0,
-  dead: 0,
-  hired: [],
-  released: [],
-  runs: 0,
-  shipped: 0,
-  ships: [],
-  since,
-  spentUsd: 0,
-});
+export const emptyDigest = (since: number) => {
+  const digest: Digest = {
+    actions: 0,
+    dead: 0,
+    hired: [],
+    released: [],
+    runs: 0,
+    shipped: 0,
+    ships: [],
+    since,
+    spentUsd: 0,
+  };
+
+  return digest;
+};
 
 /** The digest with one more event in it, or null when the event is not one it counts. */
 // oxlint-disable-next-line complexity -- a case a kind, so a new kind fails to compile here rather than go uncounted
-export const foldDigest = (d: Digest, e: PersistedActivity): Digest | null => {
+export const foldDigest = (d: Digest, e: PersistedActivity) => {
   switch (e.kind) {
     case "ship": {
       return {
         ...d,
         shipped: d.shipped + 1,
         ships: [...d.ships, e.message].slice(-DIGEST_SHIPS_SHOWN),
-      };
+      } satisfies Digest | null;
     }
+
     case "run.end": {
-      return { ...d, runs: d.runs + 1, spentUsd: d.spentUsd + e.payload.costUsd };
+      return {
+        ...d,
+        runs: d.runs + 1,
+        spentUsd: d.spentUsd + e.payload.costUsd,
+      } satisfies Digest | null;
     }
+
     case "run.ask": {
-      return e.payload.ask.type === "action" ? { ...d, actions: d.actions + 1 } : null;
+      return (
+        e.payload.ask.type === "action" ? { ...d, actions: d.actions + 1 } : null
+      ) satisfies Digest | null;
     }
+
     case "order.card": {
-      return e.payload.open ? { ...d, actions: d.actions + 1 } : null;
+      return (e.payload.open ? { ...d, actions: d.actions + 1 } : null) satisfies Digest | null;
     }
+
     case "task.dead": {
-      return { ...d, dead: d.dead + 1 };
+      return { ...d, dead: d.dead + 1 } satisfies Digest | null;
     }
+
     case "org.hired": {
-      return { ...d, hired: [...d.hired, e.payload.name] };
+      return { ...d, hired: [...d.hired, e.payload.name] } satisfies Digest | null;
     }
+
     case "org.released": {
-      return { ...d, released: [...d.released, e.payload.name] };
+      return { ...d, released: [...d.released, e.payload.name] } satisfies Digest | null;
     }
+
     case "tool_call":
     case "message":
     case "chat":
@@ -60,6 +78,9 @@ export const foldDigest = (d: Digest, e: PersistedActivity): Digest | null => {
     case "autopilot.changed": {
       return null;
     }
-    // no default
+
+    default: {
+      return unreachable(e);
+    }
   }
 };

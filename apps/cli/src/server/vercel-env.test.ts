@@ -1,12 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { parseJson } from "@repo/domain/json";
 import { tempSave } from "./test-support/save";
 import { keepEnvValue, unshippableEnvValues, setVercelEnv, teamSetEnv } from "./vercel-env";
+import { answerFetch, failFetch, interceptNetwork } from "./test-support/network";
+
+interceptNetwork();
 
 tempSave();
 
 const TOKEN = "vercel-token";
+
 const REQUEST = {
   binding: { projectId: "prj_1", projectName: "acme", teamId: "team_1" },
   name: "OPENAI_API_KEY",
@@ -22,7 +26,6 @@ const Sent = z.object({
   value: z.string(),
 });
 
-/** Vercel's env endpoint, answering each call with the next of `answers`, and every call it was sent. */
 const fakeVercel = (...answers: (() => Response)[]) => {
   const calls: {
     route: string;
@@ -30,7 +33,8 @@ const fakeVercel = (...answers: (() => Response)[]) => {
     auth: string | null;
     body: z.infer<typeof Sent>;
   }[] = [];
-  vi.stubGlobal("fetch", (input: string, init: RequestInit = {}) => {
+
+  answerFetch((input: string, init: RequestInit) => {
     const url = new URL(input);
     calls.push({
       auth: new Headers(init.headers).get("authorization"),
@@ -39,25 +43,29 @@ const fakeVercel = (...answers: (() => Response)[]) => {
       route: `${init.method ?? "GET"} ${url.pathname}`,
     });
     const answer = answers[calls.length - 1] ?? answers.at(-1);
+
     return Promise.resolve(answer?.() ?? Response.json({}, { status: 500 }));
   });
+
   return calls;
 };
 
 const created = () =>
   Response.json({ created: { key: "OPENAI_API_KEY" }, failed: [] }, { status: 201 });
 
-/** A create whose answer never arrives, then Vercel's list, its variable last changed `changedMsAgo`. */
 const lostAnswer = (changedMsAgo: number) => {
   const reads: Record<string, string>[] = [];
-  vi.stubGlobal("fetch", (input: string, init: RequestInit = {}) => {
+  answerFetch((input: string, init: RequestInit) => {
     const url = new URL(input);
+
     if (init.method === "POST") {
       return Promise.reject(
         new DOMException("The operation was aborted due to timeout", "TimeoutError"),
       );
     }
+
     reads.push({ route: url.pathname, ...Object.fromEntries(url.searchParams) });
+
     return Promise.resolve(
       Response.json(
         {
@@ -76,6 +84,7 @@ const lostAnswer = (changedMsAgo: number) => {
       ),
     );
   });
+
   return reads;
 };
 
@@ -175,7 +184,7 @@ describe("setting a product's variable on Vercel", () => {
   });
 
   it("answers an unreachable Vercel as a failure rather than throwing", async () => {
-    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("fetch failed")));
+    failFetch();
 
     await expect(setVercelEnv(REQUEST)).resolves.toEqual({ error: "fetch failed", ok: false });
   });
@@ -192,7 +201,7 @@ describe("setting a product's variable on Vercel", () => {
       lostAnswer(3_600_000);
 
       await expect(setVercelEnv({ ...REQUEST, replaces: false })).resolves.toEqual({
-        error: "The operation was aborted due to timeout",
+        error: "fetch failed",
         ok: false,
       });
     });

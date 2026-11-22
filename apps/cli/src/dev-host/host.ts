@@ -1,6 +1,3 @@
-// Main as the desktop shell runs it, with a browser where the shell's window would be, and main's
-// asks of a native app answered here. Nothing of this ships.
-
 import { spawn } from "node:child_process";
 import type { ChildProcessByStdio } from "node:child_process";
 import { once } from "node:events";
@@ -25,28 +22,20 @@ import { createPeer } from "../server/relay/rpc";
 import type { Peer } from "../server/relay/rpc";
 import { errorMessage } from "@repo/domain/errors";
 
-/** The bundle `pnpm build` leaves, the page it serves beside it (`dist/page`). */
 const SERVE_ENTRY = path.resolve(import.meta.dirname, "../../dist/index.js");
 
-// The shell's deadlines on main (src-tauri/src: shell.rs, window.rs, main_process.rs), kept here so
-// a main that wedges fails a dev launch or an e2e test as it would fail the app, not hang it.
-/** How long main has to boot once it is said hello to, before it is killed with its group. */
 const BOOT_TIMEOUT_MS = 60_000;
-/** How long main has to hand over a link: it only mints one. */
 const HANDOFF_TIMEOUT_MS = 10_000;
-/** How long a quit waits for main to stop its runs and answer. */
 const QUIT_TIMEOUT_MS = 45_000;
-/** How long main has to exit once its stdin closes, before SIGKILL. */
 const EXIT_GRACE_MS = 5000;
 
-/** A deadline on main that passed, which no answer of its own can be. */
 class MainLateError extends Error {
   override name = "MainLateError";
 }
 
-/** Main's answer, or MainLateError once `ms` pass without one. */
-const within = async <T>(answer: Promise<T>, ms: number, what: string): Promise<T> => {
+const within = async <T>(answer: Promise<T>, ms: number, what: string) => {
   const deadline = new AbortController();
+
   try {
     return await Promise.race([
       answer,
@@ -95,7 +84,6 @@ interface Main {
   peer: Peer<RelayMethod>;
 }
 
-// what node loads before main runs, as the shell drops it (src-tauri/src/runtime.rs)
 const NODE_LOADERS = ["NODE_", "OPENSSL_"] as const;
 
 /**
@@ -104,54 +92,56 @@ const NODE_LOADERS = ["NODE_", "OPENSSL_"] as const;
  * refuses. Main is told it is not packaged, so the packaged app's account and PATH resets are not
  * the dev host's to make.
  */
-export const mainEnv = (options: DevHostOptions): NodeJS.ProcessEnv => {
+export const mainEnv = (options: DevHostOptions) => {
   const { inherit = () => true } = options;
   const env: NodeJS.ProcessEnv = {};
+
   for (const [name, value] of Object.entries(process.env)) {
     if (!NODE_LOADERS.some((prefix) => name.startsWith(prefix)) && inherit(name)) {
       env[name] = value;
     }
   }
+
   if (options.root !== undefined) {
     env.IDLEBIZ_ROOT_DIR = options.root;
   }
-  return { ...env, ...options.env };
+
+  return { ...env, ...options.env } satisfies NodeJS.ProcessEnv;
 };
 
-const exitOf = (child: MainChild): string =>
+const exitOf = (child: MainChild) =>
   child.exitCode === null ? String(child.signalCode) : `code ${child.exitCode}`;
 
-const isRunning = (child: MainChild): boolean =>
-  child.exitCode === null && child.signalCode === null;
+const isRunning = (child: MainChild) => child.exitCode === null && child.signalCode === null;
 
 const linesOf = (stream: Readable) =>
   createInterface({ crlfDelay: Number.POSITIVE_INFINITY, input: stream });
 
-export const startDevHost = async (options: DevHostOptions): Promise<DevHost> => {
+export const startDevHost = async (options: DevHostOptions) => {
   const { log } = options;
   const copied: string[] = [];
-  // main's own ask to restart it, heard once the restart below exists
   const asks = new EventTarget();
   let main: Main | null = null;
-  // a restart and a stop wait their turn, so main is never started twice over one save
   let turn: Promise<void> = Promise.resolve();
   let stopped = false;
 
-  const listen = (peer: Peer<RelayMethod>): void => {
+  const listen = (peer: Peer<RelayMethod>) => {
     peer.handle("host.messageBox", messageBoxSchema, (box) => {
       log(`[host] ${box.kind}: ${box.message}${box.detail === null ? "" : `\n${box.detail}`}`);
+
       return null;
     });
     peer.handle("host.copyText", copyTextSchema, (copy) => {
       copied.push(copy.text);
+
       return null;
     });
     peer.handle("host.open", openingSchema, (opening) => {
       log(`[host] main asked to open (${opening.kind}) ${opening.target}`);
+
       return null;
     });
     peer.handle("host.loginItem", loginItemSchema, () => "unavailable");
-    // as the shell of a dev build answers: only the installed app updates itself
     peer.handle("host.checkUpdate", z.null(), () => {
       throw new Error("only the installed app updates itself");
     });
@@ -161,55 +151,52 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
     peer.on("host.notify", noteSchema, ({ body, title }) => {
       log(`[host] notification: ${title} — ${body}`);
     });
-    peer.on("host.tray", trayModelSchema, () => {
-      // the menu-bar icon is the shell's to draw
-    });
-    peer.on("host.keepAwake", keepAwakeSchema, () => {
-      // keeping the Mac awake is the shell's to hold
-    });
+    peer.on("host.tray", trayModelSchema, () => null);
+    peer.on("host.keepAwake", keepAwakeSchema, () => null);
     peer.on("host.relaunch", z.null(), () => {
       log("[host] main asked for a relaunch");
       asks.dispatchEvent(new Event("relaunch"));
     });
   };
 
-  /** Ends main at once, asking it nothing: main leads its own group, and what it started goes with it. */
-  const killMain = async (running: Main): Promise<void> => {
+  const killMain = async (running: Main) => {
     if (!isRunning(running.child) || running.child.pid === undefined) {
       return;
     }
+
     const exited = once(running.child, "exit");
     process.kill(-running.child.pid, "SIGKILL");
     await exited;
   };
 
-  const stopMain = async (running: Main): Promise<void> => {
+  const stopMain = async (running: Main) => {
     if (!isRunning(running.child)) {
       return;
     }
+
     const exited = once(running.child, "exit");
-    const answered = async (): Promise<void> => {
+
+    const answered = async () => {
       try {
         await running.peer.request("quit", null, z.null());
       } catch (error) {
         log(`[host] main did not answer quit: ${errorMessage(error)}`);
       }
     };
-    // unreferenced, so a deadline its race no longer needs holds no process open
+
     await Promise.race([answered(), sleep(QUIT_TIMEOUT_MS, undefined, { ref: false })]);
     running.child.stdin.end();
     await Promise.race([exited, sleep(EXIT_GRACE_MS, undefined, { ref: false })]);
     await killMain(running);
   };
 
-  const startMain = async (): Promise<Main> => {
+  const startMain = async () => {
     const child = spawn(process.execPath, [...(options.nodeArgs ?? []), SERVE_ENTRY, "serve"], {
-      // a group of its own: a Ctrl-C in the terminal reaches the dev server alone, and main ends
-      // when its stdin does, after its runs, as it does under the shell
       detached: true,
       env: mainEnv(options),
       stdio: ["pipe", "pipe", "pipe"],
     });
+
     const peer = createPeer<RelayMethod>({
       failed: (method, reason) => {
         log(`[dev-host] what the host does on ${method} failed: ${reason}`);
@@ -221,6 +208,7 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
         child.stdin.write(`${line}\n`);
       },
     });
+
     listen(peer);
     linesOf(child.stdout).on("line", (line) => {
       peer.receive(line);
@@ -229,10 +217,8 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       log(`[main] ${line}`);
     });
     child.stdin.on("error", (error) => {
-      // a write after main is gone fails here, not as an uncaught error in the host
       log(`[host] main's stdin: ${error.message}`);
     });
-    // a child that never ran exits never: its hello fails with the reason instead of waiting on it
     child.once("error", (error) => {
       peer.close(`main could not start: ${error.message}`);
       log(`[host] main could not start: ${error.message}`);
@@ -242,46 +228,52 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
       log(`[host] main exited (${exitOf(child)})`);
     });
     const started = { child, peer };
+
     const hello: LaunchHello = {
       openedAtLogin: false,
       packaged: false,
       pageDevUrl: options.pageDevUrl ?? null,
-      // dev keeps its keys in a file under its save, never the Keychain
       vault: null,
     };
+
     try {
       await within(peer.request("hello", hello, z.null()), BOOT_TIMEOUT_MS, "boot");
     } catch (error) {
-      // a boot that never ends would wait a quit out too
       await (error instanceof MainLateError ? killMain(started) : stopMain(started));
       throw new Error(`main did not boot: ${errorMessage(error)}`, { cause: error });
     }
+
     return started;
   };
 
-  const queue = async (step: () => Promise<void>): Promise<void> => {
+  const queue = async (step: () => Promise<void>) => {
     const previous = turn;
+
     const current = (async () => {
       await Promise.allSettled([previous]);
       await step();
     })();
+
     turn = current;
     await current;
   };
 
-  const restartMain = async (): Promise<void> => {
+  const restartMain = async () => {
     await queue(async () => {
       if (stopped) {
         return;
       }
+
       if (main !== null) {
         await stopMain(main);
         main = null;
       }
+
       main = await startMain();
       log("[host] main started again");
     });
   };
+
   asks.addEventListener("relaunch", () => {
     void (async () => {
       try {
@@ -292,9 +284,10 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
     })();
   });
 
-  const stop = async (): Promise<void> => {
+  const stop = async () => {
     await queue(async () => {
       stopped = true;
+
       if (main !== null) {
         await stopMain(main);
         main = null;
@@ -302,18 +295,21 @@ export const startDevHost = async (options: DevHostOptions): Promise<DevHost> =>
     });
   };
 
-  const handoff = async (): Promise<string> => {
+  const handoff = async () => {
     if (main === null) {
       throw new Error("main is not running");
     }
+
     const { handoffUrl } = await within(
       main.peer.request("handoff", null, handoffSchema),
       HANDOFF_TIMEOUT_MS,
       "hand over a link",
     );
+
     return handoffUrl;
   };
 
   main = await startMain();
-  return { copied, handoff, restartMain, stop };
+
+  return { copied, handoff, restartMain, stop } satisfies DevHost;
 };

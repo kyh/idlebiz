@@ -7,11 +7,7 @@ import { report } from "./report";
  * that stops it. An error after that (an accept that failed) has no caller left to reject, so it
  * is reported as `what`'s.
  */
-export const listening = async (
-  server: Server,
-  what: string,
-  listen: () => void,
-): Promise<void> => {
+export const listening = async (server: Server, what: string, listen: () => void) => {
   const listened = once(server, "listening");
   listen();
   await listened;

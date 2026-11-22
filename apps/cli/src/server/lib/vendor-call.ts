@@ -18,16 +18,22 @@ export type VendorFault =
 
 export type VendorAnswer<T> = { kind: "ok"; value: T } | VendorFault;
 
-const faultOf = (error: HttpError, reason: string): VendorFault => {
+const faultOf = (error: HttpError, reason: string) => {
   if (error.refused) {
-    return { kind: "refused", reason, status: error.status === 401 ? 401 : 403 };
+    return {
+      kind: "refused",
+      reason,
+      status: error.status === 401 ? 401 : 403,
+    } satisfies VendorFault;
   }
+
   if (error.status === 404) {
-    return { kind: "missing", reason };
+    return { kind: "missing", reason } satisfies VendorFault;
   }
-  // a 429 is the vendor busy, which a later call gets past, not a refusal
+
   const permanent = error.status >= 400 && error.status < 500 && error.status !== 429;
-  return { kind: permanent ? "rejected" : "down", reason };
+
+  return { kind: permanent ? "rejected" : "down", reason } satisfies VendorFault;
 };
 
 /**
@@ -40,20 +46,23 @@ export const answering = async <T>(
   what: string,
   call: () => Promise<T> | T,
   says: (error: HttpError) => string,
-): Promise<VendorAnswer<T>> => {
+) => {
   try {
-    return { kind: "ok", value: await call() };
+    return { kind: "ok", value: await call() } satisfies VendorAnswer<T>;
   } catch (error) {
     if (error instanceof HttpError) {
       return faultOf(error, says(error));
     }
+
     if (error instanceof z.ZodError) {
       report(`${vendor} ${what}`, error);
+
       return {
         kind: "down",
         reason: `${vendor} answered in a shape IdleBiz does not read, which a change on ${vendor}'s side causes; try again later`,
-      };
+      } satisfies VendorAnswer<T>;
     }
-    return { kind: "down", reason: errorMessage(error) };
+
+    return { kind: "down", reason: errorMessage(error) } satisfies VendorAnswer<T>;
   }
 };

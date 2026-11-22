@@ -27,17 +27,18 @@ const acme: Company = {
   workspaceDir: sharedDir(),
 };
 
-const written = (co: Company): string => serializeDoc(companyToDoc(co));
+const written = (co: Company) => serializeDoc(companyToDoc(co));
 
-/** The refusal reading `doc` throws, or null when it reads. */
-const refusalOf = (doc: FrontmatterDoc): SaveFormatError | null => {
+const refusalOf = (doc: FrontmatterDoc) => {
   try {
     docToCompany(doc);
+
     return null;
   } catch (error) {
     if (error instanceof SaveFormatError) {
       return error;
     }
+
     throw error;
   }
 };

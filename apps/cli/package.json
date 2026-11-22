@@ -41,6 +41,7 @@
     "@types/node": "catalog:",
     "citty": "^0.2.2",
     "ignore": "^7.0.14",
+    "msw": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:",
