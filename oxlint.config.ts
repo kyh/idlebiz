@@ -39,10 +39,6 @@ export default defineConfig({
         },
       },
     ],
-    "landmines-testing/strict-msw": [
-      "error",
-      { allow: { "apps/cli/src/server/test-support/network.ts": 1 } },
-    ],
     "no-await-in-loop": "off",
     "typescript/consistent-return": "off",
     "typescript/consistent-type-assertions": ["error", { assertionStyle: "never" }],
