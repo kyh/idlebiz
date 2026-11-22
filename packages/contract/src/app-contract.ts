@@ -26,6 +26,8 @@ export const appContract = {
   launchAtLogin: oc.output(type<LaunchAtLogin>()),
   /** Turns opening at login on or off, answered as macOS reads it back. */
   setLaunchAtLogin: oc.input(z.object({ on: z.boolean() })).output(type<LaunchAtLogin>()),
+  /** What the page should open as it looks, once: the Inbox a menu-bar click asked for, else null. */
+  takeOpening: oc.output(type<"inbox" | null>()),
   /** What main last heard of the release feed. */
   update: oc.output(type<UpdateStatus>()),
 };

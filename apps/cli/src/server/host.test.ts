@@ -56,6 +56,7 @@ const MESSAGES = {
   "host.tray": { from: "main", params: trayModelSchema },
   "host.vaultDelete": { from: "main", params: vaultDeleteSchema, result: z.null() },
   "host.vaultSet": { from: "main", params: vaultSetSchema, result: z.null() },
+  inbox: { from: "shell", params: z.null() },
   quit: { from: "shell", params: z.null(), result: z.null() },
   tray: { from: "shell", params: trayClickSchema },
   update: { from: "shell", params: z.null() },

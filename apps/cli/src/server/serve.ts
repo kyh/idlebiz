@@ -16,6 +16,7 @@ import { switchOffBeforeReset } from "./reset-links";
 import { controlPlane } from "./control-plane";
 import { deployToVercel } from "./deploy";
 import { founderActions } from "./founder-actions";
+import { askForInbox } from "./inbox-opening";
 import { host, hostOver, launchSchema, setHost, trayClickSchema, windowSchema } from "./host";
 import type { Handoff, Launch, WindowChange } from "./host";
 import { keepAwake } from "./keep-awake";
@@ -305,6 +306,8 @@ peer.on("tray", trayClickSchema, ({ on }) => {
     guarded("tray autopilot", () => setAutopilot(on));
   }
 });
+
+peer.on("inbox", z.null(), askForInbox);
 
 peer.on("update", z.null(), () => {
   void installFromMenu();

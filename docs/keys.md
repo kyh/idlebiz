@@ -231,8 +231,8 @@ Stripe, the product's site and Printful at `fetch` (`server/order-pump.test.ts`)
   retirement drops it and no teammate can claim it. The founder's Done or Can't closes it with no
   run, as `settled` history (`settleOrderCard` in `server/company-actions.ts`), and goes to the
   room, where support reads it. Refunds are the founder's, in Stripe, and each card says so. A
-  menu-bar-only launch counts what waits on the founder in the tray and notifies each new order
-  card.
+  closed window notifies each new order card, as it does each ask
+  ([With the window closed](app.md#the-page-the-shell-and-main)).
 - Agents read orders, buyers' emails and addresses included, with the unsigned `read_orders`.
 
 **Retiring a product** switches off, in main with the founder's key, every payment link it sells

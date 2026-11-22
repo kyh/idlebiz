@@ -13,6 +13,7 @@ import {
 } from "./company-actions";
 import type { FounderActions } from "./founder-actions";
 import { host } from "./host";
+import { takeOpening } from "./inbox-opening";
 import { answerOf } from "./lib/answers";
 import { broadcast, pageEvents } from "./lib/broadcast";
 import { report } from "./lib/report";
@@ -85,6 +86,7 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       installUpdate: os.app.installUpdate.handler(() => installUpdate()),
       launchAtLogin: os.app.launchAtLogin.handler(() => launchAtLogin()),
       setLaunchAtLogin: os.app.setLaunchAtLogin.handler(({ input }) => setLaunchAtLogin(input.on)),
+      takeOpening: os.app.takeOpening.handler(() => takeOpening()),
       update: os.app.update.handler(() => updateStatus()),
     },
     bets: {

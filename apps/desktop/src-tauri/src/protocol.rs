@@ -16,6 +16,9 @@ pub const TRAY_CLICK: &str = "tray";
 /// A click on the menu-bar icon's update item, which the shell tells main: main installs the
 /// release it offers, as Settings' button does.
 pub const UPDATE_CLICK: &str = "update";
+/// A click on one of the menu-bar icon's waiting items, which the shell tells main as it shows
+/// the window: main has the page open its Inbox.
+pub const INBOX_CLICK: &str = "inbox";
 pub const MESSAGE_BOX: &str = "host.messageBox";
 pub const COPY_TEXT: &str = "host.copyText";
 pub const OPEN: &str = "host.open";
@@ -175,6 +178,10 @@ pub enum TrayItem {
     },
     /// A struct, not a unit: serde drops a unit variant's other fields unread.
     Separator {},
+    /// Something waiting on the founder: a click opens the window on the Inbox.
+    Ask {
+        label: String,
+    },
     /// Has main install the release it offers.
     Update {
         label: String,
@@ -317,7 +324,7 @@ mod tests {
 
     /// Every request the shell makes of main, and every notification it sends it.
     const ASKED: [&str; 3] = [HELLO, HANDOFF, QUIT];
-    const TOLD: [&str; 3] = [WINDOW, TRAY_CLICK, UPDATE_CLICK];
+    const TOLD: [&str; 4] = [WINDOW, TRAY_CLICK, UPDATE_CLICK, INBOX_CLICK];
 
     #[derive(PartialEq, Eq, Deserialize)]
     #[serde(rename_all = "lowercase")]
@@ -445,7 +452,7 @@ mod tests {
                 }
                 WINDOW => reads::<WindowChange>(method, Some(params))?,
                 TRAY_CLICK => reads::<TrayClick>(method, Some(params))?,
-                UPDATE_CLICK => reads::<()>(method, Some(params))?,
+                UPDATE_CLICK | INBOX_CLICK => reads::<()>(method, Some(params))?,
                 _ => return Err(format!("the shell sends no {method}").into()),
             }
         }

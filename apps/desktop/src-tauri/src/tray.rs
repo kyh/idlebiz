@@ -1,8 +1,9 @@
 //! The menu-bar icon: a template image the system colours, beside the title, tooltip and menu main
 //! decides (`apps/cli/src/server/tray.ts`). It is drawn on main's first model and redrawn on each
 //! one after. A click the shell can answer itself (Open, Quit) is answered here. A click on the
-//! autopilot item goes to main with the state its label promised, and one on the update item goes
-//! to main, which installs the release it offers.
+//! autopilot item goes to main with the state its label promised, one on the update item goes
+//! to main, which installs the release it offers, and one on a waiting item tells main to open the
+//! Inbox as it shows the window.
 
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -23,6 +24,7 @@ const AUTOPILOT_ON: &str = "autopilot-on";
 const AUTOPILOT_OFF: &str = "autopilot-off";
 const QUIT: &str = "quit";
 const UPDATE: &str = "update";
+const ASK: &str = "ask";
 
 fn menu<R: Runtime>(app: &AppHandle<R>, items: &[TrayItem]) -> tauri::Result<Menu<R>> {
     let menu = Menu::new(app)?;
@@ -39,6 +41,10 @@ fn menu<R: Runtime>(app: &AppHandle<R>, items: &[TrayItem]) -> tauri::Result<Men
                 menu.append(&MenuItem::with_id(app, id, label, *enabled, None::<&str>)?)?;
             }
             TrayItem::Separator {} => menu.append(&PredefinedMenuItem::separator(app)?)?,
+            TrayItem::Ask { label } => {
+                let id = format!("{ASK}-{}", menu.items()?.len());
+                menu.append(&MenuItem::with_id(app, id, label, true, None::<&str>)?)?;
+            }
             TrayItem::Update { label } => {
                 menu.append(&MenuItem::with_id(app, UPDATE, label, true, None::<&str>)?)?;
             }
@@ -57,6 +63,10 @@ fn clicked<R: Runtime>(app: &AppHandle<R>, event: &MenuEvent) {
         AUTOPILOT_OFF => shell::tell_main(app, protocol::TRAY_CLICK, &TrayClick { on: false }),
         UPDATE => shell::tell_main(app, protocol::UPDATE_CLICK, &()),
         QUIT => app.exit(0),
+        id if id.starts_with(ASK) => {
+            shell::tell_main(app, protocol::INBOX_CLICK, &());
+            window::show(app);
+        }
         _ => {}
     }
 }
