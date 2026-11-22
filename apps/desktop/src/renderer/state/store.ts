@@ -27,6 +27,7 @@ import {
   useRoom,
   warm,
 } from "@/renderer/state/queries";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
 
 interface State {
   /** Main's events as heard, the newest last, to the last few hundred. */
@@ -190,6 +191,9 @@ export const digest = () => (held(companyQuery) ? api.company.takeDigest() : Pro
 
 export const setMaxAgents = (maxAgents: number) =>
   updateCompany(() => api.company.setMaxAgents({ maxAgents }));
+
+export const setStandingSignOff = (rule: HoldRuleId, on: boolean) =>
+  updateCompany(() => api.company.setStandingSignOff({ on, rule }));
 
 export const connectVercel = async (input: {
   productId: string;

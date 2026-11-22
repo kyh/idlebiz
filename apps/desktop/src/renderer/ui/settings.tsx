@@ -3,14 +3,16 @@ import { useQuery } from "@tanstack/react-query";
 import { api, orpc } from "@/renderer/api";
 import { useSubmission } from "@/renderer/hooks/use-submission";
 import { setAnswer, updateQuery, useCompany, useSaveIssues } from "@/renderer/state/queries";
-import { setMaxAgents } from "@/renderer/state/store";
+import { setMaxAgents, setStandingSignOff } from "@/renderer/state/store";
 import { Failure } from "@/renderer/ui/failure";
 import { Modal } from "@/renderer/ui/modal";
 import { Picker } from "@/renderer/ui/picker";
 import type { PickerOption } from "@/renderer/ui/picker";
 import { SaveIssues } from "@/renderer/ui/save-issues";
 import { MAX_AGENTS, MaxAgentsSchema } from "@repo/domain/domain";
-import type { LaunchAtLogin, UpdateStatus } from "@repo/domain/domain";
+import type { Company, LaunchAtLogin, UpdateStatus } from "@repo/domain/domain";
+import { HOLD_RULE_IDS, describeRule } from "@repo/domain/hold-rules";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
 import { errorMessage, unreachable } from "@repo/domain/errors";
 
 const LOGIN_CHOICES: readonly PickerOption<"off" | "on">[] = [
@@ -34,6 +36,66 @@ const LOGIN_LINES: Record<LaunchAtLogin, string> = {
     "IdleBiz is switched off under System Settings → General → Login Items. Only you can switch it back on there.",
   unavailable: "Only the installed app can open at login.",
 };
+
+const SIGN_OFF_CHOICES: readonly PickerOption<"ask" | "auto">[] = [
+  { label: "Ask me", value: "ask" },
+  { label: "Approve", value: "auto" },
+];
+
+const SIGN_OFF_NAMES = {
+  deploy: "Deploys",
+  payments: "Payments",
+} satisfies Record<HoldRuleId, string>;
+
+const SIGN_OFF_WARNINGS = {
+  deploy:
+    "A run that reads a page or an email telling it what to ship can put it live under your Vercel account.",
+  payments:
+    "A run that reads a page or an email telling it what to sell can open payment links on your Stripe account. Stripe can close an account over one it forbids.",
+} satisfies Record<HoldRuleId, string>;
+
+const StandingSignOff = ({ company, rule }: { company: Company; rule: HoldRuleId }) => {
+  const setting = useSubmission(async (on: boolean) => {
+    await setStandingSignOff(rule, on);
+  });
+
+  const on = company.standingSignOffs.includes(rule);
+
+  return (
+    <div className="mt-3">
+      <div className="text-xs text-fg">
+        {SIGN_OFF_NAMES[rule]}: {describeRule(rule)}
+      </div>
+      <Picker
+        options={SIGN_OFF_CHOICES}
+        value={on ? "auto" : "ask"}
+        onChange={(choice) => setting.submit(choice === "auto")}
+        disabled={setting.submission.kind === "sending"}
+        label={`${SIGN_OFF_NAMES[rule]} sign-off`}
+        className="mt-2 grid grid-cols-2 gap-2"
+      />
+      {on ? (
+        <div role="note" className="px-hint px-hint-danger mt-2">
+          {SIGN_OFF_WARNINGS[rule]}
+        </div>
+      ) : null}
+      <Failure submission={setting.submission} doing="change the sign-off" />
+    </div>
+  );
+};
+
+const StandingSignOffs = ({ company }: { company: Company }) => (
+  <div className="px-inset p-3 text-sm text-fg">
+    <div className="px-label text-fg-dim">Sign-offs</div>
+    <div className="mt-1 text-xs text-fg-dim">
+      What your team holds for you. Approve signs off on each one in advance, so the office keeps
+      going while you are away; every one approved so is posted in #team.
+    </div>
+    {HOLD_RULE_IDS.map((rule) => (
+      <StandingSignOff key={rule} company={company} rule={rule} />
+    ))}
+  </div>
+);
 
 const launchAtLogin = orpc.app.launchAtLogin.queryOptions({ staleTime: 0 });
 
@@ -220,6 +282,8 @@ export const Settings = ({ onClose }: { onClose: () => void }) => {
           </div>
           <Failure submission={savingCap.submission} doing="save the cap" />
         </div>
+
+        <StandingSignOffs company={company} />
 
         <LaunchAtLoginSetting />
 

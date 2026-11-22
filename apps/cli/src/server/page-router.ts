@@ -108,6 +108,9 @@ export const createPageRouter = ({ founder, resetGame }: PageRouterDeps) => {
       setMaxAgents: os.company.setMaxAgents.handler(({ input }) =>
         store.setMaxAgents(input.maxAgents),
       ),
+      setStandingSignOff: os.company.setStandingSignOff.handler(({ input }) =>
+        founder.setStandingSignOff(input.rule, input.on),
+      ),
       takeDigest: os.company.takeDigest.handler(() => store.takeDigest()),
     },
     employees: {

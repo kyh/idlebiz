@@ -1,12 +1,14 @@
 import { z } from "zod";
 import type { Budget, Company } from "@repo/domain/domain";
 import { BUSINESS_TYPE_IDS } from "@repo/domain/domain";
+import { HOLD_RULE_IDS } from "@repo/domain/hold-rules";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
 import { sharedDir } from "../paths";
 import { PACKAGE_SCHEMA, decodeDoc, packageFields } from "./frontmatter";
 import type { FrontmatterDoc } from "./frontmatter";
 
 /** What this build writes, and the only stamp it reads: CLAUDE.md's "No users yet" says why. */
-export const SAVE_FORMAT = 17;
+export const SAVE_FORMAT = 18;
 
 /**
  * A save stamped at a format this build does not write, which nothing here touches: a newer
@@ -50,6 +52,8 @@ const CompanyDocSchema = z.object({
       revenueUsd: z.number().optional(),
       ships: z.number().int().nonnegative(),
       spentUsd: z.number().nonnegative(),
+      signsOffDeploy: z.boolean(),
+      signsOffPayments: z.boolean(),
       users: z.number().optional(),
     }),
     BudgetFieldsSchema,
@@ -65,6 +69,15 @@ const budgetOf = (m: z.output<typeof BudgetFieldsSchema>) =>
   (m.budgetMode === "capped"
     ? { capUsd: m.budgetCapUsd, mode: "capped" }
     : { mode: "infinite" }) satisfies Budget;
+
+const standingOf = (m: { signsOffDeploy: boolean; signsOffPayments: boolean }) => {
+  const signs = {
+    deploy: m.signsOffDeploy,
+    payments: m.signsOffPayments,
+  } satisfies Record<HoldRuleId, boolean>;
+
+  return HOLD_RULE_IDS.filter((rule) => signs[rule]);
+};
 
 export const companyToDoc = (co: Company) => {
   const mission = co.mission === "" ? null : co.mission;
@@ -90,6 +103,8 @@ export const companyToDoc = (co: Company) => {
       revenueUsd: co.revenueUsd ?? undefined,
       ships: co.ships,
       spentUsd: co.spentUsd,
+      signsOffDeploy: co.standingSignOffs.includes("deploy"),
+      signsOffPayments: co.standingSignOffs.includes("payments"),
       users: co.users ?? undefined,
       ...budgetFields(co.budget),
     },
@@ -126,6 +141,7 @@ export const docToCompany = (doc: FrontmatterDoc) => {
     revenueUsd: m.revenueUsd ?? null,
     ships: m.ships,
     spentUsd: m.spentUsd,
+    standingSignOffs: standingOf(m),
     users: m.users ?? null,
     workspaceDir: sharedDir(),
   } satisfies Company;

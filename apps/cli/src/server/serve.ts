@@ -243,8 +243,13 @@ const boot = async (launch: Launch) => {
 
   activityEvents.on("activity", (e) => {
     broadcast("activity", e);
+
+    if (e.kind === "run.end" && e.payload.settled === "blocked") {
+      guarded("standing sign-off", () => founder.answerStanding());
+    }
   });
   scheduler.start();
+  guarded("standing sign-off", () => founder.answerStanding());
 
   metricsPulse.start();
 

@@ -43,6 +43,18 @@ has that workspace to itself: the scheduler's `tick` starts it only once no othe
 there, and starts nobody new there while it waits or runs. The agents are told the folder is
 shared. No tool sets a project's domains or sells a subscription: those stay the founder's.
 
+**A standing sign-off** is the founder's yes given in advance to every approval under one hold
+rule (`deploy` or `payments`), switched in Settings and kept in the company's `company.md` as
+`signsOffDeploy` and `signsOffPayments`. It answers through the founder's own door, so nothing
+about a sign-off changes but who clicked: the call is still held, the task still blocks, and
+`answerStanding` (`server/founder-actions.ts`) answers it with `resolveApproval` as the founder's
+Approve would, so the grant, the continuation and its workspace to itself are the same. It runs
+when a run ends blocked, when the founder switches a rule on (answering what already waits), and
+at boot; each answer is posted to the room. No company tool sets it, and the save is outside what
+a run writes, so no run grants itself one. Payments warns beside its switch: a run that reads
+outside content (a page, `read_orders`' emails) can then open links on the founder's Stripe
+account with nobody looking.
+
 **Vercel and `deploy`.** `deploy` uploads the product's folder through Vercel's API with the
 founder's `VERCEL_TOKEN` (`server/deploy.ts`), and Vercel builds it on its own machines. The
 action signed is `deploy <product> to production on Vercel project <name>` (or
