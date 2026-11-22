@@ -23,6 +23,7 @@ const acme: Company = {
   revenueUsd: null,
   ships: 0,
   spentUsd: 0,
+  standingSignOffs: [],
   users: null,
   workspaceDir: sharedDir(),
 };
@@ -50,6 +51,15 @@ describe("company codec", () => {
       expect(docToCompany(parseDoc(written(co)))).toEqual(co);
     },
   );
+
+  it.each<{ standingSignOffs: Company["standingSignOffs"] }>([
+    { standingSignOffs: ["deploy"] },
+    { standingSignOffs: ["payments"] },
+    { standingSignOffs: ["deploy", "payments"] },
+  ])("round-trips standing sign-offs $standingSignOffs", ({ standingSignOffs }) => {
+    const co = { ...acme, standingSignOffs };
+    expect(docToCompany(parseDoc(written(co)))).toEqual(co);
+  });
 
   it.each([null, ""])("writes no description and no mission line for mission %j", (mission) => {
     const text = written({ ...acme, mission });

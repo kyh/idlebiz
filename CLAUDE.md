@@ -21,6 +21,10 @@ orient a reader and link into them, never telling a mechanic again.
   every save, and the first migration is written once a bump would strand someone's.
 - **A session is check in, sign off, leave.** Autopilot is on from founding, and the Mac is kept
   out of idle sleep only while a run is in flight, never past a closed lid.
+- **The app runs with its window closed, mostly**: what waits on the founder reaches them as a
+  notification and a menu-bar item that opens the window on it, and only that, so a closed window
+  never stalls the office unseen nor buzzes for routine work. The answer is always given in the
+  window, where the card is read.
 - **The budget is usage at API prices**: what the runs would cost billed per token, not what the
   founder's plan bills, so nothing calls it spend.
 - **Single-player.** The replay only ever sees this company's bets, and no ledger leaves the
@@ -81,6 +85,11 @@ orient a reader and link into them, never telling a mechanic again.
   included, but never reach its socket, so no teammate calls lead-only tools as the lead.
 - **Keys stay in main; what spends them runs there.** No key reaches a run's env; a step that needs
   one is a tool main runs once the founder signs off on the action it names.
+- **A standing sign-off answers, never skips, the hold**: the founder may approve every call
+  under a rule in advance, so a closed window doesn't stall the office, but it answers each held
+  call through their own Approve, so the grant, the workspace held alone and the room's line are
+  what a click gives. Per rule, never one switch: a payment link nobody read can close the
+  founder's Stripe account, a deploy only embarrass them.
 - **The vault is the login keychain, one item a key**, read by the shell, never main: macOS's own
   store, which the founder can see and delete, and which prompts any other program, a run's
   `security` too. Not the data-protection keychain, which needs a provisioning profile no ad-hoc

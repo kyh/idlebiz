@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { HOLD_RULE_IDS } from "./hold-rules";
+import type { HoldRuleId } from "./hold-rules";
 import type { RunnerId } from "./runners";
 
 /** Hard ceiling on team size — the LLM staffs freely underneath it. */
@@ -285,6 +286,8 @@ export interface Company {
   founderSpriteSeed: string;
   /** when true, idle employees self-direct work (idle-game loop) */
   autopilot: boolean;
+  /** The hold rules the founder signs off on in advance: each approval under one is answered yes. */
+  standingSignOffs: HoldRuleId[];
   /** seat cap — the lead hires/releases freely below it */
   maxAgents: number;
   /** The employee who coordinates: hires, releases, delegates. Null until someone is hired. */

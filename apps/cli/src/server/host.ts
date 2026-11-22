@@ -10,6 +10,7 @@ export const RELAY_METHODS = [
   "window",
   "tray",
   "update",
+  "inbox",
   "host.messageBox",
   "host.copyText",
   "host.open",
@@ -94,6 +95,7 @@ const trayItemSchema = z.discriminatedUnion("kind", [
     on: z.boolean(),
   }),
   z.strictObject({ kind: z.literal("separator") }),
+  z.strictObject({ kind: z.literal("ask"), label: z.string() }),
   z.strictObject({ kind: z.literal("update"), label: z.string() }),
   z.strictObject({ kind: z.literal("quit"), label: z.string() }),
 ]);

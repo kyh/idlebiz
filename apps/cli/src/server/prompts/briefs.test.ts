@@ -34,6 +34,7 @@ const company: Company = {
   revenueUsd: null,
   ships: 0,
   spentUsd: 0,
+  standingSignOffs: [],
   users: null,
   workspaceDir: "/tmp/acme",
 };

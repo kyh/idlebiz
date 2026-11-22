@@ -6,12 +6,16 @@ import {
   approvalAnswer,
   founderPing,
   integrationConnectedAnswer,
+  standingApprovalNews,
+  standingSignOffNews,
 } from "./prompts/briefs";
 import type { TaskBrief } from "./prompts/briefs";
+import { report } from "./lib/report";
 import { RefusalError } from "./refusal";
 import type { Scheduler } from "./scheduler";
 import type { VercelConnection } from "./vercel-connect";
-import { resolveMentions } from "@repo/domain/domain";
+import { resolveMentions, taskIn } from "@repo/domain/domain";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
 import type { ActionReply, IntegrationAsk, IntegrationKind } from "@repo/domain/domain";
 
 /** The scheduler's doors for new work: queue a task that exists, or file one and queue it. */
@@ -122,6 +126,41 @@ export const founderActions = (queue: Queue) => {
     return assign(continuation.id, continuation.assigneeId);
   };
 
+  const answerStanding = () => {
+    const company = store.getCompany();
+
+    if (!company || company.standingSignOffs.length === 0) {
+      return;
+    }
+
+    for (const task of store.listOpenTasks().filter(taskIn("blocked"))) {
+      const { ask } = task.state;
+
+      if (ask.type !== "approval" || !company.standingSignOffs.includes(ask.rule)) {
+        continue;
+      }
+
+      try {
+        resolveApproval(task.id, true);
+        postToRoom({ kind: "office" }, standingApprovalNews(ask.command));
+      } catch (error) {
+        report(`standing sign-off on ${task.id}`, error);
+      }
+    }
+  };
+
+  const setStandingSignOff = (rule: HoldRuleId, on: boolean) => {
+    const before = store.requireCompany().standingSignOffs.includes(rule);
+    const company = store.setStandingSignOff(rule, on);
+
+    if (before !== on) {
+      postToRoom({ kind: "office" }, standingSignOffNews(rule, on));
+      answerStanding();
+    }
+
+    return company;
+  };
+
   const resumeAsks = (answers: (ask: IntegrationAsk) => boolean) => {
     if (!store.getCompany()) {
       return;
@@ -169,6 +208,7 @@ export const founderActions = (queue: Queue) => {
 
   return {
     answerQuestion,
+    answerStanding,
     assign,
     directEmployee,
     founderMessage,
@@ -176,6 +216,7 @@ export const founderActions = (queue: Queue) => {
     resolveApproval,
     resumeIntegrationAsks,
     resumeVercelAsks,
+    setStandingSignOff,
   };
 };
 

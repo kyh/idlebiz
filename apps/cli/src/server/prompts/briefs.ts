@@ -28,6 +28,7 @@ import type {
   TeamMessage,
 } from "@repo/domain/domain";
 import { formatUsd } from "@repo/domain/format";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
 
 export interface TaskBrief {
   title: string;
@@ -151,6 +152,21 @@ export const betMark = (bet: Bet) =>
   bet.claim.metric === "users"
     ? `It counts only visitors who land on ${bet.claim.landingPath} (or a page under it) of ${bet.productId}'s deploy: every link this bet places anywhere must point there, and the path must serve a real page — see "Marking a bet's traffic" in your instructions.`
     : `It counts only captured USD charges tagged metadata[bet]=${bet.id}: charge for it only with create_payment_link or sell_print and "bet":"${bet.id}", which set that tag on every payment.`;
+
+const STANDING_NAMES = {
+  deploy: "deploys",
+  payments: "payments",
+} satisfies Record<HoldRuleId, string>;
+
+/** What the team room hears when the founder starts or stops signing off on a rule in advance. */
+export const standingSignOffNews = (rule: HoldRuleId, on: boolean) =>
+  on
+    ? `✅ The founder now signs off on ${STANDING_NAMES[rule]} in advance: each one held for them is approved as it is asked.`
+    : `✋ The founder signs off on ${STANDING_NAMES[rule]} by hand again: each one waits for them.`;
+
+/** What the team room hears when a held call is approved under the founder's standing sign-off. */
+export const standingApprovalNews = (command: string) =>
+  `✅ Approved under the founder's standing sign-off: ${command}`;
 
 /** What the team room hears when a bet opens or changes state. */
 export const betNews = (bet: Bet) => {

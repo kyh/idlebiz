@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Digest } from "@repo/domain/digest";
 import { BudgetSchema, MaxAgentsSchema } from "@repo/domain/domain";
 import type { Company } from "@repo/domain/domain";
+import { HOLD_RULE_IDS } from "@repo/domain/hold-rules";
 import type { Done } from "./done";
 
 export const companyContract = {
@@ -14,6 +15,10 @@ export const companyContract = {
   setAutopilot: oc.input(z.object({ running: z.boolean() })).output(type<Company>()),
   setBudget: oc.input(z.object({ budget: BudgetSchema })).output(type<Company>()),
   setMaxAgents: oc.input(z.object({ maxAgents: MaxAgentsSchema })).output(type<Company>()),
+  /** Sign off on every approval under a rule in advance, or stop. */
+  setStandingSignOff: oc
+    .input(z.object({ on: z.boolean(), rule: z.enum(HOLD_RULE_IDS) }))
+    .output(type<Company>()),
   /** What happened since the founder last looked; null before the first look, or with no company. */
   takeDigest: oc.output(type<Digest | null>()),
 };

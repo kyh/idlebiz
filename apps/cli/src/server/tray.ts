@@ -1,10 +1,11 @@
 import { activityEvents } from "./activity";
+import { MENU_ASKS_SHOWN, alertOf, askLine, noteOf } from "./founder-alerts";
 import { runnerPool } from "./agents/runner-pool";
 import { host } from "./host";
 import type { TrayItem } from "./host";
 import * as store from "./store/store";
 import { updateStatus } from "./updates";
-import { isOutOfBudget } from "@repo/domain/domain";
+import { isOutOfBudget, taskIn } from "@repo/domain/domain";
 import { earliestReset, napLabel, usageLabel } from "@repo/domain/format";
 
 interface OfficeStatus {
@@ -98,9 +99,47 @@ const autopilotItem = (company: NonNullable<OfficeStatus["company"]>) => {
   ) satisfies TrayItem;
 };
 
+const nameOf = (employeeId: string) => store.getEmployee(employeeId)?.name ?? null;
+
+const waitingOn = (taskId: string) => {
+  const task = store.getTask(taskId);
+
+  return task?.state.kind === "blocked" ? task.state.ask : null;
+};
+
+const waitingItems = () => {
+  if (!store.getCompany()) {
+    return [];
+  }
+
+  const lines = store
+    .listOpenTasks()
+    .filter(taskIn("blocked"))
+    .map((t) =>
+      t.origin === "order"
+        ? `Order card: ${t.title}`
+        : askLine(
+            t.state.ask,
+            (t.assigneeId === null ? null : nameOf(t.assigneeId)) ?? "Your team",
+          ),
+    );
+
+  const shown = lines.slice(0, MENU_ASKS_SHOWN);
+  const more = lines.length - shown.length;
+
+  return [
+    ...shown.map((line) => ({ kind: "ask", label: `✋ ${line}` }) satisfies TrayItem),
+    ...(more > 0 ? [{ kind: "ask", label: `✋ …and ${more} more` } satisfies TrayItem] : []),
+  ];
+};
+
+const ALERT_GATHER_MS = 3000;
+
 class AppTray {
   private started = false;
   private rebuildTimer: ReturnType<typeof setTimeout> | null = null;
+  private alertTimer: ReturnType<typeof setTimeout> | null = null;
+  private alerts: string[] = [];
   private windowless = false;
 
   start() {
@@ -110,8 +149,10 @@ class AppTray {
     activityEvents.on("activity", (event) => {
       this.scheduleRebuild();
 
-      if (event.kind === "order.card" && event.payload.open) {
-        this.announceCard(event.message);
+      const line = alertOf(event, { company: store.getCompany(), nameOf, waitingOn });
+
+      if (line !== null) {
+        this.alert(line);
       }
     });
   }
@@ -134,15 +175,27 @@ class AppTray {
     this.rebuild();
   }
 
-  private announceCard(title: string) {
+  private alert(line: string) {
     if (!this.windowless) {
       return;
     }
 
-    host().notify({
-      body: `${title} — open IdleBiz to settle it.`,
-      title: "An order card is waiting",
-    });
+    this.alerts.push(line);
+
+    if (this.alertTimer) {
+      return;
+    }
+
+    this.alertTimer = setTimeout(() => {
+      this.alertTimer = null;
+      const [first, ...rest] = this.alerts;
+      this.alerts = [];
+
+      if (first !== undefined && this.windowless) {
+        host().notify(noteOf([first, ...rest]));
+      }
+    }, ALERT_GATHER_MS);
+    this.alertTimer.unref?.();
   }
 
   refresh() {
@@ -178,6 +231,7 @@ class AppTray {
         { kind: "open", label: `Open ${s.company?.name ?? "IdleBiz"}` },
         { kind: "separator" },
         { kind: "status", label: statusLine(s) },
+        ...waitingItems(),
         ...(s.company ? [autopilotItem(s.company)] : []),
         { kind: "separator" },
         ...(update.kind === "available"

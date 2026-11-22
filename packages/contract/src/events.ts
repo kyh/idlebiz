@@ -6,6 +6,7 @@ export const PageEventSchema = z.discriminatedUnion("name", [
   z.object({ data: ActivityEventSchema, name: z.literal("activity") }),
   z.object({ data: AuthFlowEventSchema, name: z.literal("auth") }),
   z.object({ data: UpdateStatusSchema, name: z.literal("update") }),
+  z.object({ data: z.null(), name: z.literal("opening") }),
 ]);
 
 export type PageEvent = z.infer<typeof PageEventSchema>;

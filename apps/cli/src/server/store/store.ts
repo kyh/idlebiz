@@ -125,6 +125,8 @@ import type {
   VercelBinding,
 } from "@repo/domain/domain";
 import type { RunnerId } from "@repo/domain/runners";
+import { HOLD_RULE_IDS } from "@repo/domain/hold-rules";
+import type { HoldRuleId } from "@repo/domain/hold-rules";
 import {
   DEFAULT_MAX_AGENTS,
   HISTORY_TASK_STATUSES,
@@ -434,6 +436,19 @@ export const setMaxAgents = (maxAgents: number) =>
   patchCompany({ maxAgents: Math.max(1, Math.round(maxAgents)) });
 
 export const setAutopilot = (on: boolean) => patchCompany({ autopilot: on });
+
+/** Sign off on every approval under `rule` in advance, or stop. */
+export const setStandingSignOff = (rule: HoldRuleId, on: boolean) => {
+  const standing = new Set(current().company.standingSignOffs);
+
+  if (on) {
+    standing.add(rule);
+  } else {
+    standing.delete(rule);
+  }
+
+  return patchCompany({ standingSignOffs: HOLD_RULE_IDS.filter((r) => standing.has(r)) });
+};
 
 const writeGrants = (grants: Grant[]) => {
   const active = current();
@@ -1977,6 +1992,7 @@ export const foundCompany = (input: {
     revenueUsd: null,
     ships: 0,
     spentUsd: 0,
+    standingSignOffs: [],
     users: null,
     workspaceDir: sharedDir(),
   };

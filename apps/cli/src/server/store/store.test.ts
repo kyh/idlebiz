@@ -830,7 +830,7 @@ describe("founder approvals", () => {
 describe("the save format", () => {
   it("stamps what it writes", () => {
     foundAcme();
-    expect(parseDoc(readFileSync(companyFile(), "utf-8")).metadata.format).toBe(17);
+    expect(parseDoc(readFileSync(companyFile(), "utf-8")).metadata.format).toBe(18);
   });
 
   it("refuses a save a newer build wrote, and leaves it as it found it", () => {

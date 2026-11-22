@@ -16,6 +16,7 @@ import { switchOffBeforeReset } from "./reset-links";
 import { controlPlane } from "./control-plane";
 import { deployToVercel } from "./deploy";
 import { founderActions } from "./founder-actions";
+import { askForInbox } from "./inbox-opening";
 import { host, hostOver, launchSchema, setHost, trayClickSchema, windowSchema } from "./host";
 import type { Handoff, Launch, WindowChange } from "./host";
 import { keepAwake } from "./keep-awake";
@@ -243,8 +244,13 @@ const boot = async (launch: Launch) => {
 
   activityEvents.on("activity", (e) => {
     broadcast("activity", e);
+
+    if (e.kind === "run.end" && e.payload.settled === "blocked") {
+      guarded("standing sign-off", () => founder.answerStanding());
+    }
   });
   scheduler.start();
+  guarded("standing sign-off", () => founder.answerStanding());
 
   metricsPulse.start();
 
@@ -299,6 +305,11 @@ peer.on("tray", trayClickSchema, ({ on }) => {
   if (store.getCompany()) {
     guarded("tray autopilot", () => setAutopilot(on));
   }
+});
+
+peer.on("inbox", z.null(), () => {
+  askForInbox();
+  broadcast("opening", null);
 });
 
 peer.on("update", z.null(), () => {

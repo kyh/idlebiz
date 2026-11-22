@@ -1,6 +1,8 @@
 import { unreachable } from "@repo/domain/errors";
 import { useEffect, useState } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { api } from "@/renderer/api";
+import { listen } from "@/renderer/page-events";
 import { PhaserGame } from "@/renderer/game/phaser-game";
 import { queryClient, useBoot } from "@/renderer/state/queries";
 import { bootShown, initStore, setGame } from "@/renderer/state/store";
@@ -66,6 +68,35 @@ const OpenOverlay = ({
   }
 };
 
+const MenuOpening = ({ onOverlay }: { onOverlay: (overlay: Overlay) => void }) => {
+  useEffect(() => {
+    const look = async () => {
+      try {
+        if ((await api.app.takeOpening()) === "inbox") {
+          onOverlay({ kind: "inbox" });
+        }
+      } catch (error) {
+        console.error("Could not ask what to open", error);
+      }
+    };
+
+    const onFocus = () => {
+      void look();
+    };
+
+    void look();
+    window.addEventListener("focus", onFocus);
+    const unlisten = listen("opening", onFocus);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      unlisten();
+    };
+  }, [onOverlay]);
+
+  return null;
+};
+
 const Screen = ({
   boot,
   overlay,
@@ -103,6 +134,7 @@ const Screen = ({
           <TeamChannel />
           <Dialogue />
           <Digest />
+          <MenuOpening onOverlay={onOverlay} />
           <OpenOverlay overlay={overlay} onOpen={onOverlay} onClose={() => onOverlay(null)} />
         </>
       );

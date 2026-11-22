@@ -107,6 +107,17 @@ which only that run's sandbox reaches, and what it does is the run's.
   login (`server/login-item.ts`): the macOS login item (`SMAppService`,
   `src-tauri/src/login_item.rs`) is its only record, only a packaged app registers one, and a
   launch at login starts in the menu bar.
+- **With the window closed.** The menu-bar icon carries what waits on the founder: its title
+  counts it, and its menu lists the first five waiting items (`server/tray.ts`). A click on one
+  tells main `inbox` as the shell shows the window, and the page asks `app.takeOpening` and opens
+  its Inbox (`server/inbox-opening.ts`): on boot, each time the window comes back (as it asks for
+  the digest), and on the `opening` event main sends then, since a window already in front gets
+  no focus. What needs the founder is a notification: `alertOf`
+  (`server/founder-alerts.ts`) names every activity kind, so a kind added fails to compile until
+  it says whether it alerts, and alerts that land within three seconds post as one. An ask, once its
+  run ends on it and the Inbox shows it, an open order card, a spent budget, a bet won or killed and a task given up on alert; an approval
+  a standing sign-off answers does not, since #team says it was. Signing off is the window's: a
+  notification carries no button that answers an ask.
 - **Updates.** The packaged app updates itself through tauri-plugin-updater
   (`src-tauri/src/updater.rs`) from the feed tauri.conf.json's `plugins.updater` names, the latest
   GitHub release's `latest.json`, whose archive is signed with the key `plugins.updater.pubkey`

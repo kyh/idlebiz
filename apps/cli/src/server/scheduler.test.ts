@@ -830,6 +830,63 @@ describe("a run the founder signed for", () => {
   });
 });
 
+const roomSaid = (text: string) => store.recentTeamMessages(50).some((m) => m.text === text);
+
+describe("a standing sign-off", () => {
+  it("approves a held call under its rule as the founder would, in its workspace alone", async () => {
+    const office = twoProducts();
+    const { drain, founder, home } = office;
+    founder.setStandingSignOff("deploy", true);
+    const ask = await askToDeploy(office, "priya", home);
+
+    founder.answerStanding();
+    const beside = onProduct("sam", home);
+    drain.tick();
+
+    const [continuation] = store.openTasksFor("priya");
+    expect(continuation?.state.kind).toBe("running");
+    expect(kindOf(ask)).not.toBe("blocked");
+    expect(kindOf(beside)).toBe("queued");
+    expect(
+      roomSaid("✅ Approved under the founder's standing sign-off: npx vercel deploy --prod"),
+    ).toBe(true);
+  });
+
+  it("leaves a call under another rule for the founder", async () => {
+    const office = twoProducts();
+    const { founder, home } = office;
+    founder.setStandingSignOff("payments", true);
+    const ask = await askToDeploy(office, "priya", home);
+
+    founder.answerStanding();
+
+    expect(kindOf(ask)).toBe("blocked");
+  });
+
+  it("answers what already waits once the founder turns it on, and says so in the room", async () => {
+    const office = twoProducts();
+    const { founder, home } = office;
+    const ask = await askToDeploy(office, "priya", home);
+
+    expect(kindOf(ask)).toBe("blocked");
+
+    const company = founder.setStandingSignOff("deploy", true);
+
+    expect(company.standingSignOffs).toEqual(["deploy"]);
+    expect(kindOf(ask)).not.toBe("blocked");
+    expect(
+      roomSaid(
+        "✅ The founder now signs off on deploys in advance: each one held for them is approved as it is asked.",
+      ),
+    ).toBe(true);
+
+    expect(founder.setStandingSignOff("deploy", false).standingSignOffs).toEqual([]);
+    expect(
+      roomSaid("✋ The founder signs off on deploys by hand again: each one waits for them."),
+    ).toBe(true);
+  });
+});
+
 const openBet = (budgetUsd: number) => {
   const [product] = store.listProducts();
 

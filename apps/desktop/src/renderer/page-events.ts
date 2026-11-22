@@ -10,6 +10,7 @@ type Listeners = { [E in PageEventName]: Set<Listener<E>> };
 const listeners: Listeners = {
   activity: new Set(),
   auth: new Set(),
+  opening: new Set(),
   update: new Set(),
 };
 
@@ -42,6 +43,11 @@ const hear = (event: PageEvent) => {
     }
 
     case "auth": {
+      tell(event.name, event.data);
+      break;
+    }
+
+    case "opening": {
       tell(event.name, event.data);
       break;
     }
