@@ -132,9 +132,8 @@ orient a reader and link into them, never telling a mechanic again.
   - `switch-exhaustiveness-check` takes a `default` as exhaustive: a default is how a consumer says
     every other kind means nothing to it.
   - landmines' allow maps: the gate, stand-in-runner and Mac sandbox suites keep their raised
-    timeouts, since each drives a real CLI or macOS service; `machine.mac.test.ts` keeps three
-    fixed waits that watch for something not happening, which no signal shows; and
-    `test-support/network.ts` starts MSW 3 strictly by `onUnhandledFrame`, a name the rule predates.
+    timeouts, since each drives a real CLI or macOS service; and `machine.mac.test.ts` keeps three
+    fixed waits that watch for something not happening, which no signal shows.
   - `no-test-doubles` is off for the renderer's `report-fault` and `state/store` suites: the page
     calls main at a path relative to its origin, which Node's fetch cannot take, so they hand the
     page the real router as its fetch (happy-dom, which can, breaks on main's event stream).
