@@ -5,19 +5,9 @@
 //! and keeps each main sets or deletes over the relay (`host.vaultSet`, `host.vaultDelete`); main
 //! never reaches the Keychain itself (`apps/cli/src/server/vault/`).
 
-use std::collections::BTreeMap;
-
-use serde::Serialize;
+use crate::protocol::Held;
 
 const SERVICE: &str = "IdleBiz";
-
-/// What the vault held at hello: each key it read, and the name of each it would not give.
-#[derive(Serialize)]
-#[cfg_attr(test, derive(serde::Deserialize), serde(deny_unknown_fields))]
-pub struct Held {
-    pub keys: BTreeMap<String, String>,
-    pub refused: Vec<String>,
-}
 
 /// The vault's keys, or `None` for a development build, which keeps its keys in a file under its
 /// save (main's), or when the Keychain would not list them: main then holds none and says so.

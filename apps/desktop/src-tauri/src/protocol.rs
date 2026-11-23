@@ -1,10 +1,10 @@
 //! What the shell and main say over `relay.rs`'s framing, pinned to main's end
 //! (`apps/cli/src/server/host.ts`) by one sample a method under `tests/fixtures/relay`.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-use crate::vault::Held;
 
 pub const HELLO: &str = "hello";
 pub const HANDOFF: &str = "handoff";
@@ -31,6 +31,14 @@ pub const CHECK_UPDATE: &str = "host.checkUpdate";
 pub const INSTALL_UPDATE: &str = "host.installUpdate";
 pub const VAULT_SET: &str = "host.vaultSet";
 pub const VAULT_DELETE: &str = "host.vaultDelete";
+
+/// What the vault held at hello: each key it read, and the name of each it would not give.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(Deserialize), serde(deny_unknown_fields))]
+pub struct Held {
+    pub keys: BTreeMap<String, String>,
+    pub refused: Vec<String>,
+}
 
 /// What only the shell knows of this launch (`launchSchema`).
 #[derive(Serialize)]

@@ -42,7 +42,7 @@ which only that run's sandbox reaches, and what it does is the run's.
   else `Origin`), since another loopback port is the same site and carries the cookie; and the
   page's content security policy is main's (`@repo/contract/page-policy`). No capability grants the
   page a command of the shell's, and `removeUnusedCommands` leaves none in the binary. The dialog
-  and notification plugins, which only Rust calls (`src-tauri/src/host.rs`, `shell.rs`,
+  and notification plugins, which only Rust calls (`src-tauri/src/host.rs`, `lib.rs`,
   `updater.rs`), still put their scripts in the page, as Tauri does every plugin's: there `alert`
   and `confirm` ask for a command no page is granted, so neither shows anything and `confirm`
   answers a Promise, true in an `if`, and a `Notification` shows nothing. The `no-alert` lint keeps
