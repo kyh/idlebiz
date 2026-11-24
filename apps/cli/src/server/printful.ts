@@ -4,8 +4,8 @@ import { HttpError, fetchOk } from "./lib/http";
 import { answering } from "./lib/vendor-call";
 import { jsonValueSchema } from "@repo/domain/json";
 import type { JsonValue } from "@repo/domain/json";
-import { CATALOG_PAGE } from "./listing";
-import type { ListingVariant, PrintPlacement } from "./listing";
+import { CATALOG_PAGE } from "./link-record";
+import type { ListingVariant, PrintPlacement } from "./link-record";
 import { RefusalError } from "./refusal";
 
 const PRINTFUL_API = "https://api.printful.com";

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Listing } from "../listing";
+import type { Listing } from "../link-record";
 import * as store from "./store";
 import { alumniDir, companyDir, retiredDir } from "../paths";
 import { foundAcme, freshSave } from "../test-support/save";

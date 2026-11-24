@@ -10,7 +10,7 @@ import {
 import type { PrintfulCredential } from "./printful";
 import type { VendorAnswer } from "./lib/vendor-call";
 import type { JsonValue } from "@repo/domain/json";
-import type { PrintPlacement } from "./listing";
+import type { PrintPlacement } from "./link-record";
 import type { Recipient } from "./order";
 
 const OrderReadSchema = z.object({
