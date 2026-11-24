@@ -5,7 +5,7 @@ import { HttpError, getJson, postForm, postFormAnswer } from "./lib/http";
 import type { VendorAnswer } from "./lib/vendor-call";
 import { STRIPE_API, answeringStripe, stripeHeaders } from "./stripe-api";
 import type { JsonValue } from "@repo/domain/json";
-import type { ListingVariant } from "./listing";
+import type { ListingVariant } from "./link-record";
 import { StripeLinkIdSchema } from "./link-record";
 
 /** One price in USD, sold once through a link whose every payment carries the product's tag and, when named, the bet's. */

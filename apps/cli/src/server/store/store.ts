@@ -91,11 +91,9 @@ import {
   windowEnd,
 } from "@repo/domain/bets";
 import type { Bet, PolicyParams } from "@repo/domain/bets";
-import { ListingSchema } from "../listing";
-import type { Listing } from "../listing";
+import { ChargeLinkSchema, ListingSchema } from "../link-record";
+import type { ChargeLink, CompanyLink, LinkState, Listing } from "../link-record";
 import { OrderSchema } from "../order";
-import { ChargeLinkSchema } from "../link-record";
-import type { ChargeLink, CompanyLink, LinkState } from "../link-record";
 import type { Order, Sale } from "../order";
 import { RefusalError } from "../refusal";
 import { emptyDigest, foldDigest } from "./digest";

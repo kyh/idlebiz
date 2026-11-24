@@ -12,7 +12,7 @@ import { getSecret } from "./vault/vault";
 import { readPaymentStanding } from "./stripe-checkouts";
 import type { PaymentStanding } from "./stripe-checkouts";
 import { formatCents } from "@repo/domain/format";
-import type { Listing } from "./listing";
+import type { Listing } from "./link-record";
 import type { Sale } from "./order";
 import { REFUND, describe } from "./order-card";
 import { takePaidCheckouts } from "./order-intake";

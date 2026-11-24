@@ -3,7 +3,8 @@
 Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the decisions. The tree
 is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
 
-- `apps/desktop/src-tauri` — the shell, Rust: the window over main's page, opened on the handoff
+- `apps/desktop/src-tauri` — the shell, Rust: main started, booted and stopped (`lib.rs`) and
+  held between (`shell.rs`), the window over main's page, opened on the handoff
   main hands it, and its navigation pin (`window.rs`, `navigation.rs`), main as its one child
   (`main_process.rs` over the relay's framing in `relay.rs` and its messages in `protocol.rs`,
   `runtime.rs` for where node and the server are), what main asks of a native app (`host.rs`:

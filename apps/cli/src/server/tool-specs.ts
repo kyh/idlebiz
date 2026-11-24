@@ -9,7 +9,7 @@ import { INTEGRATION_KINDS, KillReasonSchema, ProductDraftSchema } from "@repo/d
 import { EnvNameSchema } from "./env-name";
 import { formatUsd } from "@repo/domain/format";
 import type { JsonValue } from "@repo/domain/json";
-import { CATALOG_PAGE, PrintPlacementSchema } from "./listing";
+import { CATALOG_PAGE, PrintPlacementSchema } from "./link-record";
 import { shellQuote } from "./lib/shell-quote";
 
 const EMPTY = z.strictObject({});

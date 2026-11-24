@@ -11,10 +11,9 @@ import { CHECKOUT_READ_LIMIT, readCheckouts } from "./stripe-checkouts";
 import type { CheckoutSession } from "./stripe-checkouts";
 import type { OrdersCursor } from "./store/store";
 import { formatCents } from "@repo/domain/format";
-import type { Listing } from "./listing";
+import type { LinkState, Listing } from "./link-record";
 import { orderIdOf } from "./order";
 import type { Order, Recipient } from "./order";
-import type { LinkState } from "./link-record";
 import { REFUND, describe } from "./order-card";
 
 /** How often Stripe's checkouts are read for new paid orders. */
