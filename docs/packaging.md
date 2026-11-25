@@ -31,7 +31,7 @@ pnpm smoke:update                           # two test packs, the installed one 
 
 The fuses turn off what would let a launch run other code as the app: `ELECTRON_RUN_AS_NODE`,
 `NODE_OPTIONS`, `--inspect`, and any app code but the `app.asar` whose integrity the bundle
-records. Cookie encryption stays off: Chromium would keep its key in the login keychain, readable
+records; and since no page loads from `file://`, none gets its old extra privileges. Cookie encryption stays off: Chromium would keep its key in the login keychain, readable
 with no prompt only by the build that wrote it, so each pack a smoke makes would leave one behind
 for the next build to prompt over, and the window's one cookie is the session main mints each boot.
 

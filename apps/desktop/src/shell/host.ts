@@ -16,6 +16,7 @@ import {
 import type { RelayMethod } from "idlebiz/host";
 import { keepAwake } from "./keep-awake";
 import { loginItemStatus, setLoginItem } from "./login-item";
+import { isWebUrl } from "./navigation";
 import { shellLog } from "./shell-log";
 import { drawTray } from "./tray";
 import { checkUpdate, installUpdate } from "./updater";
@@ -23,6 +24,10 @@ import { vaultDelete, vaultSet } from "./vault";
 
 const open = async ({ kind, target }: z.infer<typeof openingSchema>) => {
   if (kind === "url") {
+    if (!isWebUrl(target)) {
+      throw new Error("only a web page opens in the browser");
+    }
+
     await shell.openExternal(target);
 
     return;

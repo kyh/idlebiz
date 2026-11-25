@@ -266,6 +266,7 @@ const config = {
     enableEmbeddedAsarIntegrityValidation: true,
     enableNodeCliInspectArguments: false,
     enableNodeOptionsEnvironmentVariable: false,
+    grantFileProtocolExtraPrivileges: false,
     onlyLoadAppFromAsar: true,
     runAsNode: false,
   },
