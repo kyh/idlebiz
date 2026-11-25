@@ -200,6 +200,7 @@ const run = () => {
     return;
   }
 
+  app.enableSandbox();
   quitOnSignals();
   app.on("second-instance", showWindow);
   app.on("activate", showWindow);
