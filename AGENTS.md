@@ -1,7 +1,7 @@
 # AGENTS.md
 
 **IdleBiz** is a retro RPG-style idle business sim where the employees are the player's own
-coding CLIs. The app is two programs: `apps/desktop`, a Tauri shell around the office page, and
+coding CLIs. The app is two programs: `apps/desktop`, an Electron shell around the office page, and
 `apps/cli`, the `idlebiz` binary, whose `idlebiz serve` is main, the node process that spawns real
 `claude` / `codex` sessions and saves the whole company as human-readable markdown under
 `~/.idlebiz/`. Every other verb of `idlebiz` is a company tool the employees call. A small Next.js
@@ -13,8 +13,8 @@ whole. How each mechanic works is told once, in its own file under `docs/`
 ([How it works](#how-it-works) lists them). The premises and decisions behind them, each with its
 reason, are `CLAUDE.md`'s: read it first. Claude reads both.
 
-Paths below are short: `server/…` and `commands/…` are under `apps/cli/src/`, `renderer/…` under
-`apps/desktop/src/`, `src-tauri/…` under `apps/desktop/`, and `@repo/<package>/<module>` is
+Paths below are short: `server/…` and `commands/…` are under `apps/cli/src/`, `renderer/…` and
+`shell/…` under `apps/desktop/src/`, and `@repo/<package>/<module>` is
 `packages/<package>/src/<module>.ts`.
 
 > Naming: this file is repo documentation. The `AGENTS.md` files under
@@ -29,33 +29,27 @@ pnpm install
 pnpm verify        # static gate: typecheck · lint · knip · format · test · build
 pnpm dev:web       # landing page → http://localhost:3000
 pnpm dev:browser   # the office in a browser → http://localhost:31100/ (signs the browser in to main)
-pnpm dev:desktop   # the app's own window (tauri dev)
+pnpm dev:desktop   # the app's own window (Electron)
 pnpm e2e           # builds the page and main, then drives them in Chromium (CI: e2e-macos)
 ```
 
-No database and no server to provision: past `pnpm install`, the one thing to install is
-Rust through rustup, since `pnpm verify` runs clippy (pedantic, `-D warnings`), `cargo test` and
-`cargo fmt --check` over the shell and `pnpm dev:desktop` builds it
-(`apps/desktop/rust-toolchain.toml` pins the toolchain, and the first `cargo` call installs it). On
-Linux the shell also links WebKitGTK, the appindicator its menu-bar icon loads and librsvg, and
-needs a C toolchain: `build-essential`, `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`,
-`librsvg2-dev` (CI's `ci` job installs the three libraries; its runner ships the toolchain). There
-is no bootstrap script and nothing to seed.
+No database, no server and no toolchain to provision past `pnpm install`: the shell is
+TypeScript, and the first `pnpm dev:desktop` downloads Electron's binary. There is no bootstrap
+script and nothing to seed.
 
 **`pnpm dev:desktop` and `pnpm dev:browser` are not plain dev servers.** Each runs `pnpm dev:kill`
-first (`apps/desktop/scripts/devkill.sh`), which terminates this checkout's desktop session —
-`tauri dev`, its shell and the dev server, each with main under it — then kills any that remain
-after ten seconds. Main stops its runs first on the TERM. `pnpm dev:web`, `pnpm verify`, tests
-and a running `pnpm e2e` survive it. It leaves an unrelated process on TCP **31100**, the dev
-server's port, alone, and startup fails while that port is occupied.
+first (`apps/desktop/scripts/devkill.sh`), which terminates this checkout's desktop session — its
+supervisor (`apps/desktop/scripts/dev.ts`), its shell and the dev server, each with main under it —
+then kills any that remain after ten seconds. Main stops its runs first on the TERM. `pnpm dev:web`,
+`pnpm verify`, tests and a running `pnpm e2e` survive it. It leaves an unrelated process on TCP
+**31100**, the dev server's port, alone, and startup fails while that port is occupied.
 
 Both build main (`apps/cli`'s bundle, `apps/cli/dist`) before the page is served and again on each
-change (`apps/desktop/vite.config.ts` watch-builds it): `tauri dev` restarts the shell when main's
-bundle changes (`--additional-watch-folders ../cli/dist`; its watcher skips what `.gitignore`
-names, so `apps/cli/.taurignore` brings `dist/` back), and `dev:browser` restarts main itself.
-Either way the page stays main's: main hands it Vite's files, so a change to the page hot-reloads
-on main's origin, and its hot-reload socket dials Vite directly. A change to the shell's Rust
-rebuilds and relaunches it.
+change (`apps/desktop/vite.config.ts` watch-builds it): `dev:desktop`'s supervisor restarts the
+shell when main's bundle changes, and `dev:browser` restarts main itself. Either way the page stays
+main's: main hands it Vite's files, so a change to the page hot-reloads on main's origin, and its
+hot-reload socket dials Vite directly. A change to the shell (`src/shell`) rebuilds it with
+electron-vite and relaunches it.
 
 ## The one hard prerequisite
 
@@ -90,14 +84,13 @@ dependabot moves (`.github/dependabot.yml`); a new step pins its action the same
 build of `apps/web` is a second remote check. `pnpm knip` checks unused files, exports and
 dependencies.
 
-Its `test-macos` job runs what only a Mac can: clippy over the shell's macOS code, `pnpm test`
-with the sandbox and every gate suite (it installs `claude`, `codex` and `agent-browser` at versions
-pinned there, signed in to nothing, and fails before the tests if one does not answer
-`--version`, since a gate skips on a CLI it cannot run), and `pnpm smoke:desktop` on an ad-hoc
-pack ([Packaging and release](docs/packaging.md)). Its `update-macos` job runs `pnpm smoke:update`
-beside it: an installed test pack takes the next release from a feed on loopback through its
-menu-bar item, and a failed run uploads `main.log` and the feed's log as the `update-smoke`
-artifact.
+Its `test-macos` job runs what only a Mac can: `pnpm test` with the sandbox and every gate suite (it
+installs `claude`, `codex` and `agent-browser` at versions pinned there, signed in to nothing, and
+fails before the tests if one does not answer `--version`, since a gate skips on a CLI it cannot
+run), and `pnpm smoke:desktop` on an ad-hoc pack ([Packaging and release](docs/packaging.md)). Its
+`update-macos` job runs `pnpm smoke:update` beside it: an installed test pack takes the next release
+from a feed on loopback through its menu-bar item, and a failed run uploads `main.log` and the
+feed's log as the `update-smoke` artifact.
 
 Its `e2e-macos` job runs `pnpm e2e` on a Mac with `IDLEBIZ_E2E_NO_SKIPS=1`, so a test that would
 skip fails the run, and uploads `tools/e2e/test-results/` as the `e2e` artifact whatever the
@@ -135,8 +128,8 @@ in its log when any of its steps fails.
 `exactOptionalPropertyTypes`, `noImplicitReturns`, `noImplicitOverride`, `erasableSyntaxOnly`,
 unused locals and parameters). Every workspace's tsconfig extends it and adds only what is its own
 (`lib`, `types`, `include`, `paths`, `jsx`, and `apps/web`'s Next plugin). The code the page
-runs (the renderer, `@repo/domain`, `@repo/contract`) extends `tsconfig.page.json`, the ES2023
-ceiling of the window's WebKit; the renderer adds the DOM in `renderer/env.d.ts`.
+runs (the renderer, `@repo/domain`, `@repo/contract`) extends `tsconfig.page.json`, the page's
+ES2023 ceiling; the renderer adds the DOM in `renderer/env.d.ts`.
 
 **Lint is a clean gate.** `oxlint.config.ts` extends the ultracite presets
 (`ultracite/oxlint/core`, `react`, `anti-slop`, `landmines`; `next` scoped to `apps/web`); every
@@ -152,15 +145,15 @@ activity reducer's table of slices is typed over every kind instead
 
 Prefer fixing code over `oxlint-disable` comments; when a rule is genuinely wrong for a line, disable that line with a stated reason (`// oxlint-disable-next-line rule -- why`).
 
-End-to-end suite — `pnpm e2e` builds the page and main, then drives them with Playwright in
-Chromium (`tools/e2e/`): each launch starts the built main through the dev host
-(`apps/cli/src/dev-host/host.ts`), which answers main's asks of a native app as the shell would,
-and opens the built page main serves on the handoff link main hands it, as the shell's window
-opens. `pnpm -F @repo/e2e e2e` reruns it on the last build. The shell itself (the window, the
-menu-bar icon, the Keychain, the login item) is Rust's, held by `cargo test`, driven packaged by
+End-to-end suite — `pnpm e2e` builds the page and main, then drives them with Playwright in Chromium
+(`tools/e2e/`): each launch starts the built main through the dev host
+(`apps/cli/src/dev-host/host.ts`), which answers main's asks of a native app as the shell would, and
+opens the built page main serves on the handoff link main hands it, as the shell's window opens.
+`pnpm -F @repo/e2e e2e` reruns it on the last build. The shell itself (the window, the menu-bar
+icon, the Keychain, the login item) is Electron's, held by its vitest suites, driven packaged by
 `pnpm smoke:desktop` and `pnpm smoke:update`, and looked at by hand. What the suite covers is its
-tests, in `tools/e2e/src/*.test.ts`. It is not part of `pnpm verify`; CI's `e2e-macos` job runs
-it, and fails on any skip:
+tests, in `tools/e2e/src/*.test.ts`. It is not part of `pnpm verify`; CI's `e2e-macos` job runs it,
+and fails on any skip:
 
 - It needs Playwright's Chromium (`pnpm -F @repo/e2e exec playwright install chromium`, once).
 - Every test that founds a company (the office, the #team approval, the panels, Vercel,
@@ -201,8 +194,9 @@ Runtime, desktop — drive the office in a browser. `pnpm dev:browser` runs main
 and main serves the page, its files from the dev server, as it serves the window. Open
 `http://localhost:31100/`: each visit asks the main running then for a one-time handoff and lands
 the browser on main's page, signed in, so after an edit to main restarts it, the same address
-lands on the new one. The app's window is WKWebView, which no automation attaches to on the Mac,
-so the browser is the one the agents drive; `pnpm dev:desktop` is for looking at the real window.
+lands on the new one. Nothing here drives the app's own window (the packaged app's fuses turn
+inspection off), so the browser is the one the agents drive; `pnpm dev:desktop` is for looking at
+the real window.
 
 > **Use an empty temporary save root for desktop verification.** Boot starts the scheduler,
 > which immediately drains queued work, even with autopilot off. Existing companies can
@@ -260,7 +254,7 @@ bundled seeded save. Employee runs started by hand use the signed-in CLI, or the
 | Platform            | Dev command        | Agent-verifiable at runtime?                      |
 | ------------------- | ------------------ | ------------------------------------------------- |
 | Desktop, in browser | `pnpm dev:browser` | **Yes** — agent-browser at http://localhost:31100 |
-| Desktop, its window | `pnpm dev:desktop` | By eye: WKWebView takes no automation on the Mac  |
+| Desktop, its window | `pnpm dev:desktop` | By eye: nothing here drives the Electron window   |
 | Web (Next.js)       | `pnpm dev:web`     | **Yes** — headless via agent-browser              |
 
 The browser and the window run the same page, which main serves, over the same main: only the host
@@ -293,10 +287,10 @@ No test needs a window or Phaser.
   `test-macos` job runs every one, on the CLI versions its workflow pins, which move by hand.
 - `pnpm --filter @repo/agent-driver test` covers an ACP turn against stand-in agents
   (permissions, resume, teardown, how a turn ends, usage) and the failure classes.
-- `pnpm --filter @repo/desktop test` covers the page's geometry and state, and its `test:rust`
-  runs `cargo test` over the shell (the relay's framing and its samples, main's supervision against
-  a stand-in main on node, the navigation pin, the runtime's paths, main's log).
-- The root `pnpm test` runs every suite and `test:rust` through turbo, `TEST_CONCURRENCY` at a
+- `pnpm --filter @repo/desktop test` covers the page's geometry and state, and the shell's pure
+  parts under node (main's supervision against a stand-in main, the navigation pin, the runtime's
+  paths and env, main's log), and the pack's refusals.
+- The root `pnpm test` runs every suite through turbo, `TEST_CONCURRENCY` at a
   time (4 unless set), and replays any suite but main's whose inputs have not changed: main's gates
   run or skip on the CLIs this machine has. turbo hands every other suite only the env its config
   names, and main's and the sandbox's the shell's whole env, as `pnpm --filter idlebiz test` does,
@@ -342,9 +336,9 @@ Turborepo + pnpm.
 
 ```
 apps/
-  desktop/       @repo/desktop — the app the founder installs: a Tauri 2 shell over the system
-                 WebKit (src-tauri/, Rust), the office page (src/renderer/, React + Phaser) and
-                 the pack and its smokes (scripts/).
+  desktop/       @repo/desktop — the app the founder installs: an Electron shell (src/shell/),
+                 the office page (src/renderer/, React + Phaser) and the pack and its smokes
+                 (scripts/).
   cli/           idlebiz — the server and the binary. `idlebiz serve` is main (src/server/); every
                  other verb is a company tool (src/commands/tools.ts); src/dev-host/ runs main as
                  the shell would; resources/ holds what main reads. The build is dist/index.js

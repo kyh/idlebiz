@@ -1,7 +1,0 @@
-{
-  "from": "main",
-  "params": {
-    "body": "Acme's order card — open IdleBiz to settle it.",
-    "title": "An order card is waiting"
-  }
-}

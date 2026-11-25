@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "types": ["node"]
+  },
+  "include": ["src/shell/**/*.ts", "electron.vite.config.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

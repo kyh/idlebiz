@@ -1,8 +1,0 @@
-# cargo's build output
-/target/
-
-# written by tauri-build on every build: the JSON schemas a capability file would point at
-/gen/schemas
-
-# the node the .app ships beside the shell, fetched and pinned by ../scripts/fetch-node.ts
-/binaries/

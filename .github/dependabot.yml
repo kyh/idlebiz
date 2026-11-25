@@ -23,19 +23,16 @@ updates:
         patterns:
           - "tailwindcss"
           - "@tailwindcss/*"
+      # one PR for Electron and the builder and updater that pack and update it: the updater reads
+      # what the builder writes, and CI's test-macos and update-macos jobs pack and update on them
+      electron:
+        patterns:
+          - "electron"
+          - "electron-builder"
+          - "electron-updater"
+          - "electron-vite"
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-
-  # the desktop shell's crates, Tauri and its plugins among them, in one PR: CI's ci job runs clippy
-  # and cargo test on them, and its test-macos job the macOS-only code and the packaged smoke
-  - package-ecosystem: cargo
-    directory: /apps/desktop/src-tauri
-    schedule:
-      interval: weekly
-    groups:
-      crates:
-        patterns:
-          - "*"

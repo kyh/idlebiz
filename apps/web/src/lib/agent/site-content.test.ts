@@ -114,7 +114,7 @@ describe("the Privacy Policy", () => {
   });
 
   it("states its effective date in words", () => {
-    expect(legalRevisedOn).toBe("October 29, 2026");
+    expect(legalRevisedOn).toBe("November 25, 2026");
   });
 
   it("opens with its effective date and an index of every section", () => {

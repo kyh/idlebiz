@@ -87,8 +87,8 @@ export const pagePorts = () => [...live];
 
 /**
  * The origin of a dev server main may take the page's files from: a loopback http one, as
- * `tauri dev` and `pnpm dev:browser` name Vite. Anything else is refused, since the page it answers
- * holds the founder's approve button.
+ * `pnpm dev:desktop` and `pnpm dev:browser` name Vite. Anything else is refused, since the page
+ * it answers holds the founder's approve button.
  */
 export const devPageOrigin = (url: string) => {
   const parsed = URL.canParse(url) ? new URL(url) : null;

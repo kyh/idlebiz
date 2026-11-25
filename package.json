@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "turbo run build",
+    "build": "turbo run build build:shell",
     "clean": "git clean -xdf node_modules",
     "clean:workspaces": "turbo run clean",
     "dev:desktop": "pnpm dev:kill && pnpm -F @repo/desktop dev",
@@ -19,7 +19,7 @@
     "smoke:desktop": "pnpm -F @repo/desktop package && pnpm -F @repo/desktop smoke",
     "smoke:update": "pnpm -F @repo/desktop smoke:update",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test test:rust --concurrency=${TEST_CONCURRENCY:-4}",
+    "test": "turbo run test --concurrency=${TEST_CONCURRENCY:-4}",
     "verify": "pnpm typecheck && pnpm lint && pnpm knip && pnpm format && pnpm test && pnpm build"
   },
   "devDependencies": {

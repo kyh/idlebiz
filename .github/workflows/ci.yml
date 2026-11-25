@@ -39,22 +39,6 @@ jobs:
           runtime: node@24
           cache: true
 
-      # Tauri compiles the desktop shell against WebKitGTK on Linux (the Mac ships its own
-      # WebKit), and its menu-bar icon loads the appindicator at runtime: AGENTS.md's Linux list,
-      # less the C toolchain the runner ships
-      - name: Desktop system libraries
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
-
-      # the toolchain apps/desktop/rust-toolchain.toml pins, which `typecheck` (clippy) and `test` run
-      - name: Desktop Rust toolchain
-        working-directory: apps/desktop
-        run: rustup toolchain install
-
-      - name: Desktop Rust cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: apps/desktop/src-tauri
-
       # the newest run's turbo cache on this OS: a task whose inputs the commit left alone replays
       # its last pass, but apps/cli's tests, which skip on the CLIs a machine has, always run
       - name: Turbo cache
@@ -83,17 +67,17 @@ jobs:
       - name: Build
         run: pnpm build
 
-  # The app ships only as a macOS arm64 .app, and only a Mac compiles the shell's own code (the
-  # Keychain, the login item, keeping awake), runs the sandbox and the gate suites, boots the pack,
-  # updates an installed one (update-macos) and founds a company end to end (e2e-macos).
-  # Typecheck, lint, knip, format and build read no platform, so the ci job alone runs them.
+  # The app ships only as a macOS arm64 .app, and only a Mac runs the sandbox and the gate suites,
+  # packs the shell and boots the pack (the Keychain, the login item, keeping awake), updates an
+  # installed one (update-macos) and founds a company end to end (e2e-macos). Typecheck, lint,
+  # knip, format and build read no platform, so the ci job alone runs them.
   test-macos:
     runs-on: macos-latest
-    # a backstop: the shell's release build for the pack is minutes of it cold
+    # a backstop: the suites and the pack are most of it cold
     timeout-minutes: 60
     env:
-      # three cores and 7 GB: main's suites beside the shell's compile, four at once, push the
-      # timing-bound gate tests past their limits
+      # three cores and 7 GB: main's suites four at once push the timing-bound gate tests past
+      # their limits
       TEST_CONCURRENCY: 2
     steps:
       # as the ci job's: no later step reaches the remote
@@ -105,15 +89,6 @@ jobs:
         with:
           runtime: node@24
           cache: true
-
-      - name: Desktop Rust toolchain
-        working-directory: apps/desktop
-        run: rustup toolchain install
-
-      - name: Desktop Rust cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: apps/desktop/src-tauri
 
       - name: Turbo cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -137,9 +112,6 @@ jobs:
       - name: Gate CLIs answer
         run: claude --version && codex --version && agent-browser --version
 
-      - name: Shell clippy
-        run: pnpm -F @repo/desktop typecheck
-
       - name: Test
         run: pnpm test
 
@@ -160,10 +132,10 @@ jobs:
             | tail -n 400 || true
 
   # An update end to end on a Mac: an installed test pack takes the next release from a feed on
-  # loopback under a throwaway key, begun from its own menu-bar item
+  # loopback, signed by a throwaway identity, begun from its own menu-bar item
   # (apps/desktop/scripts/smoke-update.ts). A runner of its own beside test-macos: its two packs
   # would double that job's critical path, and it stays clear of that job's smoke's single-instance
-  # socket and Keychain checks. It needs no secret: both keys are made in scratch as it runs.
+  # socket and Keychain checks. It needs no secret: both identities are made in scratch as it runs.
   update-macos:
     runs-on: macos-latest
     # a backstop: two packs cold are most of it
@@ -179,16 +151,6 @@ jobs:
           runtime: node@24
           cache: true
 
-      - name: Desktop Rust toolchain
-        working-directory: apps/desktop
-        run: rustup toolchain install
-
-      # the test packs' own target, apart from every other pack's (scripts/package.ts)
-      - name: Desktop Rust cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: apps/desktop/src-tauri -> target/update-test
-
       # the update begins from the menu-bar item, which osascript clicks and reads through System
       # Events, as the image lets bash and osascript: an image that stops letting them fails here,
       # rather than the smoke failing on a menu it cannot open
@@ -196,13 +158,11 @@ jobs:
         run: osascript -e 'tell application "System Events" to get UI elements enabled' | grep -qx true
 
       - name: Smoke an update
-        env:
-          # ad-hoc: a test pack is never signed, and opens on this runner alone
-          IDLEBIZ_PACK_UNSIGNED: 1
         run: pnpm smoke:update
 
-      # main's log, the shell's lines among it, and every request the feed answered, which lies in
-      # .output, a folder upload-artifact leaves out unless hidden files are asked for
+      # main's log, the shell's lines among it, what ShipIt said as it swapped the app, and every
+      # request the feed answered, which lies in .output, a folder upload-artifact leaves out unless
+      # hidden files are asked for
       - name: Update smoke logs
         if: ${{ failure() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -210,6 +170,7 @@ jobs:
           name: update-smoke
           path: |
             ~/Library/Logs/IdleBiz/main.log
+            ~/Library/Caches/com.idlebiz.desktop.ShipIt/ShipIt_stderr.log
             apps/desktop/.output/smoke-update/
           include-hidden-files: true
           if-no-files-found: warn
@@ -217,7 +178,7 @@ jobs:
 
   # The office end to end on a Mac, the one platform that sandboxes a run: each launch signs the CLIs
   # the adapters bundle in to a stand-in model on loopback, so nothing signs in or bills, and a test
-  # that would skip fails instead. A runner of its own beside test-macos: it needs no Rust, and
+  # that would skip fails instead. A runner of its own beside test-macos: it packs nothing, and
   # stays clear of the smoke's single-instance socket and Keychain checks.
   e2e-macos:
     runs-on: macos-latest

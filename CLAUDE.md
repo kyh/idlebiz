@@ -1,6 +1,6 @@
 # IdleBiz
 
-Tauri game where AI employees — real `claude` / `codex` CLI sessions — operate a business. This
+Electron game where AI employees — real `claude` / `codex` CLI sessions — operate a business. This
 file holds the premises and the decisions, each in a line or two with its reason. The workflow and
 the map are `AGENTS.md`'s, imported at the end, and how each mechanic works is `docs/`'s, one file
 an area, each described there once: change a mechanic there, and a decision here. The READMEs
@@ -8,8 +8,8 @@ orient a reader and link into them, never telling a mechanic again.
 
 ## Premises
 
-- **Two programs.** `apps/desktop` is the app the founder installs: a Rust shell (`src-tauri`)
-  around the office page (Vite + React + Phaser). `apps/cli` is the `idlebiz` binary:
+- **Two programs.** `apps/desktop` is the app the founder installs: an Electron shell
+  (`src/shell`) around the office page (Vite + React + Phaser). `apps/cli` is the `idlebiz` binary:
   `idlebiz serve` is main, the node process that owns the save, the keys and the runs, the shell's
   one child, reached over its stdio. Every other verb is a company tool an employee types in its
   shell (`idlebiz message-team '{"text":"…"}'`).
@@ -106,17 +106,17 @@ orient a reader and link into them, never telling a mechanic again.
   are what a run could write for the next to load.
 - **Nothing pushes code.** The founder pushes by hand from a fresh clone: git inside a workspace
   obeys what a run left there, unsandboxed, as the founder.
-- **The updater's key is a login**: `~/.tauri/idlebiz.key` signs every update the installed app
-  takes, so whoever holds it ships code to every install. The sandbox keeps it from every run, as it
-  keeps the notary key, and it never sits in the checkout.
+- **The Developer ID is a login**: Squirrel.Mac installs only an update signed by the identity
+  the installed app is, so whoever holds the Developer ID's key ships code to every install. It
+  stays in the founder's login keychain, which prompts any run that asks for it, the notary key
+  stays where the sandbox keeps it from every run, and neither ever sits in the checkout.
 - **What the boundaries leave open is listed**, on purpose or for want of a rule, in
   `docs/sandbox.md`'s "What stays open".
 
 ## Code
 
 - **Strict TS everywhere** — no `any`, no non-null `!`, no `as` but `as const` (parse at the
-  boundary or narrow with a guard) — and clippy pedantic in Rust. Kebab-case filenames. Make
-  illegal states unrepresentable.
+  boundary or narrow with a guard). Kebab-case filenames. Make illegal states unrepresentable.
 - **Lint and the compiler are clean gates**: ultracite's core, react, anti-slop and landmines
   presets, every rule an error. Fix the code, don't add config overrides; a disable comment states
   why. The rules set otherwise, each for its reason:
@@ -165,8 +165,8 @@ orient a reader and link into them, never telling a mechanic again.
   run.
 - **The page's API is a contract** (`packages/contract`): declare the zod schema, never a parallel
   type. The page and main ship in one app, so it may break freely.
-- **The shell and main pin each relay method to one sample**, since neither compiles against the
-  other: a method added, renamed or reshaped changes its sample and both ends in one commit.
+- **The shell and main share the relay's schemas**: the shell bundles them from `idlebiz/host`,
+  so a method added, renamed or reshaped fails to compile at whichever end was not changed with it.
 - **Everything main says happened goes through `server/activity.ts`**: a second emit path would
   be a listener somebody forgot.
 - **The activity log is an audit trail, not a query store**: state that outlives a run is written
@@ -215,8 +215,8 @@ orient a reader and link into them, never telling a mechanic again.
 - **One main per save**: boot claims the save before it reads it, so a second main refuses rather
   than run each task twice.
 - **An update lands between runs**: it replaces the server main loads as it goes and the launcher
-  the runs call, so the shell downloads it and checks its signature while the office works, stops
-  main as Quit does, and only then installs it and starts the app again.
+  the runs call, so the shell downloads it and Squirrel.Mac checks its signature while the office
+  works, stops main as Quit does, and only then installs it and starts the app again.
 - **The shell is copied between sibling repos, never shared.** kyh/inteligir and kyh/init each
   hold copies of this repo's files, and they diverge on purpose. No package holds them: each shell
   supervises its own server, or none, and each server drives its own ACP runtime, and public repos
@@ -225,9 +225,11 @@ orient a reader and link into them, never telling a mechanic again.
 - **An agent verifies the app with no login and no bill**: the suites drive the CLIs the adapters
   bundle, sandboxed, against a stand-in model on loopback; only the model is replaced, its every
   switch is one the packaged shell drops, and CI's Mac jobs fail where a test would skip.
-- **An update is held end to end** on two ad-hoc test packs from a loopback feed under a throwaway
-  key: a test pack's feed and pubkey live only in the config `package.ts` writes for it, never in
-  `tauri.conf.json` and never read at runtime, and a release refuses one.
+- **An update is held end to end** on two test packs from a loopback feed, signed by a throwaway
+  identity no Mac trusts, since Squirrel.Mac takes no update an ad-hoc app could be sure of. A test
+  pack's feed and save live only in what `package.ts` writes into it (`app-update.yml`, and the
+  save baked into its shell, since Squirrel relaunches with no arguments), and a release refuses
+  one, as it refuses an identity macOS trusts.
 - **AGENTS.md stays under 32 KiB**: codex reads AGENTS.md only that far (`project_doc_max_bytes`'s
   default) and Claude loads it, with this file, into every session. So it holds the workflow, the
   map and the traps, and each mechanic is a `docs/` file read by whoever changes it.

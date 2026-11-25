@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Pack the signed, notarized app (`pnpm package`, which refuses a release that is either less),
-# then publish its dmg, and the signed archive and feed the installed app updates from, as the
+# then publish its dmg, and the zip and feed the installed app updates from (electron-updater's
+# GitHub provider reads latest-mac.yml from the latest release), as the
 # release tagged v<version>: a draft first, made public and latest only once all three are up, so
 # neither the site's download link nor the updater's feed resolves a release missing one.
 set -euo pipefail
@@ -49,8 +50,9 @@ trap cleanup EXIT
 
 gh release upload "$TAG" \
   ".output/bin/IdleBiz-${VERSION}-arm64.dmg" \
-  ".output/bin/IdleBiz-${VERSION}-arm64.app.tar.gz" \
-  ".output/bin/latest.json"
+  ".output/bin/IdleBiz-${VERSION}-arm64-mac.zip" \
+  ".output/bin/IdleBiz-${VERSION}-arm64-mac.zip.blockmap" \
+  ".output/bin/latest-mac.yml"
 uploaded=1
 gh release edit "$TAG" --draft=false --latest
 echo "published ${TAG}: $(gh release view "$TAG" --json url -q .url)"

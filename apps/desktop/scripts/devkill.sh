@@ -2,8 +2,8 @@
 # Stop everything `pnpm dev:desktop` and `pnpm dev:browser` start, and free the dev server's port
 # (31100). Idempotent.
 #
-# Order matters: the supervisor (`tauri dev`) goes FIRST. Kill the shell on its own and `tauri dev`
-# just starts it again.
+# Order matters: the supervisor (`scripts/dev.ts`) goes FIRST. Kill the shell on its own and the
+# supervisor just starts it again.
 #
 # Every pattern is anchored to this repo's absolute path and to the desktop session, so
 # `pnpm dev:web`, `pnpm verify`, tests and `pnpm e2e`'s main here, a dev server in another
@@ -17,8 +17,8 @@ DEV_PORT=31100
 
 # outermost to innermost; pgrep -f matches the whole command line as an extended regex.
 PATTERNS=(
-  "$ROOT/apps/desktop/node_modules/.*@tauri-apps/cli/tauri\.js dev"  # tauri dev
-  "$ROOT/apps/desktop/src-tauri/target/debug/idlebiz-desktop( |$)"    # the dev shell, if tauri dev is gone
+  "$ROOT/apps/desktop/scripts/dev\.ts( |$)"                           # the dev supervisor
+  "$ROOT/.*/electron/dist/[^ ]* $ROOT/apps/desktop( |$)"            # the dev shell, if it is gone
 )
 
 descendants() {

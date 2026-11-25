@@ -1,8 +1,0 @@
-{
-  "from": "main",
-  "params": {
-    "name": "VERCEL_TOKEN",
-    "value": "vercel_token_value"
-  },
-  "result": null
-}

@@ -3,15 +3,15 @@
 Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the decisions. The tree
 is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
 
-- `apps/desktop/src-tauri` — the shell, Rust: main started, booted and stopped (`lib.rs`) and
-  held between (`shell.rs`), the window over main's page, opened on the handoff
-  main hands it, and its navigation pin (`window.rs`, `navigation.rs`), main as its one child
-  (`main_process.rs` over the relay's framing in `relay.rs` and its messages in `protocol.rs`,
-  `runtime.rs` for where node and the server are), what main asks of a native app (`host.rs`:
-  message boxes, the clipboard, Finder, opening a path or a URL, notifications; `tray.rs`,
-  `login_item.rs`, `keep_awake.rs`, and the vault's Keychain items in `vault.rs`), its own updates (`updater.rs`), and main's log
-  (`main_log.rs`, which the shell's own lines reach through `shell_log.rs`). No capability grants
-  the page a command.
+- `apps/desktop/src/shell` — the shell, Electron's main process: main started, booted and stopped
+  (`index.ts`) and held between (`shell.ts`), the window over main's page, opened on the handoff
+  main hands it, and its navigation pin (`window.ts`, `navigation.ts`), main as its one child
+  (`main-process.ts`, over the relay's framing and schemas bundled from `idlebiz/host`;
+  `runtime.ts` for where node and the server are), what main asks of a native app (`host.ts`:
+  message boxes, the clipboard, Finder, opening a path or a URL, notifications; `tray.ts`,
+  `login-item.ts`, `keep-awake.ts`, and the vault's Keychain items in `vault.ts`), its own updates
+  (`updater.ts`), and main's log (`main-log.ts`, which the shell's own lines reach through
+  `shell-log.ts`). The window has no preload, so the page reaches no IPC.
 - `apps/desktop/src/renderer` — the office page: a React overlay (`ui/`) over a Phaser 4 scene
   (`game/`, with the office's geometry: `office-depth.ts` the draw bands,
   `office-layout-schema.ts` the shape of office-design.json, `office-grid.ts` walking as pure
@@ -19,13 +19,13 @@ is AGENTS.md's [Map](../AGENTS.md#map); this is where each thing lives in it.
   and main's events applied to that cache in `state/store.ts`, and main reached through `api.ts`,
   its events through `page-events.ts`, its log through `report-fault.ts`.
 - `apps/desktop/scripts` — the pack: node fetched (`fetch-node.ts`), the server staged
-  (`stage-server.ts`, as Resources/server), everything signed (`sign-resources.ts`), the crates'
-  notices (`rust-notices.ts`), the bundle and notarization (`package.ts`), the updater's feed
-  (`release-feed.ts`), a test pack's refusals and config (`update-test-pack.ts`), the release
-  (`publish-release.sh`), the smokes (`smoke-packaged.ts`, and `smoke-update.ts`, which updates an
-  installed test pack through its menu-bar item, `tray-ax.ts`, on a keychain of its own,
-  `update-keychain.ts`; both on `packaged-app.ts`, which launches the .app and reads its
-  processes), and `devkill.sh`.
+  (`stage-server.ts`, as Resources/server), everything signed (`sign-resources.ts`), the bundle,
+  notarization and a test pack (`package.ts`, through electron-builder), a test pack's refusals,
+  config and feed (`update-test-pack.ts`), the release (`publish-release.sh`), the smokes
+  (`smoke-packaged.ts`, and `smoke-update.ts`, which updates an installed test pack through its
+  menu-bar item, `tray-ax.ts`, signed by throwaway identities, `test-identity.ts`, on a keychain of
+  its own, `update-keychain.ts`; both on `packaged-app.ts`, which launches the .app and reads its
+  processes), the dev supervisor (`dev.ts`) and `devkill.sh`.
 - `apps/cli/src` — the `idlebiz` binary: `index.ts` and `program.ts` (citty; help and version on
   stdout, every failure on stderr), `commands/serve.ts` (loads main), `commands/tools.ts` (one
   verb per company tool, a client of the control plane), `paths.ts` (the package's own files), and

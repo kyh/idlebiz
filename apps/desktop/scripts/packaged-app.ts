@@ -2,11 +2,12 @@ import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcess, ChildProcessByStdio } from "node:child_process";
 import { once } from "node:events";
 import { createConnection } from "node:net";
+import { homedir } from "node:os";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 
-/** An .app's files, where src-tauri/src/runtime.rs finds them. */
+/** An .app's files, where the shell's `resolveRuntime` (src/shell/runtime.ts) finds them. */
 interface PackagedApp {
   shellBinary: string;
   /** Main's node, beside the shell. */
@@ -59,7 +60,14 @@ export const holdsVaultItem = (keychains: readonly string[] = []) => {
   return found.status === 0;
 };
 
-export const SINGLE_INSTANCE_SOCKET = "/tmp/com_idlebiz_desktop_si.sock";
+/** The socket Electron's single-instance lock answers on, in the packaged app's userData. */
+export const SINGLE_INSTANCE_SOCKET = path.join(
+  homedir(),
+  "Library",
+  "Application Support",
+  "IdleBiz",
+  "SingletonSocket",
+);
 
 export const BOOT_TIMEOUT_MS = 120_000;
 
