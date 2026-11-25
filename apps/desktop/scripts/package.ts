@@ -262,7 +262,7 @@ const config = {
   directories: { buildResources: "resources", output: builtDir },
   dmg: { artifactName: DMG_NAME },
   electronFuses: {
-    enableCookieEncryption: true,
+    enableCookieEncryption: false,
     enableEmbeddedAsarIntegrityValidation: true,
     enableNodeCliInspectArguments: false,
     enableNodeOptionsEnvironmentVariable: false,
