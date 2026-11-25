@@ -1,7 +1,7 @@
 import { once } from "node:events";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { app, dialog } from "electron";
+import { app, autoUpdater as squirrel, dialog } from "electron";
 import electronUpdater from "electron-updater";
 import { heldMain, markQuitting, takeMain } from "./shell";
 import { shellLog } from "./shell-log";
@@ -22,7 +22,7 @@ const updater = () => {
   }
 
   autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.logger = null;
 
   return autoUpdater;
@@ -77,10 +77,7 @@ export const installUpdate = async (version: string) => {
       throw new Error(`IdleBiz ${offered} has replaced ${version} as the newest`);
     }
 
-    const downloaded = once(autoUpdater, "update-downloaded");
-
-    await autoUpdater.downloadUpdate();
-    await downloaded;
+    await Promise.all([autoUpdater.downloadUpdate(), once(squirrel, "update-downloaded")]);
   } catch (error) {
     installing = false;
     throw error;

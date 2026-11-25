@@ -102,20 +102,40 @@ export const openSigningKeychain = (dir: string) => {
       cert,
     ]);
 
-    ran(`import ${name}'s key`, "security", [
-      "import",
+    const bundle = path.join(dir, `${slug}.p12`);
+    const sealed = randomBytes(12).toString("hex");
+
+    ran(`bundle ${name}`, "/usr/bin/openssl", [
+      "pkcs12",
+      "-export",
+      "-inkey",
       key,
+      "-in",
+      cert,
+      "-name",
+      name,
+      "-keypbe",
+      "PBE-SHA1-3DES",
+      "-certpbe",
+      "PBE-SHA1-3DES",
+      "-passout",
+      `pass:${sealed}`,
+      "-out",
+      bundle,
+    ]);
+
+    ran(`import ${name}`, "security", [
+      "import",
+      bundle,
       "-k",
       file,
-      "-t",
-      "priv",
       "-f",
-      "openssl",
+      "pkcs12",
+      "-P",
+      sealed,
       "-T",
       "/usr/bin/codesign",
     ]);
-
-    ran(`import ${name}'s certificate`, "security", ["import", cert, "-k", file]);
 
     ran(`let codesign use ${name} with no prompt`, "security", [
       "set-key-partition-list",
