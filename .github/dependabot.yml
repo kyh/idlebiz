@@ -8,7 +8,8 @@ updates:
     cooldown:
       default-days: 1
     groups:
-      # one PR for the adapters and the sdk, which CI's test-macos job runs the gate suites on
+      # one PR for the adapters and the sdk, which macos.yml's test-macos job runs the gate suites
+      # on: dispatch it on the PR's branch before merging
       acp:
         patterns:
           - "@agentclientprotocol/*"
@@ -24,7 +25,8 @@ updates:
           - "tailwindcss"
           - "@tailwindcss/*"
       # one PR for Electron and the builder and updater that pack and update it: the updater reads
-      # what the builder writes, and CI's test-macos and update-macos jobs pack and update on them
+      # what the builder writes, and macos.yml's test-macos and update-macos jobs pack and update on
+      # them: dispatch it on the PR's branch before merging
       electron:
         patterns:
           - "electron"

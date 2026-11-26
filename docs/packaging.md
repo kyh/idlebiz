@@ -48,10 +48,10 @@ Store Connect key (see `.env.example`), saying it did not when `.env` names none
 sits in `~/.appstoreconnect/private_keys/` (`package.ts` reads it there alone), which the sandbox
 keeps from every run; never keep it in the checkout, which runs can read. `package.ts` drops every
 signing and notary variable electron-builder would read from its own env (`CSC_*`, `APPLE_*`) and
-sets only what it decided. `release:publish` packs as a release (`IDLEBIZ_RELEASE=1`), which stops
-unless the pack is both signed and notarized, then publishes the dmg as the release tagged
-`v<version>`, where the site's download link finds it, so bump `version` in
-`apps/desktop/package.json` and `apps/cli/package.json` together first.
+sets only what it decided. `release:publish` refuses a commit with no green `macos.yml` run, packs
+as a release (`IDLEBIZ_RELEASE=1`), which stops unless the pack is both signed and notarized, then
+publishes the dmg as the release tagged `v<version>`, where the site's download link finds it, so
+bump `version` in `apps/desktop/package.json` and `apps/cli/package.json` together first.
 
 A release is also one the installed app can update from ("Updates" in
 [The page, the shell and main](app.md#the-page-the-shell-and-main)). Only a release names the feed:
