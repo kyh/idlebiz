@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
@@ -13,12 +13,13 @@ import { keepAwake } from "./keep-awake";
 import type { KeepAwake } from "./keep-awake";
 import type { EmployeeRunner } from "./scheduler";
 import * as store from "./store/store";
-import { activityFile, companyDir, tasksDir, betFile, routineFile, shippedDir } from "./paths";
+import { activityFile, companyFile, taskFile, betFile, routineFile, shippedDir } from "./paths";
 import { activityEvents } from "./activity";
 import { createScheduler, loggedToolName } from "./scheduler";
 import { founderActions } from "./founder-actions";
 import { setAutopilot } from "./company-actions";
 import { unaskedIntegrations } from "./test-support/integrations";
+import { refuseWritesTo } from "./test-support/refused-writes";
 import { foundAcme, freshSave, hire } from "./test-support/save";
 
 const root = freshSave();
@@ -274,15 +275,14 @@ describe("draining the queue", () => {
     const drain = createScheduler(scripted().driver, asleep, unaskedIntegrations);
     const stuck = queue("priya", "high");
     const next = queue("mae");
-    const taskDir = path.join(tasksDir(), stuck.id);
+    const undo = refuseWritesTo(taskFile(stuck.id));
     const logged = vi.spyOn(console, "error");
-    chmodSync(taskDir, 0o555);
 
     try {
       expect(() => drain.tick()).not.toThrow();
       expect(logged).toHaveBeenCalledWith(`[start task ${stuck.id}]`, expect.anything());
     } finally {
-      chmodSync(taskDir, 0o755);
+      undo();
       logged.mockRestore();
     }
 
@@ -501,17 +501,16 @@ describe("settling a run", () => {
     const { driver, running } = scripted();
     const task = queue("priya");
     createScheduler(driver, asleep, unaskedIntegrations).tick();
-    const taskDir = path.join(tasksDir(), task.id);
+    const undo = refuseWritesTo(taskFile(task.id));
     const logged = vi.spyOn(console, "error");
     const runs = runEnds();
-    chmodSync(taskDir, 0o555);
 
     try {
       running.get("priya")?.(done(0.5));
       await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
       expect(logged).toHaveBeenCalledOnce();
     } finally {
-      chmodSync(taskDir, 0o755);
+      undo();
       logged.mockRestore();
       runs.stop();
     }
@@ -527,14 +526,14 @@ describe("settling a run", () => {
     const task = queue("priya");
     createScheduler(driver, asleep, unaskedIntegrations).tick();
     const logged = vi.spyOn(console, "error");
-    chmodSync(companyDir(), 0o555);
+    const undo = refuseWritesTo(companyFile());
 
     try {
       running.get("priya")?.(done(0.5));
       await vi.waitFor(() => expect(store.getEmployee("priya")?.status).toBe("idle"));
       expect(logged).toHaveBeenCalledWith(expect.stringContaining("book run"), expect.anything());
     } finally {
-      chmodSync(companyDir(), 0o755);
+      undo();
       logged.mockRestore();
     }
 
@@ -1096,16 +1095,15 @@ describe("a file the save refuses on every tick", () => {
 
     const task = queue("priya");
     const drain = createScheduler(scripted().driver, asleep, unaskedIntegrations);
-    const dir = path.dirname(betFile(stuck.id));
+    const undo = refuseWritesTo(betFile(stuck.id));
     const logged = vi.spyOn(console, "error");
-    chmodSync(dir, 0o555);
 
     try {
       expect(() => drain.start()).not.toThrow();
       expect(logged).toHaveBeenCalledWith(`[judge bet ${stuck.id}]`, expect.anything());
     } finally {
       drain.stop();
-      chmodSync(dir, 0o755);
+      undo();
       logged.mockRestore();
     }
 
@@ -1118,17 +1116,16 @@ describe("a file the save refuses on every tick", () => {
     found(UNCAPPED, "game-studio");
     const [routine] = store.listRoutines();
     const drain = createScheduler(scripted().driver, asleep, unaskedIntegrations);
-    const dir = path.dirname(routineFile(routine?.id ?? ""));
+    const undo = refuseWritesTo(routineFile(routine?.id ?? ""));
     vi.useFakeTimers({ now: Date.now() + 25 * 3_600_000, toFake: ["Date"] });
     const logged = vi.spyOn(console, "error");
-    chmodSync(dir, 0o555);
 
     try {
       expect(() => drain.start()).not.toThrow();
       expect(logged).toHaveBeenCalledWith(`[mark routine ${routine?.id}]`, expect.anything());
     } finally {
       drain.stop();
-      chmodSync(dir, 0o755);
+      undo();
       logged.mockRestore();
       vi.useRealTimers();
     }

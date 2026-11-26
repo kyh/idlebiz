@@ -29,6 +29,9 @@ interface WriteOptions {
   mode?: number;
 }
 
+/** Where atomicWrite stages `file` before the rename gives it the file's name. */
+export const tmpFileOf = (file: string) => `${file}.tmp`;
+
 /**
  * Write the whole file via tmp + rename, so a reader never sees half of it. The tmp is always
  * made new: one already there, left by a crash or planted as a link to where a reader waits,
@@ -45,7 +48,7 @@ export const atomicWrite = (file: string, content: string, options: WriteOptions
   }
 
   mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp`;
+  const tmp = tmpFileOf(file);
   rmSync(tmp, { force: true });
   const fd = openSync(tmp, "wx", options.mode);
 

@@ -1,8 +1,9 @@
-import { chmodSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import * as store from "./store";
-import { alumniDir, tasksDir, employeeAgentDir } from "../paths";
+import { alumniDir, taskFile, employeeAgentDir } from "../paths";
+import { refuseWritesTo } from "../test-support/refused-writes";
 import { foundAcme, freshSave, hire } from "../test-support/save";
 import { block, firstProduct, launch, stateOf, writeDead } from "../test-support/store";
 
@@ -118,13 +119,12 @@ describe("a release cut short", () => {
       throw new Error("no asks");
     }
 
-    const dir = path.join(tasksDir(), stuck);
-    chmodSync(dir, 0o555);
+    const undo = refuseWritesTo(taskFile(stuck));
 
     try {
       expect(store.archiveEmployee("priya")).toMatchObject({ rehomed: 1 });
     } finally {
-      chmodSync(dir, 0o755);
+      undo();
     }
 
     expect(store.getTask(rest)?.assigneeId).toBe("mae");

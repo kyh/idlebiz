@@ -1,10 +1,11 @@
-import { chmodSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as store from "./store/store";
 import { PULSE_MS } from "./metrics";
-import { companyDir } from "./paths";
+import { companyFile } from "./paths";
 import { metricsPulse } from "./metrics-pulse";
+import { refuseWritesTo } from "./test-support/refused-writes";
 import { foundAcme, freshSave, hire } from "./test-support/save";
 import { answerFetch, interceptNetwork } from "./test-support/network";
 
@@ -82,14 +83,14 @@ describe("a pulse", () => {
       ),
     );
     const logged = vi.spyOn(console, "error");
-    chmodSync(companyDir(), 0o555);
+    const undo = refuseWritesTo(companyFile());
 
     try {
       metricsPulse.now();
       await vi.waitFor(() => expect(store.getBet(bet.id)?.reading).toBe(7));
       expect(logged).toHaveBeenCalledWith("[company metrics]", expect.anything());
     } finally {
-      chmodSync(companyDir(), 0o755);
+      undo();
       logged.mockRestore();
     }
 

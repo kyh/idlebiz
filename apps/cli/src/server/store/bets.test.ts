@@ -1,12 +1,4 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { KILL_GRACE_MS, windowEnd } from "@repo/domain/bets";
@@ -18,10 +10,11 @@ import {
   retiredDir,
   sharedDir,
   shippedDir,
-  tasksDir,
+  taskFile,
   betFile,
   productWorkspace,
 } from "../paths";
+import { refuseWritesTo } from "../test-support/refused-writes";
 import { foundAcme, freshSave, hire } from "../test-support/save";
 import { firstProduct, launch, recruit, stateOf, writeDead } from "../test-support/store";
 
@@ -155,13 +148,12 @@ describe("bets", () => {
   it("keeps spend its save refused, and the bet's next write carries it", () => {
     foundAcme();
     const bet = launch(firstProduct().id);
-    const dir = path.dirname(betFile(bet.id));
-    chmodSync(dir, 0o555);
+    const undo = refuseWritesTo(betFile(bet.id));
 
     try {
       expect(() => store.recordBetSpend(bet.id, 1.5)).toThrow();
     } finally {
-      chmodSync(dir, 0o755);
+      undo();
     }
 
     expect(store.getBet(bet.id)?.spentUsd).toBe(1.5);
@@ -386,14 +378,13 @@ describe("bets", () => {
 
     store.claimTask(stuck.id, priya.id);
     store.setBetReading(bet.id, 60, 1);
-    const dir = path.join(tasksDir(), stuck.id);
-    chmodSync(dir, 0o555);
+    const undo = refuseWritesTo(taskFile(stuck.id));
     vi.spyOn(console, "error");
 
     try {
       expect(store.judgeBets(1, 0).map((b) => b.state.kind)).toEqual(["won"]);
     } finally {
-      chmodSync(dir, 0o755);
+      undo();
       vi.restoreAllMocks();
     }
 

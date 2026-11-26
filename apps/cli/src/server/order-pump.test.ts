@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -12,6 +12,7 @@ import { orderIdOf } from "./order";
 import { CHECKOUTS_READ_MS } from "./order-intake";
 import { pumpOrders } from "./order-pump";
 import { retireProduct, settleOrderCard } from "./company-actions";
+import { refuseWritesUnder } from "./test-support/refused-writes";
 import { foundAcme, freshSave, hire } from "./test-support/save";
 import { answerFetch, interceptNetwork } from "./test-support/network";
 
@@ -917,13 +918,12 @@ describe("the order pump", () => {
     const productId = openShop();
     fakeWorld({ sessions: [checkout("cs_nowhere", { collected_information: null })] });
     const logged = vi.spyOn(console, "error");
-    mkdirSync(ordersDir(), { recursive: true });
-    chmodSync(ordersDir(), 0o555);
+    const undo = refuseWritesUnder(ordersDir());
 
     try {
       await pumpOrders(NOW, "read");
     } finally {
-      chmodSync(ordersDir(), 0o755);
+      undo();
       logged.mockRestore();
     }
 

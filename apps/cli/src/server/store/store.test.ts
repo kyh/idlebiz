@@ -1,5 +1,4 @@
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -27,11 +26,13 @@ import {
   sharedDir,
   shippedDir,
   sinceLastLookFile,
+  taskFile,
   tasksDir,
   employeeAgentDir,
   productWorkspace,
 } from "../paths";
 import { unaskedIntegrations } from "../test-support/integrations";
+import { refuseWritesTo } from "../test-support/refused-writes";
 import { foundAcme, freshSave, hire } from "../test-support/save";
 import { block, firstProduct, launch, recruit, stateOf, writeDead } from "../test-support/store";
 
@@ -241,13 +242,12 @@ describe("a write that fails", () => {
     const employee = store.createEmployee(recruit("Priya"));
     const task = store.createTask({ origin: "founder", title: "Ship it" });
     store.claimTask(task.id, employee.id);
-    const dir = path.join(tasksDir(), task.id);
-    chmodSync(dir, 0o555);
+    const undo = refuseWritesTo(taskFile(task.id));
 
     try {
       expect(() => store.lockTaskForRun(task.id, "run-1")).toThrow();
     } finally {
-      chmodSync(dir, 0o755);
+      undo();
     }
 
     expect(store.getTask(task.id)?.state.kind).toBe("queued");
@@ -263,13 +263,12 @@ describe("a write that fails", () => {
     const task = store.createTask({ origin: "founder", title: "Ship it" });
     store.claimTask(task.id, employee.id);
     store.lockTaskForRun(task.id, "run-1");
-    const dir = path.join(tasksDir(), task.id);
-    chmodSync(dir, 0o555);
+    const undo = refuseWritesTo(taskFile(task.id));
 
     try {
       expect(() => store.failTask(task.id, "run-1", "boom")).toThrow();
     } finally {
-      chmodSync(dir, 0o755);
+      undo();
     }
 
     expect(store.getTask(task.id)).toMatchObject({
