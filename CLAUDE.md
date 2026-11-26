@@ -146,6 +146,10 @@ orient a reader and link into them, never telling a mechanic again.
 - **Tests run the real thing**: requests are answered through MSW (`test-support/network.ts`,
   strict, so one nothing answers fails), spies only observe, a wait is on a signal, and a test is
   a `.test.ts` beside its subject. A package exports each entrypoint by name, never `./*`.
+  Suites pass as root in a container too: a save that refuses a write is a path in the way
+  (`test-support/refused-writes.ts`), never a file mode, which root writes through; and a
+  process counts as gone once it is a zombie (`test-support/processes.ts`), since a container's
+  PID 1 may reap nothing.
 - **The store is one synchronous object.** Don't split it by entity or make it async: its
   synchronous check-and-set is what makes the task lock correct.
 - **Every write is whole; few are durable.** No reader sees half a file, but only one whose loss

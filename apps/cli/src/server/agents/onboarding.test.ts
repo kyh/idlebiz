@@ -6,6 +6,7 @@ import type { RunnerProbe } from "@repo/agent-driver/detect";
 import type { Argv } from "@repo/agent-driver/registry";
 import type { AuthFlowEvent } from "@repo/domain/domain";
 import { SYSTEM_PATH } from "../lib/founder-env";
+import { running } from "../test-support/processes";
 import { CLAUDE_INSTALLER, cancelLogin, startLogin } from "./onboarding";
 
 const LOGIN_URL = { type: "url", url: "https://claude.test/oauth/authorize" } as const;
@@ -84,20 +85,10 @@ const setByLaunchd = (base: string) => {
 
 const pidsIn = (file: string) => readFileSync(file, "utf-8").split(" ").map(Number);
 
-const alive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 const goneIn = async (file: string) => {
   await vi.waitFor(
     () => {
-      expect(pidsIn(file).filter(alive)).toEqual([]);
+      expect(pidsIn(file).filter(running)).toEqual([]);
     },
     { interval: 100, timeout: 5000 },
   );
@@ -144,7 +135,7 @@ describe("a CLI's sign-in", () => {
     await vi.waitFor(() => {
       expect(heard).toContainEqual(LOGIN_URL);
     });
-    expect(pidsIn(pids).every(alive)).toBe(true);
+    expect(pidsIn(pids).every(running)).toBe(true);
 
     cancelLogin((e) => heard.push(e));
     await settled;
@@ -261,7 +252,7 @@ describe("a CLI's sign-in", () => {
       expect(heardSecond).toContainEqual(LOGIN_URL);
     });
     await goneIn(first);
-    expect(pidsIn(second).every(alive)).toBe(true);
+    expect(pidsIn(second).every(running)).toBe(true);
 
     cancelLogin((e) => heardSecond.push(e));
     await secondSettled;

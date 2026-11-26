@@ -10,20 +10,11 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { running } from "../test-support/processes";
 import { SYSTEM_PATH as LAUNCHD_PATH } from "./founder-env";
 import { adoptShellPath, runShell } from "./shell-path";
 
 const adopted = () => process.env.PATH?.split(path.delimiter) ?? [];
-
-const alive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 describe.skipIf(process.platform !== "darwin")("adoptShellPath", () => {
   const touched = ["HOME", "PATH", "SHELL", "ZDOTDIR"];
@@ -128,7 +119,7 @@ describe.skipIf(process.platform !== "darwin")("adoptShellPath", () => {
     expect(Date.now() - started).toBeLessThan(4000);
     expect(adopted()[0]).toBe(path.join(home, ".bun/bin"));
     const [shell = 0, sleeper = 0] = readFileSync(pids, "utf-8").trim().split(" ").map(Number);
-    await expect.poll(() => [alive(shell), alive(sleeper)]).toEqual([false, false]);
+    await expect.poll(() => [running(shell), running(sleeper)]).toEqual([false, false]);
   });
 });
 
@@ -234,7 +225,7 @@ describe("runShell", () => {
     ).rejects.toThrow("/bin/sh did not answer within 500ms");
 
     expect(Date.now() - started).toBeLessThan(2000);
-    await expect.poll(() => alive(Number(readFileSync(pid, "utf-8")))).toBe(false);
+    await expect.poll(() => running(Number(readFileSync(pid, "utf-8")))).toBe(false);
     rmSync(box, { force: true, recursive: true });
   });
 

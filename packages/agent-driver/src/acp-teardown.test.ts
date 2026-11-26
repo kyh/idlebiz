@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, watch } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, watch } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -18,14 +18,35 @@ const WEDGED_AGENT = withChild('require("node:fs").writeFileSync("termed", "");'
 
 const ORPHANING_AGENT = withChild("process.exit(0);");
 
+const statOf = (pid: string) => {
+  try {
+    const stat = readFileSync(path.join("/proc", pid, "stat"), "utf-8");
+    const [state, , pgrp] = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+
+    return { pgrp: Number(pgrp), state };
+  } catch {
+    return null;
+  }
+};
+
+const unreaped = (state: string | undefined) => state === "Z" || state === "X";
+
 const groupAlive = (pgid: number) => {
   try {
     process.kill(-pgid, 0);
-
-    return true;
   } catch {
     return false;
   }
+
+  if (!existsSync("/proc/self/stat")) {
+    return true;
+  }
+
+  return readdirSync("/proc").some((pid) => {
+    const stat = /^\d+$/u.test(pid) ? statOf(pid) : null;
+
+    return stat?.pgrp === pgid && !unreaped(stat.state);
+  });
 };
 
 const written = (dir: string, name: string, done: (text: string) => boolean) => {
