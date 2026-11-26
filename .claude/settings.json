@@ -2,12 +2,11 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(pnpm install *)",
-      "Bash(pnpm verify *)",
-      "Bash(pnpm knip *)",
-      "Bash(pnpm dev:web *)",
-      "Bash(pnpm dev:kill *)",
-      "Bash(agent-browser *)"
+      "Bash(pnpm install:*)",
+      "Bash(pnpm verify:*)",
+      "Bash(pnpm knip:*)",
+      "Bash(agent-browser:*)",
+      "Bash(pnpm dev:*)"
     ]
   },
   "hooks": {
