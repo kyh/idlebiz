@@ -48,3 +48,6 @@ next-env.d.ts
 
 # vercel
 .vercel
+
+# next dev writes these for coding agents; agent docs live at the root
+apps/*/AGENTS.md
