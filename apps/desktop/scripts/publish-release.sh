@@ -29,6 +29,13 @@ if gh release view "$TAG" >/dev/null 2>&1 ||
   exit 1
 fi
 
+# The Mac jobs run on no push, so a release ships only a commit a dispatched run passed.
+SHA="$(git rev-parse HEAD)"
+if [ "$(gh run list -w macos.yml -c "$SHA" -s success -L 1 --json databaseId -q length)" = 0 ]; then
+  echo "macos.yml has no green run of ${SHA}: gh workflow run macos.yml --ref <branch>, then wait." >&2
+  exit 1
+fi
+
 IDLEBIZ_RELEASE=1 pnpm run package
 
 gh release create "$TAG" \

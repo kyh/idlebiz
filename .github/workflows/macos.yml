@@ -1,12 +1,10 @@
 name: macOS
 
-# What only a Mac runs, on a release's tag and by hand (`gh workflow run macos.yml --ref <branch>`),
-# never on a push or a PR: a macOS runner bills about ten times a Linux one. Dispatch it on a
-# branch that touches the sandbox, the gates, the shell or the pack, and on main before
-# `release:publish`.
+# What only a Mac runs, by hand only (`gh workflow run macos.yml --ref <branch>`), never on a push
+# or a PR: a macOS runner bills about ten times a Linux one. Dispatch it on a branch that touches
+# the sandbox, the gates, the shell or the pack, and on main before `release:publish`, which
+# refuses a commit with no green run.
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
 
 concurrency:

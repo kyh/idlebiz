@@ -84,16 +84,16 @@ dependabot moves (`.github/dependabot.yml`); a new step pins its action the same
 build of `apps/web` is a second remote check. `pnpm knip` checks unused files, exports and
 dependencies.
 
-`.github/workflows/macos.yml` runs what only a Mac can, on a release's tag and when dispatched by
-hand, never on a push or a PR, since a macOS runner bills about ten times a Linux one: dispatch it on
-a branch that touches the sandbox, a gate, the shell or the pack, and on main before
-`release:publish`. Its `test-macos` job runs `pnpm test` with the sandbox and every gate suite (it
-installs `claude`, `codex` and `agent-browser` at versions pinned there, signed in to nothing, and
-fails before the tests if one does not answer `--version`, since a gate skips on a CLI it cannot
-run), and `pnpm smoke:desktop` on an ad-hoc pack ([Packaging and release](docs/packaging.md)). Its
-`update-macos` job runs `pnpm smoke:update` beside it: an installed test pack takes the next release
-from a feed on loopback through its menu-bar item, and a failed run uploads `main.log` and the
-feed's log as the `update-smoke` artifact.
+`.github/workflows/macos.yml` runs what only a Mac can, when dispatched by hand, never on a push or
+a PR, since a macOS runner bills about ten times a Linux one: dispatch it on a branch that touches
+the sandbox, a gate, the shell or the pack, and on main before `release:publish`, which refuses a
+commit with no green run. Its `test-macos` job runs `pnpm test` with the sandbox and every gate
+suite (it installs `claude`, `codex` and `agent-browser` at versions pinned there, signed in to
+nothing, and fails before the tests if one does not answer `--version`, since a gate skips on a CLI
+it cannot run), and `pnpm smoke:desktop` on an ad-hoc pack ([Packaging and
+release](docs/packaging.md)). Its `update-macos` job runs `pnpm smoke:update` beside it: an
+installed test pack takes the next release from a feed on loopback through its menu-bar item, and a
+failed run uploads `main.log` and the feed's log as the `update-smoke` artifact.
 
 Its `e2e-macos` job runs `pnpm e2e` on a Mac with `IDLEBIZ_E2E_NO_SKIPS=1`, so a test that would
 skip fails the run, and uploads `tools/e2e/test-results/` as the `e2e` artifact whatever the
