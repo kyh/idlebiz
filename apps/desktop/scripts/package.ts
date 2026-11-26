@@ -104,26 +104,10 @@ const notaryOf = () => {
 const listedIdentities = () =>
   spawnSync("security", ["find-identity", "-v", "-p", "codesigning"], { encoding: "utf-8" }).stdout;
 
-const developerId = () => {
-  if (process.env.IDLEBIZ_PACK_UNSIGNED === "1") {
-    return null;
-  }
-
-  if (process.env.APPLE_SIGNING_IDENTITY !== undefined) {
-    return process.env.APPLE_SIGNING_IDENTITY;
-  }
-
-  const identity = /"(?<identity>Developer ID Application: [^"]+)"/u.exec(listedIdentities())
-    ?.groups?.identity;
-
-  if (identity === undefined) {
-    throw new Error(
-      "the keychain holds no Developer ID Application identity: install one, name it in APPLE_SIGNING_IDENTITY, or set IDLEBIZ_PACK_UNSIGNED=1 for an ad-hoc pack that opens on this Mac alone",
-    );
-  }
-
-  return identity;
-};
+const developerId = () =>
+  process.env.APPLE_SIGNING_IDENTITY ??
+  /"(?<identity>Developer ID Application: [^"]+)"/u.exec(listedIdentities())?.groups?.identity ??
+  null;
 
 const NOTARY_VARIABLES = [
   "APPLE_API_ISSUER",
@@ -188,7 +172,7 @@ const notary = identity === null ? null : notaryOf();
 
 if (release && (identity === null || notary === null)) {
   throw new Error(
-    "a release is signed with a Developer ID and notarized: set no IDLEBIZ_PACK_UNSIGNED, and name a complete notary key in the root .env",
+    "a release is signed with a Developer ID and notarized: install one in the keychain (or name it in APPLE_SIGNING_IDENTITY), and name a complete notary key in the root .env",
   );
 }
 

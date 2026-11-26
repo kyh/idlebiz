@@ -5,7 +5,7 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
 ```sh
 pnpm -F @repo/desktop package               # build, sign, notarize → apps/desktop/.output/bin/*.dmg
 pnpm -F @repo/desktop release:publish       # the same as a release, then published to GitHub
-IDLEBIZ_PACK_UNSIGNED=1 pnpm smoke:desktop  # an ad-hoc pack, booted on a scratch save
+pnpm smoke:desktop                          # a pack, booted on a scratch save
 pnpm smoke:update                           # two test packs, the installed one updating itself
 ```
 
@@ -42,7 +42,7 @@ Keychain with, which electron-builder ships in the bundle; the page and the rest
 bundled whole. `pnpm add` defaults to `dependencies`.
 
 It signs with the keychain's Developer ID (`APPLE_SIGNING_IDENTITY` names another; with none it
-stops, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack, for this Mac alone) and notarizes
+packs ad-hoc, for this Mac alone, and a release stops) and notarizes
 the app and the dmg when the root `.env` names the notary key by the id and issuer of its App
 Store Connect key (see `.env.example`), saying it did not when `.env` names none. The key's `.p8`
 sits in `~/.appstoreconnect/private_keys/` (`package.ts` reads it there alone), which the sandbox

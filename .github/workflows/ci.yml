@@ -116,9 +116,6 @@ jobs:
         run: pnpm test
 
       - name: Smoke the packaged app
-        env:
-          # ad-hoc: the runner's keychain holds no Developer ID
-          IDLEBIZ_PACK_UNSIGNED: 1
         run: pnpm smoke:desktop
 
       # what the sandbox refused while the gates or the smoke ran, which a run's own output may not
