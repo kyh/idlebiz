@@ -2,8 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <!-- Node's V8 needs JIT under the hardened runtime: the node beside the shell, and
-       the vendor runtimes main runs. Nothing else here does, and each further
+  <!-- V8 needs JIT under the hardened runtime: Electron's own, the node beside the
+       shell, and the vendor runtimes main runs. Nothing else here does, and each further
        entitlement (unsigned executable memory, dyld variables, unsigned libraries)
        widens what a signed, notarized app will run. The pack signs every Mach-O it
        ships, the vendor runtimes' included (scripts/sign-resources.ts), so library

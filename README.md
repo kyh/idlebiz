@@ -9,7 +9,7 @@ the dashboard can read your actual Stripe revenue and analytics.
 
 ## Layout
 
-- `apps/desktop` — the game: a Tauri app, a Rust shell around a React + Phaser page.
+- `apps/desktop` — the game: an Electron app, a shell around a React + Phaser page.
 - `apps/cli` — the `idlebiz` binary: `idlebiz serve` is main, the node process that runs the
   company, which the app runs as its child and which serves the page; every other verb is a
   company tool the employees call.
@@ -27,7 +27,7 @@ Source asset workspace lives outside the repo at `/Users/kyh/Desktop/vg/office`.
 
 ```sh
 pnpm install
-pnpm dev:desktop   # the app's window (needs the Rust toolchain; Linux: AGENTS.md's Quickstart)
+pnpm dev:desktop   # the app's window
 pnpm dev:browser   # the same office in a browser, at the URL it prints
 pnpm dev:web
 pnpm verify        # typecheck · lint · knip · format · test · build

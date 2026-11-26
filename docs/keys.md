@@ -8,7 +8,7 @@ Paths are short, as in [AGENTS.md](../AGENTS.md), and `CLAUDE.md` holds the deci
 value's `ENV/` name, so a misspelt name fails typecheck rather than reading as no key.
 
 - The installed app keeps each key as a generic-password item in the login keychain: service
-  "IdleBiz", account the key's name (`src-tauri/src/vault.rs`), so the founder finds them in
+  "IdleBiz", account the key's name (`apps/desktop/src/shell/vault.ts`), so the founder finds them in
   Keychain Access. The shell reads every item at hello and hands them to main as `vault`, naming any
   the Keychain would not give; main keeps a copy it reads synchronously and asks the shell to keep
   each change (`host.vaultSet`, `host.vaultDelete`) before it holds it. Main never reaches the

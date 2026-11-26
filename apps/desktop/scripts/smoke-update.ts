@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 import { once } from "node:events";
 import {
   appendFileSync,
-  constants,
   createReadStream,
   existsSync,
   readFileSync,
@@ -14,10 +13,10 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
@@ -48,7 +47,6 @@ import {
   waitForLine,
 } from "./packaged-app.ts";
 import type { Process } from "./packaged-app.ts";
-import { FEED_NAME, archiveName } from "./release-feed.ts";
 import {
   axReady,
   clickTrayItem,
@@ -58,9 +56,19 @@ import {
   securityPromptShown,
   trayItems,
 } from "./tray-ax.ts";
+import { openSigningKeychain, signAs } from "./test-identity.ts";
+import type { SigningKeychain } from "./test-identity.ts";
 import { openScratchKeychain, refuseKilledSmokesKeychain } from "./update-keychain.ts";
 import type { ScratchKeychain } from "./update-keychain.ts";
-import { loopbackFeed, updateTestSpecSchema } from "./update-test-pack.ts";
+import {
+  APP_UPDATE_FILE,
+  FEED_NAME,
+  feedOfAppUpdate,
+  loopbackFeed,
+  offeredIn,
+  updateTestSpecSchema,
+  zipName,
+} from "./update-test-pack.ts";
 
 const packageRoot = path.resolve(import.meta.dirname, "..");
 const cliRoot = path.resolve(packageRoot, "..", "cli");
@@ -71,7 +79,16 @@ const OPEN_ITEM = "Open Acme";
 const UPDATE_ITEM = "Update to IdleBiz ";
 const NOT_DOWNLOADED = "could not be downloaded";
 const VAULT_REFUSED = "[shell] the Keychain would not";
-const SWAP_FOLDER = /^tauri_(?:current|updated)_app/u;
+const MAIN_LOG = path.join(homedir(), "Library", "Logs", "IdleBiz", "main.log");
+
+const SHIPIT_LOG = path.join(
+  homedir(),
+  "Library",
+  "Caches",
+  "com.idlebiz.desktop.ShipIt",
+  "ShipIt_stderr.log",
+);
+
 const CHECK_TIMEOUT_MS = 60_000;
 const TRAY_TIMEOUT_MS = 60_000;
 const TRAY_SETTLE_MS = 5000;
@@ -182,11 +199,6 @@ const newer = (one: string, other: string) => {
   return false;
 };
 
-const feedSchema = z.object({
-  platforms: z.object({ "darwin-aarch64": z.object({ signature: z.string(), url: z.string() }) }),
-  version: z.string(),
-});
-
 const OWN_MOVES = new Set([".main", path.join("company", "state")]);
 
 interface Snapshot {
@@ -248,14 +260,16 @@ const changesBetween = (before: Snapshot, after: Snapshot) => [
   ...[...after.logs.keys()].flatMap((name) => (before.logs.has(name) ? [] : [`${name} is new`])),
 ];
 
-const swapFolders = (dirs: readonly string[]) =>
-  dirs.flatMap((dir) =>
-    existsSync(dir)
-      ? readdirSync(dir)
-          .filter((name) => SWAP_FOLDER.test(name))
-          .map((name) => path.join(dir, name))
-      : [],
-  );
+const sizeOf = (file: string) => (existsSync(file) ? statSync(file).size : 0);
+
+const tailOf = (file: string, from: number) =>
+  existsSync(file) ? readFileSync(file).subarray(from).toString("utf-8") : "";
+
+const sha512Of = (file: string) => createHash("sha512").update(readFileSync(file)).digest("base64");
+
+const zipped = (app: string, zip: string) => {
+  run(`zip ${app}`, "ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", app, zip]);
+};
 
 const args = process.argv.slice(2);
 const packsArg = args.find((arg) => arg.startsWith("--packs="));
@@ -266,9 +280,7 @@ if (unknown.length > 0) {
 }
 
 if (process.platform !== "darwin" || process.arch !== "arm64") {
-  throw new Error(
-    "the update smoke runs on an Apple-silicon Mac: its packs are arm64 .apps, and the feed offers darwin-aarch64 alone",
-  );
+  throw new Error("the update smoke runs on an Apple-silicon Mac: its packs are arm64 .apps");
 }
 
 if (process.env.IDLEBIZ_PACK_UPDATE_TEST !== undefined) {
@@ -323,15 +335,18 @@ if (!reuse && keptFiles.some((file) => existsSync(file))) {
   );
 }
 
-if (!reuse && process.env.IDLEBIZ_PACK_UNSIGNED !== "1") {
-  throw new Error(
-    "a test pack is ad-hoc, so it opens on this Mac alone: run with IDLEBIZ_PACK_UNSIGNED=1, as CI does",
-  );
-}
-
 const reusedPort =
   reuse && kept !== null
-    ? Number(new URL(readJson(kept.feed, feedSchema).platforms["darwin-aarch64"].url).port)
+    ? Number(
+        new URL(
+          feedOfAppUpdate(
+            readFileSync(
+              path.join(kept.installed, "Contents", "Resources", APP_UPDATE_FILE),
+              "utf-8",
+            ),
+          ),
+        ).port,
+      )
     : 0;
 
 const scratch = realpathSync.native(
@@ -347,7 +362,7 @@ const {
 
 const packs = path.dirname(updateDir);
 
-const save = path.join(scratch, "save");
+const save = path.join(packs, "save");
 const install = path.join(scratch, "Applications", "IdleBiz.app");
 const installed = packagedApp(install);
 const PROXIES = new Set(["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"]);
@@ -358,10 +373,6 @@ const env: NodeJS.ProcessEnv = {
   ),
   PATH: SYSTEM_PATH,
 };
-
-const signerEnv = Object.fromEntries(
-  Object.entries(process.env).filter(([name]) => !name.startsWith("TAURI_SIGNING_")),
-);
 
 interface Served {
   body: Buffer | null;
@@ -375,8 +386,16 @@ await mkdir(REPORT_DIR, { recursive: true });
 
 writeFileSync(FEED_LOG, "");
 
+const NO_CACHE = /^\?noCache=[0-9a-v]+$/u;
+
+const pathOf = (url: string) => {
+  const parsed = new URL(url, "http://127.0.0.1");
+
+  return parsed.search === "" || NO_CACHE.test(parsed.search) ? parsed.pathname : url;
+};
+
 const answer = (request: IncomingMessage, response: ServerResponse) => {
-  const asked = `${request.method ?? "?"} ${request.url ?? "?"}`;
+  const asked = `${request.method ?? "?"} ${pathOf(request.url ?? "?")}`;
 
   const heard = (status: number) => {
     requests.push(asked);
@@ -384,22 +403,18 @@ const answer = (request: IncomingMessage, response: ServerResponse) => {
     log(`the feed answered ${asked} ${status}`);
   };
 
-  if (request.method === "GET" && request.url === `/${FEED_NAME}` && feed.body !== null) {
-    response.writeHead(200, { "content-type": "application/json" });
+  if (asked === `GET /${FEED_NAME}` && feed.body !== null) {
+    response.writeHead(200, { "content-type": "text/yaml" });
     response.end(feed.body);
     heard(200);
 
     return;
   }
 
-  if (
-    request.method === "GET" &&
-    feed.archive !== null &&
-    request.url === `/${path.basename(feed.archive)}`
-  ) {
+  if (feed.archive !== null && asked === `GET /${path.basename(feed.archive)}`) {
     response.writeHead(200, {
       "content-length": statSync(feed.archive).size,
-      "content-type": "application/gzip",
+      "content-type": "application/zip",
     });
     createReadStream(feed.archive)
       .on("error", () => response.destroy())
@@ -416,6 +431,7 @@ const answer = (request: IncomingMessage, response: ServerResponse) => {
 const server = createServer(answer);
 
 let keychain: ScratchKeychain | null = null;
+let signing: SigningKeychain | null = null;
 let shellGroup: number | null = null;
 const mainGroups: number[] = [];
 let cleaned = false;
@@ -475,12 +491,23 @@ const cleanUp = () => {
     });
   }
 
+  const signer = signing;
+
+  if (signer !== null) {
+    step("put the signing keychain away", () => {
+      for (const failure of signer.close()) {
+        leftUndone(failure);
+      }
+    });
+  }
+
   step("close the feed", () => {
     server.closeAllConnections();
     server.close();
   });
   step(`remove ${scratch}`, () => {
     rmSync(scratch, { force: true, recursive: true });
+    rmSync(save, { force: true, recursive: true });
   });
 };
 
@@ -515,31 +542,16 @@ try {
   const feedUrl = `http://127.0.0.1:${listening.data.port}/${FEED_NAME}`;
   log(`the feed answers ${feedUrl}, and logs each request to ${FEED_LOG}`);
 
-  const keys = path.join(scratch, "keys");
-  await mkdir(keys);
-
-  const signer = (what: string, signerArgs: readonly string[]) => {
-    run(what, "pnpm", ["exec", "tauri", "signer", ...signerArgs], {
-      cwd: packageRoot,
-      env: signerEnv,
-    });
-  };
-
-  const keyA = path.join(keys, "a.key");
-  const keyB = path.join(keys, "b.key");
-
-  if (!reuse) {
-    signer("make the key the packs trust", ["generate", "--ci", "-p", "", "-w", keyA]);
-  }
-
-  signer("make a key no pack trusts", ["generate", "--ci", "-p", "", "-w", keyB]);
+  const identities = await mkdtemp(path.join(scratch, "identities-"));
+  signing = openSigningKeychain(identities);
+  const identityB = signing.identity("IdleBiz Update Smoke B");
 
   if (reuse) {
     log(`reusing the packs in ${packs}, which ask ${feedUrl}`);
   } else {
+    const identityA = signing.identity("IdleBiz Update Smoke A");
     const { version } = readJson(path.join(packageRoot, "package.json"), versionSchema);
     const [major, minor, patch] = semver(version);
-    const pubkey = readFileSync(`${keyA}.pub`, "utf-8");
 
     const pack = (name: string, spec: z.input<typeof updateTestSpecSchema>) => {
       const file = path.join(scratch, `${name}.spec.json`);
@@ -556,25 +568,24 @@ try {
       );
     };
 
+    const signedBy = { feed: feedUrl, identity: identityA, keychain: signing.file, root: save };
+
     pack("installed", {
       archive: false,
-      feed: feedUrl,
       outDir: path.dirname(installedPack),
-      pubkey,
       version,
+      ...signedBy,
     });
     pack("update", {
       archive: true,
-      feed: feedUrl,
-      key: keyA,
       outDir: updateDir,
-      pubkey,
       version: `${major}.${minor}.${patch + 1}`,
+      ...signedBy,
     });
   }
 
   const from = bundleVersion(installedPack);
-  const offered = readJson(packedFeed, feedSchema);
+  const offered = offeredIn(readFileSync(packedFeed, "utf-8"));
   const to = offered.version;
 
   if (bundleVersion(updatePack) !== to || !newer(to, from)) {
@@ -583,10 +594,8 @@ try {
     );
   }
 
-  if (offered.platforms["darwin-aarch64"].url !== new URL(archiveName(to), feedUrl).href) {
-    throw new Error(
-      `the update's feed names ${offered.platforms["darwin-aarch64"].url}, not its archive on ${feedUrl}`,
-    );
+  if (offered.path !== zipName(to)) {
+    throw new Error(`the update's feed names ${offered.path}, not its zip, ${zipName(to)}`);
   }
 
   log(`IdleBiz ${from} is to update to ${to}`);
@@ -606,35 +615,43 @@ try {
   );
   log(`seeded Acme on ${save}`);
 
+  const badApp = path.join(scratch, "bad", "IdleBiz.app");
+  await mkdir(path.dirname(badApp));
+  run("copy the update", "ditto", [updatePack, badApp]);
+  signAs(badApp, identityB, signing.file);
+  const badZip = path.join(scratch, "bad", zipName(to));
+  zipped(badApp, badZip);
+  log(`re-signed a copy of the update as ${identityB}, an identity neither pack is`);
+
+  for (const failure of signing.close()) {
+    leftUndone(failure);
+  }
+
+  signing = null;
+
   keychain = openScratchKeychain(scratch, [install, updatePack]);
   log(`${keychain.file} holds a key of IdleBiz's for both packs, first on the search list`);
 
-  const archive = path.join(updateDir, archiveName(to));
-  const badDir = path.join(scratch, "bad");
-  await mkdir(badDir);
-  const badCopy = path.join(badDir, archiveName(to));
-  await copyFile(archive, badCopy, constants.COPYFILE_FICLONE);
-  signer("sign the update with a key no pack trusts", [
-    "sign",
-    "-f",
-    keyB,
-    "-p",
-    "",
-    "--app-version",
-    to,
-    badCopy,
-  ]);
+  const goodZip = path.join(updateDir, zipName(to));
   const goodFeed = await readFile(packedFeed);
 
   const badFeed = Buffer.from(
-    `${JSON.stringify(loopbackFeed({ feed: feedUrl, publishedAt: new Date(), signature: await readFile(`${badCopy}.sig`, "utf-8"), version: to }), null, 2)}\n`,
+    loopbackFeed({
+      feed: feedUrl,
+      releasedAt: new Date(),
+      sha512: sha512Of(badZip),
+      size: statSync(badZip).size,
+      version: to,
+    }),
   );
 
-  feed.archive = archive;
-  feed.body = goodFeed;
+  const offer = (zip: string, body: Buffer) => {
+    feed.archive = zip;
+    feed.body = body;
+  };
 
-  const swapRoots = [realpathSync.native(tmpdir()), path.dirname(install)];
-  const swapsBefore = new Set(swapFolders(swapRoots));
+  offer(goodZip, goodFeed);
+
   let promptLookedAt = 0;
 
   const refusal = () => {
@@ -652,7 +669,7 @@ try {
 
     try {
       return securityPromptShown()
-        ? "macOS asks for leave in a SecurityAgent window nobody here answers: the Keychain's, when the scratch keychain's partition list did not let this pack read its key (update-keychain.ts), or an administrator's, when the swap was refused the install's folder"
+        ? "macOS asks for leave in a SecurityAgent window nobody here answers: the Keychain's, when the scratch keychain's partition list did not let this pack read its key (update-keychain.ts), or an administrator's, when ShipIt was refused the install's folder"
         : null;
     } catch (error) {
       log(`could not look for a Keychain prompt: ${String(error)}`);
@@ -665,9 +682,7 @@ try {
     const root = startingEnvOf(main).get("IDLEBIZ_ROOT_DIR");
 
     if (root !== save) {
-      throw new Error(
-        `main ${main.pid} serves ${root ?? "no save"}, not the one --root= named, ${save}`,
-      );
+      throw new Error(`main ${main.pid} serves ${root ?? "no save"}, not the test pack's, ${save}`);
     }
   };
 
@@ -715,7 +730,7 @@ try {
       },
       TRAY_TIMEOUT_MS,
       () =>
-        `IdleBiz's menu-bar item did not ${what} within ${TRAY_TIMEOUT_MS}ms (a notification the shell is still posting holds main's redraws behind it, main_process.rs); it showed:\n  ${lastTray.join("\n  ")}${lastFailure()}`,
+        `IdleBiz's menu-bar item did not ${what} within ${TRAY_TIMEOUT_MS}ms (a notification the shell is still posting holds main's redraws behind it, main-process.ts); it showed:\n  ${lastTray.join("\n  ")}${lastFailure()}`,
       TRAY_POLL_MS,
     );
 
@@ -751,11 +766,11 @@ try {
   log(`the menu-bar item opens Acme and offers "${offeredItem}"`);
   const before = snapshotOf(save);
 
-  feed.body = badFeed;
+  offer(badZip, badFeed);
   let asked = requests.length;
   let said = first.output().length;
   clickTrayItem(UPDATE_ITEM);
-  log(`clicked "${offeredItem}", the feed offering a signature by key b`);
+  log(`clicked "${offeredItem}", the feed offering a zip signed as ${identityB}`);
 
   const box = await waitFor(
     () => {
@@ -765,20 +780,22 @@ try {
     },
     BOX_TIMEOUT_MS,
     () =>
-      `IdleBiz showed no box within ${BOX_TIMEOUT_MS}ms of a click on "${offeredItem}" with a bad signature on offer${lastFailure()}\nits windows then:\n${describeWindows()}`,
+      `IdleBiz showed no box within ${BOX_TIMEOUT_MS}ms of a click on "${offeredItem}" with a zip by another identity on offer${lastFailure()}\nits windows then:\n${describeWindows()}`,
   );
 
   if (!box.includes(NOT_DOWNLOADED)) {
-    throw new Error(`the box a bad signature should open says something else:\n${box}`);
+    throw new Error(`the box another identity's zip should open says something else:\n${box}`);
   }
 
-  if (!requests.slice(asked).includes(`GET /${archiveName(to)}`)) {
+  if (!requests.slice(asked).includes(`GET /${zipName(to)}`)) {
     throw new Error(
-      `IdleBiz said ${to} ${NOT_DOWNLOADED} without asking the feed for its archive:\n${box}`,
+      `IdleBiz said ${to} ${NOT_DOWNLOADED} without asking the feed for its zip:\n${box}`,
     );
   }
 
-  log(`IdleBiz downloaded the archive and refused it in a box:\n${box}`);
+  log(
+    `IdleBiz downloaded the zip, Squirrel refused its signature, and it said so in a box:\n${box}`,
+  );
   dismissDialog();
   await waitFor(
     () => (look(dialogText) === "" ? true : null),
@@ -788,7 +805,7 @@ try {
   );
 
   if (first.output().slice(said).includes("main exited")) {
-    throw new Error("main exited over a release whose signature the pack refused");
+    throw new Error("main exited over an update whose signature Squirrel refused");
   }
 
   if (mainOf(installed, first.shell).pid !== firstMain.pid || ended(first.shell)) {
@@ -805,18 +822,22 @@ try {
   await waitForTray((items) => items.includes(offeredItem), `offer "${offeredItem}" again`);
   log(`main asked the feed again and offers "${offeredItem}" again`);
 
-  feed.body = goodFeed;
+  offer(goodZip, goodFeed);
   asked = requests.length;
   said = first.output().length;
   clickTrayItem(UPDATE_ITEM);
   log(`clicked "${offeredItem}", the feed offering the update as packed`);
   await waitForLine(first, MAIN_EXITED_CLEANLY, { after: said, refusal });
 
-  if (!requests.slice(asked).includes(`GET /${archiveName(to)}`)) {
+  if (!requests.slice(asked).includes(`GET /${zipName(to)}`)) {
     throw new Error("main stopped for an update the shell never downloaded");
   }
 
-  log("the shell downloaded the update, checked its signature and stopped main as Quit does");
+  log(
+    "the shell downloaded the update, Squirrel checked its signature, and main stopped as Quit does",
+  );
+  const loggedBefore = sizeOf(MAIN_LOG);
+  const shipItBefore = sizeOf(SHIPIT_LOG);
   const askedByNext = requests.length;
   await waitFor(
     () => {
@@ -840,30 +861,27 @@ try {
     },
     INSTALL_TIMEOUT_MS,
     () =>
-      `IdleBiz ${from} was still running ${INSTALL_TIMEOUT_MS}ms after main stopped: the install or its restart hung`,
+      `IdleBiz ${from} was still running ${INSTALL_TIMEOUT_MS}ms after main stopped: the install or its restart hung\nShipIt said:\n${tailOf(SHIPIT_LOG, shipItBefore)}`,
   );
 
   if (first.shell.exitCode !== 0) {
     throw new Error(`IdleBiz ${from} exited ${how(first.shell)}, not 0 as a restart does`);
   }
 
-  const relaunchedArgs = `${installed.shellBinary} --root=${save}`;
-
   const relaunched = await waitFor(
-    () => processes().find((each) => each.args === relaunchedArgs && each.pid !== shellPid) ?? null,
+    () =>
+      processes().find((each) => each.args === installed.shellBinary && each.pid !== shellPid) ??
+      null,
     RELAUNCH_TIMEOUT_MS,
     () =>
-      `no shell ran \`${relaunchedArgs}\` within ${RELAUNCH_TIMEOUT_MS}ms of IdleBiz ${from} exiting: the restart lost the app or its save`,
+      `no shell ran \`${installed.shellBinary}\` within ${RELAUNCH_TIMEOUT_MS}ms of IdleBiz ${from} exiting: ShipIt did not relaunch the app\nShipIt said:\n${tailOf(SHIPIT_LOG, shipItBefore)}`,
   );
 
-  if (relaunched.pgid !== shellPid) {
-    throw new Error(
-      `the shell the update restarted as leads group ${relaunched.pgid}, not ${shellPid}, the one it was restarted from`,
-    );
-  }
-
-  log(`IdleBiz ${from} exited 0 and restarted as pid ${relaunched.pid}, on the same --root=`);
-  await waitForLine(first, WINDOW_LOADED, { after: said, refusal, restartedAs: relaunched.pid });
+  log(
+    `IdleBiz ${from} exited 0, and ShipIt relaunched it as pid ${relaunched.pid}, with no arguments`,
+  );
+  const relaunchedLog = { output: () => tailOf(MAIN_LOG, loggedBefore), shell: first.shell };
+  await waitForLine(relaunchedLog, WINDOW_LOADED, { refusal, restartedAs: relaunched.pid });
   const nextMain = mainUnder(installed, relaunched.pid);
   mainGroups.push(nextMain.pgid);
   const mains = mainsOf(installed);
@@ -875,7 +893,9 @@ try {
   }
 
   rootOf(nextMain);
-  log(`the relaunch booted one main (pid ${nextMain.pid}) on the same save, and its window loaded`);
+  log(
+    `the relaunch booted one main (pid ${nextMain.pid}) on the save it carries, and its window loaded`,
+  );
 
   const version = bundleVersion(install);
 
@@ -929,12 +949,12 @@ try {
     throw new Error(`the update moved the save:\n  ${changes.join("\n  ")}`);
   }
 
-  proveVaultRead(first.output().slice(said), to);
+  proveVaultRead(relaunchedLog.output(), to);
   log(
     `the save is as IdleBiz ${from} left it, and ${to} reads the same Keychain key with no prompt`,
   );
 
-  said = first.output().length;
+  const loggedBeforeQuit = sizeOf(MAIN_LOG);
   process.kill(relaunched.pid, "SIGTERM");
   await waitFor(
     () => (isRunning(relaunched.pid) ? null : true),
@@ -942,11 +962,11 @@ try {
     () => `IdleBiz ${to} was still running ${EXIT_TIMEOUT_MS}ms after SIGTERM`,
   );
 
-  if (!first.output().slice(said).includes(MAIN_EXITED_CLEANLY)) {
+  if (!tailOf(MAIN_LOG, loggedBeforeQuit).includes(MAIN_EXITED_CLEANLY)) {
     throw new Error(`IdleBiz ${to} quit without main exiting cleanly`);
   }
 
-  const groups = new Set([shellPid, firstMain.pgid, nextMain.pgid]);
+  const groups = new Set([shellPid, relaunched.pgid, firstMain.pgid, nextMain.pgid]);
   let left: Process[] = [];
   await waitFor(
     () => {
@@ -960,13 +980,7 @@ try {
     () =>
       `the quit left what the app or main started running:\n  ${left.map((each) => `${each.pid} ${each.args}`).join("\n  ")}`,
   );
-  const swapsLeft = swapFolders(swapRoots).filter((folder) => !swapsBefore.has(folder));
-
-  if (swapsLeft.length > 0) {
-    throw new Error(`the update left its swap folders behind:\n  ${swapsLeft.join("\n  ")}`);
-  }
-
-  log(`IdleBiz ${to} quit cleanly, and the update left no swap folder behind`);
+  log(`IdleBiz ${to} quit cleanly, and left nothing it started running`);
   log("PASS");
 } finally {
   cleanUp();

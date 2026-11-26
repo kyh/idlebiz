@@ -4,5 +4,5 @@ export const RPC_PREFIX = "/rpc";
 /** The query parameter a handoff link carries its one-time nonce in. */
 export const HANDOFF_PARAM = "handoff";
 
-/** Vite's dev server: the page's files under `tauri dev` and `pnpm dev:browser`. */
+/** Vite's dev server: the page's files under `pnpm dev:desktop` and `pnpm dev:browser`. */
 export const DEV_PORT = 31_100;

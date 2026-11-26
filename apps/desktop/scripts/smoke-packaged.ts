@@ -37,18 +37,18 @@ const [named] = process.argv.slice(2);
 
 if (named === undefined && process.env.IDLEBIZ_PACK_UPDATE_TEST !== undefined) {
   throw new Error(
-    "IDLEBIZ_PACK_UPDATE_TEST is set, so the pack before this smoke was a test pack, which leaves src-tauri/target/release's .app as it was: unset it, or name the .app to smoke",
+    "IDLEBIZ_PACK_UPDATE_TEST is set, so the pack before this smoke was a test pack, which leaves .output/bin's .app as it was: unset it, or name the .app to smoke",
   );
 }
 
 const appDir =
   named === undefined
-    ? path.join(packageRoot, "src-tauri", "target", "release", "bundle", "macos", "IdleBiz.app")
+    ? path.join(packageRoot, ".output", "bin", "IdleBiz.app")
     : path.resolve(named);
 
 const app = packagedApp(appDir);
 const { shellBinary, bundledNode, serverDir, noticesDir } = app;
-const NOTICES = ["rust-crates.txt", "node/LICENSE", "node/SOURCE"];
+const NOTICES = ["shell-packages.md", "node/LICENSE", "node/SOURCE"];
 
 const EXIT_TIMEOUT_MS = 60_000;
 const HANDOVER_TIMEOUT_MS = 30_000;

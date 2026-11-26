@@ -62,9 +62,9 @@ installed app has `~/.idlebiz` open) refuses to boot and says so, rather than ru
 one a crash left holds nothing. Each main's socket has a name of its own that appears only once it
 answers, so a file there that answers nothing never will and any main clears it, and mains claiming
 at once each step back a random while and try again, so one holds and never two. A second launch of
-the packaged app hands over to the first, which shows its window (`tauri-plugin-single-instance`,
-`src-tauri/src/lib.rs`); a development shell skips it, since it keys on the bundle id machine-wide
-and would hand over to an installed IdleBiz.
+the packaged app hands over to the first, which shows its window (Electron's single-instance lock,
+`apps/desktop/src/shell/index.ts`); a development shell skips it, since it keeps a userData of its
+own and so could never hand over to an installed IdleBiz anyway.
 
 ## Activity and running state
 

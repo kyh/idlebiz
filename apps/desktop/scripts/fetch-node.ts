@@ -13,7 +13,6 @@ interface Pinned {
 }
 
 const VERSION = "v24.21.0";
-const TARGET = "aarch64-apple-darwin";
 const TARBALL_NAME = `node-${VERSION}-darwin-arm64.tar.gz`;
 
 const TARBALL: Pinned = {
@@ -31,7 +30,7 @@ Source: https://github.com/nodejs/node/tree/${VERSION}
 
 const packageRoot = path.resolve(import.meta.dirname, "..");
 const cacheDir = path.join(packageRoot, ".cache", "bundled-node");
-const binaryFile = path.join(packageRoot, "src-tauri", "binaries", `node-${TARGET}`);
+const binaryFile = path.join(cacheDir, "node");
 const payloadDir = path.join(packageRoot, "resources", "node");
 const stagingDir = `${payloadDir}.partial`;
 

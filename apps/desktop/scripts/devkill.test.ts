@@ -13,7 +13,7 @@ mkdirSync(path.dirname(script), { recursive: true });
 
 copyFileSync(path.join(import.meta.dirname, "devkill.sh"), script);
 
-const shell = path.join(checkout, "apps/desktop/src-tauri/target/debug/idlebiz-desktop");
+const shell = `${checkout}/apps/desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron ${checkout}/apps/desktop`;
 const main = path.join(checkout, "apps/cli/dist/index.js");
 
 const started: ChildProcess[] = [];
@@ -61,24 +61,24 @@ describe("devkill", () => {
     expect(alive(e2e)).toBe(true);
   });
 
-  it("stops what tauri dev started, whatever its command line", async () => {
+  it("stops what the dev supervisor started, whatever its command line", async () => {
     const helper = path.join(checkout, "helper-pid");
 
-    const tauri = await standIn(
-      `node ${checkout}/apps/desktop/node_modules/.bin/../@tauri-apps/cli/tauri.js dev --additional-watch-folders ../cli/dist`,
+    const supervisor = await standIn(
+      `node ${checkout}/apps/desktop/scripts/dev.ts`,
       `bash -c "sleep 60 & echo \\$! > ${helper}; echo ready; wait"`,
     );
 
-    if (tauri.stdout) {
-      await once(tauri.stdout, "data");
+    if (supervisor.stdout) {
+      await once(supervisor.stdout, "data");
     }
 
     const pid = Number(readFileSync(helper, "utf-8"));
 
     await devkill();
-    await exited(tauri);
+    await exited(supervisor);
 
-    expect(alive(tauri)).toBe(false);
+    expect(alive(supervisor)).toBe(false);
     await vi.waitFor(() => {
       expect(() => process.kill(pid, 0)).toThrow();
     });

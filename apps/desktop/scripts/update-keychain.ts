@@ -9,6 +9,7 @@ const CANARY_ITEM = ["-s", KEYCHAIN_SERVICE, "-a", CANARY_ACCOUNT] as const;
 const APPLE_PARTITIONS = ["apple-tool:", "apple:"] as const;
 const SECURITY_TIMEOUT_MS = 10_000;
 const KEYCHAIN_NAME = "update-smoke.keychain";
+const SMOKES_KEYCHAINS = [KEYCHAIN_NAME, "update-smoke-signing.keychain"] as const;
 
 /** The keychains `security list-keychains` prints, one quoted path a line. */
 export const parseSearchList = (listed: string) =>
@@ -88,7 +89,7 @@ export const refuseKilledSmokesKeychain = () => {
   const listed = searchList();
 
   const left = listed.filter((file) =>
-    [KEYCHAIN_NAME, `${KEYCHAIN_NAME}-db`].includes(path.basename(file)),
+    SMOKES_KEYCHAINS.some((name) => [name, `${name}-db`].includes(path.basename(file))),
   );
 
   if (left.length > 0) {

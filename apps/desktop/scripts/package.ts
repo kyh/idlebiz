@@ -1,29 +1,32 @@
 import { spawnSync } from "node:child_process";
 import type { SpawnSyncOptions } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { Arch, Platform, build } from "electron-builder";
+import type { Configuration } from "electron-builder";
 import { z } from "zod";
-import { FEED_NAME, archiveName, releaseAssets, releaseFeed } from "./release-feed.ts";
-import { writeRustNotices } from "./rust-notices.ts";
-import { signResources } from "./sign-resources.ts";
 import { systemTempDir } from "./packaged-app.ts";
+import { signResources } from "./sign-resources.ts";
 import { stageServer } from "./stage-server.ts";
+import { signAs } from "./test-identity.ts";
 import {
+  APP_UPDATE_FILE,
+  FEED_NAME,
+  appUpdateYml,
   loopbackFeed,
   realPathOf,
   refuseUpdateTest,
-  signedBy,
-  updateTestConfig,
+  trustedIdentitiesIn,
   updateTestSpecSchema,
+  zipName,
 } from "./update-test-pack.ts";
 
 const packageRoot = path.resolve(import.meta.dirname, "..");
 const checkout = path.resolve(packageRoot, "..", "..");
 const outDir = path.join(packageRoot, ".output", "bin");
-const targetDir = path.join(packageRoot, "src-tauri", "target");
-const testTargetDir = path.join(targetDir, "update-test");
 
 const { version } = z
   .object({ version: z.string() })
@@ -31,8 +34,9 @@ const { version } = z
 
 const DMG_NAME = `IdleBiz-${version}-arm64.dmg`;
 const MINIMUM_MACOS = "13.5";
-const ARCHIVE_NAME = archiveName(version);
-const UPDATER_KEY = path.join(homedir(), ".tauri", "idlebiz.key");
+const DEVELOPER_ID = "Developer ID Application: ";
+const RELEASE_REPO = { owner: "kyh", repo: "idlebiz" } as const;
+const ENTITLEMENTS = path.join(packageRoot, "resources", "entitlements.mac.plist");
 
 const log = (line: string) => {
   process.stdout.write(`package: ${line}\n`);
@@ -47,15 +51,15 @@ const run = (file: string, args: readonly string[], options: SpawnSyncOptions = 
 };
 
 interface Notary {
-  APPLE_API_ISSUER: string;
-  APPLE_API_KEY: string;
-  APPLE_API_KEY_PATH: string;
+  issuer: string;
+  keyId: string;
+  keyPath: string;
 }
 
 const NOTARY_KEYS = path.join(homedir(), ".appstoreconnect", "private_keys");
 const ENV_NAMES = new Set(["APPLE_API_ISSUER", "APPLE_API_KEY"]);
 
-const notaryEnv = () => {
+const notaryOf = () => {
   const file = path.join(packageRoot, ".env");
 
   if (!existsSync(file)) {
@@ -95,28 +99,23 @@ const notaryEnv = () => {
     );
   }
 
-  return {
-    APPLE_API_ISSUER: issuer,
-    APPLE_API_KEY: keyId,
-    APPLE_API_KEY_PATH: keyPath,
-  } satisfies Notary | null;
+  return { issuer, keyId, keyPath } satisfies Notary | null;
 };
 
-const signingIdentity = () => {
+const listedIdentities = () =>
+  spawnSync("security", ["find-identity", "-v", "-p", "codesigning"], { encoding: "utf-8" }).stdout;
+
+const developerId = () => {
   if (process.env.IDLEBIZ_PACK_UNSIGNED === "1") {
-    return "-";
+    return null;
   }
 
   if (process.env.APPLE_SIGNING_IDENTITY !== undefined) {
     return process.env.APPLE_SIGNING_IDENTITY;
   }
 
-  const listed = spawnSync("security", ["find-identity", "-v", "-p", "codesigning"], {
-    encoding: "utf-8",
-  });
-
-  const identity = /"(?<identity>Developer ID Application: [^"]+)"/u.exec(listed.stdout)?.groups
-    ?.identity;
+  const identity = /"(?<identity>Developer ID Application: [^"]+)"/u.exec(listedIdentities())
+    ?.groups?.identity;
 
   if (identity === undefined) {
     throw new Error(
@@ -127,90 +126,43 @@ const signingIdentity = () => {
   return identity;
 };
 
-const NOTARY_VARIABLES = new Set([
+const NOTARY_VARIABLES = [
   "APPLE_API_ISSUER",
   "APPLE_API_KEY",
-  "APPLE_API_KEY_PATH",
+  "APPLE_API_KEY_ID",
   "APPLE_ID",
-  "APPLE_PASSWORD",
+  "APPLE_APP_SPECIFIC_PASSWORD",
+  "APPLE_KEYCHAIN",
+  "APPLE_KEYCHAIN_PROFILE",
   "APPLE_TEAM_ID",
-]);
+  "CSC_LINK",
+  "CSC_KEY_PASSWORD",
+  "CSC_NAME",
+  "CSC_IDENTITY_AUTO_DISCOVERY",
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "IDLEBIZ_TEST_PACK_ROOT",
+] as const;
 
-const SIGNING_VARIABLES = new Set([
-  "TAURI_SIGNING_PRIVATE_KEY",
-  "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
-]);
+const sha512Of = async (file: string) => {
+  const hash = createHash("sha512");
 
-const {
-  plugins: { updater },
-} = z
-  .object({
-    plugins: z.object({
-      updater: z.object({ endpoints: z.tuple([z.string()]), pubkey: z.string() }),
-    }),
-  })
-  .parse(JSON.parse(readFileSync(path.join(packageRoot, "src-tauri", "tauri.conf.json"), "utf-8")));
-
-const updaterPassword = () => {
-  const file = path.join(packageRoot, ".env");
-  const name = "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=";
-
-  const line = existsSync(file)
-    ? readFileSync(file, "utf-8")
-        .split("\n")
-        .map((each) => each.trim())
-        .find((each) => each.startsWith(name))
-    : undefined;
-
-  if (line === undefined) {
-    throw new Error(
-      `a release signs its update with ${UPDATER_KEY}, whose password apps/desktop/.env's ${name} line holds: add the line, empty for a key made without one (see .env.example)`,
-    );
+  for await (const chunk of createReadStream(file)) {
+    hash.update(z.instanceof(Buffer).parse(chunk));
   }
 
-  return line.slice(name.length);
-};
-
-const updaterSigning = () => {
-  if (process.env.IDLEBIZ_RELEASE !== "1") {
-    return null;
-  }
-
-  if (updater.pubkey === "") {
-    throw new Error(
-      `a release is signed for the updater, but src-tauri/tauri.conf.json's plugins.updater.pubkey is empty: make the key once with \`pnpm -F @repo/desktop tauri signer generate -w ${UPDATER_KEY}\` and paste its .pub file's contents there`,
-    );
-  }
-
-  if (!existsSync(UPDATER_KEY)) {
-    throw new Error(`a release signs its update with ${UPDATER_KEY}, which is missing`);
-  }
-
-  releaseAssets(updater.endpoints[0], version);
-
-  return {
-    TAURI_SIGNING_PRIVATE_KEY: UPDATER_KEY,
-    TAURI_SIGNING_PRIVATE_KEY_PASSWORD: updaterPassword(),
-  } satisfies Record<string, string> | null;
-};
-
-const findOne = async (dir: string, suffix: string) => {
-  const entries = await readdir(dir);
-  const names = entries.filter((name) => name.endsWith(suffix));
-  const [only] = names;
-
-  if (only === undefined || names.length !== 1) {
-    throw new Error(`expected one *${suffix} in ${dir}, found ${names.length}`);
-  }
-
-  return path.join(dir, only);
+  return hash.digest("base64");
 };
 
 if (process.platform !== "darwin") {
   throw new Error("the Mac app packs on a Mac: codesign, hdiutil and notarytool are macOS's");
 }
 
-const identity = signingIdentity();
+for (const name of NOTARY_VARIABLES) {
+  Reflect.deleteProperty(process.env, name);
+}
+
+const release = process.env.IDLEBIZ_RELEASE === "1";
 const specFile = process.env.IDLEBIZ_PACK_UPDATE_TEST;
 
 const spec =
@@ -221,70 +173,51 @@ const spec =
 if (spec !== null) {
   refuseUpdateTest(spec, {
     checkout,
-    identity,
     installed: ["/Applications", path.join(homedir(), "Applications")],
-    pubkey: updater.pubkey,
     real: realPathOf,
-    release: process.env.IDLEBIZ_RELEASE === "1",
+    release,
     releaseOut: outDir,
     scratch: systemTempDir(),
-    updaterKey: UPDATER_KEY,
+    trusted: trustedIdentitiesIn(listedIdentities()),
   });
-
-  if (spec.archive && !existsSync(spec.key)) {
-    throw new Error(`a test pack signs its archive with ${spec.key}, which is missing`);
-  }
 
   log(`a test pack of ${spec.version}, asking ${spec.feed}, left in ${spec.outDir}`);
 }
 
-const bundleDir = path.join(spec === null ? targetDir : testTargetDir, "release", "bundle");
+const identity = spec === null ? developerId() : null;
+const notary = identity === null ? null : notaryOf();
 
-const inputsDir =
-  spec === null
-    ? path.join(packageRoot, ".output")
-    : path.join(packageRoot, ".output", "update-test");
-
-const inputsFromShell = spec === null ? "../.output" : "../.output/update-test";
-const signed = identity !== "-";
-const notary = signed ? notaryEnv() : null;
-
-if (process.env.IDLEBIZ_RELEASE === "1" && notary === null) {
+if (release && (identity === null || notary === null)) {
   throw new Error(
-    "a release is signed with a Developer ID and notarized: apps/desktop/.env names no complete notary key",
+    "a release is signed with a Developer ID and notarized: set no IDLEBIZ_PACK_UNSIGNED, and name a complete notary key in apps/desktop/.env",
   );
 }
-
-log(signed ? `signing as ${identity}` : "signing ad-hoc: this pack opens only on this Mac");
-
-log(
-  notary === null
-    ? "apps/desktop/.env names no notary key — not notarized"
-    : `notarizing with ${notary.APPLE_API_KEY_PATH}`,
-);
-
-const testSigning =
-  spec?.archive === true
-    ? { TAURI_SIGNING_PRIVATE_KEY: spec.key, TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "" }
-    : null;
-
-const signing = spec === null ? updaterSigning() : testSigning;
 
 if (spec === null) {
   log(
-    signing === null
-      ? "no update archive: not a release"
-      : `signing the update with ${UPDATER_KEY}`,
+    identity === null
+      ? "signing ad-hoc: this pack opens only on this Mac"
+      : `signing as ${identity}`,
+  );
+  log(notary === null ? "no notary key: not notarized" : `notarizing with ${notary.keyPath}`);
+  log(
+    release
+      ? `a release, for github.com/${RELEASE_REPO.owner}/${RELEASE_REPO.repo}`
+      : "not a release: it takes no updates",
   );
 } else {
-  log(
-    spec.archive
-      ? `signing the update with ${spec.key}`
-      : "no update archive: this test pack is not the update",
-  );
+  log(`signing as the throwaway identity ${spec.identity}`);
 }
 
+const inputsDir = path.join(packageRoot, ".output", spec === null ? "pack" : "update-test");
+const builtDir = path.join(inputsDir, "built");
+
 run("pnpm", ["run", "build"], { cwd: packageRoot });
+
+run("pnpm", ["run", "build:shell"], {
+  cwd: packageRoot,
+  env: spec === null ? process.env : { ...process.env, IDLEBIZ_TEST_PACK_ROOT: spec.root },
+});
 
 run("pnpm", ["--filter", "idlebiz", "run", "build"], { cwd: packageRoot });
 
@@ -300,112 +233,150 @@ if (spec !== null) {
   await writeFile(manifest, `${JSON.stringify({ ...fields, version: spec.version }, null, 2)}\n`);
 }
 
-const resourceCount = await signResources([staged], identity, signed);
+const resourceCount = await signResources([staged], identity ?? "-", identity !== null);
 
 log(`signed ${resourceCount} binaries the server's dependencies carry`);
 
-const crateCount = await writeRustNotices(
-  path.join(packageRoot, "src-tauri"),
-  path.join(inputsDir, "notices", "rust-crates.txt"),
+const notices = path.join(inputsDir, "notices");
+
+await rm(notices, { force: true, recursive: true });
+
+await mkdir(notices, { recursive: true });
+
+await copyFile(
+  path.join(packageRoot, ".output", "app", "shell", "shell-packages.md"),
+  path.join(notices, "shell-packages.md"),
 );
 
-log(`noted the licences of the ${crateCount} Rust crates the shell links`);
+const builderIdentity = () => {
+  if (identity !== null) {
+    return identity.replace(DEVELOPER_ID, "");
+  }
 
-const config = {
-  bundle: {
-    createUpdaterArtifacts: signing !== null,
-    externalBin: ["binaries/node"],
-    macOS: {
-      entitlements: "../resources/entitlements.mac.plist",
-      hardenedRuntime: signed,
-      minimumSystemVersion: MINIMUM_MACOS,
-      signingIdentity: identity,
-    },
-    resources: {
-      [`${inputsFromShell}/notices/`]: "notices/",
-      [`${inputsFromShell}/staged-server/`]: "server/",
-      "../resources/node/": "notices/node/",
-    },
-    targets: spec === null ? ["app", "dmg"] : ["app"],
-  },
-  ...updateTestConfig(spec),
+  return spec === null ? "-" : null;
 };
 
-const configFile = path.join(inputsDir, "tauri.package.conf.json");
+const config = {
+  appId: "com.idlebiz.desktop",
+  asar: true,
+  directories: { buildResources: "resources", output: builtDir },
+  dmg: { artifactName: DMG_NAME },
+  electronFuses: {
+    enableCookieEncryption: false,
+    enableEmbeddedAsarIntegrityValidation: true,
+    enableNodeCliInspectArguments: false,
+    enableNodeOptionsEnvironmentVariable: false,
+    grantFileProtocolExtraPrivileges: false,
+    onlyLoadAppFromAsar: true,
+    runAsNode: false,
+  },
+  extraFiles: [{ from: ".cache/bundled-node/node", to: "MacOS/node" }],
+  extraMetadata: spec === null ? {} : { version: spec.version },
+  extraResources: [
+    { from: staged, to: "server" },
+    { from: notices, to: "notices" },
+    { from: "resources/node", to: "notices/node" },
+    { from: "resources/tray.png", to: "tray.png" },
+  ],
+  files: [".output/app/**", "!.output/app/**/*.md", "package.json"],
+  mac: {
+    artifactName: zipName(version),
+    category: "public.app-category.games",
+    entitlements: ENTITLEMENTS,
+    entitlementsInherit: ENTITLEMENTS,
+    hardenedRuntime: identity !== null,
+    icon: "resources/icon.icns",
+    identity: builderIdentity(),
+    minimumSystemVersion: MINIMUM_MACOS,
+    notarize: notary !== null,
+  },
+  productName: "IdleBiz",
+  publish: release ? { provider: "github", ...RELEASE_REPO } : null,
+} satisfies Configuration;
 
-await writeFile(configFile, `${JSON.stringify(config, null, 2)}\n`);
-
-await rm(bundleDir, { force: true, recursive: true });
-
-const inherited = Object.fromEntries(
-  Object.entries(process.env).filter(
-    ([name]) => !NOTARY_VARIABLES.has(name) && !SIGNING_VARIABLES.has(name),
-  ),
-);
-
-const buildEnv: NodeJS.ProcessEnv = { ...inherited, ...notary, ...signing };
-
-if (spec !== null) {
-  buildEnv.CARGO_TARGET_DIR = testTargetDir;
+if (notary !== null) {
+  process.env.APPLE_API_KEY = notary.keyPath;
+  process.env.APPLE_API_KEY_ID = notary.keyId;
+  process.env.APPLE_API_ISSUER = notary.issuer;
 }
 
-run("pnpm", ["exec", "tauri", "build", "--config", configFile], {
-  cwd: packageRoot,
-  env: buildEnv,
+process.env.CSC_IDENTITY_AUTO_DISCOVERY = "false";
+
+await rm(builtDir, { force: true, recursive: true });
+
+const targetsOf = () => {
+  if (spec !== null) {
+    return ["dir"];
+  }
+
+  return release ? ["dmg", "zip"] : ["dmg"];
+};
+
+await build({
+  config,
+  projectDir: packageRoot,
+  publish: "never",
+  targets: Platform.MAC.createTarget(targetsOf(), Arch.arm64),
 });
+
+const builtApp = path.join(builtDir, "mac-arm64", "IdleBiz.app");
 
 if (spec === null) {
   await rm(outDir, { force: true, recursive: true });
   await mkdir(outDir, { recursive: true });
-  await copyFile(await findOne(path.join(bundleDir, "dmg"), ".dmg"), path.join(outDir, DMG_NAME));
-  log(
-    `${path.join("src-tauri", "target", "release", "bundle", "macos", "IdleBiz.app")} and ${DMG_NAME}`,
-  );
+  run("ditto", [builtApp, path.join(outDir, "IdleBiz.app")]);
+  await copyFile(path.join(builtDir, DMG_NAME), path.join(outDir, DMG_NAME));
 
-  if (signing !== null) {
-    const archive = await findOne(path.join(bundleDir, "macos"), ".app.tar.gz");
-    await copyFile(archive, path.join(outDir, ARCHIVE_NAME));
-    const signature = await readFile(`${archive}.sig`, "utf-8");
+  if (notary !== null) {
+    run("xcrun", [
+      "notarytool",
+      "submit",
+      path.join(outDir, DMG_NAME),
+      "--key",
+      notary.keyPath,
+      "--key-id",
+      notary.keyId,
+      "--issuer",
+      notary.issuer,
+      "--wait",
+    ]);
+    run("xcrun", ["stapler", "staple", path.join(outDir, DMG_NAME)]);
+  }
 
-    const feed = releaseFeed({
-      feed: updater.endpoints[0],
-      publishedAt: new Date(),
-      signature,
-      version,
-    });
+  log(`${path.join(".output", "bin", "IdleBiz.app")} and ${DMG_NAME}`);
 
-    await writeFile(path.join(outDir, FEED_NAME), `${JSON.stringify(feed, null, 2)}\n`);
-    log(`${ARCHIVE_NAME} and ${FEED_NAME}, for the installed app's updater`);
+  if (release) {
+    for (const asset of [zipName(version), `${zipName(version)}.blockmap`, FEED_NAME]) {
+      await copyFile(path.join(builtDir, asset), path.join(outDir, asset));
+    }
+
+    log(`${zipName(version)} and ${FEED_NAME}, for the installed app's updater`);
   }
 } else {
+  await writeFile(
+    path.join(builtApp, "Contents", "Resources", APP_UPDATE_FILE),
+    appUpdateYml(spec.feed),
+  );
+  signAs(builtApp, spec.identity, spec.keychain);
   await mkdir(spec.outDir, { recursive: true });
   const app = path.join(spec.outDir, "IdleBiz.app");
   await rm(app, { force: true, recursive: true });
-  run("ditto", [path.join(bundleDir, "macos", "IdleBiz.app"), app]);
+  run("ditto", [builtApp, app]);
   log(`${app}, IdleBiz ${spec.version} asking ${spec.feed}`);
 
   if (spec.archive) {
-    const archive = await findOne(path.join(bundleDir, "macos"), ".app.tar.gz");
-    const signature = await readFile(`${archive}.sig`, "utf-8");
-
-    if (signedBy(signature, updater.pubkey)) {
-      await rm(archive, { force: true });
-      await rm(`${archive}.sig`, { force: true });
-      throw new Error(
-        `${spec.key} is the release's key, so the archive it signed is removed: a test pack signs with a throwaway key made in scratch`,
-      );
-    }
-
-    await copyFile(archive, path.join(spec.outDir, archiveName(spec.version)));
+    const zip = path.join(spec.outDir, zipName(spec.version));
+    run("ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", app, zip]);
 
     const feed = loopbackFeed({
       feed: spec.feed,
-      publishedAt: new Date(),
-      signature,
+      releasedAt: new Date(),
+      sha512: await sha512Of(zip),
+      size: statSync(zip).size,
       version: spec.version,
     });
 
-    await writeFile(path.join(spec.outDir, FEED_NAME), `${JSON.stringify(feed, null, 2)}\n`);
-    log(`${archiveName(spec.version)} and ${FEED_NAME}, for ${spec.feed} to serve`);
+    await writeFile(path.join(spec.outDir, FEED_NAME), feed);
+    log(`${zipName(spec.version)} and ${FEED_NAME}, for ${spec.feed} to serve`);
   }
 }

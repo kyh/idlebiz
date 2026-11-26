@@ -160,7 +160,7 @@ export const aboutPage: ProsePage = {
       `${siteConfig.name} started from a simple question: what if an idle game's employees did real work? Coding agents are good enough now to write, test and ship small products on their own, but driving them one prompt at a time feels like micromanagement. ${siteConfig.name} gives them a company instead — an office, a team channel, a task queue and a budget — and lets you play the founder.`,
     ),
     p(
-      "The desktop app is built with Tauri, React and Phaser. It does not ship its own model or hold any model-provider keys: each employee is a session of the claude or codex CLI you already use, so work runs under your account and your plan. The game schedules them, hands each one a brief grounded in what the company knows, and records what they ship.",
+      "The desktop app is built with Electron, React and Phaser. It does not ship its own model or hold any model-provider keys: each employee is a session of the claude or codex CLI you already use, so work runs under your account and your plan. The game schedules them, hands each one a brief grounded in what the company knows, and records what they ship.",
     ),
     p(
       "Safety is part of the design, not an afterthought. Every run starts inside a macOS Seatbelt sandbox that seals your SSH keys, cloud logins, shell startup files and the app itself. Deploys, payment links and print listings go through tools that wait for your sign-off on the exact action. No tool pushes code: you push by hand from a fresh clone. A spending cap stops the scheduler before a run starts, not after.",
@@ -225,7 +225,7 @@ export const contactPage: ProsePage = {
   title: "Contact",
 };
 
-const legalRevisedIso = "2026-10-29";
+const legalRevisedIso = "2026-11-25";
 
 /** The last change to the home page and to the pages without a revision date of their own. */
 export const siteUpdatedIso = "2026-10-27";
@@ -288,7 +288,7 @@ const privacySections: Section[] = [
     ),
     p(
       strong("Information the desktop app keeps on your Mac."),
-      " The desktop app runs on your Mac and sends us nothing about you or your company. It has no telemetry and no crash reporting to us. Your company (its employees, tasks, memory, workspace files, orders and activity log) lives on your Mac under ~/.idlebiz. Your claude or codex CLI also keeps each run's transcript, prompts and tool results included, in ~/.claude/projects (in folders named after the ~/.idlebiz paths the runs work in) or ~/.codex/sessions. Stripe, Vercel and Printful keys you enter are stored in ~/.idlebiz, encrypted with the macOS Keychain whenever the Keychain is available (if it is not, they are kept there as plain text until it is), and are never handed to your employees. The app's logs stay on your Mac, in ~/Library/Logs/IdleBiz. If neither CLI is installed when you sign in during setup, the app downloads Anthropic's Claude Code installer from claude.ai and runs it, and signing a CLI in is that CLI's own sign-in with Anthropic or OpenAI. The app also asks GitHub for the latest IdleBiz release when it starts and every six hours while it runs, and downloads an update from GitHub only when you choose to install one. Each of those requests shows GitHub your IP address, as any request does, but nothing about your company. We do not receive any of this information; the services the app sends it to at your direction are described in ",
+      " The desktop app runs on your Mac and sends us nothing about you or your company. It has no telemetry and no crash reporting to us. Your company (its employees, tasks, memory, workspace files, orders and activity log) lives on your Mac under ~/.idlebiz. Your claude or codex CLI also keeps each run's transcript, prompts and tool results included, in ~/.claude/projects (in folders named after the ~/.idlebiz paths the runs work in) or ~/.codex/sessions. Stripe, Vercel and Printful keys you enter are stored in ~/.idlebiz, encrypted with the macOS Keychain whenever the Keychain is available (if it is not, they are kept there as plain text until it is), and are never handed to your employees. The app's logs stay on your Mac, in ~/Library/Logs/IdleBiz. If neither CLI is installed when you sign in during setup, the app downloads Anthropic's Claude Code installer from claude.ai and runs it, and signing a CLI in is that CLI's own sign-in with Anthropic or OpenAI. The app also asks GitHub for the latest IdleBiz release when it starts and every six hours while it runs, and downloads an update from GitHub only when you choose to install one. Each of those requests shows GitHub your IP address, as any request does, and the version of IdleBiz you run, which the app names itself by, but nothing about your company. We do not receive any of this information; the services the app sends it to at your direction are described in ",
       link(SHARE, anchor(SHARE)),
       ".",
     ),

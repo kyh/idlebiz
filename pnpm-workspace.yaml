@@ -6,6 +6,7 @@ packages:
 # One declaration per dep that more than one workspace uses, so versions
 # cannot drift between them, and the ACP adapters.
 allowBuilds:
+  electron-winstaller: false
   msw: set this to true or false
 
 catalog:
