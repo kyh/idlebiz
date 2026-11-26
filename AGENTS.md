@@ -190,7 +190,7 @@ agent-browser snapshot          # accessibility tree with @eN refs
 agent-browser screenshot /tmp/web.png
 ```
 
-Give each agent its own browser with `AGENT_BROWSER_SESSION=<repo>-<task>` (or `--session`): the default one is shared. Locate by `snapshot -i` refs or `find role … --name`, never `find text`, which can match a hidden duplicate label. A background tab gets no animation frames, so menus won't open: `agent-browser tab keep live` fixes it.
+Each session gets its own browser: the SessionStart hook sets `AGENT_BROWSER_SESSION` to the session's id, so a subagent driving a browser beside another passes `--session <name>`. Locate by `snapshot -i` refs or `find role … --name`, never `find text`, which can match a hidden duplicate label. A background tab gets no animation frames, so menus won't open: `agent-browser tab keep live` fixes it.
 
 Runtime, desktop — drive the office in a browser. `pnpm dev:browser` runs main as the shell does,
 and main serves the page, its files from the dev server, as it serves the window. Open
