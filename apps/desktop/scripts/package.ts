@@ -26,6 +26,7 @@ import {
 
 const packageRoot = path.resolve(import.meta.dirname, "..");
 const checkout = path.resolve(packageRoot, "..", "..");
+const envFile = path.join(checkout, ".env");
 const outDir = path.join(packageRoot, ".output", "bin");
 
 const { version } = z
@@ -60,15 +61,13 @@ const NOTARY_KEYS = path.join(homedir(), ".appstoreconnect", "private_keys");
 const ENV_NAMES = new Set(["APPLE_API_ISSUER", "APPLE_API_KEY"]);
 
 const notaryOf = () => {
-  const file = path.join(packageRoot, ".env");
-
-  if (!existsSync(file)) {
+  if (!existsSync(envFile)) {
     return null;
   }
 
   const values = new Map<string, string>();
 
-  for (const line of readFileSync(file, "utf-8").split("\n")) {
+  for (const line of readFileSync(envFile, "utf-8").split("\n")) {
     const match = /^(?<name>APPLE_[A-Z_]+)=(?<value>.+)$/u.exec(line.trim());
 
     if (match?.groups?.name !== undefined && match.groups.value !== undefined) {
@@ -80,7 +79,7 @@ const notaryOf = () => {
 
   if (unknown.length > 0) {
     throw new Error(
-      `apps/desktop/.env names ${unknown.join(", ")}: it holds only ${[...ENV_NAMES].join(" and ")}, and the key's .p8 sits in ${NOTARY_KEYS}`,
+      `the root .env names ${unknown.join(", ")}: it holds only ${[...ENV_NAMES].join(" and ")}, and the key's .p8 sits in ${NOTARY_KEYS}`,
     );
   }
 
@@ -95,7 +94,7 @@ const notaryOf = () => {
 
   if (!existsSync(keyPath)) {
     throw new Error(
-      `apps/desktop/.env names a notary key, but ${keyPath} is missing: move the key's .p8 there`,
+      `the root .env names a notary key, but ${keyPath} is missing: move the key's .p8 there`,
     );
   }
 
@@ -189,7 +188,7 @@ const notary = identity === null ? null : notaryOf();
 
 if (release && (identity === null || notary === null)) {
   throw new Error(
-    "a release is signed with a Developer ID and notarized: set no IDLEBIZ_PACK_UNSIGNED, and name a complete notary key in apps/desktop/.env",
+    "a release is signed with a Developer ID and notarized: set no IDLEBIZ_PACK_UNSIGNED, and name a complete notary key in the root .env",
   );
 }
 

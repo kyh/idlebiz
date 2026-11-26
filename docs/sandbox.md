@@ -216,7 +216,7 @@ On purpose or for want of a rule:
   so one the founder, or launchd's env, moved is read where it went;
 - reads across HOME outside the login stores (another project's `.env`, transcripts, a clipboard
   manager's history, `~/.yarnrc.yml`, yarn's settings, where `yarn npm login` adds a token), this
-  checkout's `apps/desktop/.env` included: it names the notary key by id and issuer, which sign
+  checkout's root `.env` included: it names the notary key by id and issuer, which sign
   nothing without the `.p8` the sandbox keeps in `~/.appstoreconnect/private_keys`;
 - to claude runs, which share the founder's login, the Keychain: claude reads its login there, so
   a token the founder's `gh` or git keeps there, and what a run does with it (a push over https),

@@ -327,7 +327,7 @@ rather than crashing boot.
 - `IDLEBIZ_STAND_IN=1`, `pnpm dev:browser`'s alone, runs every turn on the stand-in model, on an
   `IDLEBIZ_ROOT_DIR` of its own and never `~/.idlebiz`; main never sees it
   (`apps/desktop/vite.config.ts`), and the packaged app drops it.
-- `apps/desktop/.env` (see `.env.example`) is release-only
+- The root `.env` (see `.env.example`) is release-only
   ([Packaging and release](docs/packaging.md)).
 
 ## Map

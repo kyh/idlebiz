@@ -43,7 +43,7 @@ bundled whole. `pnpm add` defaults to `dependencies`.
 
 It signs with the keychain's Developer ID (`APPLE_SIGNING_IDENTITY` names another; with none it
 stops, unless `IDLEBIZ_PACK_UNSIGNED=1` asks for an ad-hoc pack, for this Mac alone) and notarizes
-the app and the dmg when `apps/desktop/.env` names the notary key by the id and issuer of its App
+the app and the dmg when the root `.env` names the notary key by the id and issuer of its App
 Store Connect key (see `.env.example`), saying it did not when `.env` names none. The key's `.p8`
 sits in `~/.appstoreconnect/private_keys/` (`package.ts` reads it there alone), which the sandbox
 keeps from every run; never keep it in the checkout, which runs can read. `package.ts` drops every
