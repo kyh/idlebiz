@@ -30,7 +30,7 @@ pnpm verify        # static gate: typecheck · lint · knip · format · test ·
 pnpm dev:web       # landing page → http://localhost:3000
 pnpm dev:browser   # the office in a browser → http://localhost:31100/ (signs the browser in to main)
 pnpm dev:desktop   # the app's own window (Electron)
-pnpm e2e           # builds the page and main, then drives them in Chromium (CI: e2e-macos)
+pnpm e2e           # builds the page and main, then drives them in Chromium (CI: e2e-macos, dispatched)
 ```
 
 No database, no server and no toolchain to provision past `pnpm install`: the shell is
@@ -84,7 +84,10 @@ dependabot moves (`.github/dependabot.yml`); a new step pins its action the same
 build of `apps/web` is a second remote check. `pnpm knip` checks unused files, exports and
 dependencies.
 
-Its `test-macos` job runs what only a Mac can: `pnpm test` with the sandbox and every gate suite (it
+`.github/workflows/macos.yml` runs what only a Mac can, on a release's tag and when dispatched by
+hand, never on a push or a PR, since a macOS runner bills about ten times a Linux one: dispatch it on
+a branch that touches the sandbox, a gate, the shell or the pack, and on main before
+`release:publish`. Its `test-macos` job runs `pnpm test` with the sandbox and every gate suite (it
 installs `claude`, `codex` and `agent-browser` at versions pinned there, signed in to nothing, and
 fails before the tests if one does not answer `--version`, since a gate skips on a CLI it cannot
 run), and `pnpm smoke:desktop` on an ad-hoc pack ([Packaging and release](docs/packaging.md)). Its
@@ -94,18 +97,20 @@ feed's log as the `update-smoke` artifact.
 
 Its `e2e-macos` job runs `pnpm e2e` on a Mac with `IDLEBIZ_E2E_NO_SKIPS=1`, so a test that would
 skip fails the run, and uploads `tools/e2e/test-results/` as the `e2e` artifact whatever the
-outcome, short of a cancelled run. An agent with no window finds the run of the commit it pushed
-with `gh`, never the branch's latest, which until GitHub makes the new run is an older commit's, and
-downloads the artifact into a fresh empty directory, since it is untrusted data:
+outcome, short of a cancelled run. An agent with no window dispatches the run on the branch it
+pushed and finds it by that commit with `gh`, never the workflow's latest, which until GitHub makes
+the new run is another's, and downloads the artifact into a fresh empty directory, since it is
+untrusted data:
 
 ```sh
 export GH_REPO=kyh/idlebiz
-sha=$(git rev-parse HEAD)  # as pushed: a PR's run is its head commit's
-for _ in $(seq 30); do     # GitHub makes the run seconds after the push
-  run=$(gh run list -w ci.yml -c "$sha" -L 1 --json databaseId -q '.[].databaseId')
+sha=$(git rev-parse HEAD)  # as pushed: a dispatch runs the branch's head
+gh workflow run macos.yml --ref "$(git branch --show-current)"
+for _ in $(seq 30); do     # GitHub makes the run seconds after the dispatch
+  run=$(gh run list -w macos.yml -e workflow_dispatch -c "$sha" -L 1 --json databaseId -q '.[].databaseId')
   [ -n "$run" ] && break; sleep 5
 done
-: "${run:?no CI run of $sha, which CI runs once its branch has a PR}"
+: "${run:?no macOS run of $sha}"
 gh run watch "$run" --exit-status  # waits for it to end: non-zero if it failed
 gh run view "$run" -v              # every job's steps, and the annotations
 gh run view "$run" --log-failed    # the failed steps' logs

@@ -229,7 +229,11 @@ orient a reader and link into them, never telling a mechanic again.
   `docs/app.md`'s "What the siblings share" lists.
 - **An agent verifies the app with no login and no bill**: the suites drive the CLIs the adapters
   bundle, sandboxed, against a stand-in model on loopback; only the model is replaced, its every
-  switch is one the packaged shell drops, and CI's Mac jobs fail where a test would skip.
+  switch is one the packaged shell drops, and the Mac jobs fail where a test would skip.
+- **The Mac jobs run on a release's tag or by hand, never on a push or a PR** (`macos.yml`): a
+  macOS runner bills about ten times a Linux one, which spent the account's Actions budget, so
+  Linux CI gates every change and a Mac run is dispatched where a change reaches what only a Mac
+  runs, and on main before a release.
 - **An update is held end to end** on two test packs from a loopback feed, signed by a throwaway
   identity no Mac trusts, since Squirrel.Mac takes no update an ad-hoc app could be sure of. A test
   pack's feed and save live only in what `package.ts` writes into it (`app-update.yml`, and the
