@@ -24,7 +24,7 @@
   "scripts": {
     "build": "vite build && node scripts/stage-page.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "NODE_USE_ENV_PROXY=0 vitest run",
     "clean": "rm -rf .cache dist"
   },
   "dependencies": {

@@ -149,7 +149,8 @@ orient a reader and link into them, never telling a mechanic again.
   Suites pass as root in a container too: a save that refuses a write is a path in the way
   (`test-support/refused-writes.ts`), never a file mode, which root writes through; and a
   process counts as gone once it is a zombie (`test-support/processes.ts`), since a container's
-  PID 1 may reap nothing.
+  PID 1 may reap nothing. `idlebiz`'s test script sets `NODE_USE_ENV_PROXY=0`, since Node's
+  env proxy routes `fetch` past MSW, and a test never reaches the network.
 - **The store is one synchronous object.** Don't split it by entity or make it async: its
   synchronous check-and-set is what makes the task lock correct.
 - **Every write is whole; few are durable.** No reader sees half a file, but only one whose loss
